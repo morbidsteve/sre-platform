@@ -1,0 +1,169 @@
+---
+# Loki — Log aggregation engine (Simple Scalable deployment mode)
+# Chart: grafana/loki
+# Docs: https://grafana.com/docs/loki/latest/
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: logging
+  annotations:
+    sre.io/nist-controls: "AU-2, AU-3, AU-4, AU-9, AU-12"
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: loki
+      version: "5.47.2"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  dependsOn:
+    - name: istio-base
+      namespace: istio-system
+    - name: monitoring
+      namespace: monitoring
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # ---------------------------------------------------------------
+    # Deployment Mode
+    # ---------------------------------------------------------------
+    deploymentMode: SimpleScalable
+
+    # ---------------------------------------------------------------
+    # Loki Configuration
+    # ---------------------------------------------------------------
+    loki:
+      auth_enabled: false
+
+      commonConfig:
+        replication_factor: 1
+
+      storage:
+        type: s3
+        s3:
+          endpoint: "minio.minio.svc:9000"
+          bucketnames: "loki-chunks"
+          region: "us-east-1"
+          access_key_id: "REPLACE_ME"
+          secret_access_key: "REPLACE_ME"
+          s3ForcePathStyle: true
+          insecure: true
+
+      schemaConfig:
+        configs:
+          - from: "2024-01-01"
+            store: tsdb
+            object_store: s3
+            schema: v13
+            index:
+              prefix: "loki_index_"
+              period: "24h"
+
+      limits_config:
+        retention_period: "720h"
+        max_query_series: 500
+        max_query_parallelism: 2
+        enforce_metric_name: false
+        reject_old_samples: true
+        reject_old_samples_max_age: "168h"
+
+      rulerConfig:
+        storage:
+          type: local
+
+    # ---------------------------------------------------------------
+    # Read Path (Queriers)
+    # ---------------------------------------------------------------
+    read:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    # ---------------------------------------------------------------
+    # Write Path (Ingesters)
+    # ---------------------------------------------------------------
+    write:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      persistence:
+        enabled: true
+        size: 10Gi
+
+    # ---------------------------------------------------------------
+    # Backend (Compactor + Ruler + IndexGateway)
+    # ---------------------------------------------------------------
+    backend:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      persistence:
+        enabled: true
+        size: 10Gi
+
+    # ---------------------------------------------------------------
+    # Gateway (nginx reverse proxy)
+    # ---------------------------------------------------------------
+    gateway:
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+
+    # ---------------------------------------------------------------
+    # Monitoring Integration
+    # ---------------------------------------------------------------
+    monitoring:
+      serviceMonitor:
+        enabled: true
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+      selfMonitoring:
+        enabled: false
+        grafanaAgent:
+          installOperator: false
+      lokiCanary:
+        enabled: false
+
+    # ---------------------------------------------------------------
+    # Testing
+    # ---------------------------------------------------------------
+    test:
+      enabled: false
+
+  valuesFrom:
+    - kind: Secret
+      name: loki-s3-credentials
+      optional: true
+    - kind: ConfigMap
+      name: loki-env-values
+      optional: true

@@ -1,0 +1,217 @@
+---
+# Alloy — Log collector DaemonSet (replaces Promtail)
+# Chart: grafana/alloy
+# Docs: https://grafana.com/docs/alloy/latest/
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: logging
+  annotations:
+    sre.io/nist-controls: "AU-2, AU-3, AU-12"
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: alloy
+      version: "0.3.2"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  dependsOn:
+    - name: loki
+      namespace: logging
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # ---------------------------------------------------------------
+    # Controller — DaemonSet for node-level log collection
+    # ---------------------------------------------------------------
+    controller:
+      type: daemonset
+
+    # ---------------------------------------------------------------
+    # Alloy Configuration
+    # ---------------------------------------------------------------
+    alloy:
+      configMap:
+        content: |
+          // ============================================================
+          // Kubernetes Pod Log Discovery
+          // ============================================================
+          discovery.kubernetes "pods" {
+            role = "pod"
+          }
+
+          discovery.relabel "pod_logs" {
+            targets = discovery.kubernetes.pods.targets
+
+            // Keep only running pods
+            rule {
+              source_labels = ["__meta_kubernetes_pod_phase"]
+              regex         = "Pending|Succeeded|Failed|Completed"
+              action        = "drop"
+            }
+
+            // Set namespace label
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label  = "namespace"
+            }
+
+            // Set pod name label
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              target_label  = "pod"
+            }
+
+            // Set container name label
+            rule {
+              source_labels = ["__meta_kubernetes_pod_container_name"]
+              target_label  = "container"
+            }
+
+            // Set app label from k8s metadata
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+              target_label  = "app"
+            }
+
+            // Set team label from SRE metadata
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_sre_io_team"]
+              target_label  = "team"
+            }
+
+            // Set node name
+            rule {
+              source_labels = ["__meta_kubernetes_pod_node_name"]
+              target_label  = "node"
+            }
+
+            // Set the job label to namespace/pod-name
+            rule {
+              source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_name"]
+              separator     = "/"
+              target_label  = "job"
+            }
+          }
+
+          loki.source.kubernetes "pod_logs" {
+            targets    = discovery.relabel.pod_logs.output
+            forward_to = [loki.process.pod_logs.receiver]
+          }
+
+          // ============================================================
+          // Log Processing Pipeline
+          // ============================================================
+          loki.process "pod_logs" {
+            // Detect and parse JSON log lines
+            stage.json {
+              expressions = {
+                level   = "level",
+                msg     = "msg",
+                ts      = "ts",
+              }
+            }
+
+            // Add parsed level as a label when present
+            stage.labels {
+              values = {
+                level = "",
+              }
+            }
+
+            forward_to = [loki.write.default.receiver]
+          }
+
+          // ============================================================
+          // Node Journal Log Collection
+          // ============================================================
+          loki.source.journal "node_journal" {
+            relabel_rules = loki.relabel.journal_labels.rules
+            forward_to    = [loki.write.default.receiver]
+            labels        = {
+              job = "systemd-journal",
+            }
+          }
+
+          loki.relabel "journal_labels" {
+            forward_to = []
+
+            rule {
+              source_labels = ["__journal__systemd_unit"]
+              target_label  = "unit"
+            }
+
+            rule {
+              source_labels = ["__journal__hostname"]
+              target_label  = "hostname"
+            }
+
+            rule {
+              source_labels = ["__journal_priority_keyword"]
+              target_label  = "level"
+            }
+          }
+
+          // ============================================================
+          // Loki Write Endpoint
+          // ============================================================
+          loki.write "default" {
+            endpoint {
+              url = "http://loki-gateway.logging.svc.cluster.local:80/loki/api/v1/push"
+            }
+          }
+
+    # ---------------------------------------------------------------
+    # Resources
+    # ---------------------------------------------------------------
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+    # ---------------------------------------------------------------
+    # Monitoring Integration
+    # ---------------------------------------------------------------
+    serviceMonitor:
+      enabled: true
+      labels:
+        app.kubernetes.io/part-of: sre-platform
+
+    # ---------------------------------------------------------------
+    # Volume mounts required for log collection
+    # ---------------------------------------------------------------
+    mounts:
+      # Mount node logs for journal collection
+      extra:
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: machine-id
+          mountPath: /etc/machine-id
+          readOnly: true
+
+    extraVolumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: machine-id
+        hostPath:
+          path: /etc/machine-id
+
+  valuesFrom:
+    - kind: ConfigMap
+      name: alloy-env-values
+      optional: true
