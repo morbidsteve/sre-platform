@@ -1,0 +1,159 @@
+---
+# HelmRepository sources for all platform charts
+# All repositories are defined in flux-system namespace so they are
+# accessible to HelmReleases in any namespace.
+
+# ── Istio ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: istio
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://istio-release.storage.googleapis.com/charts
+
+---
+# ── Jetstack (cert-manager) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://charts.jetstack.io
+
+---
+# ── Kyverno ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kyverno
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://kyverno.github.io/kyverno
+
+---
+# ── Prometheus Community (kube-prometheus-stack) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://prometheus-community.github.io/helm-charts
+
+---
+# ── Grafana (Loki, Alloy, Tempo, Grafana) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://grafana.github.io/helm-charts
+
+---
+# ── OpenBao ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: openbao
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://openbao.github.io/openbao-helm
+
+---
+# ── External Secrets Operator ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-secrets
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://charts.external-secrets.io
+
+---
+# ── Harbor ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: harbor
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://helm.goharbor.io
+
+---
+# ── NeuVector ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: neuvector
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://neuvector.github.io/neuvector-helm
+
+---
+# ── Keycloak (Bitnami) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: bitnami
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://charts.bitnami.com/bitnami
+
+---
+# ── Velero ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: vmware-tanzu
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://vmware-tanzu.github.io/helm-charts
+
+---
+# ── Kiali (Istio observability) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kiali
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://kiali.org/helm-charts

@@ -1,0 +1,26 @@
+---
+# Flux Kustomization for Velero backup
+# Depends on: istio, monitoring
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-backup
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "CP-9, CP-10"
+spec:
+  interval: 10m
+  path: ./platform/core/backup
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  dependsOn:
+    - name: sre-istio
+    - name: sre-monitoring
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: velero
+      namespace: velero
+  timeout: 5m

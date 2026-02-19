@@ -1,0 +1,26 @@
+---
+# Flux Kustomization for Backstage developer portal (optional)
+# Depends on: istio, cert-manager, keycloak, monitoring
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-backstage
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./platform/addons/backstage
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  dependsOn:
+    - name: sre-istio
+    - name: sre-cert-manager
+    - name: sre-monitoring
+    - name: sre-keycloak
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: backstage
+      namespace: backstage
+  timeout: 5m

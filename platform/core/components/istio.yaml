@@ -1,0 +1,23 @@
+---
+# Flux Kustomization for Istio service mesh
+# First in the dependency chain — no dependsOn
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-istio
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AC-4, SC-7, SC-8, SC-13"
+spec:
+  interval: 10m
+  path: ./platform/core/istio
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: istiod
+      namespace: istio-system
+  timeout: 10m

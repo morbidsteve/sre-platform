@@ -1,0 +1,30 @@
+---
+# Flux Kustomization for Kyverno policy engine
+# Depends on: istio, cert-manager
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-kyverno
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-6, CM-6, CM-7, SI-7"
+spec:
+  interval: 10m
+  path: ./platform/core/kyverno
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  dependsOn:
+    - name: sre-istio
+    - name: sre-cert-manager
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kyverno-admission-controller
+      namespace: kyverno
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kyverno-reports-controller
+      namespace: kyverno
+  timeout: 5m

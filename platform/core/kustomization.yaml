@@ -1,0 +1,21 @@
+---
+# Flux Kustomizations for all core platform components
+# Ordered by dependency chain:
+#   istio → cert-manager → kyverno → monitoring → logging →
+#   openbao → external-secrets → runtime-security → backup
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # ── Sources (HelmRepositories) ──
+  - sources/helmrepositories.yaml
+
+  # ── Core Components (Flux Kustomization CRDs) ──
+  - components/istio.yaml
+  - components/cert-manager.yaml
+  - components/kyverno.yaml
+  - components/monitoring.yaml
+  - components/logging.yaml
+  - components/openbao.yaml
+  - components/external-secrets.yaml
+  - components/runtime-security.yaml
+  - components/backup.yaml

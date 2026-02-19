@@ -1,0 +1,27 @@
+---
+# Flux Kustomization for Harbor container registry
+# Depends on: istio, cert-manager, monitoring
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-harbor
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "CM-2, SI-3, SI-7, SA-11, RA-5"
+spec:
+  interval: 10m
+  path: ./platform/addons/harbor
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  dependsOn:
+    - name: sre-istio
+    - name: sre-cert-manager
+    - name: sre-monitoring
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: harbor-core
+      namespace: harbor
+  timeout: 10m

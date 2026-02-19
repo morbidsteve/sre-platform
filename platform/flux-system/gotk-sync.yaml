@@ -1,0 +1,41 @@
+---
+# Flux Root Sync — GitRepository + Kustomization
+# This is the entry point for all GitOps reconciliation.
+# Flux watches this Git repo and reconciles the platform/ directory.
+
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: sre-platform
+  namespace: flux-system
+spec:
+  interval: 5m
+  url: https://github.com/REPLACE_ME/sre-platform.git
+  ref:
+    branch: main
+  secretRef:
+    name: sre-platform-auth
+  # Ignore non-platform directories to reduce reconciliation scope
+  ignore: |
+    /*
+    !/platform/
+    !/policies/
+
+---
+# Root Kustomization — discovers and reconciles platform/core and platform/addons
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-platform
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "CM-2, CM-3, SA-10"
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  path: ./platform
+  prune: true
+  wait: true
+  timeout: 5m

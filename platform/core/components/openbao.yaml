@@ -1,0 +1,26 @@
+---
+# Flux Kustomization for OpenBao secrets management
+# Depends on: istio, monitoring
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-openbao
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "IA-5, SC-12, SC-13, SC-28"
+spec:
+  interval: 10m
+  path: ./platform/core/openbao
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  dependsOn:
+    - name: sre-istio
+    - name: sre-monitoring
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      name: openbao
+      namespace: openbao
+  timeout: 10m

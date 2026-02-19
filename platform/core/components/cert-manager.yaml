@@ -1,0 +1,29 @@
+---
+# Flux Kustomization for cert-manager
+# Depends on: istio
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-cert-manager
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "IA-5, SC-12, SC-13"
+spec:
+  interval: 10m
+  path: ./platform/core/cert-manager
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+  dependsOn:
+    - name: sre-istio
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: cert-manager
+      namespace: cert-manager
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: cert-manager-webhook
+      namespace: cert-manager
+  timeout: 5m

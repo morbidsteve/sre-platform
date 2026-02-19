@@ -1,0 +1,11 @@
+---
+# Flux Kustomizations for optional addon components
+# These are disabled by default. Enable by uncommenting the relevant resource.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
+  # Uncomment to enable addons:
+  # - components/harbor.yaml
+  # - components/keycloak.yaml
+  # - components/argocd.yaml
+  # - components/backstage.yaml
