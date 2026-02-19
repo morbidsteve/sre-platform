@@ -1,0 +1,37 @@
+---
+# OS Hardening — Main task entry point
+# Rocky Linux 9 DISA STIG application
+# NIST Controls: CM-6, AC-17, AU-2, SC-7, SI-7, IA-5
+
+- name: Include SSHD hardening
+  ansible.builtin.include_tasks: sshd.yml
+  tags: [sshd]
+
+- name: Include audit configuration
+  ansible.builtin.include_tasks: auditd.yml
+  tags: [audit]
+
+- name: Include kernel hardening
+  ansible.builtin.include_tasks: kernel.yml
+  tags: [kernel]
+
+- name: Include filesystem hardening
+  ansible.builtin.include_tasks: filesystem.yml
+  tags: [filesystem]
+
+- name: Include PAM / password policy
+  ansible.builtin.include_tasks: pam.yml
+  tags: [pam]
+
+- name: Include crypto policy
+  ansible.builtin.include_tasks: crypto-policy.yml
+  tags: [crypto]
+
+- name: Include firewall configuration
+  ansible.builtin.include_tasks: firewall.yml
+  tags: [firewall]
+
+- name: Include AIDE configuration
+  ansible.builtin.include_tasks: aide.yml
+  tags: [aide]
+  when: os_hardening_aide_enabled

@@ -1,0 +1,62 @@
+---
+# Filesystem Hardening — NIST CM-6
+# Secure mount options and file permissions
+
+- name: Set correct permissions on /etc/passwd
+  ansible.builtin.file:
+    path: /etc/passwd
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set correct permissions on /etc/shadow
+  ansible.builtin.file:
+    path: /etc/shadow
+    owner: root
+    group: root
+    mode: "0000"
+
+- name: Set correct permissions on /etc/group
+  ansible.builtin.file:
+    path: /etc/group
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set correct permissions on /etc/gshadow
+  ansible.builtin.file:
+    path: /etc/gshadow
+    owner: root
+    group: root
+    mode: "0000"
+
+- name: Ensure /tmp has restricted mount options
+  ansible.posix.mount:
+    path: /tmp
+    src: tmpfs
+    fstype: tmpfs
+    opts: "{{ os_hardening_tmp_mount_options }},size=2g"
+    state: mounted
+
+- name: Set sticky bit on world-writable directories
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      find / -xdev -type d \( -perm -0002 -a ! -perm -1000 \) 2>/dev/null | head -20
+    executable: /bin/bash
+  register: _world_writable_dirs
+  changed_when: false
+
+- name: Apply sticky bit to world-writable directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "o+t"
+  loop: "{{ _world_writable_dirs.stdout_lines }}"
+  when: _world_writable_dirs.stdout_lines | length > 0
+
+- name: Disable automounting
+  ansible.builtin.systemd:
+    name: autofs
+    state: stopped
+    enabled: false
+  failed_when: false

@@ -1,0 +1,7 @@
+---
+# ansible-lint configuration for SRE platform
+
+# Skip role-name rule: our convention uses hyphens (os-hardening, rke2-server)
+# which matches the architecture docs and ansible-patterns.md
+skip_list:
+  - "role-name"

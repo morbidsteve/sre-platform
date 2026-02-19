@@ -1,0 +1,37 @@
+---
+# AIDE (Advanced Intrusion Detection Environment) — NIST SI-7
+# File integrity monitoring for detecting unauthorized changes
+
+- name: Install AIDE
+  ansible.builtin.dnf:
+    name: aide
+    state: present
+
+- name: Check if AIDE database exists
+  ansible.builtin.stat:
+    path: /var/lib/aide/aide.db.gz
+  register: _aide_db
+
+- name: Initialize AIDE database
+  ansible.builtin.command:
+    cmd: aide --init
+    creates: /var/lib/aide/aide.db.new.gz
+  when: not _aide_db.stat.exists
+
+- name: Move new AIDE database to active location
+  ansible.builtin.copy:
+    src: /var/lib/aide/aide.db.new.gz
+    dest: /var/lib/aide/aide.db.gz
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when: not _aide_db.stat.exists
+
+- name: Configure daily AIDE check via cron
+  ansible.builtin.cron:
+    name: "AIDE integrity check"
+    minute: "30"
+    hour: "5"
+    job: "/usr/sbin/aide --check | /usr/bin/logger -t aide"
+    user: root

@@ -1,0 +1,40 @@
+# {{ ansible_managed }}
+# RKE2 Server Configuration
+# NIST Controls: CM-2, CM-6, SC-13
+
+{% if rke2_server_url != '' %}
+server: "{{ rke2_server_url }}"
+{% endif %}
+token: "{{ rke2_token }}"
+
+tls-san:
+{% for san in _rke2_tls_san_list %}
+  - "{{ san }}"
+{% endfor %}
+
+profile: "{{ rke2_profile }}"
+
+{% if rke2_fips_enabled %}
+# FIPS 140-2 mode (NIST SC-13)
+# Uses BoringCrypto Go module for all crypto operations
+{% endif %}
+
+cni:
+  - "{{ rke2_cni }}"
+
+{% if rke2_disable | length > 0 %}
+disable:
+{% for component in rke2_disable %}
+  - "{{ component }}"
+{% endfor %}
+{% endif %}
+
+etcd-snapshot-schedule-cron: "{{ rke2_etcd_snapshot_schedule }}"
+etcd-snapshot-retention: {{ rke2_etcd_snapshot_retention }}
+
+kubelet-arg:
+{% for arg in rke2_kubelet_args %}
+  - "{{ arg }}"
+{% endfor %}
+
+write-kubeconfig-mode: "0600"

@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# RKE2 Agent Configuration
+
+server: "{{ rke2_server_url }}"
+token: "{{ rke2_token }}"
+
+{% if rke2_node_labels | length > 0 %}
+node-label:
+{% for label in rke2_node_labels %}
+  - "{{ label }}"
+{% endfor %}
+{% endif %}
+
+kubelet-arg:
+{% for arg in rke2_kubelet_args %}
+  - "{{ arg }}"
+{% endfor %}

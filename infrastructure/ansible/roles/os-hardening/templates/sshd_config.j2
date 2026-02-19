@@ -1,0 +1,48 @@
+# {{ ansible_managed }}
+# SSHD Configuration — Rocky Linux 9 DISA STIG
+# NIST Controls: AC-17, IA-2
+
+Port {{ os_hardening_ssh_port }}
+Protocol 2
+AddressFamily any
+ListenAddress 0.0.0.0
+
+# Authentication
+PermitRootLogin {{ os_hardening_ssh_permit_root_login }}
+PasswordAuthentication {{ os_hardening_ssh_password_authentication }}
+MaxAuthTries {{ os_hardening_ssh_max_auth_tries }}
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Session
+ClientAliveInterval {{ os_hardening_ssh_client_alive_interval }}
+ClientAliveCountMax {{ os_hardening_ssh_client_alive_count_max }}
+MaxSessions {{ os_hardening_ssh_max_sessions }}
+LoginGraceTime 60
+
+# Security
+X11Forwarding {{ os_hardening_ssh_x11_forwarding }}
+PermitEmptyPasswords no
+PermitUserEnvironment no
+StrictModes yes
+IgnoreRhosts yes
+HostbasedAuthentication no
+Banner /etc/issue.net
+
+# Crypto (NIST SC-13 / FIPS)
+Ciphers {{ os_hardening_ssh_ciphers }}
+MACs {{ os_hardening_ssh_macs }}
+KexAlgorithms {{ os_hardening_ssh_kex_algorithms }}
+
+# Logging (NIST AU-2)
+SyslogFacility AUTHPRIV
+LogLevel {{ os_hardening_ssh_log_level }}
+
+# Subsystems
+Subsystem sftp /usr/libexec/openssh/sftp-server
+
+# Disable tunneling
+AllowTcpForwarding no
+AllowAgentForwarding no
+GatewayPorts no
+PermitTunnel no

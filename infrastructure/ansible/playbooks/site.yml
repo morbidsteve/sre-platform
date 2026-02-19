@@ -1,0 +1,12 @@
+---
+# Site Playbook — Full SRE node provisioning
+# Runs: OS hardening → RKE2 server install → RKE2 agent join
+#
+# Usage:
+#   ansible-playbook playbooks/site.yml -i inventory/dev/hosts.yml
+
+- name: Harden all nodes
+  ansible.builtin.import_playbook: harden-os.yml
+
+- name: Install RKE2 on all nodes
+  ansible.builtin.import_playbook: install-rke2.yml

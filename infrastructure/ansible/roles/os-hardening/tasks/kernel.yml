@@ -1,0 +1,52 @@
+---
+# Kernel Hardening — NIST SC-7, SI-7
+# Applies sysctl settings for network and kernel security
+
+- name: Load required kernel modules for Kubernetes
+  ansible.builtin.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - br_netfilter
+    - overlay
+
+- name: Ensure kernel modules load at boot
+  ansible.builtin.copy:
+    content: |
+      br_netfilter
+      overlay
+    dest: /etc/modules-load.d/kubernetes.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply hardened sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-sre-hardening.conf
+  loop: "{{ os_hardening_sysctl_settings | dict2items }}"
+
+- name: Disable core dumps via limits.conf
+  ansible.builtin.copy:
+    content: |
+      # STIG: Disable core dumps
+      *     hard   core    0
+    dest: /etc/security/limits.d/99-sre-nodump.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Disable USB storage module
+  ansible.builtin.copy:
+    content: |
+      # STIG: Disable USB storage
+      install usb-storage /bin/true
+      blacklist usb-storage
+    dest: /etc/modprobe.d/disable-usb-storage.conf
+    owner: root
+    group: root
+    mode: "0644"

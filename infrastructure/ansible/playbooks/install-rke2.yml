@@ -1,0 +1,23 @@
+---
+# RKE2 Installation Playbook
+# Installs RKE2 server on control plane nodes, then agents on worker nodes.
+# Server nodes are installed serially to ensure the first node initializes
+# the cluster before others join.
+#
+# NIST Controls: CM-2, CM-6
+#
+# Usage:
+#   ansible-playbook playbooks/install-rke2.yml -i inventory/dev/hosts.yml
+
+- name: Install RKE2 server on control plane nodes
+  hosts: control_plane
+  become: true
+  serial: 1
+  roles:
+    - role: rke2-server
+
+- name: Install RKE2 agent on worker nodes
+  hosts: workers
+  become: true
+  roles:
+    - role: rke2-agent

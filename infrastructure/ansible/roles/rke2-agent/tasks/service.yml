@@ -1,0 +1,14 @@
+---
+# RKE2 agent service management
+
+- name: Enable and start RKE2 agent
+  ansible.builtin.systemd:
+    name: rke2-agent
+    state: started
+    enabled: true
+
+- name: Wait for RKE2 agent to join the cluster
+  ansible.builtin.wait_for:
+    path: "{{ rke2_data_dir }}/agent/kubelet.kubeconfig"
+    state: present
+    timeout: 300

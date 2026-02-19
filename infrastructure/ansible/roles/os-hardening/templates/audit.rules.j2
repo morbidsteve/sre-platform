@@ -1,0 +1,64 @@
+# {{ ansible_managed }}
+# DISA STIG Audit Rules for Rocky Linux 9
+# NIST Controls: AU-2, AU-3, AU-12
+
+# Delete all existing rules
+-D
+
+# Set buffer size
+-b 8192
+
+# Failure mode: 1=printk, 2=panic
+-f 1
+
+# --- Identity and Authentication (AU-2, IA-2) ---
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+-w /etc/sudoers -p wa -k identity
+-w /etc/sudoers.d/ -p wa -k identity
+
+# --- Session Tracking ---
+-w /var/run/utmp -p wa -k session
+-w /var/log/wtmp -p wa -k session
+-w /var/log/btmp -p wa -k session
+
+# --- Login/Logout Events ---
+-w /var/log/lastlog -p wa -k logins
+-w /var/log/faillock/ -p wa -k logins
+
+# --- Access Control Changes ---
+-a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=4294967295 -k perm_mod
+-a always,exit -F arch=b64 -S chown,fchown,lchown,fchownat -F auid>=1000 -F auid!=4294967295 -k perm_mod
+-a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=4294967295 -k perm_mod
+
+# --- Unauthorized File Access Attempts ---
+-a always,exit -F arch=b64 -S open,openat,creat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=4294967295 -k access
+-a always,exit -F arch=b64 -S open,openat,creat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=4294967295 -k access
+
+# --- System Administration Actions ---
+-w /sbin/insmod -p x -k modules
+-w /sbin/rmmod -p x -k modules
+-w /sbin/modprobe -p x -k modules
+-a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k modules
+
+# --- Mount Operations ---
+-a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=4294967295 -k mounts
+
+# --- File Deletion by Users ---
+-a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=4294967295 -k delete
+
+# --- Privileged Commands ---
+-a always,exit -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
+-a always,exit -F path=/usr/bin/su -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
+-a always,exit -F path=/usr/bin/passwd -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
+-a always,exit -F path=/usr/bin/chage -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
+
+# --- SSH Key Changes ---
+-w /etc/ssh/sshd_config -p wa -k sshd_config
+-w /etc/ssh/ -p wa -k ssh_keys
+
+# --- Audit Configuration Immutable (must be last) ---
+-e 2

@@ -1,0 +1,78 @@
+---
+# OS Hardening Role — Default Variables
+# Override these in inventory group_vars as needed.
+
+# ---- FIPS Mode ----
+os_hardening_fips_enabled: true
+
+# ---- SSH Hardening (NIST AC-17, IA-2) ----
+os_hardening_ssh_port: 22
+os_hardening_ssh_permit_root_login: "no"
+os_hardening_ssh_password_authentication: "no"
+os_hardening_ssh_max_auth_tries: 3
+os_hardening_ssh_client_alive_interval: 600
+os_hardening_ssh_client_alive_count_max: 0
+os_hardening_ssh_x11_forwarding: "no"
+os_hardening_ssh_max_sessions: 10
+os_hardening_ssh_log_level: "VERBOSE"
+os_hardening_ssh_ciphers: "aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
+os_hardening_ssh_macs: "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com"
+os_hardening_ssh_kex_algorithms: >-
+  ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,
+  diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,
+  diffie-hellman-group18-sha512
+
+# ---- Audit Configuration (NIST AU-2, AU-3, AU-12) ----
+os_hardening_audit_max_log_file: 25
+os_hardening_audit_num_logs: 5
+os_hardening_audit_max_log_file_action: "keep_logs"
+os_hardening_audit_space_left_action: "email"
+os_hardening_audit_admin_space_left_action: "halt"
+os_hardening_audit_disk_full_action: "halt"
+os_hardening_audit_disk_error_action: "halt"
+
+# ---- Kernel Hardening (NIST SC-7, SI-7) ----
+os_hardening_sysctl_settings:
+  net.ipv4.ip_forward: 1  # Required for Kubernetes
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.conf.all.send_redirects: 0
+  net.ipv4.conf.default.send_redirects: 0
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.all.log_martians: 1
+  net.ipv4.conf.default.log_martians: 1
+  net.ipv4.conf.all.rp_filter: 1
+  net.ipv4.conf.default.rp_filter: 1
+  net.ipv4.icmp_echo_ignore_broadcasts: 1
+  net.ipv4.icmp_ignore_bogus_error_responses: 1
+  net.ipv4.tcp_syncookies: 1
+  kernel.randomize_va_space: 2
+  kernel.dmesg_restrict: 1
+  kernel.kptr_restrict: 2
+  fs.suid_dumpable: 0
+  kernel.core_uses_pid: 1
+  kernel.yama.ptrace_scope: 1
+  vm.swappiness: 0  # Kubernetes nodes should not swap
+
+# ---- Filesystem Hardening ----
+os_hardening_tmp_mount_options: "nodev,nosuid,noexec"
+os_hardening_var_tmp_mount_options: "nodev,nosuid,noexec"
+
+# ---- PAM / Password Policy (NIST IA-5) ----
+os_hardening_password_min_length: 15
+os_hardening_password_min_class: 4
+os_hardening_password_max_days: 60
+os_hardening_password_min_days: 1
+os_hardening_password_warn_age: 7
+os_hardening_max_login_retries: 3
+os_hardening_lockout_time: 900  # 15 minutes
+
+# ---- AIDE (File Integrity Monitoring, NIST SI-7) ----
+os_hardening_aide_enabled: true
+
+# ---- Firewall (NIST SC-7) ----
+os_hardening_firewalld_enabled: true
+os_hardening_firewalld_default_zone: "drop"

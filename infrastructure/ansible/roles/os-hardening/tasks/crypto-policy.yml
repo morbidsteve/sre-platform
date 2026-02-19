@@ -1,0 +1,30 @@
+---
+# Crypto Policy — NIST SC-13
+# Enable FIPS 140-2 mode and set system-wide crypto policy
+
+- name: Check current crypto policy
+  ansible.builtin.command: update-crypto-policies --show
+  register: _current_crypto_policy
+  changed_when: false
+
+- name: Set FIPS crypto policy
+  ansible.builtin.command: update-crypto-policies --set FIPS
+  changed_when: true
+  when:
+    - os_hardening_fips_enabled
+    - "'FIPS' not in _current_crypto_policy.stdout"
+  notify: Reboot required
+
+- name: Check if FIPS mode is enabled in kernel
+  ansible.builtin.command: fips-mode-setup --check
+  register: _fips_check
+  changed_when: false
+  failed_when: false
+
+- name: Enable FIPS mode
+  ansible.builtin.command: fips-mode-setup --enable
+  changed_when: true
+  when:
+    - os_hardening_fips_enabled
+    - "'is enabled' not in _fips_check.stdout"
+  notify: Reboot required

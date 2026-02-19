@@ -1,0 +1,10 @@
+---
+# Control plane specific variables
+
+# First server has empty server_url (it initializes the cluster)
+# Additional servers would set this to https://<first-server-ip>:9345
+rke2_server_url: ""
+
+rke2_tls_san:
+  - "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+  - "{{ rke2_api_server_lb }}"

@@ -1,0 +1,30 @@
+---
+# RKE2 Agent Role — Default Variables
+
+# RKE2 version — must match the server version
+rke2_version: "v1.28.6+rke2r1"
+
+# RKE2 channel
+rke2_channel: "stable"
+
+# Installation method: "tarball" for air-gapped, "rpm" for online
+rke2_install_method: "rpm"
+
+# Server URL to join (REQUIRED — set in inventory)
+rke2_server_url: ""
+
+# Shared token for node registration (injected via ansible-vault)
+rke2_token: "REPLACE_ME"
+
+# Data directory
+rke2_data_dir: "/var/lib/rancher/rke2"
+
+# Node labels applied to this agent
+rke2_node_labels:
+  - "node-role.kubernetes.io/worker=true"
+
+# Kubelet arguments
+rke2_kubelet_args:
+  - "protect-kernel-defaults=true"
+  - "streaming-connection-idle-timeout=5m"
+  - "make-iptables-util-chains=true"

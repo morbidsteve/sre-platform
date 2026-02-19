@@ -1,0 +1,26 @@
+---
+# RKE2 Agent Installation — NIST CM-2, CM-6
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - rke2_server_url != ''
+      - rke2_token != 'REPLACE_ME'
+    fail_msg: "rke2_server_url and rke2_token must be set for agent nodes."
+  tags: [always]
+
+- name: Include agent prerequisites
+  ansible.builtin.include_tasks: prereqs.yml
+  tags: [prereqs]
+
+- name: Include agent installation
+  ansible.builtin.include_tasks: install.yml
+  tags: [install]
+
+- name: Include agent configuration
+  ansible.builtin.include_tasks: configure.yml
+  tags: [configure]
+
+- name: Include agent service management
+  ansible.builtin.include_tasks: service.yml
+  tags: [service]

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+# Account lockout settings — NIST AC-7
+
+deny = {{ os_hardening_max_login_retries }}
+unlock_time = {{ os_hardening_lockout_time }}
+fail_interval = 900
+even_deny_root
+root_unlock_time = {{ os_hardening_lockout_time }}
+audit
+silent

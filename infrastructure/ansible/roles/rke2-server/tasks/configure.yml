@@ -1,0 +1,16 @@
+---
+# RKE2 server configuration
+
+- name: Build TLS SAN list
+  ansible.builtin.set_fact:
+    _rke2_tls_san_list: >-
+      {{ rke2_tls_san + ([rke2_api_server_lb] if rke2_api_server_lb != '' else []) }}
+
+- name: Deploy RKE2 server configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart rke2-server

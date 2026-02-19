@@ -1,0 +1,50 @@
+---
+# RKE2 Server Role — Default Variables
+
+# RKE2 version — always pin explicitly
+rke2_version: "v1.28.6+rke2r1"
+
+# RKE2 channel (stable, latest, or specific version)
+rke2_channel: "stable"
+
+# Installation method: "tarball" for air-gapped, "rpm" for online
+rke2_install_method: "rpm"
+
+# First server node becomes the init server; others join it
+rke2_server_url: ""  # Empty for first server, set to https://<first-server>:9345 for others
+
+# Shared token for node registration (injected via ansible-vault)
+rke2_token: "REPLACE_ME"
+
+# TLS SAN entries for the K8s API certificate
+rke2_tls_san:
+  - "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+
+# API server load balancer DNS (added to TLS SANs)
+rke2_api_server_lb: ""
+
+# CIS hardening profile (recommended for STIG compliance)
+rke2_profile: "cis-1.23"
+
+# FIPS mode
+rke2_fips_enabled: true
+
+# CNI plugin (canal is the only FIPS-validated option)
+rke2_cni: "canal"
+
+# Disable default components (we deploy our own via Flux)
+rke2_disable:
+  - "rke2-ingress-nginx"
+
+# etcd snapshot configuration
+rke2_etcd_snapshot_schedule: "0 */6 * * *"
+rke2_etcd_snapshot_retention: 5
+
+# Data directory
+rke2_data_dir: "/var/lib/rancher/rke2"
+
+# Kubelet arguments
+rke2_kubelet_args:
+  - "protect-kernel-defaults=true"
+  - "streaming-connection-idle-timeout=5m"
+  - "make-iptables-util-chains=true"

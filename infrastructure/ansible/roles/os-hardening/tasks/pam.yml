@@ -1,0 +1,49 @@
+---
+# PAM / Password Policy — NIST IA-5
+# Enforce password complexity and account lockout
+
+- name: Install PAM packages
+  ansible.builtin.dnf:
+    name:
+      - pam
+      - libpwquality
+    state: present
+
+- name: Configure password quality requirements
+  ansible.builtin.template:
+    src: pwquality.conf.j2
+    dest: /etc/security/pwquality.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set password aging in login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^{{ item.key }}"
+    line: "{{ item.key }}\t{{ item.value }}"
+    state: present
+  loop:
+    - key: PASS_MAX_DAYS
+      value: "{{ os_hardening_password_max_days }}"
+    - key: PASS_MIN_DAYS
+      value: "{{ os_hardening_password_min_days }}"
+    - key: PASS_WARN_AGE
+      value: "{{ os_hardening_password_warn_age }}"
+    - key: PASS_MIN_LEN
+      value: "{{ os_hardening_password_min_length }}"
+
+- name: Configure account lockout via faillock
+  ansible.builtin.template:
+    src: faillock.conf.j2
+    dest: /etc/security/faillock.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set default umask to 077
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^UMASK"
+    line: "UMASK\t\t077"
+    state: present

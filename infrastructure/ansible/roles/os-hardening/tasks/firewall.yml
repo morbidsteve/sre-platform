@@ -1,0 +1,33 @@
+---
+# Firewall Configuration — NIST SC-7
+# Configure firewalld with restrictive default zone
+
+- name: Install firewalld
+  ansible.builtin.dnf:
+    name: firewalld
+    state: present
+  when: os_hardening_firewalld_enabled
+
+- name: Ensure firewalld is enabled and running
+  ansible.builtin.systemd:
+    name: firewalld
+    state: started
+    enabled: true
+  when: os_hardening_firewalld_enabled
+
+- name: Set default firewall zone
+  ansible.posix.firewalld:
+    zone: "{{ os_hardening_firewalld_default_zone }}"
+    permanent: true
+    state: enabled
+  when: os_hardening_firewalld_enabled
+  notify: Reload firewalld
+
+- name: Allow SSH in default zone
+  ansible.posix.firewalld:
+    service: ssh
+    zone: "{{ os_hardening_firewalld_default_zone }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: os_hardening_firewalld_enabled

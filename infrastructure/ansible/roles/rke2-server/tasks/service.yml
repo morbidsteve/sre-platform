@@ -1,0 +1,36 @@
+---
+# RKE2 server service management
+
+- name: Ensure .kube directory exists
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Enable and start RKE2 server
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: started
+    enabled: true
+
+- name: Wait for RKE2 server to be ready
+  ansible.builtin.wait_for:
+    path: "{{ rke2_data_dir }}/server/node-token"
+    state: present
+    timeout: 300
+
+- name: Symlink kubectl
+  ansible.builtin.file:
+    src: "{{ rke2_data_dir }}/bin/kubectl"
+    dest: /usr/local/bin/kubectl
+    state: link
+    force: true
+
+- name: Create kubeconfig symlink for root
+  ansible.builtin.file:
+    src: /etc/rancher/rke2/rke2.yaml
+    dest: /root/.kube/config
+    state: link
+    force: true

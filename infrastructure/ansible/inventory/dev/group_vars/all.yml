@@ -1,0 +1,14 @@
+---
+# Shared variables for all hosts in the dev environment
+
+# RKE2 configuration
+rke2_version: "v1.28.6+rke2r1"
+rke2_token: "REPLACE_ME"  # Override via ansible-vault or --extra-vars
+rke2_api_server_lb: ""  # Set to the API LB DNS from OpenTofu output
+rke2_profile: "cis-1.23"
+rke2_fips_enabled: true
+
+# OS hardening
+os_hardening_fips_enabled: true
+os_hardening_aide_enabled: true
+os_hardening_firewalld_enabled: true

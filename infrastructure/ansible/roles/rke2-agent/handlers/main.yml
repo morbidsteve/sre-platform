@@ -1,0 +1,10 @@
+---
+- name: Restart rke2-agent
+  ansible.builtin.systemd:
+    name: rke2-agent
+    state: restarted
+
+- name: Restart NetworkManager
+  ansible.builtin.systemd:
+    name: NetworkManager
+    state: restarted

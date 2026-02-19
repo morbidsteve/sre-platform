@@ -1,0 +1,13 @@
+---
+# OS Hardening Playbook — Apply DISA STIG to Rocky Linux 9
+# NIST Controls: CM-6, AC-17, AU-2, SC-7, SI-7, IA-5
+#
+# Usage:
+#   ansible-playbook playbooks/harden-os.yml -i inventory/dev/hosts.yml
+#   ansible-playbook playbooks/harden-os.yml -i inventory/dev/hosts.yml --tags sshd
+
+- name: Apply OS hardening to all nodes
+  hosts: all
+  become: true
+  roles:
+    - role: os-hardening

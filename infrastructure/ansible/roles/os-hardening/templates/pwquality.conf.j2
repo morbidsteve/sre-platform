@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+# Password quality settings — NIST IA-5
+
+minlen = {{ os_hardening_password_min_length }}
+minclass = {{ os_hardening_password_min_class }}
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+maxrepeat = 3
+maxclassrepeat = 4
+gecoscheck = true
+dictcheck = true
+enforcing = true
+retry = {{ os_hardening_max_login_retries }}

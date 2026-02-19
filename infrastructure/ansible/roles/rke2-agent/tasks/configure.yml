@@ -1,0 +1,11 @@
+---
+# RKE2 agent configuration
+
+- name: Deploy RKE2 agent configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart rke2-agent

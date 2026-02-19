@@ -1,0 +1,18 @@
+---
+# RKE2 Server Installation — NIST CM-2, CM-6
+
+- name: Include RKE2 prerequisites
+  ansible.builtin.include_tasks: prereqs.yml
+  tags: [prereqs]
+
+- name: Include RKE2 installation
+  ansible.builtin.include_tasks: install.yml
+  tags: [install]
+
+- name: Include RKE2 configuration
+  ansible.builtin.include_tasks: configure.yml
+  tags: [configure]
+
+- name: Include RKE2 service management
+  ansible.builtin.include_tasks: service.yml
+  tags: [service]
