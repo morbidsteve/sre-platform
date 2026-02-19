@@ -1,0 +1,13 @@
+---
+apiVersion: v2
+name: sre-web-app
+description: SRE standard Helm chart for web applications with Istio ingress
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - sre
+  - web
+  - istio
+maintainers:
+  - name: SRE Platform Team

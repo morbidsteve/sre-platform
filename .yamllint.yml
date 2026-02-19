@@ -32,3 +32,4 @@ ignore: |
   .claude/
   node_modules/
   infrastructure/tofu/.terraform/
+  apps/templates/*/templates/

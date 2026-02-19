@@ -1,0 +1,77 @@
+---
+# -- Developer-facing values (what app teams configure) --
+app:
+  # Application name, used for resource naming
+  name: ""
+  # Owning team name, used for labels and RBAC
+  team: ""
+  image:
+    # Container image repository (must be from harbor.sre.internal)
+    repository: ""
+    # Image tag (must be pinned, never use "latest")
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Number of replicas (used when autoscaling is disabled)
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Command to run (optional, overrides image CMD)
+  command: []
+  # Arguments to command (optional)
+  args: []
+  # Environment variables
+  # - name: QUEUE_URL
+  #   value: "amqp://..."
+  # - name: API_KEY
+  #   secretRef: my-api-key  # Synced from OpenBao via ESO
+  env: []
+  probes:
+    liveness:
+      # Use exec probe for workers without HTTP endpoints
+      exec:
+        command:
+          - /bin/sh
+          - -c
+          - "pgrep -f worker || exit 1"
+      initialDelaySeconds: 10
+      periodSeconds: 30
+    readiness:
+      exec:
+        command:
+          - /bin/sh
+          - -c
+          - "pgrep -f worker || exit 1"
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+# -- Autoscaling --
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilization: 80
+
+# -- Platform integration (usually not changed by app teams) --
+serviceAccount:
+  create: true
+
+serviceMonitor:
+  enabled: true
+  interval: "30s"
+  # Workers expose metrics on a separate port
+  port: 9090
+  path: /metrics
+
+networkPolicy:
+  enabled: true
+  # Additional egress rules beyond the defaults
+  additionalEgress: []
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

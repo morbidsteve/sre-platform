@@ -1,0 +1,26 @@
+SRE CronJob: {{ .Values.app.name }}
+Team: {{ .Values.app.team }}
+
+Your scheduled job has been deployed successfully.
+
+Image:    {{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}
+Schedule: {{ .Values.schedule.cron }}
+{{- if .Values.schedule.timezone }}
+Timezone: {{ .Values.schedule.timezone }}
+{{- end }}
+
+Concurrency:      {{ .Values.schedule.concurrencyPolicy }}
+Active Deadline:  {{ .Values.schedule.activeDeadlineSeconds }}s
+Backoff Limit:    {{ .Values.schedule.backoffLimit }}
+
+To check job history:
+  kubectl get jobs -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }}
+
+To check the CronJob schedule:
+  kubectl get cronjob {{ include "sre-cronjob.fullname" . }} -n {{ .Release.Namespace }}
+
+To view logs from the latest job:
+  kubectl logs -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }} --tail=100
+
+To trigger a job manually:
+  kubectl create job --from=cronjob/{{ include "sre-cronjob.fullname" . }} {{ .Values.app.name }}-manual -n {{ .Release.Namespace }}

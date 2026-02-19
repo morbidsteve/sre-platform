@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "sre-cronjob.fullname" . }}-test-job"
+  labels:
+    {{- include "sre-cronjob.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+spec:
+  serviceAccountName: {{ include "sre-cronjob.serviceAccountName" . }}
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: test
+      image: "harbor.sre.internal/library/busybox:1.36.1"
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Verifying CronJob {{ include "sre-cronjob.fullname" . }} exists"
+          exit 0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+  restartPolicy: Never

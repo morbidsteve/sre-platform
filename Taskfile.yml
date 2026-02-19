@@ -191,6 +191,7 @@ tasks:
           -not -path "./.git/*" \
           -not -path "./node_modules/*" \
           -not -path "./.claude/*" \
+          -not -path "./apps/templates/*/templates/*" \
           | xargs yamllint -c .yamllint.yml
         echo "✓ YAML lint passed"
     preconditions:
@@ -226,13 +227,25 @@ tasks:
       - |
         echo "=== Helm lint ==="
         FAILED=0
+        LINT_VALUES=$(mktemp /tmp/sre-lint-XXXXXX.yaml)
+        cat > "$LINT_VALUES" <<LINTEOF
+        app:
+          name: lint-test
+          team: lint-test
+          image:
+            repository: harbor.sre.internal/lint/test
+            tag: "v0.0.1"
+        schedule:
+          cron: "0 2 * * *"
+        LINTEOF
         for chart in apps/templates/*/; do
           if [ -f "$chart/Chart.yaml" ]; then
-            if ! helm lint "$chart" --quiet; then
+            if ! helm lint "$chart" -f "$LINT_VALUES" --quiet; then
               FAILED=1
             fi
           fi
         done
+        rm -f "$LINT_VALUES"
         if [ "$FAILED" -eq 1 ]; then
           echo "ERROR: Helm lint failed for one or more charts."
           exit 1
@@ -302,11 +315,23 @@ tasks:
       - |
         echo "=== Helm schema validation ==="
         FAILED=0
+        LINT_VALUES=$(mktemp /tmp/sre-schema-XXXXXX.yaml)
+        cat > "$LINT_VALUES" <<SCHEMAEOF
+        app:
+          name: schema-test
+          team: schema-test
+          image:
+            repository: harbor.sre.internal/test/app
+            tag: "v0.0.1"
+        schedule:
+          cron: "0 2 * * *"
+        SCHEMAEOF
         for chart in apps/templates/*/; do
           if [ -f "$chart/values.schema.json" ] && [ -f "$chart/values.yaml" ]; then
             echo "  Checking $chart..."
-            if ! helm template test "$chart" --dry-run >/dev/null 2>&1; then
+            if ! helm template test "$chart" -f "$LINT_VALUES" --dry-run >/dev/null 2>&1; then
               echo "  ERROR: Schema validation failed for $chart"
+              helm template test "$chart" -f "$LINT_VALUES" --dry-run 2>&1 | tail -5
               FAILED=1
             fi
           elif [ -f "$chart/Chart.yaml" ] && [ ! -f "$chart/values.schema.json" ]; then
@@ -314,6 +339,7 @@ tasks:
             FAILED=1
           fi
         done
+        rm -f "$LINT_VALUES"
         if [ "$FAILED" -eq 1 ]; then
           exit 1
         fi

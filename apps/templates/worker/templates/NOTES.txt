@@ -1,0 +1,29 @@
+SRE Worker: {{ .Values.app.name }}
+Team: {{ .Values.app.team }}
+
+Your background worker has been deployed successfully.
+
+Image: {{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}
+
+This is a worker process with NO ingress traffic.
+{{- if .Values.autoscaling.enabled }}
+
+Autoscaling is ENABLED.
+  Min replicas: {{ .Values.autoscaling.minReplicas }}
+  Max replicas: {{ .Values.autoscaling.maxReplicas }}
+  CPU target:   {{ .Values.autoscaling.targetCPUUtilization }}%
+{{- else }}
+
+Autoscaling is DISABLED. Running {{ .Values.app.replicas }} replica(s).
+{{- end }}
+
+{{- if .Values.serviceMonitor.enabled }}
+
+Prometheus metrics are being scraped at port {{ .Values.serviceMonitor.port }}{{ .Values.serviceMonitor.path }}
+{{- end }}
+
+To check pod status:
+  kubectl get pods -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }}
+
+To view logs:
+  kubectl logs -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }} -f

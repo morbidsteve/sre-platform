@@ -1,0 +1,13 @@
+---
+apiVersion: v2
+name: sre-worker
+description: SRE standard Helm chart for background worker processes
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - sre
+  - worker
+  - background
+maintainers:
+  - name: SRE Platform Team

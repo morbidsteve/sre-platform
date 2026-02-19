@@ -1,0 +1,34 @@
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sre-cronjob.fullname" . }}-metrics
+  labels:
+    {{- include "sre-cronjob.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.serviceMonitor.port }}
+      targetPort: {{ .Values.serviceMonitor.port }}
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "sre-cronjob.selectorLabels" . | nindent 4 }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sre-cronjob.fullname" . }}
+  labels:
+    {{- include "sre-cronjob.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sre-cronjob.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

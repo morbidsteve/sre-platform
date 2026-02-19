@@ -9,15 +9,25 @@ Standardized Helm charts that bake in all SRE compliance requirements. Developer
 | `web-app/` | HTTP services exposed via Istio ingress |
 | `api-service/` | Internal APIs with mTLS and AuthorizationPolicy |
 | `worker/` | Background processors with no ingress |
+| `cronjob/` | Scheduled jobs with configurable cron expressions |
 
 ## What Every Template Includes
 
 - Hardened security context (non-root, read-only rootfs, drop ALL capabilities)
-- HPA for autoscaling
-- PodDisruptionBudget
 - NetworkPolicy (default deny + explicit allows)
-- ServiceMonitor for Prometheus
+- ServiceMonitor for Prometheus (where applicable)
 - ExternalSecret support for OpenBao integration
+- ServiceAccount with no auto-mounted token
+
+## Additional Features by Template
+
+| Feature | web-app | worker | cronjob |
+|---------|---------|--------|---------|
+| Service | Yes | No | No |
+| VirtualService | Yes | No | No |
+| HPA | Yes | Yes | No |
+| PDB | Yes | Yes | No |
+| ServiceMonitor | Yes | Yes | Optional |
 
 ## Requirements
 

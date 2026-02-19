@@ -1,0 +1,35 @@
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "sre-worker.fullname" . }}-test-metrics"
+  labels:
+    {{- include "sre-worker.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+spec:
+  serviceAccountName: {{ include "sre-worker.serviceAccountName" . }}
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: wget
+      image: "harbor.sre.internal/library/busybox:1.36.1"
+      command: ["wget"]
+      args:
+        - "--no-verbose"
+        - "--tries=1"
+        - "--spider"
+        - "http://{{ include "sre-worker.fullname" . }}-metrics:{{ .Values.serviceMonitor.port }}{{ .Values.serviceMonitor.path }}"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+  restartPolicy: Never
+{{- end }}
