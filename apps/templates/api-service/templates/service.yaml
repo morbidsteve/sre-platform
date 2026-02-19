@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sre-api-service.fullname" . }}
+  labels:
+    {{- include "sre-api-service.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.app.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "sre-api-service.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,73 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sre-api-service.fullname" . }}
+  labels:
+    {{- include "sre-api-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.app.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "sre-api-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sre-api-service.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "sre-api-service.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ .Values.app.name }}
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.port }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: {{ .Values.app.resources.requests.cpu }}
+              memory: {{ .Values.app.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.app.resources.limits.cpu }}
+              memory: {{ .Values.app.resources.limits.memory }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.app.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.app.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.app.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.app.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.app.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
+          env:
+            {{- range .Values.app.env }}
+            {{- if .value }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- if .secretRef }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretRef }}
+                  key: value
+            {{- end }}
+            {{- end }}

@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["app"],
+  "properties": {
+    "app": {
+      "type": "object",
+      "required": ["name", "team", "image"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Application name, used for resource naming"
+        },
+        "team": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Owning team name, used for labels and RBAC"
+        },
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "pattern": "^harbor\\.sre\\.internal/",
+              "description": "Must be from the internal Harbor registry"
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1,
+              "not": { "const": "latest" },
+              "description": "Image tag — must be pinned, never latest"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"],
+              "description": "Image pull policy"
+            }
+          }
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Container port the API listens on"
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of replicas when autoscaling is disabled"
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpu": { "type": "string" },
+                "memory": { "type": "string" }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "cpu": { "type": "string" },
+                "memory": { "type": "string" }
+              }
+            }
+          }
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "string" },
+              "secretRef": { "type": "string" }
+            }
+          }
+        },
+        "probes": {
+          "type": "object",
+          "properties": {
+            "liveness": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "initialDelaySeconds": { "type": "integer" },
+                "periodSeconds": { "type": "integer" }
+              }
+            },
+            "readiness": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "initialDelaySeconds": { "type": "integer" },
+                "periodSeconds": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "authorizationPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Istio AuthorizationPolicy for caller restrictions"
+        },
+        "allowedNamespaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["namespace"],
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace allowed to call this API"
+              }
+            }
+          },
+          "description": "List of namespaces allowed to call this API"
+        },
+        "allowedCallers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["namespace"],
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace of the allowed caller"
+              },
+              "serviceAccounts": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Specific service accounts allowed from this namespace"
+              }
+            }
+          },
+          "description": "Fine-grained caller restrictions by namespace and service account"
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilization": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "interval": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "additionalIngress": { "type": "array" },
+        "additionalEgress": { "type": "array" }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{{- if .Values.authorizationPolicy.enabled }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "sre-api-service.fullname" . }}
+  labels:
+    {{- include "sre-api-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sre-api-service.selectorLabels" . | nindent 6 }}
+  action: ALLOW
+  rules:
+    # Allow traffic from within the same namespace
+    - from:
+        - source:
+            namespaces:
+              - {{ .Release.Namespace | quote }}
+    {{- if .Values.authorizationPolicy.allowedNamespaces }}
+    # Allow traffic from explicitly listed namespaces
+    - from:
+        - source:
+            namespaces:
+              {{- range .Values.authorizationPolicy.allowedNamespaces }}
+              - {{ .namespace | quote }}
+              {{- end }}
+    {{- end }}
+    {{- range .Values.authorizationPolicy.allowedCallers }}
+    {{- $callerNs := .namespace }}
+    # Allow traffic from {{ .namespace }} namespace
+    {{- if .serviceAccounts }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .namespace | quote }}
+            principals:
+              {{- range .serviceAccounts }}
+              - {{ printf "cluster.local/ns/%s/sa/%s" $callerNs . | quote }}
+              {{- end }}
+    {{- else }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .namespace | quote }}
+    {{- end }}
+    {{- end }}
+    # Allow Prometheus scraping from monitoring namespace
+    - from:
+        - source:
+            namespaces:
+              - "monitoring"
+{{- end }}

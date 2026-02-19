@@ -1,0 +1,59 @@
+SRE API Service: {{ .Values.app.name }}
+Team: {{ .Values.app.team }}
+
+Your internal API service has been deployed successfully.
+
+Image: {{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}
+Port:  {{ .Values.app.port }}
+
+This is an INTERNAL service — it is not exposed outside the cluster.
+Other services within the mesh can reach it at:
+  http://{{ include "sre-api-service.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.app.port }}
+
+{{- if .Values.authorizationPolicy.enabled }}
+
+Istio AuthorizationPolicy is ENABLED.
+  Allowed from same namespace: yes
+  Allowed from monitoring:     yes
+{{- if .Values.authorizationPolicy.allowedNamespaces }}
+  Allowed namespaces:
+  {{- range .Values.authorizationPolicy.allowedNamespaces }}
+    - {{ .namespace }}
+  {{- end }}
+{{- end }}
+{{- if .Values.authorizationPolicy.allowedCallers }}
+  Allowed callers:
+  {{- range .Values.authorizationPolicy.allowedCallers }}
+    - {{ .namespace }}{{ if .serviceAccounts }} ({{ join ", " .serviceAccounts }}){{ end }}
+  {{- end }}
+{{- end }}
+{{- else }}
+
+Istio AuthorizationPolicy is DISABLED. Any service in the mesh can call this API.
+Consider enabling it with authorizationPolicy.enabled=true.
+{{- end }}
+
+{{- if .Values.autoscaling.enabled }}
+
+Autoscaling is ENABLED.
+  Min replicas: {{ .Values.autoscaling.minReplicas }}
+  Max replicas: {{ .Values.autoscaling.maxReplicas }}
+  CPU target:   {{ .Values.autoscaling.targetCPUUtilization }}%
+{{- else }}
+
+Autoscaling is DISABLED. Running {{ .Values.app.replicas }} replica(s).
+{{- end }}
+
+{{- if .Values.serviceMonitor.enabled }}
+
+Prometheus metrics are being scraped at {{ .Values.serviceMonitor.path }}
+{{- end }}
+
+To check pod status:
+  kubectl get pods -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }}
+
+To view logs:
+  kubectl logs -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }} -f
+
+To test connectivity from within the cluster:
+  kubectl run test-curl --rm -it --image=harbor.sre.internal/library/busybox:1.36.1 -- wget -qO- http://{{ include "sre-api-service.fullname" . }}.{{ .Release.Namespace }}:{{ .Values.app.port }}{{ .Values.app.probes.readiness.path }}

@@ -1,0 +1,33 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "sre-api-service.fullname" . }}-test-connection"
+  labels:
+    {{- include "sre-api-service.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+spec:
+  serviceAccountName: {{ include "sre-api-service.serviceAccountName" . }}
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: wget
+      image: "harbor.sre.internal/library/busybox:1.36.1"
+      command: ["wget"]
+      args:
+        - "--no-verbose"
+        - "--tries=1"
+        - "--spider"
+        - "http://{{ include "sre-api-service.fullname" . }}:{{ .Values.app.port }}{{ .Values.app.probes.readiness.path }}"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+  restartPolicy: Never

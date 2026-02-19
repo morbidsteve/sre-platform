@@ -1,0 +1,86 @@
+---
+# -- Developer-facing values (what app teams configure) --
+app:
+  # Application name, used for resource naming
+  name: ""
+  # Owning team name, used for labels and RBAC
+  team: ""
+  image:
+    # Container image repository (must be from harbor.sre.internal)
+    repository: ""
+    # Image tag (must be pinned, never use "latest")
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Container port the application listens on
+  port: 8080
+  # Number of replicas (used when autoscaling is disabled)
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Environment variables
+  # - name: DATABASE_URL
+  #   value: "postgres://..."
+  # - name: API_KEY
+  #   secretRef: my-api-key  # Synced from OpenBao via ESO
+  env: []
+  probes:
+    liveness:
+      path: /healthz
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      path: /readyz
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+# -- Istio AuthorizationPolicy --
+authorizationPolicy:
+  # Enable Istio AuthorizationPolicy for caller restrictions
+  enabled: true
+  # List of namespaces allowed to call this API
+  # If empty and enabled, all traffic is denied (explicit allow required)
+  allowedNamespaces: []
+  # Example:
+  # - namespace: team-alpha
+  # - namespace: team-beta
+  #
+  # Advanced: allow specific service accounts from specific namespaces
+  # allowedCallers:
+  # - namespace: team-alpha
+  #   serviceAccounts:
+  #     - frontend-sa
+  #     - gateway-sa
+  allowedCallers: []
+
+# -- Autoscaling --
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilization: 80
+
+# -- Platform integration (usually not changed by app teams) --
+serviceAccount:
+  # Create a dedicated ServiceAccount
+  create: true
+
+serviceMonitor:
+  enabled: true
+  interval: "30s"
+  path: /metrics
+
+networkPolicy:
+  enabled: true
+  # Additional ingress rules beyond the defaults
+  additionalIngress: []
+  # Additional egress rules beyond the defaults
+  additionalEgress: []
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
