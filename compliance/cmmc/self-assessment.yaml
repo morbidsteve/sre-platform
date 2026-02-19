@@ -1,0 +1,257 @@
+---
+assessment:
+  title: "CMMC 2.0 Level 2 Self-Assessment"
+  organization: "SRE Platform"
+  date: "2025-02-19"
+  level: 2
+  description: >-
+    Self-assessment of the SRE platform against CMMC 2.0 Level 2 requirements.
+    CMMC 2.0 Level 2 maps directly to NIST SP 800-171 Rev 2, which contains
+    110 security requirements derived from NIST SP 800-53. This assessment
+    covers the key practices addressed by the SRE platform across all
+    applicable CMMC domains.
+
+domains:
+  - domain: "Access Control (AC)"
+    nist_family: "3.1"
+    practices:
+      - id: "AC.L2-3.1.1"
+        title: "Authorized Access Control"
+        nist_mapping: "AC-2"
+        status: "implemented"
+        implementation: "Keycloak provides centralized identity with group-based RBAC. Kubernetes RBAC scopes access to namespaces."
+        components:
+          - "platform/addons/keycloak"
+          - "apps/tenants/*/rbac.yaml"
+
+      - id: "AC.L2-3.1.2"
+        title: "Transaction and Function Control"
+        nist_mapping: "AC-3"
+        status: "implemented"
+        implementation: "Istio AuthorizationPolicy and Kubernetes RBAC enforce transaction-level access control."
+        components:
+          - "platform/core/istio"
+          - "apps/tenants/*/rbac.yaml"
+
+      - id: "AC.L2-3.1.3"
+        title: "Control CUI Flow"
+        nist_mapping: "AC-4"
+        status: "implemented"
+        implementation: "NetworkPolicies (default deny) and Istio mTLS control all data flows. NeuVector provides network DLP."
+        components:
+          - "platform/core/istio"
+          - "platform/core/runtime-security"
+
+      - id: "AC.L2-3.1.5"
+        title: "Least Privilege"
+        nist_mapping: "AC-6"
+        status: "implemented"
+        implementation: "Pod security contexts enforce non-root, drop ALL capabilities. RBAC roles scoped to namespaces. Kyverno policies enforce least privilege."
+        components:
+          - "policies/restricted"
+          - "policies/custom/require-security-context.yaml"
+
+      - id: "AC.L2-3.1.12"
+        title: "Control Remote Access"
+        nist_mapping: "AC-17"
+        status: "implemented"
+        implementation: "All management access through Keycloak SSO with MFA. Istio gateway provides TLS termination. SSH hardened via Ansible."
+        components:
+          - "platform/addons/keycloak"
+          - "platform/core/istio"
+          - "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"
+
+  - domain: "Audit and Accountability (AU)"
+    nist_family: "3.3"
+    practices:
+      - id: "AU.L2-3.3.1"
+        title: "System Auditing"
+        nist_mapping: "AU-2"
+        status: "implemented"
+        implementation: "Kubernetes API audit policy, Istio access logs, and application logs captured by Alloy."
+        components:
+          - "platform/core/logging"
+          - "infrastructure/ansible/roles/os-hardening/tasks/auditd.yml"
+
+      - id: "AU.L2-3.3.2"
+        title: "User Accountability"
+        nist_mapping: "AU-3"
+        status: "implemented"
+        implementation: "Structured JSON logs include user identity, timestamp, action, and outcome. All logs forwarded to Loki."
+        components:
+          - "platform/core/logging"
+
+      - id: "AU.L2-3.3.4"
+        title: "Audit Failure Alerting"
+        nist_mapping: "AU-5"
+        status: "implemented"
+        implementation: "Prometheus alerts on Loki ingestion failures and disk pressure. AlertManager routes to configured receivers."
+        components:
+          - "platform/core/monitoring"
+          - "platform/core/logging"
+
+  - domain: "Configuration Management (CM)"
+    nist_family: "3.4"
+    practices:
+      - id: "CM.L2-3.4.1"
+        title: "System Baselining"
+        nist_mapping: "CM-2"
+        status: "implemented"
+        implementation: "Git repository is the baseline. Flux CD reconciles cluster state continuously. All changes tracked in Git history."
+        components:
+          - "platform/flux-system"
+
+      - id: "CM.L2-3.4.2"
+        title: "Security Configuration Enforcement"
+        nist_mapping: "CM-6"
+        status: "implemented"
+        implementation: "Ansible STIG roles harden OS. RKE2 CIS profile hardens Kubernetes. Kyverno policies enforce workload configurations."
+        components:
+          - "infrastructure/ansible/roles/os-hardening"
+          - "platform/core/kyverno"
+          - "policies/"
+
+      - id: "CM.L2-3.4.6"
+        title: "Least Functionality"
+        nist_mapping: "CM-7"
+        status: "implemented"
+        implementation: "Kyverno restricts capabilities, volumes, and host access. NeuVector blocks unauthorized processes. SELinux enforces mandatory access control."
+        components:
+          - "policies/restricted"
+          - "platform/core/runtime-security"
+
+  - domain: "Identification and Authentication (IA)"
+    nist_family: "3.5"
+    practices:
+      - id: "IA.L2-3.5.1"
+        title: "Identification"
+        nist_mapping: "IA-2"
+        status: "implemented"
+        implementation: "Keycloak SSO with MFA for all users. OIDC integration with Kubernetes API server."
+        components:
+          - "platform/addons/keycloak"
+
+      - id: "IA.L2-3.5.3"
+        title: "Multifactor Authentication"
+        nist_mapping: "IA-2(1)"
+        status: "implemented"
+        implementation: "Keycloak enforces MFA for all privileged access to platform UIs including Grafana, Harbor, and management interfaces."
+        components:
+          - "platform/addons/keycloak"
+
+  - domain: "Incident Response (IR)"
+    nist_family: "3.6"
+    practices:
+      - id: "IR.L2-3.6.1"
+        title: "Incident Handling"
+        nist_mapping: "IR-4"
+        status: "implemented"
+        implementation: "NeuVector alerts integrated into Prometheus/Grafana alerting pipeline with linked runbooks. AlertManager routes incidents to configured receivers."
+        components:
+          - "platform/core/runtime-security"
+          - "platform/core/monitoring"
+
+      - id: "IR.L2-3.6.2"
+        title: "Incident Reporting"
+        nist_mapping: "IR-6"
+        status: "implemented"
+        implementation: "Grafana dashboards provide exportable incident reports. Kyverno PolicyReports provide compliance violation history."
+        components:
+          - "platform/core/monitoring"
+          - "platform/core/kyverno"
+
+  - domain: "Risk Assessment (RA)"
+    nist_family: "3.11"
+    practices:
+      - id: "RA.L2-3.11.2"
+        title: "Vulnerability Scanning"
+        nist_mapping: "RA-5"
+        status: "implemented"
+        implementation: "Harbor + Trivy for image scanning on push. NeuVector for runtime vulnerability scanning. CIS benchmark scanning on all nodes."
+        components:
+          - "platform/addons/harbor"
+          - "platform/core/runtime-security"
+
+  - domain: "System and Communications Protection (SC)"
+    nist_family: "3.13"
+    practices:
+      - id: "SC.L2-3.13.1"
+        title: "Boundary Protection"
+        nist_mapping: "SC-7"
+        status: "implemented"
+        implementation: "Istio gateway provides single ingress point. NetworkPolicies enforce default deny in all namespaces. NeuVector provides network microsegmentation."
+        components:
+          - "platform/core/istio"
+          - "platform/core/runtime-security"
+
+      - id: "SC.L2-3.13.8"
+        title: "CUI Encryption in Transit"
+        nist_mapping: "SC-8"
+        status: "implemented"
+        implementation: "Istio mTLS STRICT mode encrypts all in-cluster traffic. TLS termination at gateway for external traffic. RKE2 FIPS mode for control plane."
+        components:
+          - "platform/core/istio"
+          - "platform/core/cert-manager"
+
+      - id: "SC.L2-3.13.11"
+        title: "CUI Encryption at Rest"
+        nist_mapping: "SC-28"
+        status: "implemented"
+        implementation: "Kubernetes Secrets encrypted at rest via RKE2 default configuration. OpenBao provides encrypted secrets storage backend."
+        components:
+          - "platform/core/openbao"
+
+      - id: "SC.L2-3.13.16"
+        title: "Data at Rest Protection"
+        nist_mapping: "SC-28"
+        status: "implemented"
+        implementation: "All persistent data encrypted via storage encryption. OpenBao seals data at rest with auto-unseal via KMS."
+        components:
+          - "platform/core/openbao"
+
+  - domain: "System and Information Integrity (SI)"
+    nist_family: "3.14"
+    practices:
+      - id: "SI.L2-3.14.1"
+        title: "Flaw Remediation"
+        nist_mapping: "SI-2"
+        status: "implemented"
+        implementation: "Trivy scanning in Harbor with severity-based alerts. Flux automates image updates via GitOps. Ansible applies OS patches."
+        components:
+          - "platform/addons/harbor"
+          - "platform/flux-system"
+
+      - id: "SI.L2-3.14.6"
+        title: "Security Alerts"
+        nist_mapping: "SI-5"
+        status: "implemented"
+        implementation: "Grafana alerting to Slack/email/PagerDuty. NeuVector CVE alerts. Prometheus AlertManager with configurable receivers."
+        components:
+          - "platform/core/monitoring"
+          - "platform/core/runtime-security"
+
+      - id: "SI.L2-3.14.7"
+        title: "Software Integrity"
+        nist_mapping: "SI-7"
+        status: "implemented"
+        implementation: "Cosign image signatures verified by Kyverno on admission. SBOM generation and storage in Harbor. Flux detects and remediates drift."
+        components:
+          - "policies/custom/verify-image-signatures.yaml"
+          - "platform/addons/harbor"
+          - "platform/flux-system"
+
+summary:
+  total_practices: 22
+  implemented: 22
+  partially_implemented: 0
+  not_implemented: 0
+  not_applicable: 0
+  domains_assessed: 9
+  assessment_notes: >-
+    This self-assessment covers the key CMMC 2.0 Level 2 practices that are
+    directly addressed by the SRE platform's technical controls. Organizational
+    and procedural controls (e.g., personnel security, physical protection,
+    media protection beyond encryption) require additional policy documentation
+    outside the scope of this platform assessment. A full CMMC Level 2
+    certification requires assessment of all 110 NIST SP 800-171 controls by
+    a C3PAO (CMMC Third Party Assessor Organization).

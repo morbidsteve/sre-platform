@@ -1,0 +1,159 @@
+---
+stig:
+  title: "Kubernetes DISA STIG (RKE2)"
+  version: "V1R11"
+  release: "11"
+  date: "2025-02-19"
+  benchmark_id: "Kubernetes_STIG"
+  description: >-
+    This checklist documents the SRE platform's compliance with the DISA STIG
+    for Kubernetes, applied to the RKE2 distribution. RKE2 ships with a CIS
+    hardened profile enabled by default and is the only Kubernetes distribution
+    with a published DISA STIG. Additional hardening is applied via Kyverno
+    policies, Istio service mesh, and the rke2-hardening Ansible role.
+
+findings:
+  - vuln_id: "V-242376"
+    stig_id: "CNTR-K8-000010"
+    severity: "high"
+    title: "The Kubernetes Controller Manager must use TLS 1.2"
+    status: "not_a_finding"
+    implementation: "RKE2 defaults to TLS 1.2+ with FIPS-compliant cipher suites."
+    evidence: "RKE2 FIPS mode configuration"
+    nist_controls:
+      - "SC-8"
+      - "SC-13"
+
+  - vuln_id: "V-242377"
+    stig_id: "CNTR-K8-000020"
+    severity: "high"
+    title: "The Kubernetes Scheduler must use TLS 1.2"
+    status: "not_a_finding"
+    implementation: "RKE2 defaults to TLS 1.2+ for all control plane components."
+    evidence: "RKE2 FIPS mode configuration"
+    nist_controls:
+      - "SC-8"
+      - "SC-13"
+
+  - vuln_id: "V-242378"
+    stig_id: "CNTR-K8-000030"
+    severity: "high"
+    title: "The Kubernetes API Server must use TLS 1.2"
+    status: "not_a_finding"
+    implementation: "RKE2 API server configured with TLS 1.2 minimum via FIPS profile."
+    evidence: "infrastructure/ansible/roles/rke2-server/defaults/main.yml"
+    nist_controls:
+      - "SC-8"
+      - "SC-13"
+
+  - vuln_id: "V-242381"
+    stig_id: "CNTR-K8-000060"
+    severity: "medium"
+    title: "Kubernetes etcd must enable client authentication"
+    status: "not_a_finding"
+    implementation: "RKE2 embedded etcd uses mTLS for client authentication by default."
+    evidence: "RKE2 default configuration"
+    nist_controls:
+      - "IA-3"
+      - "SC-8"
+
+  - vuln_id: "V-242383"
+    stig_id: "CNTR-K8-000080"
+    severity: "high"
+    title: "User-facing components must be TLS-protected"
+    status: "not_a_finding"
+    implementation: "Istio gateway provides TLS termination. cert-manager manages certificates."
+    evidence: "platform/core/istio/gateway.yaml, platform/core/cert-manager/"
+    nist_controls:
+      - "SC-8"
+      - "SC-12"
+
+  - vuln_id: "V-242386"
+    stig_id: "CNTR-K8-000110"
+    severity: "high"
+    title: "Kubernetes must have a pod security policy set"
+    status: "not_a_finding"
+    implementation: "Kyverno ClusterPolicies enforce Pod Security Standards (restricted). PSP replaced by Kyverno admission control."
+    evidence: "policies/custom/require-security-context.yaml"
+    nist_controls:
+      - "CM-6"
+      - "CM-7"
+      - "AC-6"
+
+  - vuln_id: "V-242395"
+    stig_id: "CNTR-K8-000300"
+    severity: "medium"
+    title: "Kubernetes must disable anonymous authentication"
+    status: "not_a_finding"
+    implementation: "RKE2 disables anonymous authentication by default in its CIS hardened profile."
+    evidence: "infrastructure/ansible/roles/rke2-server/defaults/main.yml"
+    nist_controls:
+      - "AC-14"
+      - "IA-2"
+
+  - vuln_id: "V-242396"
+    stig_id: "CNTR-K8-000310"
+    severity: "high"
+    title: "Kubernetes must enable RBAC"
+    status: "not_a_finding"
+    implementation: "RKE2 enables RBAC by default. Tenant namespaces have scoped RoleBindings."
+    evidence: "apps/tenants/team-alpha/rbac.yaml"
+    nist_controls:
+      - "AC-3"
+      - "AC-6"
+
+  - vuln_id: "V-242402"
+    stig_id: "CNTR-K8-000370"
+    severity: "medium"
+    title: "Kubernetes must have audit logging enabled"
+    status: "not_a_finding"
+    implementation: "RKE2 enables audit logging by default. Logs forwarded to Loki via Alloy."
+    evidence: "platform/core/logging/helmrelease-alloy.yaml"
+    nist_controls:
+      - "AU-2"
+      - "AU-3"
+      - "AU-12"
+
+  - vuln_id: "V-242414"
+    stig_id: "CNTR-K8-000700"
+    severity: "high"
+    title: "Kubernetes cluster must use non-privileged host ports"
+    status: "not_a_finding"
+    implementation: "Kyverno policy restricts host port usage. All services use ClusterIP."
+    evidence: "policies/custom/require-security-context.yaml"
+    nist_controls:
+      - "CM-7"
+      - "AC-6"
+
+  - vuln_id: "V-242434"
+    stig_id: "CNTR-K8-001400"
+    severity: "medium"
+    title: "Kubernetes must use approved container registry"
+    status: "not_a_finding"
+    implementation: "Kyverno restrict-image-registries policy only allows harbor.sre.internal."
+    evidence: "policies/custom/restrict-image-registries.yaml"
+    nist_controls:
+      - "CM-11"
+      - "CM-7"
+
+  - vuln_id: "V-242435"
+    stig_id: "CNTR-K8-001410"
+    severity: "medium"
+    title: "Kubernetes must verify image signatures"
+    status: "not_a_finding"
+    implementation: "Kyverno verify-image-signatures policy enforces Cosign verification on all pods."
+    evidence: "policies/custom/verify-image-signatures.yaml"
+    nist_controls:
+      - "SI-7"
+      - "SA-10"
+
+summary:
+  total_findings: 12
+  not_a_finding: 12
+  open: 0
+  not_applicable: 0
+  severity_breakdown:
+    high: 7
+    medium: 5
+    low: 0
+  automation: "RKE2 CIS hardened profile addresses most findings by default. Additional findings are addressed by Kyverno policies, Istio, and the rke2-hardening Ansible role."

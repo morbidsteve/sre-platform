@@ -1,0 +1,370 @@
+{
+  "metadata": {
+    "title": "SRE Platform NIST 800-53 Rev 5 Control Mapping",
+    "version": "1.0.0",
+    "baseline": "Moderate",
+    "last-updated": "2025-02-19"
+  },
+  "controls": {
+    "AC-2": {
+      "title": "Account Management",
+      "components": ["keycloak"],
+      "status": "implemented",
+      "evidence": ["platform/addons/keycloak/helmrelease.yaml"]
+    },
+    "AC-3": {
+      "title": "Access Enforcement",
+      "components": ["kyverno", "istio"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/kyverno/helmrelease.yaml",
+        "platform/core/istio/authorization-policy-default.yaml"
+      ]
+    },
+    "AC-4": {
+      "title": "Information Flow Enforcement",
+      "components": ["istio", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/istio/peer-authentication.yaml",
+        "apps/tenants/team-alpha/network-policies/default-deny.yaml"
+      ]
+    },
+    "AC-6": {
+      "title": "Least Privilege",
+      "components": ["kyverno", "istio"],
+      "status": "implemented",
+      "evidence": [
+        "policies/custom/require-security-context.yaml",
+        "apps/tenants/team-alpha/rbac.yaml"
+      ]
+    },
+    "AC-6(1)": {
+      "title": "Authorize Access to Security Functions",
+      "components": ["flux", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/flux-system/gotk-sync.yaml",
+        "policies/custom/require-labels.yaml"
+      ]
+    },
+    "AC-6(9)": {
+      "title": "Auditing Use of Privileged Functions",
+      "components": ["logging", "istio"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/logging/helmrelease-alloy.yaml",
+        "platform/core/istio/helmrelease.yaml"
+      ]
+    },
+    "AC-6(10)": {
+      "title": "Prohibit Non-Privileged Users from Executing Privileged Functions",
+      "components": ["kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "policies/baseline/disallow-privileged.yaml",
+        "policies/restricted/disallow-privilege-escalation.yaml"
+      ]
+    },
+    "AC-14": {
+      "title": "Permitted Actions Without Identification",
+      "components": ["istio"],
+      "status": "implemented",
+      "evidence": ["platform/core/istio/peer-authentication.yaml"]
+    },
+    "AC-17": {
+      "title": "Remote Access",
+      "components": ["keycloak", "istio"],
+      "status": "implemented",
+      "evidence": [
+        "platform/addons/keycloak/helmrelease.yaml",
+        "platform/core/istio/gateway.yaml"
+      ]
+    },
+    "AU-2": {
+      "title": "Audit Events",
+      "components": ["logging", "istio"],
+      "status": "implemented",
+      "evidence": ["platform/core/logging/helmrelease-alloy.yaml"]
+    },
+    "AU-3": {
+      "title": "Content of Audit Records",
+      "components": ["logging"],
+      "status": "implemented",
+      "evidence": ["platform/core/logging/helmrelease-alloy.yaml"]
+    },
+    "AU-4": {
+      "title": "Audit Storage Capacity",
+      "components": ["logging"],
+      "status": "implemented",
+      "evidence": ["platform/core/logging/helmrelease-loki.yaml"]
+    },
+    "AU-5": {
+      "title": "Response to Audit Processing Failures",
+      "components": ["monitoring", "logging"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/monitoring/prometheusrule-sre.yaml",
+        "platform/core/logging/helmrelease-loki.yaml"
+      ]
+    },
+    "AU-6": {
+      "title": "Audit Review, Analysis, and Reporting",
+      "components": ["monitoring"],
+      "status": "implemented",
+      "evidence": ["platform/core/monitoring/helmrelease.yaml"]
+    },
+    "AU-8": {
+      "title": "Time Stamps",
+      "components": ["ansible"],
+      "status": "implemented",
+      "evidence": ["infrastructure/ansible/roles/os-hardening/tasks/main.yml"]
+    },
+    "AU-9": {
+      "title": "Protection of Audit Information",
+      "components": ["logging"],
+      "status": "implemented",
+      "evidence": ["platform/core/logging/helmrelease-loki.yaml"]
+    },
+    "AU-12": {
+      "title": "Audit Generation",
+      "components": ["logging"],
+      "status": "implemented",
+      "evidence": ["platform/core/logging/helmrelease-alloy.yaml"]
+    },
+    "CA-7": {
+      "title": "Continuous Monitoring",
+      "components": ["monitoring", "neuvector", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/monitoring/helmrelease.yaml",
+        "platform/core/runtime-security/helmrelease.yaml"
+      ]
+    },
+    "CA-8": {
+      "title": "Penetration Testing",
+      "components": ["neuvector", "harbor"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/runtime-security/helmrelease.yaml",
+        "platform/addons/harbor/helmrelease.yaml"
+      ]
+    },
+    "CM-2": {
+      "title": "Baseline Configuration",
+      "components": ["flux"],
+      "status": "implemented",
+      "evidence": ["platform/flux-system/gotk-sync.yaml"]
+    },
+    "CM-3": {
+      "title": "Configuration Change Control",
+      "components": ["flux"],
+      "status": "implemented",
+      "evidence": ["platform/flux-system/gotk-sync.yaml"]
+    },
+    "CM-5": {
+      "title": "Access Restrictions for Change",
+      "components": ["flux", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/flux-system/gotk-sync.yaml",
+        "policies/custom/require-labels.yaml"
+      ]
+    },
+    "CM-6": {
+      "title": "Configuration Settings",
+      "components": ["ansible", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "infrastructure/ansible/roles/os-hardening/",
+        "policies/custom/"
+      ]
+    },
+    "CM-7": {
+      "title": "Least Functionality",
+      "components": ["kyverno", "neuvector"],
+      "status": "implemented",
+      "evidence": ["policies/custom/require-security-context.yaml"]
+    },
+    "CM-8": {
+      "title": "Information System Component Inventory",
+      "components": ["flux", "harbor"],
+      "status": "implemented",
+      "evidence": [
+        "platform/flux-system/gotk-sync.yaml",
+        "platform/addons/harbor/helmrelease.yaml"
+      ]
+    },
+    "CM-11": {
+      "title": "User-Installed Software",
+      "components": ["kyverno", "harbor"],
+      "status": "implemented",
+      "evidence": [
+        "policies/custom/restrict-image-registries.yaml",
+        "policies/custom/verify-image-signatures.yaml"
+      ]
+    },
+    "IA-2": {
+      "title": "Identification and Authentication (Organizational Users)",
+      "components": ["keycloak"],
+      "status": "implemented",
+      "evidence": ["platform/addons/keycloak/helmrelease.yaml"]
+    },
+    "IA-3": {
+      "title": "Device Identification and Authentication",
+      "components": ["istio"],
+      "status": "implemented",
+      "evidence": ["platform/core/istio/peer-authentication.yaml"]
+    },
+    "IA-5": {
+      "title": "Authenticator Management",
+      "components": ["keycloak", "cert-manager", "openbao"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/cert-manager/helmrelease.yaml",
+        "platform/core/openbao/helmrelease.yaml"
+      ]
+    },
+    "IA-8": {
+      "title": "Identification and Authentication (Non-Organizational Users)",
+      "components": ["istio"],
+      "status": "implemented",
+      "evidence": ["platform/core/istio/gateway.yaml"]
+    },
+    "IR-4": {
+      "title": "Incident Handling",
+      "components": ["neuvector", "monitoring"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/runtime-security/helmrelease.yaml",
+        "platform/core/monitoring/prometheusrule-sre.yaml"
+      ]
+    },
+    "IR-5": {
+      "title": "Incident Monitoring",
+      "components": ["neuvector", "kyverno", "monitoring"],
+      "status": "implemented",
+      "evidence": ["platform/core/runtime-security/helmrelease.yaml"]
+    },
+    "IR-6": {
+      "title": "Incident Reporting",
+      "components": ["monitoring"],
+      "status": "implemented",
+      "evidence": ["platform/core/monitoring/helmrelease.yaml"]
+    },
+    "MP-2": {
+      "title": "Media Access",
+      "components": ["openbao", "rke2"],
+      "status": "implemented",
+      "evidence": ["platform/core/openbao/helmrelease.yaml"]
+    },
+    "RA-5": {
+      "title": "Vulnerability Scanning",
+      "components": ["harbor", "neuvector"],
+      "status": "implemented",
+      "evidence": [
+        "platform/addons/harbor/helmrelease.yaml",
+        "platform/core/runtime-security/helmrelease.yaml"
+      ]
+    },
+    "SA-10": {
+      "title": "Developer Configuration Management",
+      "components": ["flux"],
+      "status": "implemented",
+      "evidence": ["platform/flux-system/gotk-sync.yaml"]
+    },
+    "SA-11": {
+      "title": "Developer Testing and Evaluation",
+      "components": ["kyverno", "flux"],
+      "status": "implemented",
+      "evidence": [
+        "policies/tests/",
+        "apps/templates/"
+      ]
+    },
+    "SC-3": {
+      "title": "Security Function Isolation",
+      "components": ["istio", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/istio/authorization-policy-default.yaml",
+        "apps/tenants/team-alpha/network-policies/default-deny.yaml"
+      ]
+    },
+    "SC-7": {
+      "title": "Boundary Protection",
+      "components": ["istio", "neuvector"],
+      "status": "implemented",
+      "evidence": ["platform/core/istio/gateway.yaml"]
+    },
+    "SC-8": {
+      "title": "Transmission Confidentiality and Integrity",
+      "components": ["istio"],
+      "status": "implemented",
+      "evidence": ["platform/core/istio/peer-authentication.yaml"]
+    },
+    "SC-12": {
+      "title": "Cryptographic Key Establishment and Management",
+      "components": ["cert-manager", "openbao"],
+      "status": "implemented",
+      "evidence": ["platform/core/cert-manager/helmrelease.yaml"]
+    },
+    "SC-13": {
+      "title": "Cryptographic Protection",
+      "components": ["rke2", "ansible"],
+      "status": "implemented",
+      "evidence": ["infrastructure/ansible/roles/os-hardening/tasks/crypto-policy.yml"]
+    },
+    "SC-28": {
+      "title": "Protection of Information at Rest",
+      "components": ["openbao", "rke2"],
+      "status": "implemented",
+      "evidence": ["platform/core/openbao/helmrelease.yaml"]
+    },
+    "SI-2": {
+      "title": "Flaw Remediation",
+      "components": ["harbor", "flux"],
+      "status": "implemented",
+      "evidence": ["platform/addons/harbor/helmrelease.yaml"]
+    },
+    "SI-3": {
+      "title": "Malicious Code Protection",
+      "components": ["neuvector"],
+      "status": "implemented",
+      "evidence": ["platform/core/runtime-security/helmrelease.yaml"]
+    },
+    "SI-4": {
+      "title": "System Monitoring",
+      "components": ["monitoring", "logging", "neuvector", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/monitoring/helmrelease.yaml",
+        "platform/core/logging/helmrelease-loki.yaml"
+      ]
+    },
+    "SI-5": {
+      "title": "Security Alerts, Advisories, and Directives",
+      "components": ["monitoring", "neuvector"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/monitoring/prometheusrule-sre.yaml",
+        "platform/core/runtime-security/helmrelease.yaml"
+      ]
+    },
+    "SI-6": {
+      "title": "Security Function Verification",
+      "components": ["neuvector", "kyverno"],
+      "status": "implemented",
+      "evidence": [
+        "platform/core/runtime-security/helmrelease.yaml",
+        "policies/custom/"
+      ]
+    },
+    "SI-7": {
+      "title": "Software, Firmware, and Information Integrity",
+      "components": ["kyverno", "harbor"],
+      "status": "implemented",
+      "evidence": ["policies/custom/verify-image-signatures.yaml"]
+    }
+  }
+}

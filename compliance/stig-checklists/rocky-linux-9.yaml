@@ -1,0 +1,180 @@
+---
+stig:
+  title: "RHEL 9 / Rocky Linux 9 DISA STIG"
+  version: "V1R1"
+  release: "1"
+  date: "2025-02-19"
+  benchmark_id: "RHEL_9_STIG"
+  description: >-
+    This checklist documents the SRE platform's compliance with the DISA STIG
+    for Red Hat Enterprise Linux 9. Rocky Linux 9 is binary-compatible with
+    RHEL 9, so the same STIG applies directly. All findings are addressed by
+    the Ansible os-hardening role and Packer base image builds.
+
+findings:
+  - vuln_id: "V-257777"
+    stig_id: "RHEL-09-211010"
+    severity: "high"
+    title: "RHEL 9 must be a vendor-supported release"
+    status: "not_a_finding"
+    implementation: "Rocky Linux 9 is binary-compatible with RHEL 9 and receives timely security updates. Packer builds use latest Rocky 9 ISO."
+    evidence: "infrastructure/packer/rocky-linux-9-base/build.pkr.hcl"
+    nist_controls:
+      - "CM-6"
+      - "SI-2"
+
+  - vuln_id: "V-257778"
+    stig_id: "RHEL-09-211015"
+    severity: "medium"
+    title: "RHEL 9 must implement NIST FIPS-validated cryptography"
+    status: "not_a_finding"
+    implementation: "FIPS 140-2 mode enabled via Ansible os-hardening role. Crypto policy set to FIPS."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/crypto-policy.yml"
+    nist_controls:
+      - "SC-13"
+      - "IA-5"
+
+  - vuln_id: "V-257779"
+    stig_id: "RHEL-09-211020"
+    severity: "high"
+    title: "RHEL 9 must encrypt all stored passwords with a FIPS 140-2 approved algorithm"
+    status: "not_a_finding"
+    implementation: "PAM is configured to use SHA-512 for password hashing via os-hardening role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"
+    nist_controls:
+      - "IA-5"
+      - "SC-13"
+
+  - vuln_id: "V-257780"
+    stig_id: "RHEL-09-211025"
+    severity: "medium"
+    title: "RHEL 9 must employ FIPS 140-2 approved cryptographic hashing algorithms"
+    status: "not_a_finding"
+    implementation: "System crypto policy set to FIPS via os-hardening Ansible role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/crypto-policy.yml"
+    nist_controls:
+      - "SC-13"
+
+  - vuln_id: "V-257781"
+    stig_id: "RHEL-09-212010"
+    severity: "medium"
+    title: "RHEL 9 must enable SELinux"
+    status: "not_a_finding"
+    implementation: "SELinux is enforcing by default on Rocky Linux 9. Verified in os-hardening role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/kernel.yml"
+    nist_controls:
+      - "AC-3"
+      - "AC-6"
+      - "CM-7"
+
+  - vuln_id: "V-257782"
+    stig_id: "RHEL-09-212015"
+    severity: "high"
+    title: "RHEL 9 must enable the SELinux targeted policy"
+    status: "not_a_finding"
+    implementation: "SELinux targeted policy is the Rocky Linux 9 default. Verified by Ansible."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/kernel.yml"
+    nist_controls:
+      - "AC-3"
+      - "AC-6"
+      - "CM-7"
+
+  - vuln_id: "V-257783"
+    stig_id: "RHEL-09-213010"
+    severity: "medium"
+    title: "RHEL 9 must enable auditing"
+    status: "not_a_finding"
+    implementation: "auditd is installed and enabled via os-hardening Ansible role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/auditd.yml"
+    nist_controls:
+      - "AU-2"
+      - "AU-3"
+      - "AU-12"
+
+  - vuln_id: "V-257784"
+    stig_id: "RHEL-09-213015"
+    severity: "medium"
+    title: "RHEL 9 must configure audit to use the log_file format"
+    status: "not_a_finding"
+    implementation: "auditd configuration template sets log format and rotation via Ansible."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/auditd.yml"
+    nist_controls:
+      - "AU-4"
+      - "AU-9"
+
+  - vuln_id: "V-257785"
+    stig_id: "RHEL-09-214010"
+    severity: "medium"
+    title: "RHEL 9 must use SSH to protect communications"
+    status: "not_a_finding"
+    implementation: "SSH is the only remote access mechanism. sshd_config hardened via Ansible."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"
+    nist_controls:
+      - "SC-8"
+      - "AC-17"
+
+  - vuln_id: "V-257786"
+    stig_id: "RHEL-09-214015"
+    severity: "medium"
+    title: "RHEL 9 SSH daemon must not allow root login"
+    status: "not_a_finding"
+    implementation: "PermitRootLogin set to no in sshd_config via os-hardening role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"
+    nist_controls:
+      - "AC-6"
+      - "IA-2"
+
+  - vuln_id: "V-257787"
+    stig_id: "RHEL-09-214020"
+    severity: "medium"
+    title: "RHEL 9 SSH must disable password authentication"
+    status: "not_a_finding"
+    implementation: "PasswordAuthentication set to no. Only key-based auth allowed."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"
+    nist_controls:
+      - "IA-2"
+      - "IA-5"
+
+  - vuln_id: "V-257788"
+    stig_id: "RHEL-09-215010"
+    severity: "medium"
+    title: "RHEL 9 must use a host-based firewall"
+    status: "not_a_finding"
+    implementation: "firewalld is installed and configured via os-hardening Ansible role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/firewall.yml"
+    nist_controls:
+      - "SC-7"
+      - "CM-7"
+
+  - vuln_id: "V-257789"
+    stig_id: "RHEL-09-216010"
+    severity: "medium"
+    title: "RHEL 9 must deploy AIDE to verify integrity"
+    status: "not_a_finding"
+    implementation: "AIDE is installed and initialized via os-hardening Ansible role."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/aide.yml"
+    nist_controls:
+      - "SI-6"
+      - "SI-7"
+
+  - vuln_id: "V-257790"
+    stig_id: "RHEL-09-252010"
+    severity: "medium"
+    title: "RHEL 9 must mount /tmp with nodev"
+    status: "not_a_finding"
+    implementation: "Filesystem hardening sets nodev,nosuid,noexec on /tmp via Ansible."
+    evidence: "infrastructure/ansible/roles/os-hardening/tasks/filesystem.yml"
+    nist_controls:
+      - "CM-6"
+      - "CM-7"
+
+summary:
+  total_findings: 14
+  not_a_finding: 14
+  open: 0
+  not_applicable: 0
+  severity_breakdown:
+    high: 3
+    medium: 11
+    low: 0
+  automation: "All findings are addressed by the Ansible os-hardening role and verified during Packer image builds."
