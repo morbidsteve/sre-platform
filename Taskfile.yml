@@ -1,0 +1,646 @@
+# https://taskfile.dev
+# Install: https://taskfile.dev/installation/
+# This file goes in the repository root: ./Taskfile.yml
+
+version: "3"
+
+vars:
+  TOFU_CMD:
+    sh: command -v tofu >/dev/null 2>&1 && echo "tofu" || echo "terraform"
+  TOFU_ENV: dev
+  TOFU_DIR: infrastructure/tofu/environments/{{.TOFU_ENV}}
+
+silent: false
+
+tasks:
+  # ===========================================================================
+  # SETUP
+  # ===========================================================================
+
+  init:
+    desc: Install all required CLI tools and dependencies
+    cmds:
+      - echo "=== Installing CLI tools ==="
+
+      # Detect platform
+      - |
+        HAS_BREW=false
+        if command -v brew &>/dev/null; then
+          HAS_BREW=true
+          echo "Detected Homebrew — using brew for CLI tools."
+        fi
+
+      # yamllint (pip — works everywhere)
+      - pip3 install --quiet yamllint 2>/dev/null || pip3 install --quiet --break-system-packages yamllint
+      - echo "✓ yamllint $(yamllint --version 2>&1 | head -1)"
+
+      # ansible-lint (pip — works everywhere)
+      - pip3 install --quiet ansible-lint 2>/dev/null || pip3 install --quiet --break-system-packages ansible-lint
+      - echo "✓ ansible-lint $(ansible-lint --version 2>&1 | head -1)"
+
+      # kyverno CLI
+      - |
+        if ! command -v kyverno &>/dev/null; then
+          echo "Installing Kyverno CLI..."
+          if command -v brew &>/dev/null; then
+            brew install kyverno
+          else
+            OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+            ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH="amd64"; [ "$ARCH" = "aarch64" ] && ARCH="arm64"
+            curl -sLO "https://github.com/kyverno/kyverno/releases/latest/download/kyverno-cli_latest_${OS}_${ARCH}.tar.gz"
+            tar -xzf "kyverno-cli_latest_${OS}_${ARCH}.tar.gz"
+            mv kyverno /usr/local/bin/ 2>/dev/null || mv kyverno ~/.local/bin/
+            rm -f "kyverno-cli_latest_${OS}_${ARCH}.tar.gz"
+          fi
+        fi
+        echo "✓ kyverno $(kyverno version 2>&1 | head -1)"
+
+      # helm
+      - |
+        if ! command -v helm &>/dev/null; then
+          echo "Installing Helm..."
+          if command -v brew &>/dev/null; then
+            brew install helm
+          else
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+        fi
+        echo "✓ helm $(helm version --short 2>&1)"
+
+      # flux CLI
+      - |
+        if ! command -v flux &>/dev/null; then
+          echo "Installing Flux CLI..."
+          if command -v brew &>/dev/null; then
+            brew install fluxcd/tap/flux
+          else
+            curl -s https://fluxcd.io/install.sh | bash
+          fi
+        fi
+        echo "✓ flux $(flux --version 2>&1)"
+
+      # trivy
+      - |
+        if ! command -v trivy &>/dev/null; then
+          echo "Installing Trivy..."
+          if command -v brew &>/dev/null; then
+            brew install trivy
+          else
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          fi
+        fi
+        echo "✓ trivy $(trivy version 2>&1 | head -1)"
+
+      # opentofu
+      - |
+        if ! command -v tofu &>/dev/null; then
+          if command -v brew &>/dev/null; then
+            echo "Installing OpenTofu..."
+            brew install opentofu
+          else
+            echo "NOTE: OpenTofu not installed. Install from https://opentofu.org/docs/intro/install/"
+            echo "  Falling back to terraform if available."
+          fi
+        fi
+        if command -v tofu &>/dev/null; then
+          echo "✓ tofu $(tofu version 2>&1 | head -1)"
+        fi
+
+      - echo ""
+      - echo "=== Setup complete ==="
+
+  # ===========================================================================
+  # FORMATTING
+  # ===========================================================================
+
+  fmt:
+    desc: Auto-format all files (YAML, HCL, Helm)
+    cmds:
+      - task: fmt:yaml
+      - task: fmt:hcl
+      - task: fmt:helm
+
+  fmt:yaml:
+    desc: Fix YAML formatting issues
+    cmds:
+      - |
+        echo "=== Formatting YAML ==="
+        find . -type f \( -name "*.yaml" -o -name "*.yml" \) \
+          -not -path "./.git/*" \
+          -not -path "./node_modules/*" \
+          -not -path "./.claude/*" \
+          | head -200 \
+          | while read -r f; do
+              yamllint -c .yamllint.yml "$f" >/dev/null 2>&1 || echo "  WARN: $f has lint issues"
+            done
+        echo "✓ YAML check complete"
+    preconditions:
+      - sh: command -v yamllint
+        msg: "yamllint not found. Run: task init"
+
+  fmt:hcl:
+    desc: Auto-format all OpenTofu/Terraform files
+    cmds:
+      - |
+        echo "=== Formatting HCL ==="
+        if command -v tofu &>/dev/null; then
+          find infrastructure/tofu -name "*.tf" -exec tofu fmt -write=true {} + 2>/dev/null
+        elif command -v terraform &>/dev/null; then
+          find infrastructure/tofu -name "*.tf" -exec terraform fmt -write=true {} + 2>/dev/null
+        else
+          echo "SKIP: Neither tofu nor terraform found"
+          exit 0
+        fi
+        echo "✓ HCL format complete"
+
+  fmt:helm:
+    desc: Lint all Helm charts (helm lint does not auto-fix but reports issues)
+    cmds:
+      - |
+        echo "=== Linting Helm charts ==="
+        for chart in apps/templates/*/; do
+          if [ -f "$chart/Chart.yaml" ]; then
+            helm lint "$chart" 2>&1 | tail -1
+          fi
+        done
+        echo "✓ Helm lint complete"
+    preconditions:
+      - sh: command -v helm
+        msg: "helm not found. Run: task init"
+
+  # ===========================================================================
+  # LINTING
+  # ===========================================================================
+
+  lint:
+    desc: Run all linters (YAML, HCL, Helm, Ansible)
+    cmds:
+      - task: lint:yaml
+      - task: lint:hcl
+      - task: lint:helm
+      - task: lint:ansible
+      - echo ""
+      - echo "=== All linters passed ==="
+
+  lint:yaml:
+    desc: Lint all YAML files with yamllint
+    cmds:
+      - |
+        echo "=== yamllint ==="
+        find . -type f \( -name "*.yaml" -o -name "*.yml" \) \
+          -not -path "./.git/*" \
+          -not -path "./node_modules/*" \
+          -not -path "./.claude/*" \
+          | xargs yamllint -c .yamllint.yml
+        echo "✓ YAML lint passed"
+    preconditions:
+      - sh: command -v yamllint
+        msg: "yamllint not found. Run: task init"
+
+  lint:hcl:
+    desc: Check HCL formatting (fails if files are not formatted)
+    cmds:
+      - |
+        echo "=== HCL format check ==="
+        UNFORMATTED=""
+        if command -v tofu &>/dev/null; then
+          UNFORMATTED=$(find infrastructure/tofu -name "*.tf" -exec tofu fmt -check {} + 2>&1) || true
+        elif command -v terraform &>/dev/null; then
+          UNFORMATTED=$(find infrastructure/tofu -name "*.tf" -exec terraform fmt -check {} + 2>&1) || true
+        else
+          echo "SKIP: Neither tofu nor terraform found"
+          exit 0
+        fi
+        if [ -n "$UNFORMATTED" ]; then
+          echo "ERROR: Unformatted HCL files:"
+          echo "$UNFORMATTED"
+          echo ""
+          echo "Run 'task fmt:hcl' to fix."
+          exit 1
+        fi
+        echo "✓ HCL format check passed"
+
+  lint:helm:
+    desc: Lint all Helm charts
+    cmds:
+      - |
+        echo "=== Helm lint ==="
+        FAILED=0
+        for chart in apps/templates/*/; do
+          if [ -f "$chart/Chart.yaml" ]; then
+            if ! helm lint "$chart" --quiet; then
+              FAILED=1
+            fi
+          fi
+        done
+        if [ "$FAILED" -eq 1 ]; then
+          echo "ERROR: Helm lint failed for one or more charts."
+          exit 1
+        fi
+        echo "✓ Helm lint passed"
+    preconditions:
+      - sh: command -v helm
+        msg: "helm not found. Run: task init"
+
+  lint:ansible:
+    desc: Lint all Ansible playbooks and roles
+    cmds:
+      - |
+        echo "=== ansible-lint ==="
+        cd infrastructure/ansible
+        ansible-lint
+        echo "✓ Ansible lint passed"
+    preconditions:
+      - sh: command -v ansible-lint
+        msg: "ansible-lint not found. Run: task init"
+      - sh: test -d infrastructure/ansible
+        msg: "infrastructure/ansible directory not found"
+
+  # ===========================================================================
+  # VALIDATION
+  # ===========================================================================
+
+  validate:
+    desc: Run all validators (Kyverno tests, compliance checks, Tofu validate)
+    cmds:
+      - task: validate:kyverno
+      - task: validate:tofu
+      - task: validate:helm-schemas
+      - echo ""
+      - echo "=== All validations passed ==="
+
+  validate:kyverno:
+    desc: Run all Kyverno policy tests
+    cmds:
+      - |
+        echo "=== Kyverno policy tests ==="
+        if [ -d policies/tests ]; then
+          kyverno test policies/tests/
+          echo "✓ Kyverno tests passed"
+        else
+          echo "SKIP: No policy tests found at policies/tests/"
+        fi
+    preconditions:
+      - sh: command -v kyverno
+        msg: "kyverno CLI not found. Run: task init"
+
+  validate:tofu:
+    desc: Validate OpenTofu configuration
+    vars:
+      ENV: '{{.ENV | default "dev"}}'
+    cmds:
+      - |
+        echo "=== OpenTofu validate ({{.ENV}}) ==="
+        cd infrastructure/tofu/environments/{{.ENV}}
+        {{.TOFU_CMD}} init -backend=false >/dev/null 2>&1
+        {{.TOFU_CMD}} validate
+        echo "✓ OpenTofu validation passed"
+
+  validate:helm-schemas:
+    desc: Validate Helm chart values against their JSON schemas
+    cmds:
+      - |
+        echo "=== Helm schema validation ==="
+        FAILED=0
+        for chart in apps/templates/*/; do
+          if [ -f "$chart/values.schema.json" ] && [ -f "$chart/values.yaml" ]; then
+            echo "  Checking $chart..."
+            if ! helm template test "$chart" --dry-run >/dev/null 2>&1; then
+              echo "  ERROR: Schema validation failed for $chart"
+              FAILED=1
+            fi
+          elif [ -f "$chart/Chart.yaml" ] && [ ! -f "$chart/values.schema.json" ]; then
+            echo "  WARNING: $chart is missing values.schema.json"
+            FAILED=1
+          fi
+        done
+        if [ "$FAILED" -eq 1 ]; then
+          exit 1
+        fi
+        echo "✓ Helm schema validation passed"
+    preconditions:
+      - sh: command -v helm
+        msg: "helm not found. Run: task init"
+
+  # ===========================================================================
+  # INFRASTRUCTURE
+  # ===========================================================================
+
+  infra-plan:
+    desc: Run OpenTofu plan for an environment
+    vars:
+      ENV: '{{.ENV | default "dev"}}'
+    cmds:
+      - |
+        echo "=== OpenTofu plan ({{.ENV}}) ==="
+        cd infrastructure/tofu/environments/{{.ENV}}
+        {{.TOFU_CMD}} init
+        {{.TOFU_CMD}} plan -out=tfplan
+        echo ""
+        echo "Review the plan above. To apply, run: task infra-apply ENV={{.ENV}}"
+
+  infra-apply:
+    desc: Apply OpenTofu plan for an environment
+    vars:
+      ENV: '{{.ENV | default "dev"}}'
+    prompt: "Apply infrastructure changes to {{.ENV}}? This cannot be undone."
+    cmds:
+      - |
+        echo "=== OpenTofu apply ({{.ENV}}) ==="
+        cd infrastructure/tofu/environments/{{.ENV}}
+        if [ -f tfplan ]; then
+          {{.TOFU_CMD}} apply tfplan
+          rm -f tfplan
+        else
+          echo "ERROR: No plan file found. Run 'task infra-plan ENV={{.ENV}}' first."
+          exit 1
+        fi
+        echo "✓ Infrastructure applied"
+
+  infra-destroy:
+    desc: Destroy infrastructure for an environment (DANGEROUS)
+    vars:
+      ENV: '{{.ENV | default "dev"}}'
+    prompt: "DESTROY all infrastructure in {{.ENV}}? THIS CANNOT BE UNDONE."
+    cmds:
+      - |
+        echo "=== OpenTofu destroy ({{.ENV}}) ==="
+        cd infrastructure/tofu/environments/{{.ENV}}
+        {{.TOFU_CMD}} destroy
+        echo "Infrastructure destroyed."
+
+  # ===========================================================================
+  # FLUX / GITOPS
+  # ===========================================================================
+
+  bootstrap-flux:
+    desc: Bootstrap Flux CD onto the cluster
+    vars:
+      REPO_URL: '{{.REPO_URL | default ""}}'
+      BRANCH: '{{.BRANCH | default "main"}}'
+    cmds:
+      - |
+        if [ -z "{{.REPO_URL}}" ]; then
+          echo "ERROR: REPO_URL is required."
+          echo "Usage: task bootstrap-flux REPO_URL=https://github.com/org/repo"
+          exit 1
+        fi
+        echo "=== Bootstrapping Flux CD ==="
+        flux bootstrap git \
+          --url={{.REPO_URL}} \
+          --branch={{.BRANCH}} \
+          --path=platform/flux-system \
+          --components-extra=image-reflector-controller,image-automation-controller
+        echo "✓ Flux bootstrapped"
+    preconditions:
+      - sh: command -v flux
+        msg: "flux CLI not found. Run: task init"
+      - sh: kubectl cluster-info
+        msg: "No Kubernetes cluster connection. Check your kubeconfig."
+
+  flux-status:
+    desc: Show status of all Flux resources
+    cmds:
+      - echo "=== Flux Kustomizations ==="
+      - flux get kustomizations -A
+      - echo ""
+      - echo "=== Flux HelmReleases ==="
+      - flux get helmreleases -A
+      - echo ""
+      - echo "=== Flux Sources ==="
+      - flux get sources all -A
+    preconditions:
+      - sh: command -v flux
+        msg: "flux CLI not found. Run: task init"
+
+  flux-reconcile:
+    desc: Force reconcile all Flux resources
+    cmds:
+      - |
+        echo "=== Force reconciling Flux ==="
+        flux reconcile source git sre-platform -n flux-system
+        flux reconcile kustomization sre-core -n flux-system
+        echo "✓ Reconciliation triggered"
+    preconditions:
+      - sh: command -v flux
+        msg: "flux CLI not found. Run: task init"
+
+  # ===========================================================================
+  # HELM
+  # ===========================================================================
+
+  helm-template:
+    desc: Render a Helm chart's templates for inspection
+    vars:
+      CHART: '{{.CHART | default ""}}'
+      VALUES: '{{.VALUES | default ""}}'
+    cmds:
+      - |
+        if [ -z "{{.CHART}}" ]; then
+          echo "ERROR: CHART is required."
+          echo "Usage: task helm-template CHART=apps/templates/sre-web-app"
+          echo "       task helm-template CHART=apps/templates/sre-web-app VALUES=my-values.yaml"
+          exit 1
+        fi
+        echo "=== Rendering {{.CHART}} ==="
+        if [ -n "{{.VALUES}}" ]; then
+          helm template test {{.CHART}} -f {{.VALUES}}
+        else
+          helm template test {{.CHART}}
+        fi
+    preconditions:
+      - sh: command -v helm
+        msg: "helm not found. Run: task init"
+
+  # ===========================================================================
+  # SECURITY
+  # ===========================================================================
+
+  security-scan:
+    desc: Run Trivy vulnerability scan on a container image
+    vars:
+      IMAGE: '{{.IMAGE | default ""}}'
+    cmds:
+      - |
+        if [ -z "{{.IMAGE}}" ]; then
+          echo "ERROR: IMAGE is required."
+          echo "Usage: task security-scan IMAGE=harbor.sre.internal/team/app:v1.2.3"
+          exit 1
+        fi
+        echo "=== Trivy scan: {{.IMAGE}} ==="
+        trivy image --severity CRITICAL,HIGH {{.IMAGE}}
+    preconditions:
+      - sh: command -v trivy
+        msg: "trivy not found. Run: task init"
+
+  security-scan-config:
+    desc: Run Trivy config scan on Kubernetes manifests
+    vars:
+      TARGET: '{{.TARGET | default "."}}'
+    cmds:
+      - |
+        echo "=== Trivy config scan: {{.TARGET}} ==="
+        trivy config --severity CRITICAL,HIGH {{.TARGET}}
+    preconditions:
+      - sh: command -v trivy
+        msg: "trivy not found. Run: task init"
+
+  # ===========================================================================
+  # COMPLIANCE
+  # ===========================================================================
+
+  compliance-report:
+    desc: Generate a compliance report from the current cluster state
+    cmds:
+      - |
+        echo "=== Compliance Report ==="
+        echo ""
+
+        echo "--- Kyverno Policy Reports ---"
+        kubectl get policyreport -A --no-headers 2>/dev/null | \
+          awk '{printf "  %-30s pass=%-4s fail=%-4s warn=%-4s\n", $1"/"$2, $3, $4, $5}' || \
+          echo "  No policy reports found (is Kyverno running?)"
+        echo ""
+
+        echo "--- Cluster Policy Reports ---"
+        kubectl get clusterpolicyreport --no-headers 2>/dev/null | \
+          awk '{printf "  %-30s pass=%-4s fail=%-4s warn=%-4s\n", $1, $2, $3, $4}' || \
+          echo "  No cluster policy reports found"
+        echo ""
+
+        echo "--- Pod Security Standards ---"
+        echo "  Namespaces with PSS enforcement:"
+        kubectl get ns -o json 2>/dev/null | \
+          jq -r '.items[] | select(.metadata.labels["pod-security.kubernetes.io/enforce"] != null) | "  \(.metadata.name): \(.metadata.labels["pod-security.kubernetes.io/enforce"])"' || \
+          echo "  Could not query namespaces"
+        echo ""
+
+        echo "--- mTLS Status ---"
+        kubectl get peerauthentication -A --no-headers 2>/dev/null | \
+          awk '{printf "  %-30s mode=%s\n", $1"/"$2, $3}' || \
+          echo "  No PeerAuthentication resources found (is Istio running?)"
+        echo ""
+
+        echo "--- Network Policies ---"
+        echo "  Namespaces with NetworkPolicies:"
+        kubectl get networkpolicy -A --no-headers 2>/dev/null | \
+          awk '{print "  "$1}' | sort -u || \
+          echo "  No NetworkPolicies found"
+        echo ""
+        echo "  Namespaces WITHOUT NetworkPolicies:"
+        comm -23 \
+          <(kubectl get ns --no-headers 2>/dev/null | awk '{print $1}' | sort) \
+          <(kubectl get networkpolicy -A --no-headers 2>/dev/null | awk '{print $1}' | sort -u) \
+          | grep -vE "^(kube-node-lease|kube-public)$" \
+          | sed 's/^/  /' || \
+          echo "  Could not determine"
+        echo ""
+
+        echo "=== Report complete ==="
+    preconditions:
+      - sh: kubectl cluster-info
+        msg: "No Kubernetes cluster connection."
+
+  compliance-gaps:
+    desc: Show NIST 800-53 controls without implementing components
+    cmds:
+      - |
+        echo "=== Compliance Gap Analysis ==="
+        echo ""
+        echo "Scanning manifests for sre.io/nist-controls annotations..."
+        echo ""
+
+        # Collect all declared controls
+        DECLARED=$(grep -rh "sre.io/nist-controls" platform/ policies/ tenants/ 2>/dev/null \
+          | sed 's/.*sre.io\/nist-controls:\s*["]*//; s/["]*$//' \
+          | tr ',' '\n' \
+          | sed 's/^ *//;s/ *$//' \
+          | sort -u)
+
+        if [ -z "$DECLARED" ]; then
+          echo "WARNING: No sre.io/nist-controls annotations found."
+          echo "Add annotations to manifests and Kyverno policies."
+          exit 0
+        fi
+
+        echo "Controls declared in manifests:"
+        echo "$DECLARED" | sed 's/^/  /'
+        echo ""
+
+        # Expected controls from compliance-mapping.md
+        EXPECTED="AC-2 AC-3 AC-4 AC-6 AC-6(1) AC-6(9) AC-6(10) AC-14 AC-17
+                  AU-2 AU-3 AU-4 AU-5 AU-6 AU-8 AU-9 AU-12
+                  CA-7 CA-8
+                  CM-2 CM-3 CM-5 CM-6 CM-7 CM-8 CM-11
+                  IA-2 IA-3 IA-5 IA-8
+                  IR-4 IR-5 IR-6
+                  MP-2
+                  RA-5
+                  SA-10 SA-11
+                  SC-3 SC-7 SC-8 SC-12 SC-13 SC-28
+                  SI-2 SI-3 SI-4 SI-5 SI-6 SI-7"
+
+        echo "Gaps (expected but not declared in any manifest):"
+        GAPS=0
+        for ctrl in $EXPECTED; do
+          if ! echo "$DECLARED" | grep -q "^${ctrl}$"; then
+            echo "  MISSING: $ctrl"
+            GAPS=$((GAPS + 1))
+          fi
+        done
+
+        if [ "$GAPS" -eq 0 ]; then
+          echo "  None — all expected controls are declared."
+        fi
+
+        echo ""
+        echo "Total expected: $(echo $EXPECTED | wc -w | tr -d ' ')"
+        echo "Total declared: $(echo "$DECLARED" | wc -l | tr -d ' ')"
+        echo "Gaps: $GAPS"
+
+  # ===========================================================================
+  # TESTING
+  # ===========================================================================
+
+  test:
+    desc: Run all tests (lint + validate + policy tests)
+    cmds:
+      - task: lint
+      - task: validate
+      - echo ""
+      - echo "=== All tests passed ==="
+
+  # ===========================================================================
+  # DOCUMENTATION
+  # ===========================================================================
+
+  docs:
+    desc: Serve documentation locally (requires Python 3)
+    cmds:
+      - |
+        echo "=== Serving docs at http://localhost:8000 ==="
+        echo "Press Ctrl+C to stop."
+        cd docs
+        python3 -m http.server 8000
+
+  # ===========================================================================
+  # CLEANUP
+  # ===========================================================================
+
+  clean:
+    desc: Remove generated files and caches
+    cmds:
+      - |
+        echo "=== Cleaning ==="
+        # Tofu plan files
+        find infrastructure/tofu -name "tfplan" -delete 2>/dev/null
+        find infrastructure/tofu -name ".terraform" -type d -exec rm -rf {} + 2>/dev/null
+        find infrastructure/tofu -name ".terraform.lock.hcl" -delete 2>/dev/null
+        # Helm packaging artifacts
+        find apps/templates -name "*.tgz" -delete 2>/dev/null
+        # Python caches
+        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
+        find . -name "*.pyc" -delete 2>/dev/null
+        # Temp files
+        rm -rf /tmp/sre-* 2>/dev/null
+        echo "✓ Clean complete"

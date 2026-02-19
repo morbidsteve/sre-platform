@@ -1,0 +1,47 @@
+# OpenTofu / Terraform
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Ansible
+*.retry
+.vault_pass
+
+# Helm
+*.tgz
+charts/
+
+# Packer
+packer_cache/
+*.box
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Secrets — NEVER commit these
+*.key
+*.pem
+*.crt
+!infrastructure/packer/**/*.pkr.hcl
+
+# Claude Code local overrides
+CLAUDE.local.md
+
+# Temp
+/tmp/
