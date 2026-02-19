@@ -1,0 +1,91 @@
+---
+# ServiceMonitor for Istio control plane (istiod)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istiod
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/component: istio
+spec:
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  selector:
+    matchLabels:
+      app: istiod
+  endpoints:
+    - port: http-monitoring
+      targetPort: 15014
+      interval: 30s
+      path: /metrics
+
+---
+# ServiceMonitor for Flux source-controller
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flux-source-controller
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/component: flux
+spec:
+  namespaceSelector:
+    matchNames:
+      - flux-system
+  selector:
+    matchLabels:
+      app: source-controller
+  endpoints:
+    - port: http-prom
+      targetPort: 8080
+      interval: 30s
+      path: /metrics
+
+---
+# ServiceMonitor for Flux kustomize-controller
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flux-kustomize-controller
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/component: flux
+spec:
+  namespaceSelector:
+    matchNames:
+      - flux-system
+  selector:
+    matchLabels:
+      app: kustomize-controller
+  endpoints:
+    - port: http-prom
+      targetPort: 8080
+      interval: 30s
+      path: /metrics
+
+---
+# ServiceMonitor for Flux helm-controller
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flux-helm-controller
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/component: flux
+spec:
+  namespaceSelector:
+    matchNames:
+      - flux-system
+  selector:
+    matchLabels:
+      app: helm-controller
+  endpoints:
+    - port: http-prom
+      targetPort: 8080
+      interval: 30s
+      path: /metrics

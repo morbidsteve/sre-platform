@@ -1,0 +1,112 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sre-platform-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    release: monitoring
+spec:
+  groups:
+    - name: sre-platform-alerts
+      rules:
+        # ---------------------------------------------------------------
+        # Kyverno policy violations
+        # ---------------------------------------------------------------
+        - alert: KyvernoPolicyViolation
+          expr: |
+            sum(increase(kyverno_policy_results_total{rule_result="fail"}[15m])) > 0
+          for: 15m
+          labels:
+            severity: "warning"
+            component: "kyverno"
+          annotations:
+            summary: "Kyverno policy violations detected"
+            description: >-
+              Kyverno has reported policy violations in the last 15 minutes.
+              Check Kyverno policy reports for details:
+              kubectl get policyreport -A
+            runbook_url: "https://docs.sre.internal/runbooks/kyverno-policy-violation"
+
+        # ---------------------------------------------------------------
+        # Certificate expiry warning
+        # ---------------------------------------------------------------
+        - alert: CertificateExpiringSoon
+          expr: |
+            certmanager_certificate_expiration_timestamp_seconds - time() < 2592000
+          for: 1h
+          labels:
+            severity: "warning"
+            component: "cert-manager"
+          annotations:
+            summary: "Certificate {{ $labels.name }} expires in less than 30 days"
+            description: >-
+              Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+              will expire in less than 30 days. Verify cert-manager is renewing
+              it automatically, or manually trigger renewal.
+            runbook_url: "https://docs.sre.internal/runbooks/certificate-expiry"
+
+        # ---------------------------------------------------------------
+        # Flux reconciliation failures
+        # ---------------------------------------------------------------
+        - alert: FluxReconciliationFailure
+          expr: |
+            gotk_reconcile_condition{type="Ready",status="False"} == 1
+          for: 30m
+          labels:
+            severity: "critical"
+            component: "flux"
+          annotations:
+            summary: "Flux {{ $labels.kind }} {{ $labels.name }} reconciliation failing"
+            description: >-
+              Flux {{ $labels.kind }} {{ $labels.name }} in namespace
+              {{ $labels.namespace }} has not been ready for 30 minutes.
+              Check flux logs: flux logs --kind={{ $labels.kind }}
+              --name={{ $labels.name }} -n {{ $labels.namespace }}
+            runbook_url: "https://docs.sre.internal/runbooks/flux-reconciliation-failure"
+
+        # ---------------------------------------------------------------
+        # Pod running as root
+        # ---------------------------------------------------------------
+        - alert: PodSecurityViolation
+          expr: |
+            kube_pod_container_info{container!="istio-init"} unless on(pod, namespace)
+            kube_pod_container_status_running{container!="istio-init"} == 0
+            and on(pod, namespace)
+            (kube_pod_spec_containers_security_context_run_as_user == 0)
+          for: 5m
+          labels:
+            severity: "critical"
+            component: "security"
+          annotations:
+            summary: "Pod {{ $labels.pod }} is running as root"
+            description: >-
+              Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has a
+              container running as UID 0 (root). This violates SRE security
+              policy. Ensure the container image runs as a non-root user and
+              the pod security context sets runAsNonRoot: true.
+            runbook_url: "https://docs.sre.internal/runbooks/pod-security-violation"
+
+        # ---------------------------------------------------------------
+        # High HTTP 5xx error rate
+        # ---------------------------------------------------------------
+        - alert: HighErrorRate
+          expr: |
+            (
+              sum(rate(istio_requests_total{response_code=~"5.."}[5m])) by (destination_service_name, destination_service_namespace)
+              /
+              sum(rate(istio_requests_total[5m])) by (destination_service_name, destination_service_namespace)
+            ) > 0.05
+          for: 10m
+          labels:
+            severity: "critical"
+            component: "application"
+          annotations:
+            summary: "High 5xx error rate for {{ $labels.destination_service_name }}"
+            description: >-
+              Service {{ $labels.destination_service_name }} in namespace
+              {{ $labels.destination_service_namespace }} is returning more
+              than 5% HTTP 5xx responses over the last 10 minutes. Investigate
+              application logs and traces in Grafana.
+            runbook_url: "https://docs.sre.internal/runbooks/high-error-rate"
