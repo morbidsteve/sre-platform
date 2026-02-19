@@ -1,0 +1,75 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/description: >-
+      Restricts container images to only those sourced from the internal Harbor
+      registry (harbor.sre.internal/).
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: critical
+    sre.io/nist-controls: "CM-11, SI-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validate-image-registry
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      validate:
+        message: >-
+          All container images must be from the approved registry
+          harbor.sre.internal/.
+        pattern:
+          spec:
+            containers:
+              - image: "harbor.sre.internal/*"
+    - name: validate-init-container-image-registry
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.initContainers[] | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+      validate:
+        message: >-
+          All init container images must be from the approved registry
+          harbor.sre.internal/.
+        pattern:
+          spec:
+            initContainers:
+              - image: "harbor.sre.internal/*"

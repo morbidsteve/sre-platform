@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+  namespace: tenant-alpha
+spec:
+  securityContext:
+    runAsNonRoot: true
+  containers:
+    - name: app
+      image: "harbor.sre.internal/alpha/my-app:v1.0.0"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - "ALL"

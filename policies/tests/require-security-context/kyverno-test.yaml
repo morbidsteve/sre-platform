@@ -1,0 +1,31 @@
+---
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-security-context-test
+policies:
+  - policy.yaml
+resources:
+  - resource-pass.yaml
+  - resource-fail.yaml
+results:
+  - policy: require-security-context
+    rule: require-run-as-non-root
+    resource: secure-pod
+    kind: Pod
+    result: pass
+  - policy: require-security-context
+    rule: require-run-as-non-root
+    resource: insecure-pod
+    kind: Pod
+    result: fail
+  - policy: require-security-context
+    rule: require-drop-all-capabilities
+    resource: secure-pod
+    kind: Pod
+    result: pass
+  - policy: require-security-context
+    rule: require-drop-all-capabilities
+    resource: insecure-pod
+    kind: Pod
+    result: fail

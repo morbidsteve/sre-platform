@@ -1,0 +1,48 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Verify Image Signatures
+    policies.kyverno.io/description: >-
+      Verifies that all container images from harbor.sre.internal are signed
+      using Cosign.
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: critical
+    sre.io/nist-controls: "SA-10, SI-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      verifyImages:
+        - imageReferences:
+            - "harbor.sre.internal/*"
+          attestors:
+            - entries:
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      REPLACE_ME_WITH_COSIGN_PUBLIC_KEY
+                      -----END PUBLIC KEY-----

@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-pod
+  namespace: tenant-alpha
+  labels:
+    app.kubernetes.io/name: "my-app"
+    app.kubernetes.io/part-of: "sre-platform"
+    sre.io/team: "alpha"
+spec:
+  containers:
+    - name: app
+      image: "harbor.sre.internal/alpha/my-app:v1.0.0"

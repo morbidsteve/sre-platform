@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: approved-registry-pod
+  namespace: tenant-alpha
+spec:
+  containers:
+    - name: app
+      image: "harbor.sre.internal/alpha/my-app:v1.0.0"

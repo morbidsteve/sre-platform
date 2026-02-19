@@ -1,0 +1,86 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-security-context
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Require Security Context
+    policies.kyverno.io/description: >-
+      Requires all Pods to set runAsNonRoot to true, allowPrivilegeEscalation to
+      false, and drop ALL capabilities on every container. These settings enforce
+      the principle of least privilege and prevent container breakout attacks.
+      System namespaces are excluded from this policy.
+    policies.kyverno.io/category: Pod Security Standards Restricted
+    policies.kyverno.io/severity: high
+    sre.io/nist-controls: "AC-6, CM-7"
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      validate:
+        message: >-
+          Pod {{request.object.metadata.name}} must set
+          `spec.securityContext.runAsNonRoot` to true. Running containers as root
+          is a security risk. Add `securityContext.runAsNonRoot: true` to your
+          Pod spec.
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+    - name: require-drop-all-capabilities
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      validate:
+        message: >-
+          All containers in Pod {{request.object.metadata.name}} must set
+          `securityContext.allowPrivilegeEscalation` to false and drop ALL
+          capabilities. Add to each container:
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        foreach:
+          - list: "request.object.spec.containers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.allowPrivilegeEscalation || true }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ element.securityContext.capabilities.drop || [''] | contains(@, 'ALL') }}"
+                    operator: Equals
+                    value: false

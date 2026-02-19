@@ -1,0 +1,46 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-network-policies
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Require Network Policies
+    policies.kyverno.io/description: >-
+      Requires every non-system namespace to have at least one NetworkPolicy
+      defined, indicated by the sre.io/network-policy-configured label.
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    sre.io/nist-controls: "SC-7, AC-4"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-network-policy-exists
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      validate:
+        message: >-
+          Namespace {{request.object.metadata.name}} must have the label
+          sre.io/network-policy-configured: "true", indicating that a
+          NetworkPolicy has been created for this namespace.
+        pattern:
+          metadata:
+            labels:
+              sre.io/network-policy-configured: "true"

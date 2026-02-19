@@ -1,0 +1,52 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Require Standard Labels
+    policies.kyverno.io/description: >-
+      Requires all Pods to include the standard labels: app.kubernetes.io/name,
+      app.kubernetes.io/part-of, and sre.io/team. These labels are essential for
+      inventory management, cost tracking, and incident response. System namespaces
+      are excluded from this policy.
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    sre.io/nist-controls: "CM-8"
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-required-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+      validate:
+        message: >-
+          Pod {{request.object.metadata.name}} in namespace
+          {{request.object.metadata.namespace}} is missing required labels.
+          All Pods must have the following labels:
+          `app.kubernetes.io/name`, `app.kubernetes.io/part-of`, and `sre.io/team`.
+          Add them to your Deployment or Pod spec under metadata.labels.
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+              app.kubernetes.io/part-of: "?*"
+              sre.io/team: "?*"

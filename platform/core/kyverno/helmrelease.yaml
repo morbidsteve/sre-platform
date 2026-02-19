@@ -1,0 +1,77 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kyverno
+  namespace: kyverno
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: kyverno
+      version: "3.1.4"
+      sourceRef:
+        kind: HelmRepository
+        name: kyverno
+        namespace: flux-system
+  dependsOn:
+    - name: istio-base
+      namespace: istio-system
+    - name: cert-manager
+      namespace: cert-manager
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    admissionController:
+      replicas: 3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    backgroundController:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    reportsController:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    cleanupController:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    config:
+      webhooks:
+        - objectSelector:
+            matchExpressions:
+              - key: "app.kubernetes.io/managed-by"
+                operator: NotIn
+                values:
+                  - "Helm"
+    features:
+      policyExceptions:
+        enabled: true

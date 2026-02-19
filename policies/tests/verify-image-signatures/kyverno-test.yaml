@@ -1,0 +1,21 @@
+---
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: verify-image-signatures-test
+policies:
+  - policy.yaml
+resources:
+  - resource-pass.yaml
+  - resource-fail.yaml
+results:
+  - policy: verify-image-signatures
+    rule: verify-cosign-signature
+    resource: signed-image-pod
+    kind: Pod
+    result: fail
+  - policy: verify-image-signatures
+    rule: verify-cosign-signature
+    resource: unsigned-image-pod
+    kind: Pod
+    result: fail

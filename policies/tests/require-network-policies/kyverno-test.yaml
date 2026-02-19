@@ -1,0 +1,21 @@
+---
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-network-policies-test
+policies:
+  - policy.yaml
+resources:
+  - resource-pass.yaml
+  - resource-fail.yaml
+results:
+  - policy: require-network-policies
+    rule: check-network-policy-exists
+    resource: tenant-with-netpol
+    kind: Namespace
+    result: pass
+  - policy: require-network-policies
+    rule: check-network-policy-exists
+    resource: tenant-without-netpol
+    kind: Namespace
+    result: fail

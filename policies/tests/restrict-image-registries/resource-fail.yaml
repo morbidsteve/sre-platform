@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unapproved-registry-pod
+  namespace: tenant-alpha
+spec:
+  containers:
+    - name: app
+      image: "docker.io/library/nginx:1.25.0"
