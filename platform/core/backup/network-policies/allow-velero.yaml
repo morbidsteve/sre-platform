@@ -1,0 +1,42 @@
+---
+# Allow Velero to reach S3 storage, Kubernetes API, and be scraped by Prometheus
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-velero
+  namespace: velero
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Prometheus scraping metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8085
+          protocol: TCP
+  egress:
+    # S3-compatible storage backend (HTTPS)
+    - ports:
+        - port: 443
+          protocol: TCP
+    # Kubernetes API server (backup/restore operations)
+    - ports:
+        - port: 6443
+          protocol: TCP
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

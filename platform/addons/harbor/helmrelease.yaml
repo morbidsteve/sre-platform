@@ -1,0 +1,210 @@
+---
+# Harbor Container Registry
+# Provides image storage, Trivy vulnerability scanning, Cosign signature
+# verification, and multi-tenant project isolation.
+# NIST Controls: CM-2, SI-3, SI-7, SA-11, RA-5
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: harbor
+      version: "1.14.2"
+      sourceRef:
+        kind: HelmRepository
+        name: harbor
+        namespace: flux-system
+  dependsOn:
+    - name: istio-base
+      namespace: istio-system
+    - name: cert-manager
+      namespace: cert-manager
+    - name: monitoring
+      namespace: monitoring
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # -----------------------------------------------------------------
+    # Expose — ClusterIP only; Istio handles external ingress and TLS
+    # -----------------------------------------------------------------
+    expose:
+      type: clusterIP
+      tls:
+        enabled: false
+      clusterIP:
+        name: harbor
+
+    externalURL: "https://harbor.apps.sre.example.com"
+
+    # -----------------------------------------------------------------
+    # Persistence — S3-compatible backend for image and chart storage
+    # -----------------------------------------------------------------
+    persistence:
+      enabled: true
+      persistentVolumeClaim:
+        registry:
+          size: 50Gi
+        database:
+          size: 5Gi
+        redis:
+          size: 2Gi
+        jobservice:
+          jobLog:
+            size: 2Gi
+      imageChartStorage:
+        type: s3
+        s3:
+          region: "REPLACE_ME"
+          bucket: "REPLACE_ME"
+          accesskey: "REPLACE_ME"
+          secretkey: "REPLACE_ME"
+          regionendpoint: "REPLACE_ME"
+          rootdirectory: "/harbor"
+          encrypt: true
+          secure: true
+
+    # -----------------------------------------------------------------
+    # Trivy — vulnerability scanning on every image push (NIST RA-5)
+    # -----------------------------------------------------------------
+    trivy:
+      enabled: true
+      gitHubToken: ""
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+
+    # -----------------------------------------------------------------
+    # Notary — disabled; use Cosign for image signing instead (NIST SI-7)
+    # -----------------------------------------------------------------
+    notary:
+      enabled: false
+
+    # -----------------------------------------------------------------
+    # Internal database (PostgreSQL)
+    # -----------------------------------------------------------------
+    database:
+      type: internal
+      internal:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+    # -----------------------------------------------------------------
+    # Internal Redis
+    # -----------------------------------------------------------------
+    redis:
+      type: internal
+      internal:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+
+    # -----------------------------------------------------------------
+    # Core component resources
+    # -----------------------------------------------------------------
+    core:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    # -----------------------------------------------------------------
+    # Job service resources
+    # -----------------------------------------------------------------
+    jobservice:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    # -----------------------------------------------------------------
+    # Registry component resources
+    # -----------------------------------------------------------------
+    registry:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    # -----------------------------------------------------------------
+    # Portal (web UI) resources
+    # -----------------------------------------------------------------
+    portal:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+    # -----------------------------------------------------------------
+    # Metrics — Prometheus integration (NIST CA-7, SI-4)
+    # -----------------------------------------------------------------
+    metrics:
+      enabled: true
+      core:
+        path: /metrics
+        port: 8001
+      registry:
+        path: /metrics
+        port: 8001
+      jobservice:
+        path: /metrics
+        port: 8001
+      exporter:
+        path: /metrics
+        port: 8001
+      serviceMonitor:
+        enabled: true
+        additionalLabels:
+          app.kubernetes.io/part-of: sre-platform
+
+    # -----------------------------------------------------------------
+    # Cache layer
+    # -----------------------------------------------------------------
+    cache:
+      enabled: true
+      expireHours: 24
+
+  # -------------------------------------------------------------------
+  # Sensitive values from External Secrets (OpenBao via ESO)
+  # -------------------------------------------------------------------
+  valuesFrom:
+    - kind: Secret
+      name: harbor-credentials
+      optional: false
+    - kind: ConfigMap
+      name: harbor-env-values
+      optional: true

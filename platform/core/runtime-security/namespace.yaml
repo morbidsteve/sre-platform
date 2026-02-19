@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: neuvector
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    # NO istio-injection — NeuVector needs privileged DaemonSet

@@ -1,0 +1,25 @@
+---
+# Istio VirtualService for Keycloak SSO
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "AC-17, IA-2"
+spec:
+  hosts:
+    - "keycloak.apps.sre.example.com"
+  gateways:
+    - istio-system/main
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: keycloak
+            port:
+              number: 80

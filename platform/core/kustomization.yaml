@@ -2,7 +2,7 @@
 # Flux Kustomizations for all core platform components
 # Ordered by dependency chain:
 #   istio → cert-manager → kyverno → monitoring → logging →
-#   openbao → external-secrets → runtime-security → backup
+#   openbao → external-secrets → runtime-security → tempo → backup
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -18,4 +18,5 @@ resources:
   - components/openbao.yaml
   - components/external-secrets.yaml
   - components/runtime-security.yaml
+  - components/tempo.yaml
   - components/backup.yaml

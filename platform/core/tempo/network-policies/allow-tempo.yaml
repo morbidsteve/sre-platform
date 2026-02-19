@@ -1,0 +1,64 @@
+---
+# Allow Tempo to receive traces from all namespaces and serve queries to Grafana
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tempo
+  namespace: tempo
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Zipkin traces from Istio sidecars in all namespaces
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 9411
+          protocol: TCP
+    # OTLP gRPC traces from applications and OpenTelemetry collectors
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 4317
+          protocol: TCP
+    # OTLP HTTP traces from applications
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 4318
+          protocol: TCP
+    # Grafana queries from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 3100
+          protocol: TCP
+    # Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 3100
+          protocol: TCP
+  egress:
+    # S3-compatible storage backend (HTTPS)
+    - ports:
+        - port: 443
+          protocol: TCP
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

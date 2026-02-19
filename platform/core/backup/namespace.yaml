@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    # NO istio-injection — Velero needs to work independently of service mesh

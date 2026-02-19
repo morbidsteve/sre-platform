@@ -1,0 +1,223 @@
+---
+# Allow NeuVector controller internal cluster communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-neuvector-controller
+  namespace: neuvector
+spec:
+  podSelector:
+    matchLabels:
+      app: neuvector-controller-pod
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Manager and scanner connect to controller API
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: neuvector
+      ports:
+        - port: 10443
+          protocol: TCP
+    # Controller cluster communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+      ports:
+        - port: 18300
+          protocol: TCP
+        - port: 18301
+          protocol: TCP
+        - port: 18400
+          protocol: TCP
+        - port: 18401
+          protocol: TCP
+    # Enforcer reports to controller
+    - from:
+        - podSelector:
+            matchLabels:
+              app: neuvector-enforcer-pod
+      ports:
+        - port: 18300
+          protocol: TCP
+        - port: 18301
+          protocol: TCP
+        - port: 18400
+          protocol: TCP
+        - port: 18401
+          protocol: TCP
+    # Prometheus scraping metrics exporter
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8068
+          protocol: TCP
+    # Admission webhook from Kubernetes API
+    - from: []
+      ports:
+        - port: 20443
+          protocol: TCP
+  egress:
+    # Controller cluster communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+      ports:
+        - port: 18300
+          protocol: TCP
+        - port: 18301
+          protocol: TCP
+        - port: 18400
+          protocol: TCP
+        - port: 18401
+          protocol: TCP
+    # Kubernetes API server
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# Allow NeuVector enforcer DaemonSet communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-neuvector-enforcer
+  namespace: neuvector
+spec:
+  podSelector:
+    matchLabels:
+      app: neuvector-enforcer-pod
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Controller sends policies to enforcer
+    - from:
+        - podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+      ports:
+        - port: 18301
+          protocol: TCP
+        - port: 18401
+          protocol: TCP
+  egress:
+    # Report to controller
+    - to:
+        - podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+      ports:
+        - port: 18300
+          protocol: TCP
+        - port: 18301
+          protocol: TCP
+        - port: 18400
+          protocol: TCP
+        - port: 18401
+          protocol: TCP
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# Allow NeuVector manager (web UI) communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-neuvector-manager
+  namespace: neuvector
+spec:
+  podSelector:
+    matchLabels:
+      app: neuvector-manager-pod
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Ingress from Istio gateway for web UI access
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 8443
+          protocol: TCP
+  egress:
+    # Connect to controller API
+    - to:
+        - podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+      ports:
+        - port: 10443
+          protocol: TCP
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# Allow NeuVector scanner communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-neuvector-scanner
+  namespace: neuvector
+spec:
+  podSelector:
+    matchLabels:
+      app: neuvector-scanner-pod
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    # Connect to controller API
+    - to:
+        - podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+      ports:
+        - port: 10443
+          protocol: TCP
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

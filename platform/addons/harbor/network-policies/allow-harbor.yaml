@@ -1,0 +1,119 @@
+---
+# Allow ingress from Istio gateway to Harbor core and portal
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-istio
+  namespace: harbor
+spec:
+  podSelector:
+    matchExpressions:
+      - key: component
+        operator: In
+        values:
+          - core
+          - portal
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              istio: gateway
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+
+---
+# Allow internal communication between Harbor components
+# Harbor core, registry, jobservice, database, redis, portal, and trivy
+# must communicate freely within the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-harbor-internal
+  namespace: harbor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# Allow Prometheus scraping from monitoring namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-monitoring
+  namespace: harbor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8001
+          protocol: TCP
+
+---
+# Allow egress to S3-compatible storage (image/chart persistence)
+# and to upstream registries for replication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-external
+  namespace: harbor
+spec:
+  podSelector:
+    matchExpressions:
+      - key: component
+        operator: In
+        values:
+          - registry
+          - jobservice
+          - trivy
+          - core
+  policyTypes:
+    - Egress
+  egress:
+    # S3-compatible storage, upstream registries, and Trivy DB updates (HTTPS)
+    - ports:
+        - port: 443
+          protocol: TCP
+
+---
+# Allow DNS egress for all Harbor pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: harbor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

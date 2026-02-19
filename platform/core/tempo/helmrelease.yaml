@@ -1,0 +1,74 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tempo
+  namespace: tempo
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: tempo
+      version: "1.7.2"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  dependsOn:
+    - name: istio-base
+      namespace: istio-system
+    - name: monitoring
+      namespace: monitoring
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # ---------------------------------------------------------------
+    # Tempo Configuration
+    # ---------------------------------------------------------------
+    tempo:
+      storage:
+        trace:
+          backend: "s3"
+          s3:
+            endpoint: "REPLACE_ME"
+            bucket: "REPLACE_ME"
+            access_key: "REPLACE_ME"
+            secret_key: "REPLACE_ME"
+            insecure: false
+      receivers:
+        zipkin:
+          endpoint: "0.0.0.0:9411"
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+      metricsGenerator:
+        enabled: true
+
+    # ---------------------------------------------------------------
+    # Persistence
+    # ---------------------------------------------------------------
+    persistence:
+      enabled: true
+      size: "10Gi"
+
+    # ---------------------------------------------------------------
+    # Prometheus ServiceMonitor
+    # ---------------------------------------------------------------
+    serviceMonitor:
+      enabled: true
+  valuesFrom:
+    - kind: Secret
+      name: tempo-s3-credentials
+      optional: true
+    - kind: ConfigMap
+      name: tempo-env-values
+      optional: true

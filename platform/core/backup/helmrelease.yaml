@@ -1,0 +1,119 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: velero
+  namespace: velero
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: velero
+      version: "6.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: vmware-tanzu
+        namespace: flux-system
+  dependsOn:
+    - name: istio-base
+      namespace: istio-system
+    - name: monitoring
+      namespace: monitoring
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # ---------------------------------------------------------------
+    # Backup Storage Location
+    # ---------------------------------------------------------------
+    configuration:
+      backupStorageLocation:
+        - name: "default"
+          provider: "aws"
+          bucket: "sre-velero-backups"
+          config:
+            region: "us-east-1"
+            s3ForcePathStyle: "true"
+            s3Url: "REPLACE_ME"
+
+      # ---------------------------------------------------------------
+      # Volume Snapshot Location
+      # ---------------------------------------------------------------
+      volumeSnapshotLocation:
+        - name: "default"
+          provider: "aws"
+          config:
+            region: "us-east-1"
+
+    # ---------------------------------------------------------------
+    # AWS Plugin
+    # ---------------------------------------------------------------
+    initContainers:
+      - name: velero-plugin-for-aws
+        image: "velero/velero-plugin-for-aws:v1.9.1"
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: plugins
+            mountPath: /target
+
+    # ---------------------------------------------------------------
+    # Prometheus Metrics
+    # ---------------------------------------------------------------
+    metrics:
+      serviceMonitor:
+        enabled: true
+
+    # ---------------------------------------------------------------
+    # Backup Schedules
+    # ---------------------------------------------------------------
+    schedules:
+      daily-backup:
+        disabled: false
+        schedule: "0 2 * * *"
+        template:
+          ttl: "168h"
+          excludedNamespaces:
+            - kube-system
+            - flux-system
+          includeClusterResources: true
+          storageLocation: "default"
+          volumeSnapshotLocations:
+            - "default"
+
+      weekly-backup:
+        disabled: false
+        schedule: "0 3 * * 0"
+        template:
+          ttl: "672h"
+          excludedNamespaces:
+            - kube-system
+            - flux-system
+          includeClusterResources: true
+          storageLocation: "default"
+          volumeSnapshotLocations:
+            - "default"
+
+      monthly-backup:
+        disabled: false
+        schedule: "0 4 1 * *"
+        template:
+          ttl: "2160h"
+          excludedNamespaces:
+            - kube-system
+            - flux-system
+          includeClusterResources: true
+          storageLocation: "default"
+          volumeSnapshotLocations:
+            - "default"
+  valuesFrom:
+    - kind: Secret
+      name: velero-s3-credentials
+      optional: false
+    - kind: ConfigMap
+      name: velero-env-values
+      optional: true
