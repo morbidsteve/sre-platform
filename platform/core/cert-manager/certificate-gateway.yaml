@@ -1,0 +1,23 @@
+---
+# Wildcard TLS certificate for the Istio ingress gateway
+# Referenced by the Istio Gateway resource as credentialName: sre-wildcard-tls
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sre-wildcard-tls
+  namespace: istio-system
+spec:
+  secretName: sre-wildcard-tls
+  duration: 2160h  # 90 days
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - "*.apps.sre.example.com"
+    - "apps.sre.example.com"
+  issuerRef:
+    # Use internal CA for dev; switch to letsencrypt-production for prod
+    name: sre-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io

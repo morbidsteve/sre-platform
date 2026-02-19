@@ -1,0 +1,11 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - helmrelease.yaml
+  - clusterissuer-selfsigned.yaml
+  - clusterissuer-letsencrypt.yaml
+  - certificate-gateway.yaml
+  - network-policies/default-deny.yaml
+  - network-policies/allow-cert-manager.yaml
