@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-alpha
+  labels:
+    istio-injection: enabled
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-alpha
+    sre.io/network-policy-configured: "true"
