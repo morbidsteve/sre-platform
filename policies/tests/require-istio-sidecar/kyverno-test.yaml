@@ -1,0 +1,21 @@
+---
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-istio-sidecar-test
+policies:
+  - policy.yaml
+resources:
+  - resource-pass.yaml
+  - resource-fail.yaml
+results:
+  - policy: require-istio-sidecar
+    rule: check-istio-injection-label
+    resource: team-alpha
+    kind: Namespace
+    result: pass
+  - policy: require-istio-sidecar
+    rule: check-istio-injection-label
+    resource: team-no-mesh
+    kind: Namespace
+    result: fail

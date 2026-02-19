@@ -1,0 +1,53 @@
+---
+# Allow istiod to communicate with the Kubernetes API and mesh proxies
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istiod
+  namespace: istio-system
+spec:
+  podSelector:
+    matchLabels:
+      app: istiod
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # xDS and webhook traffic from all namespaces
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 15010
+          protocol: TCP
+        - port: 15012
+          protocol: TCP
+        - port: 15017
+          protocol: TCP
+    # Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 15014
+          protocol: TCP
+  egress:
+    # Kubernetes API server
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

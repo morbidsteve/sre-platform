@@ -1,0 +1,12 @@
+---
+# Cluster-wide STRICT mTLS — NIST SC-8, SC-13
+# All pod-to-pod communication must use mutual TLS.
+# No unencrypted service-to-service traffic is permitted.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT

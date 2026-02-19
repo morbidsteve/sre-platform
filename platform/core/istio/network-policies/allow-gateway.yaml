@@ -1,0 +1,47 @@
+---
+# Allow ingress gateway to receive external traffic and route to mesh
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway
+  namespace: istio-system
+spec:
+  podSelector:
+    matchLabels:
+      istio: gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # External traffic on HTTP/HTTPS
+    - ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+    # Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 15090
+          protocol: TCP
+    # Health checks from load balancer
+    - ports:
+        - port: 15021
+          protocol: TCP
+  egress:
+    # Route traffic to all mesh workloads
+    - to:
+        - namespaceSelector: {}
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

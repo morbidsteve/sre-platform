@@ -1,0 +1,48 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-istio-sidecar
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Require Istio Sidecar Injection
+    policies.kyverno.io/description: >-
+      Ensures all non-system namespaces have Istio sidecar injection enabled.
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    sre.io/nist-controls: "SC-8, AC-4"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-istio-injection-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - default
+                - istio-system
+                - flux-system
+                - kyverno
+          - resources:
+              selector:
+                matchLabels:
+                  sre.io/system-namespace: "true"
+      validate:
+        message: >-
+          Namespace {{request.object.metadata.name}} must have the label
+          `istio-injection: enabled` to participate in the service mesh.
+        pattern:
+          metadata:
+            labels:
+              istio-injection: "enabled"

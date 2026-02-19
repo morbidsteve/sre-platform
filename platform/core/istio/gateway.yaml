@@ -1,0 +1,31 @@
+---
+# Main ingress gateway — single entry point for north-south traffic
+# NIST SC-7 (Boundary Protection)
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: main
+  namespace: istio-system
+spec:
+  selector:
+    istio: gateway
+  servers:
+    # HTTPS — primary ingress
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: sre-wildcard-tls
+      hosts:
+        - "*.apps.sre.example.com"
+    # HTTP — redirect to HTTPS
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      tls:
+        httpsRedirect: true
+      hosts:
+        - "*.apps.sre.example.com"

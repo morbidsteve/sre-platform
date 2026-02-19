@@ -1,0 +1,49 @@
+---
+# Default deny-all AuthorizationPolicy for istio-system namespace
+# NIST AC-3, AC-4 — explicit allow required for all traffic
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: istio-system
+spec:
+  # Empty spec = deny all traffic to workloads in this namespace
+  {}
+
+---
+# Allow ingress gateway to receive external traffic
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-gateway
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: gateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            ipBlocks:
+              - "0.0.0.0/0"
+
+---
+# Allow Prometheus to scrape Istio metrics
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: istio-system
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "15014"
+              - "15090"
