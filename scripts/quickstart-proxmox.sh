@@ -346,6 +346,54 @@ pve_create_api_user() {
     success "API token created: $PROXMOX_USER"
 }
 
+# Wait for a Proxmox task (UPID) to complete. Returns 0 on success, 1 on failure.
+# Sets PVE_TASK_EXIT to the exit status string on failure.
+pve_wait_task() {
+    local upid="$1" label="$2" timeout="${3:-600}"
+    local encoded_upid
+    encoded_upid=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${upid}', safe=''))" 2>/dev/null \
+        || echo "$upid" | sed 's/:/%3A/g; s/\//%2F/g')
+    local status="" elapsed=0
+
+    while [[ "$status" != "stopped" ]]; do
+        if (( elapsed >= timeout )); then
+            PVE_TASK_EXIT="timed out after ${timeout}s"
+            return 1
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+        printf "\r  %s (%ds elapsed)" "$label" "$elapsed"
+
+        local task_status
+        task_status=$(pve_api GET "/nodes/${PROXMOX_NODE}/tasks/${encoded_upid}/status" 2>/dev/null) || continue
+        status=$(echo "$task_status" | jq -r '.data.status // empty')
+
+        local exitstatus
+        exitstatus=$(echo "$task_status" | jq -r '.data.exitstatus // empty')
+        if [[ "$status" == "stopped" && "$exitstatus" != "OK" ]]; then
+            echo
+            PVE_TASK_EXIT="$exitstatus"
+            return 1
+        fi
+    done
+    echo
+    return 0
+}
+
+# Upload an ISO from the local workstation to Proxmox via the API
+pve_upload_iso() {
+    local storage="$1" filepath="$2" filename="$3"
+    local url="https://${PROXMOX_HOST}:8006/api2/json/nodes/${PROXMOX_NODE}/storage/${storage}/upload"
+
+    log "Uploading ISO to Proxmox storage (this may take a few minutes)..."
+    curl -fsSk \
+        -b "PVEAuthCookie=${PVE_TICKET}" \
+        -H "CSRFPreventionToken: ${PVE_CSRF}" \
+        -F "content=iso" \
+        -F "filename=@${filepath};filename=${filename}" \
+        "$url" > /dev/null || return 1
+}
+
 # Ensure the Rocky Linux 9 ISO exists on Proxmox storage
 pve_ensure_iso() {
     local storage="$PVE_ISO_STORAGE"
@@ -369,62 +417,51 @@ pve_ensure_iso() {
     log "URL: $ROCKY_ISO_URL"
     log "This may take a few minutes depending on your connection."
 
-    # Use the download-url API (available in Proxmox 7.2+)
+    # Strategy 1: Use the download-url API (Proxmox downloads directly — fastest)
+    local pve_download_ok=false
     local download_response
     download_response=$(pve_api POST "/nodes/${PROXMOX_NODE}/storage/${storage}/download-url" \
         --data-urlencode "url=${ROCKY_ISO_URL}" \
         --data-urlencode "content=iso" \
         --data-urlencode "filename=${ROCKY_ISO_FILENAME}" \
-        --data-urlencode "verify-certificates=0" 2>&1) || {
-        error "Failed to initiate ISO download."
-        error "This may mean your Proxmox version is older than 7.2."
-        error ""
-        error "Manual fix: Download the ISO to your Proxmox host manually:"
-        error "  ssh root@${PROXMOX_HOST} 'cd /var/lib/vz/template/iso/ && wget ${ROCKY_ISO_URL}'"
-        error ""
-        error "Then re-run this script."
-        exit 1
+        --data-urlencode "verify-certificates=0" 2>&1) && {
+
+        local upid
+        upid=$(echo "$download_response" | jq -r '.data // empty')
+        if [[ -n "$upid" ]]; then
+            if pve_wait_task "$upid" "Downloading ISO on Proxmox..." 600; then
+                pve_download_ok=true
+            else
+                warn "Proxmox-side download failed: $PVE_TASK_EXIT"
+            fi
+        fi
     }
 
-    # Extract the UPID (task ID) from the response
-    local upid
-    upid=$(echo "$download_response" | jq -r '.data // empty')
-    if [[ -z "$upid" ]]; then
-        fatal "Download started but no task ID returned. Response: $download_response"
+    # Strategy 2: Download locally and upload via API
+    if [[ "$pve_download_ok" != "true" ]]; then
+        warn "Falling back to local download + upload to Proxmox..."
+        local tmpfile
+        tmpfile=$(mktemp "${TMPDIR:-/tmp}/sre-rocky-iso.XXXXXX")
+        # shellcheck disable=SC2064
+        trap "rm -f '$tmpfile'" EXIT
+
+        log "Downloading ISO to local workstation (curl -4 -L)..."
+        if ! curl -4 -fSL --progress-bar -o "$tmpfile" "$ROCKY_ISO_URL"; then
+            rm -f "$tmpfile"
+            fatal "Failed to download ISO locally. Check your internet connection and URL: $ROCKY_ISO_URL"
+        fi
+        success "ISO downloaded locally ($(du -h "$tmpfile" | cut -f1) )."
+
+        if ! pve_upload_iso "$storage" "$tmpfile" "$ROCKY_ISO_FILENAME"; then
+            rm -f "$tmpfile"
+            fatal "Failed to upload ISO to Proxmox."
+        fi
+        rm -f "$tmpfile"
+        trap - EXIT
     fi
 
-    # Poll the task until completion
-    local encoded_upid
-    encoded_upid=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${upid}', safe=''))" 2>/dev/null \
-        || echo "$upid" | sed 's/:/%3A/g; s/\//%2F/g')
-    local status=""
-    local elapsed=0
-    local timeout=600  # 10 minutes max for ISO download
-
-    while [[ "$status" != "stopped" ]]; do
-        if (( elapsed >= timeout )); then
-            fatal "ISO download timed out after ${timeout}s. Check Proxmox task log for UPID: $upid"
-        fi
-        sleep 5
-        elapsed=$((elapsed + 5))
-        printf "\r  Downloading ISO... (%ds elapsed)" "$elapsed"
-
-        local task_status
-        task_status=$(pve_api GET "/nodes/${PROXMOX_NODE}/tasks/${encoded_upid}/status" 2>/dev/null) || continue
-        status=$(echo "$task_status" | jq -r '.data.status // empty')
-
-        # Check for failure
-        local exitstatus
-        exitstatus=$(echo "$task_status" | jq -r '.data.exitstatus // empty')
-        if [[ "$status" == "stopped" && "$exitstatus" != "OK" ]]; then
-            echo
-            fatal "ISO download failed with status: $exitstatus. Check Proxmox task log."
-        fi
-    done
-
-    echo
     PROXMOX_ISO="$iso_volid"
-    success "ISO downloaded: $PROXMOX_ISO"
+    success "ISO available: $PROXMOX_ISO"
 }
 
 # ============================================================================
