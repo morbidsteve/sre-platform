@@ -10,9 +10,9 @@ Read @docs/architecture.md for the full architecture spec.
 Read @docs/decisions.md for all architectural decision records (ADRs).
 
 ## Project Structure
-- `tofu/` — OpenTofu infrastructure modules (AWS, Azure, vSphere)
+- `tofu/` — OpenTofu infrastructure modules (AWS, Azure, vSphere, Proxmox VE)
 - `ansible/` — OS hardening + RKE2 installation playbooks
-- `packer/` — Immutable VM image builds (Rocky Linux 9)
+- `packer/` — Immutable VM image builds (Rocky Linux 9 for AWS, vSphere, Proxmox VE)
 - `platform/` — Flux CD GitOps manifests for all platform services
 - `platform/core/` — Istio, Kyverno, monitoring, logging, secrets, security
 - `platform/addons/` — Optional services (Backstage, Keycloak, ArgoCD)
