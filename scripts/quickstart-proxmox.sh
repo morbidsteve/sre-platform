@@ -218,14 +218,22 @@ pve_authenticate() {
 
 # Generic Proxmox API call with ticket auth
 # Usage: pve_api GET /nodes
+#        pve_api GET /nodes/pve/storage/local/content --data-urlencode "content=iso"
 #        pve_api POST /access/users --data-urlencode "userid=packer@pve"
 pve_api() {
     local method="$1" path="$2"
     shift 2
     local url="https://${PROXMOX_HOST}:8006/api2/json${path}"
 
+    # For GET requests, -G tells curl to append --data-urlencode params as
+    # query string instead of sending them as a POST body (which causes 501).
+    local -a method_args=(-X "$method")
+    if [[ "$method" == "GET" ]]; then
+        method_args+=(-G)
+    fi
+
     curl -fsSk \
-        -X "$method" \
+        "${method_args[@]}" \
         -b "PVEAuthCookie=${PVE_TICKET}" \
         -H "CSRFPreventionToken: ${PVE_CSRF}" \
         "$@" \
