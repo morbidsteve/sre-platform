@@ -39,26 +39,40 @@ SRE is modeled after the DoD Platform One / Big Bang architecture but is indepen
 
 SRE is composed of four layers, each building on the one below:
 
-```
-+------------------------------------------------------------------+
-|                    Layer 4: Supply Chain Security                 |
-|   Harbor (Trivy scanning) + Cosign (image signing) + SBOM (Syft)|
-|   Kyverno imageVerify + NeuVector admission control              |
-+------------------------------------------------------------------+
-|                    Layer 3: Developer Experience                  |
-|   Helm chart templates (web-app, api-service, worker, cronjob)   |
-|   Tenant namespaces + ResourceQuotas + GitOps app deployment     |
-+------------------------------------------------------------------+
-|                    Layer 2: Platform Services                     |
-|   Istio | Kyverno | Prometheus/Grafana | Loki/Alloy | Tempo     |
-|   NeuVector | OpenBao + ESO | cert-manager | Keycloak | Velero  |
-|   All deployed and reconciled via Flux CD                        |
-+------------------------------------------------------------------+
-|                    Layer 1: Cluster Foundation                    |
-|   RKE2 Kubernetes on Rocky Linux 9 (STIG-hardened, FIPS enabled) |
-|   Provisioned by OpenTofu (AWS, Azure, vSphere, Proxmox VE)      |
-|   Hardened by Ansible | Imaged by Packer                         |
-+------------------------------------------------------------------+
+```mermaid
+flowchart TB
+    subgraph L4["Layer 4: Supply Chain Security"]
+        Harbor["Harbor + Trivy"]
+        Cosign["Cosign Signing"]
+        SBOM["SBOM (Syft)"]
+        ImgVerify["Kyverno imageVerify"]
+    end
+
+    subgraph L3["Layer 3: Developer Experience"]
+        Charts["Helm Chart Templates"]
+        Tenants["Tenant Namespaces"]
+        GitOpsApps["GitOps App Deployment"]
+    end
+
+    subgraph L2["Layer 2: Platform Services (Flux CD)"]
+        Istio["Istio mTLS"] --- Kyverno["Kyverno Policies"]
+        Kyverno --- Prometheus["Prometheus + Grafana"]
+        Prometheus --- Loki["Loki + Alloy"]
+        Loki --- Tempo2["Tempo"]
+        NeuVector["NeuVector"] --- OpenBao["OpenBao + ESO"]
+        OpenBao --- CertMgr2["cert-manager"]
+        CertMgr2 --- Keycloak2["Keycloak"]
+        Keycloak2 --- Velero2["Velero"]
+    end
+
+    subgraph L1["Layer 1: Cluster Foundation"]
+        RKE2["RKE2 Kubernetes\n(FIPS + CIS + STIG)"]
+        Rocky["Rocky Linux 9\n(DISA STIG Hardened)"]
+        Tofu2["OpenTofu\n(AWS / Azure / vSphere / Proxmox)"]
+        Ansible2["Ansible + Packer"]
+    end
+
+    L4 --> L3 --> L2 --> L1
 ```
 
 **Layer 1 -- Cluster Foundation:** Infrastructure provisioned with OpenTofu (AWS, Azure, vSphere, or Proxmox VE), operating system hardened to DISA STIG standards via Ansible, and RKE2 Kubernetes installed with FIPS 140-2 mode and CIS benchmark profile enabled.
@@ -68,6 +82,47 @@ SRE is composed of four layers, each building on the one below:
 **Layer 3 -- Developer Experience:** Self-service application deployment through standardized Helm chart templates and GitOps-managed tenant namespaces. Developers deploy applications by committing a values file; the platform handles security contexts, network policies, monitoring, and mesh integration automatically.
 
 **Layer 4 -- Supply Chain Security:** End-to-end image integrity from build through deployment. Images are scanned by Trivy in Harbor, signed with Cosign, verified by Kyverno admission control, and monitored at runtime by NeuVector.
+
+### How Code Gets Deployed
+
+```mermaid
+flowchart LR
+    Dev["Developer"] -->|"git push tag"| CI["CI Pipeline\n(Build → Scan → Sign)"]
+    CI -->|"Push signed image"| Harbor2["Harbor\nRegistry"]
+    CI -->|"Update image tag"| GitRepo["Git Repo\n(HelmRelease)"]
+    GitRepo -->|"Reconcile"| Flux2["Flux CD"]
+    Flux2 -->|"Validate"| Kyverno2["Kyverno\n(Policy Check)"]
+    Kyverno2 -->|"Deploy"| Pod["Running Pod\n(mTLS + Monitoring)"]
+
+    style Dev fill:#3498db,color:#fff
+    style Harbor2 fill:#2ecc71,color:#fff
+    style Kyverno2 fill:#9b59b6,color:#fff
+    style Pod fill:#2ecc71,color:#fff
+```
+
+### Security Controls at Every Layer
+
+```mermaid
+flowchart LR
+    Request["Request"] --> TLS2["TLS\nTermination"]
+    TLS2 --> JWT["JWT\nValidation"]
+    JWT --> AuthZ2["Authorization\nPolicy"]
+    AuthZ2 --> NP2["Network\nPolicy"]
+    NP2 --> mTLS["Istio\nmTLS"]
+    mTLS --> App2["Application"]
+    App2 -.-> NV2["NeuVector\nRuntime Monitor"]
+
+    style Request fill:#e74c3c,color:#fff
+    style TLS2 fill:#e67e22,color:#fff
+    style JWT fill:#e67e22,color:#fff
+    style AuthZ2 fill:#9b59b6,color:#fff
+    style NP2 fill:#9b59b6,color:#fff
+    style mTLS fill:#3498db,color:#fff
+    style App2 fill:#2ecc71,color:#fff
+    style NV2 fill:#e74c3c,color:#fff
+```
+
+> See [docs/diagrams.md](docs/diagrams.md) for the full set of architecture, security, compliance, and workflow diagrams.
 
 ## Project Structure
 
