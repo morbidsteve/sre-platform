@@ -94,10 +94,10 @@ variable "vm_vlan_tag" {
   default     = -1
 }
 
-variable "vm_kvm" {
+variable "vm_disable_kvm" {
   type        = bool
-  description = "Enable KVM hardware virtualisation. Set to false for hosts without VT-x/AMD-V (e.g., nested VMs)."
-  default     = true
+  description = "Disable KVM hardware virtualisation and use QEMU emulation instead. Set to true for hosts without VT-x/AMD-V (e.g., nested VMs)."
+  default     = false
 }
 
 # ── ISO Configuration ──

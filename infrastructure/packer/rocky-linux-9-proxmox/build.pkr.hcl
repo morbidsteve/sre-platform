@@ -6,7 +6,7 @@ packer {
   required_version = ">= 1.10.0"
   required_plugins {
     proxmox = {
-      version = "= 1.2.2"
+      version = "= 1.2.3"
       source  = "github.com/hashicorp/proxmox"
     }
     ansible = {
@@ -44,8 +44,8 @@ source "proxmox-iso" "rocky9-rke2" {
   qemu_agent       = true
   scsi_controller  = "virtio-scsi-single"
   os               = "l26"
-  kvm              = var.vm_kvm
-  cpu_type         = var.vm_kvm ? "host" : "qemu64"
+  disable_kvm      = var.vm_disable_kvm
+  cpu_type         = var.vm_disable_kvm ? "qemu64" : "host"
   cores            = var.vm_cores
   memory           = var.vm_memory
 

@@ -678,7 +678,7 @@ else
             warn "KVM hardware virtualisation is not available on this host."
             log "Retrying with QEMU emulation (build will be slower)..."
             echo
-            packer build "${PACKER_VARS[@]}" -var "image_version=1.0.0" -var "vm_kvm=false" .
+            packer build "${PACKER_VARS[@]}" -var "image_version=1.0.0" -var "vm_disable_kvm=true" .
         else
             # Not a KVM error — show output and fail
             echo "$packer_output"
