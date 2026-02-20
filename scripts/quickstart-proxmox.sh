@@ -40,14 +40,14 @@
 #   PROXMOX_NODE         — Proxmox node name (e.g., pve)
 #   PROXMOX_USER         — API user (e.g., packer@pve!packer-token)
 #   PROXMOX_TOKEN        — API token secret
-#   PROXMOX_ISO          — ISO path (e.g., local:iso/Rocky-9.5-x86_64-minimal.iso)
+#   PROXMOX_ISO          — ISO path (e.g., local:iso/Rocky-9-latest-x86_64-minimal.iso)
 #   PROXMOX_STORAGE      — Storage pool (e.g., local-lvm)
 #   PROXMOX_BRIDGE       — Network bridge (e.g., vmbr0)
 #   SSH_KEY_PATH         — Path to SSH private key
 #   SERVER_COUNT         — Control plane nodes (default: 1)
 #   AGENT_COUNT          — Worker nodes (default: 2)
 #   ROCKY_ISO_URL        — Override Rocky Linux ISO download URL
-#   ROCKY_ISO_FILENAME   — ISO filename on storage (default: Rocky-9.5-x86_64-minimal.iso)
+#   ROCKY_ISO_FILENAME   — ISO filename on storage (default: Rocky-9-latest-x86_64-minimal.iso)
 #   SKIP_PACKER          — Set to 1 to skip Packer build (template already exists)
 #   SKIP_FLUX            — Set to 1 to skip Flux bootstrap
 # ============================================================================
@@ -187,8 +187,8 @@ done
 # These functions use the Proxmox REST API for zero-touch bootstrap.
 # They are only called when PROXMOX_USER + PROXMOX_TOKEN are NOT provided.
 
-ROCKY_ISO_URL="${ROCKY_ISO_URL:-https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso}"
-ROCKY_ISO_FILENAME="${ROCKY_ISO_FILENAME:-Rocky-9.5-x86_64-minimal.iso}"
+ROCKY_ISO_URL="${ROCKY_ISO_URL:-https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9-latest-x86_64-minimal.iso}"
+ROCKY_ISO_FILENAME="${ROCKY_ISO_FILENAME:-Rocky-9-latest-x86_64-minimal.iso}"
 
 # Authenticate to Proxmox as root@pam, sets PVE_TICKET and PVE_CSRF
 pve_authenticate() {
