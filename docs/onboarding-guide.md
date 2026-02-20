@@ -356,28 +356,45 @@ Once provisioning is complete, the platform team will notify you. To access your
 
 ### Configure kubectl
 
-1. Authenticate with the SRE cluster via Keycloak. The platform team will provide the OIDC configuration for your kubeconfig. A typical setup looks like:
+1. **Install kubelogin** -- The SRE platform uses Keycloak OIDC for authentication. The `kubelogin` plugin handles the browser-based login flow. This replaces the deprecated `--auth-provider=oidc` flag that was removed in Kubernetes 1.26+.
+
+   ```bash
+   # macOS
+   brew install int128/kubelogin/kubelogin
+
+   # Linux
+   curl -LO "https://github.com/int128/kubelogin/releases/latest/download/kubelogin_linux_amd64.zip"
+   unzip kubelogin_linux_amd64.zip && sudo mv kubelogin /usr/local/bin/kubectl-oidc_login
+   rm kubelogin_linux_amd64.zip
+   ```
+
+2. **Configure your kubeconfig.** The platform team will provide the cluster details and OIDC credentials:
 
    ```bash
    kubectl config set-cluster sre-platform \
      --server=https://api.sre.example.com:6443 \
      --certificate-authority=/path/to/ca.crt
 
-   kubectl config set-credentials <your-username> \
-     --auth-provider=oidc \
-     --auth-provider-arg=idp-issuer-url=https://keycloak.sre.example.com/realms/sre \
-     --auth-provider-arg=client-id=kubernetes \
-     --auth-provider-arg=client-secret=REPLACE_ME
+   kubectl config set-credentials sre-oidc \
+     --exec-api-version=client.authentication.k8s.io/v1beta1 \
+     --exec-command=kubectl \
+     --exec-arg=oidc-login \
+     --exec-arg=get-token \
+     --exec-arg=--oidc-issuer-url=https://keycloak.sre.example.com/realms/sre \
+     --exec-arg=--oidc-client-id=kubernetes \
+     --exec-arg=--oidc-client-secret=REPLACE_ME
 
    kubectl config set-context sre \
      --cluster=sre-platform \
-     --user=<your-username> \
+     --user=sre-oidc \
      --namespace=<team-name>
 
    kubectl config use-context sre
    ```
 
-   Your platform team may provide a helper script or configuration file to simplify this process.
+   The first time you run a kubectl command, kubelogin will open your browser for Keycloak authentication. After login, the token is cached locally and refreshed automatically.
+
+   Your platform team may provide a pre-configured kubeconfig file instead of these individual commands. See the [Developer Getting Started Guide](getting-started-developer.md#connect-to-the-cluster) for more detail.
 
 2. Set your default namespace so you do not need to pass `-n <team-name>` on every command:
 
