@@ -37,9 +37,10 @@ The platform is modeled after the DoD Platform One / Big Bang architecture but i
 - Configure auditd for NIST AU-family controls
 
 **Provisioning: OpenTofu + Ansible**
-- OpenTofu (open-source Terraform fork, fully compatible) for infrastructure (cloud VMs, networking, LBs) with modules for AWS, Azure, and on-prem vSphere
+- OpenTofu (open-source Terraform fork, fully compatible) for infrastructure (cloud VMs, networking, LBs) with modules for AWS, Azure, on-prem vSphere, and Proxmox VE
 - Ansible for OS hardening and RKE2 bootstrap
-- Packer for immutable, pre-hardened AMI/VM image builds
+- Packer for immutable, pre-hardened AMI/VM image builds (AWS, vSphere, Proxmox VE)
+- Proxmox VE support enables on-premises homelabs and air-gapped environments with cloud-init based provisioning
 - Note: When pursuing government contracts, swap cloud targets to AWS GovCloud / Azure Gov as needed
 
 Create the following directory structure:
@@ -49,11 +50,13 @@ sre/
 │   ├── modules/
 │   │   ├── aws/
 │   │   ├── azure/
-│   │   └── vsphere/
+│   │   ├── vsphere/
+│   │   └── proxmox/
 │   ├── environments/
 │   │   ├── dev/
 │   │   ├── staging/
-│   │   └── production/
+│   │   ├── production/
+│   │   └── proxmox-lab/
 │   └── main.tf
 ├── ansible/
 │   ├── playbooks/
@@ -63,7 +66,8 @@ sre/
 │   └── inventory/
 ├── packer/
 │   ├── rocky9-hardened.pkr.hcl
-│   └── ubuntu2204-hardened.pkr.hcl
+│   ├── ubuntu2204-hardened.pkr.hcl
+│   └── rocky-linux-9-proxmox/   # Proxmox VE template with RKE2 pre-staged
 ├── platform/                    # Layer 2 - Flux GitOps
 │   ├── flux-system/
 │   ├── core/

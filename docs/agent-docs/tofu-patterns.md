@@ -19,7 +19,8 @@ infrastructure/tofu/
 │   ├── network/                # VPC/subnets/security groups
 │   ├── dns/                    # DNS records
 │   ├── load-balancer/          # Load balancer config
-│   └── storage/                # Object storage / block storage
+│   ├── storage/                # Object storage / block storage
+│   └── proxmox/                # Proxmox VE VM provisioning via cloud-init
 ├── environments/
 │   ├── dev/
 │   │   ├── main.tf             # Calls modules with dev values
@@ -28,7 +29,8 @@ infrastructure/tofu/
 │   │   ├── backend.tf          # State backend config
 │   │   └── versions.tf         # Provider version pins
 │   ├── staging/
-│   └── production/
+│   ├── production/
+│   └── proxmox-lab/            # On-premises Proxmox VE lab environment
 └── scripts/
     └── init-backend.sh         # Bootstrap state backend
 ```

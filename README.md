@@ -32,7 +32,8 @@ SRE is modeled after the DoD Platform One / Big Bang architecture but is indepen
 - **GitOps-Driven Operations (Flux CD)** -- All cluster state reconciled from Git with drift detection, automated rollback, and full audit trail via Kubernetes-native CRDs
 - **Self-Service Developer Experience** -- Standardized Helm chart templates with security contexts, network policies, and observability integrations baked in, enabling developers to deploy compliant applications with a simple values file
 - **Backup and Disaster Recovery (Velero)** -- Scheduled cluster state and persistent volume backups with automated restore testing
-- **Immutable Infrastructure (Packer)** -- Pre-hardened VM images for air-gapped and reproducible deployments across AWS, Azure, and vSphere
+- **Immutable Infrastructure (Packer)** -- Pre-hardened VM images for air-gapped and reproducible deployments across AWS, Azure, vSphere, and Proxmox VE
+- **Proxmox VE Support** -- First-class on-premises and homelab support with an OpenTofu module for VM provisioning via cloud-init, a Packer template for building Proxmox VM templates, and a ready-to-use lab inventory for Ansible
 
 ## Architecture
 
@@ -55,11 +56,12 @@ SRE is composed of four layers, each building on the one below:
 +------------------------------------------------------------------+
 |                    Layer 1: Cluster Foundation                    |
 |   RKE2 Kubernetes on Rocky Linux 9 (STIG-hardened, FIPS enabled) |
-|   Provisioned by OpenTofu | Hardened by Ansible | Imaged by Packer|
+|   Provisioned by OpenTofu (AWS, Azure, vSphere, Proxmox VE)      |
+|   Hardened by Ansible | Imaged by Packer                         |
 +------------------------------------------------------------------+
 ```
 
-**Layer 1 -- Cluster Foundation:** Infrastructure provisioned with OpenTofu (AWS, Azure, vSphere), operating system hardened to DISA STIG standards via Ansible, and RKE2 Kubernetes installed with FIPS 140-2 mode and CIS benchmark profile enabled.
+**Layer 1 -- Cluster Foundation:** Infrastructure provisioned with OpenTofu (AWS, Azure, vSphere, or Proxmox VE), operating system hardened to DISA STIG standards via Ansible, and RKE2 Kubernetes installed with FIPS 140-2 mode and CIS benchmark profile enabled.
 
 **Layer 2 -- Platform Services:** Security, observability, networking, policy, and secrets tooling deployed via Flux CD as HelmReleases and Kustomizations. Every component is defined declaratively in Git and continuously reconciled to the cluster.
 
@@ -72,14 +74,14 @@ SRE is composed of four layers, each building on the one below:
 ```
 sre/
 ├── infrastructure/
-│   ├── tofu/                    # OpenTofu modules and environments (AWS, Azure, vSphere)
-│   │   ├── modules/             # Reusable infrastructure modules
-│   │   └── environments/        # Per-environment configurations (dev, staging, production)
+│   ├── tofu/                    # OpenTofu modules and environments
+│   │   ├── modules/             # Reusable infrastructure modules (AWS, Azure, vSphere, Proxmox)
+│   │   └── environments/        # Per-environment configurations (dev, staging, production, proxmox-lab)
 │   ├── ansible/                 # OS hardening and RKE2 installation playbooks
 │   │   ├── playbooks/           # Main playbooks (harden-os, install-rke2, site)
 │   │   ├── roles/               # Ansible roles (os-hardening, rke2-server, rke2-agent)
 │   │   └── inventory/           # Per-environment inventory files
-│   └── packer/                  # Immutable VM image builds (Rocky Linux 9)
+│   └── packer/                  # Immutable VM image builds (Rocky Linux 9 for AWS, vSphere, Proxmox)
 ├── platform/                    # Flux CD GitOps manifests for platform services
 │   ├── flux-system/             # Flux bootstrap and root Kustomizations
 │   ├── core/                    # Core platform services
@@ -124,14 +126,14 @@ sre/
 
 ### Prerequisites
 
-- A Kubernetes-capable environment (AWS, Azure, or vSphere)
+- A Kubernetes-capable environment (AWS, Azure, vSphere, or Proxmox VE)
 - [Task](https://taskfile.dev) installed as the command runner
 - Git for version control and GitOps workflow
 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-org/sre-platform.git
+git clone https://github.com/morbidsteve/sre-platform.git
 cd sre-platform
 ```
 
@@ -145,6 +147,7 @@ This installs yamllint, ansible-lint, Kyverno CLI, Helm, Flux CLI, Trivy, and Op
 
 ### 3. Provision infrastructure
 
+**Cloud (AWS/Azure/vSphere):**
 ```bash
 # Review the plan
 task infra-plan ENV=dev
@@ -153,17 +156,38 @@ task infra-plan ENV=dev
 task infra-apply ENV=dev
 ```
 
+**Proxmox VE (on-premises / homelab):**
+```bash
+# Build the VM template first
+cd infrastructure/packer/rocky-linux-9-proxmox
+packer init .
+packer build -var 'proxmox_url=https://pve.example.com:8006/api2/json' \
+  -var 'proxmox_username=packer@pve!packer-token' \
+  -var 'proxmox_token=YOUR_TOKEN' \
+  -var 'proxmox_node=pve' \
+  -var 'iso_file=local:iso/Rocky-9.3-x86_64-minimal.iso' \
+  -var 'vm_storage_pool=local-lvm' .
+
+# Then provision VMs from the template
+cd ../../tofu/environments/proxmox-lab
+tofu init && tofu plan && tofu apply
+```
+
 ### 4. Harden the OS and install RKE2
 
 ```bash
+# Cloud environments
 cd infrastructure/ansible
 ansible-playbook playbooks/site.yml -i inventory/dev/hosts.yml
+
+# Proxmox lab
+ansible-playbook playbooks/site.yml -i inventory/proxmox-lab/hosts.yml
 ```
 
 ### 5. Bootstrap Flux CD
 
 ```bash
-task bootstrap-flux REPO_URL=https://github.com/your-org/sre-platform
+task bootstrap-flux REPO_URL=https://github.com/morbidsteve/sre-platform
 ```
 
 Flux will begin reconciling all platform services from the Git repository automatically.
@@ -203,9 +227,10 @@ task compliance-report
 |-----------|-----------|---------|
 | Kubernetes Distribution | RKE2 | DISA STIG-certified, FIPS 140-2 compliant Kubernetes |
 | Base Operating System | Rocky Linux 9 | RHEL-compatible OS with published DISA STIG |
-| Infrastructure as Code | OpenTofu | Declarative infrastructure provisioning (AWS, Azure, vSphere) |
+| Infrastructure as Code | OpenTofu | Declarative infrastructure provisioning (AWS, Azure, vSphere, Proxmox VE) |
 | OS Hardening | Ansible | DISA STIG application, RKE2 installation, idempotent configuration |
-| Image Builds | Packer | Immutable, pre-hardened VM images for reproducible deployments |
+| Image Builds | Packer | Immutable, pre-hardened VM images for reproducible deployments (AWS, vSphere, Proxmox VE) |
+| Virtualization (on-prem) | Proxmox VE | On-premises hypervisor with VM provisioning via cloud-init and OpenTofu |
 | GitOps Engine | Flux CD | Continuous reconciliation of cluster state from Git |
 | Service Mesh | Istio | Zero-trust mTLS, traffic management, and authorization policies |
 | Policy Engine | Kyverno | Kubernetes-native admission control, mutation, and image verification |

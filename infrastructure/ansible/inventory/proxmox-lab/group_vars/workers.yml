@@ -1,0 +1,10 @@
+---
+# Worker node specific variables
+
+# Workers connect to the first control plane node
+# Update this with the actual server IP or VIP/LB address
+rke2_server_url: "https://192.168.1.10:9345"
+
+rke2_node_labels:
+  - "node-role.kubernetes.io/worker=true"
+  - "sre.io/environment=lab"
