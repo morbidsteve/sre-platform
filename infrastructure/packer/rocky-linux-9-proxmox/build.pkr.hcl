@@ -44,7 +44,8 @@ source "proxmox-iso" "rocky9-rke2" {
   qemu_agent       = true
   scsi_controller  = "virtio-scsi-single"
   os               = "l26"
-  cpu_type         = "host"
+  kvm              = var.vm_kvm
+  cpu_type         = var.vm_kvm ? "host" : "qemu64"
   cores            = var.vm_cores
   memory           = var.vm_memory
 
