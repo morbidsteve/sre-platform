@@ -298,6 +298,29 @@ pve_discover_bridge() {
     success "Discovered bridge: $PROXMOX_BRIDGE"
 }
 
+# Detect whether KVM hardware virtualisation is available on the Proxmox node
+pve_detect_kvm() {
+    # The /nodes/{node}/capabilities/qemu/cpu endpoint lists CPU models.
+    # If KVM is available, the "host" model type will be present.
+    local cpu_json
+    cpu_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/capabilities/qemu/cpu" 2>/dev/null) || {
+        warn "Could not query CPU capabilities — assuming KVM is available."
+        PVE_KVM_AVAILABLE="true"
+        return
+    }
+
+    local host_cpu
+    host_cpu=$(echo "$cpu_json" | jq -r '.data[] | select(.name == "host") | .name // empty' 2>/dev/null)
+
+    if [[ -n "$host_cpu" ]]; then
+        PVE_KVM_AVAILABLE="true"
+        success "KVM hardware virtualisation: available"
+    else
+        PVE_KVM_AVAILABLE="false"
+        warn "KVM hardware virtualisation: NOT available (QEMU emulation will be used — builds will be slower)"
+    fi
+}
+
 # Create the packer@pve API user and token
 pve_create_api_user() {
     local userid="packer@pve"
@@ -524,6 +547,7 @@ if [[ -n "${PROXMOX_USER:-}" && -n "${PROXMOX_TOKEN:-}" ]]; then
     prompt       PROXMOX_ISO     "Rocky Linux 9 ISO path on Proxmox storage" "local:iso/${ROCKY_ISO_FILENAME}"
     prompt       PROXMOX_STORAGE "Storage pool for VM disks" "local-lvm"
     prompt       PROXMOX_BRIDGE  "Network bridge" "vmbr0"
+    PVE_KVM_AVAILABLE="${PVE_KVM_AVAILABLE:-true}"
 else
     # ── Zero-Touch Mode ───────────────────────────────────────────────────
     echo "Zero-touch mode: the script will auto-discover your Proxmox environment,"
@@ -550,6 +574,7 @@ else
     pve_discover_node
     pve_discover_storage
     pve_discover_bridge
+    pve_detect_kvm
 
     echo
     log "Creating API credentials..."
@@ -640,32 +665,29 @@ else
     packer init . > /dev/null 2>&1
     success "Packer plugins initialized."
 
+    # Build the common Packer var args
+    PACKER_VARS=(
+        -var "proxmox_url=$PROXMOX_URL_PACKER"
+        -var "proxmox_username=$PROXMOX_USER"
+        -var "proxmox_token=$PROXMOX_TOKEN"
+        -var "proxmox_node=$PROXMOX_NODE"
+        -var "iso_file=$PROXMOX_ISO"
+        -var "vm_storage_pool=$PROXMOX_STORAGE"
+        -var "vm_network_bridge=$PROXMOX_BRIDGE"
+        -var "proxmox_insecure_skip_tls_verify=true"
+        -var "vm_kvm=$PVE_KVM_AVAILABLE"
+    )
+
     log "Validating Packer template..."
-    packer validate \
-        -var "proxmox_url=$PROXMOX_URL_PACKER" \
-        -var "proxmox_username=$PROXMOX_USER" \
-        -var "proxmox_token=$PROXMOX_TOKEN" \
-        -var "proxmox_node=$PROXMOX_NODE" \
-        -var "iso_file=$PROXMOX_ISO" \
-        -var "vm_storage_pool=$PROXMOX_STORAGE" \
-        -var "vm_network_bridge=$PROXMOX_BRIDGE" \
-        -var "proxmox_insecure_skip_tls_verify=true" \
-        . > /dev/null 2>&1
+    packer validate "${PACKER_VARS[@]}" . > /dev/null 2>&1
     success "Packer template validated."
 
     log "Building VM template (this takes 15-30 minutes)..."
+    if [[ "$PVE_KVM_AVAILABLE" == "false" ]]; then
+        warn "KVM not available — using QEMU emulation. Build will be significantly slower."
+    fi
     echo
-    packer build \
-        -var "proxmox_url=$PROXMOX_URL_PACKER" \
-        -var "proxmox_username=$PROXMOX_USER" \
-        -var "proxmox_token=$PROXMOX_TOKEN" \
-        -var "proxmox_node=$PROXMOX_NODE" \
-        -var "iso_file=$PROXMOX_ISO" \
-        -var "vm_storage_pool=$PROXMOX_STORAGE" \
-        -var "vm_network_bridge=$PROXMOX_BRIDGE" \
-        -var "proxmox_insecure_skip_tls_verify=true" \
-        -var "image_version=1.0.0" \
-        .
+    packer build "${PACKER_VARS[@]}" -var "image_version=1.0.0" .
 
     success "VM template built successfully."
 fi
