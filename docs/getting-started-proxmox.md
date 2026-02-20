@@ -84,11 +84,12 @@ tofu version
 
 **Packer** (VM image builds):
 ```bash
-# macOS
-brew install packer
+# macOS (Packer requires HashiCorp's tap — it is not in homebrew-core)
+brew tap hashicorp/tap
+brew install hashicorp/tap/packer
 
 # Linux
-curl -fsSL https://releases.hashicorp.com/packer/1.10.3/packer_1.10.3_linux_amd64.zip -o packer.zip
+curl -fsSL https://releases.hashicorp.com/packer/1.11.2/packer_1.11.2_linux_amd64.zip -o packer.zip
 unzip packer.zip && sudo mv packer /usr/local/bin/
 rm packer.zip
 
