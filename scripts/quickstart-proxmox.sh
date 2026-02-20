@@ -384,9 +384,11 @@ pve_wait_task() {
 pve_upload_iso() {
     local storage="$1" filepath="$2" filename="$3"
     local url="https://${PROXMOX_HOST}:8006/api2/json/nodes/${PROXMOX_NODE}/storage/${storage}/upload"
+    local filesize
+    filesize=$(du -h "$filepath" | cut -f1)
 
-    log "Uploading ISO to Proxmox storage (this may take a few minutes)..."
-    curl -fsSk \
+    log "Uploading ISO to Proxmox storage ($filesize)..."
+    curl -fSk --progress-bar \
         -b "PVEAuthCookie=${PVE_TICKET}" \
         -H "CSRFPreventionToken: ${PVE_CSRF}" \
         -F "content=iso" \
