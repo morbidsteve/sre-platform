@@ -124,13 +124,25 @@ sre/
 
 ## Quick Start
 
-### Prerequisites
+### Proxmox VE (one-command quickstart)
 
-- A Kubernetes-capable environment (AWS, Azure, vSphere, or Proxmox VE)
+```bash
+git clone https://github.com/morbidsteve/sre-platform.git
+cd sre-platform
+./scripts/quickstart-proxmox.sh
+```
+
+The script prompts for your Proxmox connection details, then automates the entire pipeline: Packer image build, OpenTofu VM provisioning, Ansible OS hardening + RKE2 install, kubeconfig retrieval, and Flux CD bootstrap. See the [Proxmox Getting Started Guide](docs/getting-started-proxmox.md) for details and manual steps.
+
+### Cloud (AWS / Azure / vSphere)
+
+#### Prerequisites
+
+- A Kubernetes-capable environment (AWS, Azure, or vSphere)
 - [Task](https://taskfile.dev) installed as the command runner
 - Git for version control and GitOps workflow
 
-### 1. Clone the repository
+#### 1. Clone the repository
 
 ```bash
 git clone https://github.com/morbidsteve/sre-platform.git

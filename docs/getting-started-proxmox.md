@@ -4,6 +4,12 @@ This guide walks you through deploying the full Secure Runtime Environment platf
 
 **Audience:** Platform engineers and operators deploying SRE infrastructure.
 
+> **Want the fast path?** Run the automated quickstart script instead of following the manual steps below:
+> ```bash
+> ./scripts/quickstart-proxmox.sh
+> ```
+> It prompts for your Proxmox details, then handles Packer, OpenTofu, Ansible, kubeconfig retrieval, and Flux bootstrap in a single run. See [Quickstart Script](#quickstart-script) for details.
+
 ---
 
 ## Table of Contents
@@ -652,6 +658,60 @@ kubectl get policyreport -A -o wide
 
 - If Harbor is not yet deployed, platform images may fail to pull. This is expected during initial bootstrap
 - For upstream images (Istio, Prometheus, etc.), ensure the cluster has outbound internet access on port 443
+
+---
+
+## Quickstart Script
+
+Instead of following the manual steps above, you can run the automated quickstart script:
+
+```bash
+./scripts/quickstart-proxmox.sh
+```
+
+The script prompts for your Proxmox connection details, then automates the entire pipeline:
+
+1. Checks all required tools are installed
+2. Prompts for Proxmox URL, node name, API token, ISO path, storage pool, and cluster sizing
+3. Generates an SSH key pair (if you do not have one)
+4. Runs Packer to build the hardened VM template
+5. Runs OpenTofu to provision cluster VMs
+6. Extracts the VM IPs from OpenTofu output and generates the Ansible inventory automatically
+7. Waits for VMs to finish cloud-init and accept SSH
+8. Runs Ansible to harden the OS and install RKE2
+9. Retrieves the kubeconfig and configures it for kubectl
+10. Optionally bootstraps Flux CD for GitOps
+
+### Skipping steps
+
+If you already have a Packer template built, skip the Packer step:
+```bash
+SKIP_PACKER=1 ./scripts/quickstart-proxmox.sh
+```
+
+To skip Flux bootstrap (deploy only the bare cluster):
+```bash
+SKIP_FLUX=1 ./scripts/quickstart-proxmox.sh
+```
+
+### Pre-setting values via environment variables
+
+To skip prompts entirely (useful for CI or re-runs), export the values before running:
+
+```bash
+export PROXMOX_URL="https://192.168.1.100:8006"
+export PROXMOX_NODE="pve"
+export PROXMOX_USER="packer@pve!packer-token"
+export PROXMOX_TOKEN="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+export PROXMOX_ISO="local:iso/Rocky-9.5-x86_64-minimal.iso"
+export PROXMOX_STORAGE="local-lvm"
+export PROXMOX_BRIDGE="vmbr0"
+export SSH_KEY_PATH="$HOME/.ssh/sre-proxmox-lab"
+export SERVER_COUNT=1
+export AGENT_COUNT=2
+
+./scripts/quickstart-proxmox.sh
+```
 
 ---
 
