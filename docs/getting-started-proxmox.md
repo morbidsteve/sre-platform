@@ -4,11 +4,11 @@ This guide walks you through deploying the full Secure Runtime Environment platf
 
 **Audience:** Platform engineers and operators deploying SRE infrastructure.
 
-> **Want the fast path?** Run the automated quickstart script instead of following the manual steps below:
+> **Want the fast path?** Run the zero-touch quickstart script instead of following the manual steps below:
 > ```bash
 > ./scripts/quickstart-proxmox.sh
 > ```
-> It prompts for your Proxmox details, then handles Packer, OpenTofu, Ansible, kubeconfig retrieval, and Flux bootstrap in a single run. See [Quickstart Script](#quickstart-script) for details.
+> Just provide the Proxmox host IP and root password. The script auto-discovers your environment, creates the API user/token, downloads the ISO, and handles Packer, OpenTofu, Ansible, kubeconfig retrieval, and Flux bootstrap in a single run. No SSH to the Proxmox host required. See [Quickstart Script](#quickstart-script) for details.
 
 ---
 
@@ -196,6 +196,10 @@ cd sre-platform
 ---
 
 ## Step 1: Configure Proxmox
+
+> **Using the quickstart script?** Steps 1.1 through 1.4 are **fully automated** in zero-touch mode. The script authenticates to Proxmox as `root@pam`, auto-discovers the node, storage, and network bridge, creates the API user/token, and downloads the ISO. You only need the Proxmox host IP and root password. See [Quickstart Script](#quickstart-script) for details.
+>
+> The manual steps below are only needed if you prefer to set things up yourself or are running in **advanced mode** with pre-existing credentials.
 
 ### 1.1 Upload the Rocky Linux 9 ISO
 
@@ -669,18 +673,38 @@ Instead of following the manual steps above, you can run the automated quickstar
 ./scripts/quickstart-proxmox.sh
 ```
 
-The script prompts for your Proxmox connection details, then automates the entire pipeline:
+### Zero-touch mode (recommended)
 
-1. Checks all required tools are installed
-2. Prompts for Proxmox URL, node name, API token, ISO path, storage pool, and cluster sizing
-3. Generates an SSH key pair (if you do not have one)
-4. Runs Packer to build the hardened VM template
-5. Runs OpenTofu to provision cluster VMs
-6. Extracts the VM IPs from OpenTofu output and generates the Ansible inventory automatically
-7. Waits for VMs to finish cloud-init and accept SSH
-8. Runs Ansible to harden the OS and install RKE2
-9. Retrieves the kubeconfig and configures it for kubectl
-10. Optionally bootstraps Flux CD for GitOps
+By default, the script runs in **zero-touch mode**. You only provide:
+- Proxmox host IP or hostname
+- `root@pam` password (used once for bootstrap, then discarded from memory)
+- Cluster sizing (optional, defaults to 1 server + 2 workers)
+
+The script automatically:
+1. Authenticates to Proxmox via the REST API
+2. Auto-discovers the node name, storage pools, and network bridge
+3. Creates a `packer@pve` API user with `PVEVMAdmin` + `PVEDatastoreUser` roles
+4. Creates an API token (`packer-token`) with privilege separation disabled
+5. Downloads the Rocky Linux 9 ISO to Proxmox storage (if not already present)
+6. Generates an SSH key pair (if needed)
+7. Builds a hardened Rocky Linux 9 VM template with Packer
+8. Provisions control plane + worker VMs with OpenTofu
+9. Generates the Ansible inventory from OpenTofu output
+10. Hardens the OS and installs RKE2 with Ansible
+11. Retrieves the kubeconfig and configures it for kubectl
+12. Optionally bootstraps Flux CD for GitOps
+
+No SSH access to the Proxmox host is required -- everything is done via the REST API.
+
+### Advanced mode (backward compatible)
+
+If you already have an API user and token, set `PROXMOX_USER` and `PROXMOX_TOKEN` before running the script. The bootstrap phase is skipped entirely and the script prompts for the remaining details (URL, node, ISO, storage, bridge) as before.
+
+```bash
+export PROXMOX_USER="packer@pve!packer-token"
+export PROXMOX_TOKEN="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+./scripts/quickstart-proxmox.sh
+```
 
 ### Skipping steps
 
@@ -694,9 +718,41 @@ To skip Flux bootstrap (deploy only the bare cluster):
 SKIP_FLUX=1 ./scripts/quickstart-proxmox.sh
 ```
 
-### Pre-setting values via environment variables
+### Environment variables
 
-To skip prompts entirely (useful for CI or re-runs), export the values before running:
+All variables can be set before running the script to skip prompts. This table lists all supported variables:
+
+| Variable | Mode | Description | Default |
+|----------|------|-------------|---------|
+| `PROXMOX_HOST` | Zero-touch | Proxmox IP or hostname | (prompted) |
+| `PROXMOX_ROOT_PASS` | Zero-touch | `root@pam` password (used once, then discarded) | (prompted as secret) |
+| `PROXMOX_URL` | Advanced | Full Proxmox API URL (e.g., `https://192.168.1.100:8006`) | Derived from `PROXMOX_HOST` |
+| `PROXMOX_NODE` | Both | Proxmox node name | Auto-discovered or `pve` |
+| `PROXMOX_USER` | Advanced | API user (e.g., `packer@pve!packer-token`) | Auto-created |
+| `PROXMOX_TOKEN` | Advanced | API token secret | Auto-created |
+| `PROXMOX_ISO` | Both | ISO path on Proxmox storage | Auto-discovered or `local:iso/Rocky-9.5-x86_64-minimal.iso` |
+| `PROXMOX_STORAGE` | Both | Storage pool for VM disks | Auto-discovered or `local-lvm` |
+| `PROXMOX_BRIDGE` | Both | Network bridge | Auto-discovered or `vmbr0` |
+| `ROCKY_ISO_URL` | Zero-touch | Override Rocky Linux ISO download URL | Rocky 9.5 minimal |
+| `ROCKY_ISO_FILENAME` | Zero-touch | ISO filename on storage | `Rocky-9.5-x86_64-minimal.iso` |
+| `SSH_KEY_PATH` | Both | Path to SSH private key | `~/.ssh/sre-proxmox-lab` |
+| `SERVER_COUNT` | Both | Control plane nodes | `1` |
+| `AGENT_COUNT` | Both | Worker nodes | `2` |
+| `SKIP_PACKER` | Both | Set to `1` to skip Packer build | `0` |
+| `SKIP_FLUX` | Both | Set to `1` to skip Flux bootstrap | `0` |
+
+#### Full zero-touch example (no prompts)
+
+```bash
+export PROXMOX_HOST="192.168.1.100"
+export PROXMOX_ROOT_PASS="your-root-password"
+export SERVER_COUNT=1
+export AGENT_COUNT=2
+
+./scripts/quickstart-proxmox.sh
+```
+
+#### Full advanced example (no prompts)
 
 ```bash
 export PROXMOX_URL="https://192.168.1.100:8006"
@@ -712,6 +768,18 @@ export AGENT_COUNT=2
 
 ./scripts/quickstart-proxmox.sh
 ```
+
+### Idempotency on re-runs
+
+The script handles re-runs gracefully:
+- **API user**: If `packer@pve` already exists, it is reused. The token is always recreated (Proxmox does not allow retrieving token secrets after creation).
+- **ISO download**: If the ISO already exists on storage, the download is skipped.
+- **Packer template**: Set `SKIP_PACKER=1` to reuse an existing template.
+- **OpenTofu**: Re-applies infrastructure changes (VMs are updated or recreated as needed).
+
+### Proxmox version requirements
+
+Zero-touch mode requires **Proxmox VE 7.2+** for the `download-url` storage API. If your Proxmox version is older, the script will give clear instructions for downloading the ISO manually.
 
 ---
 
