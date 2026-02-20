@@ -314,16 +314,29 @@ pve_create_api_user() {
             --data-urlencode "comment=SRE Packer image builder (auto-created)" \
             > /dev/null || fatal "Failed to create API user ${userid}."
         success "Created user: $userid"
-
-        # Grant PVEVMAdmin + PVEDatastoreUser on /
-        pve_api PUT "/access/acl" \
-            --data-urlencode "path=/" \
-            --data-urlencode "users=${userid}" \
-            --data-urlencode "roles=PVEVMAdmin,PVEDatastoreUser" \
-            > /dev/null || fatal "Failed to set ACL for ${userid}."
-        success "Granted PVEVMAdmin + PVEDatastoreUser roles."
     else
         log "API user $userid already exists."
+    fi
+
+    # Always ensure correct permissions (covers first run and permission updates)
+    log "Ensuring API user permissions..."
+    pve_api PUT "/access/acl" \
+        --data-urlencode "path=/" \
+        --data-urlencode "users=${userid}" \
+        --data-urlencode "roles=PVEVMAdmin,PVEDatastoreUser" \
+        > /dev/null || fatal "Failed to set ACL for ${userid}."
+
+    # SDN.Use is required on Proxmox 8.x for SDN-managed network bridges
+    if pve_api PUT "/access/acl" \
+        --data-urlencode "path=/sdn" \
+        --data-urlencode "users=${userid}" \
+        --data-urlencode "roles=PVESDNUser" \
+        > /dev/null 2>&1; then
+        success "Granted PVEVMAdmin + PVEDatastoreUser + PVESDNUser roles."
+    else
+        # PVESDNUser role may not exist on older Proxmox versions — not fatal
+        success "Granted PVEVMAdmin + PVEDatastoreUser roles."
+        warn "Could not grant PVESDNUser (may not be needed if SDN is not enabled)."
     fi
 
     # Delete existing token (secret cannot be retrieved), then recreate
