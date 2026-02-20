@@ -166,7 +166,8 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     echo "  https://github.com/morbidsteve/sre-platform/blob/main/docs/getting-started-proxmox.md#local-workstation-tools"
     echo
     echo "Quick install (macOS):"
-    echo "  brew install opentofu packer ansible kubectl helm jq"
+    echo "  brew tap hashicorp/tap"
+    echo "  brew install hashicorp/tap/packer opentofu ansible kubectl helm jq"
     echo
     echo "Quick install (Linux):"
     echo "  See the getting-started-proxmox.md guide for distro-specific commands."
