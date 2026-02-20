@@ -654,7 +654,7 @@ else
     )
 
     log "Validating Packer template..."
-    local validate_output
+    validate_output=""
     if ! validate_output=$(packer validate "${PACKER_VARS[@]}" . 2>&1); then
         error "Packer validation failed:"
         echo "$validate_output"
