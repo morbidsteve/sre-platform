@@ -209,7 +209,7 @@ Download the Rocky Linux 9 minimal ISO and upload it to your Proxmox storage:
 ```bash
 # On the Proxmox host (via SSH or shell)
 cd /var/lib/vz/template/iso/
-wget https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso
+wget https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9-latest-x86_64-minimal.iso
 ```
 
 Or upload via the Proxmox web UI: **Datacenter > Storage > local > ISO Images > Upload**.
@@ -270,7 +270,7 @@ packer validate \
   -var "proxmox_username=packer@pve!packer-token" \
   -var "proxmox_token=YOUR_PACKER_TOKEN" \
   -var "proxmox_node=YOUR_NODE_NAME" \
-  -var "iso_file=local:iso/Rocky-9.5-x86_64-minimal.iso" \
+  -var "iso_file=local:iso/Rocky-9-latest-x86_64-minimal.iso" \
   -var "vm_storage_pool=local-lvm" \
   .
 ```
@@ -288,7 +288,7 @@ packer build \
   -var "proxmox_username=packer@pve!packer-token" \
   -var "proxmox_token=YOUR_PACKER_TOKEN" \
   -var "proxmox_node=YOUR_NODE_NAME" \
-  -var "iso_file=local:iso/Rocky-9.5-x86_64-minimal.iso" \
+  -var "iso_file=local:iso/Rocky-9-latest-x86_64-minimal.iso" \
   -var "vm_storage_pool=local-lvm" \
   -var "rke2_version=v1.28.6+rke2r1" \
   -var "image_version=1.0.0" \
@@ -731,11 +731,11 @@ All variables can be set before running the script to skip prompts. This table l
 | `PROXMOX_NODE` | Both | Proxmox node name | Auto-discovered or `pve` |
 | `PROXMOX_USER` | Advanced | API user (e.g., `packer@pve!packer-token`) | Auto-created |
 | `PROXMOX_TOKEN` | Advanced | API token secret | Auto-created |
-| `PROXMOX_ISO` | Both | ISO path on Proxmox storage | Auto-discovered or `local:iso/Rocky-9.5-x86_64-minimal.iso` |
+| `PROXMOX_ISO` | Both | ISO path on Proxmox storage | Auto-discovered or `local:iso/Rocky-9-latest-x86_64-minimal.iso` |
 | `PROXMOX_STORAGE` | Both | Storage pool for VM disks | Auto-discovered or `local-lvm` |
 | `PROXMOX_BRIDGE` | Both | Network bridge | Auto-discovered or `vmbr0` |
 | `ROCKY_ISO_URL` | Zero-touch | Override Rocky Linux ISO download URL | Rocky 9.5 minimal |
-| `ROCKY_ISO_FILENAME` | Zero-touch | ISO filename on storage | `Rocky-9.5-x86_64-minimal.iso` |
+| `ROCKY_ISO_FILENAME` | Zero-touch | ISO filename on storage | `Rocky-9-latest-x86_64-minimal.iso` |
 | `SSH_KEY_PATH` | Both | Path to SSH private key | `~/.ssh/sre-proxmox-lab` |
 | `SERVER_COUNT` | Both | Control plane nodes | `1` |
 | `AGENT_COUNT` | Both | Worker nodes | `2` |
@@ -760,7 +760,7 @@ export PROXMOX_URL="https://192.168.1.100:8006"
 export PROXMOX_NODE="pve"
 export PROXMOX_USER="packer@pve!packer-token"
 export PROXMOX_TOKEN="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-export PROXMOX_ISO="local:iso/Rocky-9.5-x86_64-minimal.iso"
+export PROXMOX_ISO="local:iso/Rocky-9-latest-x86_64-minimal.iso"
 export PROXMOX_STORAGE="local-lvm"
 export PROXMOX_BRIDGE="vmbr0"
 export SSH_KEY_PATH="$HOME/.ssh/sre-proxmox-lab"
