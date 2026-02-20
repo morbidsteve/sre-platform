@@ -398,11 +398,13 @@ pve_upload_iso() {
 pve_ensure_iso() {
     local storage="$PVE_ISO_STORAGE"
 
-    # Check if ISO already exists
+    # Check if ISO already exists — first by exact filename match, then by
+    # any Rocky-9 minimal ISO on the storage (covers renamed or versioned files)
     local content_json
     content_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/storage/${storage}/content" \
         --data-urlencode "content=iso") || fatal "Failed to query storage content."
 
+    # Exact match on the expected filename
     local iso_volid="${storage}:iso/${ROCKY_ISO_FILENAME}"
     local existing
     existing=$(echo "$content_json" | jq -r ".data[] | select(.volid == \"${iso_volid}\") | .volid // empty")
@@ -410,6 +412,18 @@ pve_ensure_iso() {
     if [[ -n "$existing" ]]; then
         success "ISO already exists: $iso_volid"
         PROXMOX_ISO="$iso_volid"
+        return
+    fi
+
+    # Fuzzy match: any Rocky-9 minimal ISO (e.g., Rocky-9.7, Rocky-9-latest, Rocky-9.5)
+    local fuzzy_match
+    fuzzy_match=$(echo "$content_json" | jq -r '
+        [.data[] | select(.volid | test("Rocky-9.*minimal\\.iso$"))] | .[0].volid // empty
+    ')
+
+    if [[ -n "$fuzzy_match" ]]; then
+        success "Found existing Rocky 9 ISO: $fuzzy_match"
+        PROXMOX_ISO="$fuzzy_match"
         return
     fi
 
@@ -440,24 +454,36 @@ pve_ensure_iso() {
     # Strategy 2: Download locally and upload via API
     if [[ "$pve_download_ok" != "true" ]]; then
         warn "Falling back to local download + upload to Proxmox..."
-        local tmpfile
-        tmpfile=$(mktemp "${TMPDIR:-/tmp}/sre-rocky-iso.XXXXXX")
-        # shellcheck disable=SC2064
-        trap "rm -f '$tmpfile'" EXIT
 
-        log "Downloading ISO to local workstation (curl -4 -L)..."
-        if ! curl -4 -fSL --progress-bar -o "$tmpfile" "$ROCKY_ISO_URL"; then
-            rm -f "$tmpfile"
-            fatal "Failed to download ISO locally. Check your internet connection and URL: $ROCKY_ISO_URL"
+        # Use a stable cache path so re-runs don't re-download a 2.5 GB file
+        local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/sre-platform"
+        mkdir -p "$cache_dir"
+        local cached_iso="${cache_dir}/${ROCKY_ISO_FILENAME}"
+
+        if [[ -f "$cached_iso" ]]; then
+            local cached_size
+            cached_size=$(wc -c < "$cached_iso")
+            # Sanity check: ISO should be at least 1 GB (avoids using truncated files)
+            if (( cached_size > 1073741824 )); then
+                success "Using cached ISO: $cached_iso ($(du -h "$cached_iso" | cut -f1))"
+            else
+                warn "Cached ISO looks truncated ($(du -h "$cached_iso" | cut -f1)), re-downloading..."
+                rm -f "$cached_iso"
+            fi
         fi
-        success "ISO downloaded locally ($(du -h "$tmpfile" | cut -f1) )."
 
-        if ! pve_upload_iso "$storage" "$tmpfile" "$ROCKY_ISO_FILENAME"; then
-            rm -f "$tmpfile"
+        if [[ ! -f "$cached_iso" ]]; then
+            log "Downloading ISO to local cache (curl -4 -L)..."
+            if ! curl -4 -fSL --progress-bar -o "$cached_iso" "$ROCKY_ISO_URL"; then
+                rm -f "$cached_iso"
+                fatal "Failed to download ISO locally. Check your internet connection and URL: $ROCKY_ISO_URL"
+            fi
+            success "ISO downloaded to cache ($(du -h "$cached_iso" | cut -f1))."
+        fi
+
+        if ! pve_upload_iso "$storage" "$cached_iso" "$ROCKY_ISO_FILENAME"; then
             fatal "Failed to upload ISO to Proxmox."
         fi
-        rm -f "$tmpfile"
-        trap - EXIT
     fi
 
     PROXMOX_ISO="$iso_volid"
