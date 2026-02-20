@@ -38,6 +38,8 @@ Your workflow is: build a container image, push it to Harbor, write a small valu
 
 ## Prerequisites
 
+> **New to SRE?** Start with the [Developer Getting Started Guide](getting-started-developer.md) for step-by-step tool installation, credential setup, and your first deployment.
+
 Before deploying an application, confirm the following:
 
 ### 1. Tenant namespace

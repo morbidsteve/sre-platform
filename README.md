@@ -210,14 +210,23 @@ task compliance-report
 
 ## Documentation
 
+### Getting Started
+
+| Guide | Audience | Description |
+|-------|----------|-------------|
+| [Deploy to Proxmox](docs/getting-started-proxmox.md) | Platform engineers | Step-by-step: local tool setup, Packer build, OpenTofu provision, Ansible harden, Flux bootstrap |
+| [Deploy Your App](docs/getting-started-developer.md) | App developers | Tool installation, credential setup, build compliant images, deploy with SRE Helm charts, integrate with platform services |
+| [Onboarding Guide](docs/onboarding-guide.md) | Team leads | Request a tenant namespace and understand what gets provisioned |
+
+### Reference
+
 | Guide | Description |
 |-------|-------------|
 | [Architecture](docs/architecture.md) | Full platform architecture specification and design rationale |
 | [Decision Records](docs/decisions.md) | Architectural Decision Records (ADRs) for all major technology choices |
-| [Developer Guide](docs/developer-guide.md) | How to deploy an application on SRE from zero to running |
+| [Developer Guide](docs/developer-guide.md) | Complete reference for all Helm chart values and configuration options |
 | [Operator Guide](docs/operator-guide.md) | Day-2 operations: monitoring, alerting, upgrades, backup, and rotation |
 | [Security Guide](docs/security-guide.md) | Security architecture, threat model, and incident response procedures |
-| [Onboarding Guide](docs/onboarding-guide.md) | How to request a tenant namespace and deploy your first application |
 | [Compliance Guide](docs/compliance-guide.md) | Compliance framework coverage and artifact generation |
 | [Session Playbook](docs/session-playbook.md) | Step-by-step build plan for the platform |
 
