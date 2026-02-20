@@ -6,25 +6,37 @@
 #
 # What this script does:
 #   1. Checks that all required CLI tools are installed
-#   2. Prompts for Proxmox connection details
-#   3. Generates an SSH key pair (if needed)
-#   4. Builds a hardened Rocky Linux 9 VM template with Packer
-#   5. Provisions control plane + worker VMs with OpenTofu
-#   6. Generates an Ansible inventory from the OpenTofu output
-#   7. Hardens the OS and installs RKE2 with Ansible
-#   8. Retrieves the kubeconfig
-#   9. (Optionally) bootstraps Flux CD for GitOps
+#   2. Connects to Proxmox and auto-discovers the environment
+#   3. Creates a dedicated API user and token (if not provided)
+#   4. Downloads the Rocky Linux 9 ISO to Proxmox storage (if not present)
+#   5. Generates an SSH key pair (if needed)
+#   6. Builds a hardened Rocky Linux 9 VM template with Packer
+#   7. Provisions control plane + worker VMs with OpenTofu
+#   8. Generates an Ansible inventory from the OpenTofu output
+#   9. Hardens the OS and installs RKE2 with Ansible
+#  10. Retrieves the kubeconfig
+#  11. (Optionally) bootstraps Flux CD for GitOps
 #
 # Usage:
 #   ./scripts/quickstart-proxmox.sh
 #
+# Zero-touch mode (recommended):
+#   Provide only a Proxmox host IP and root password. The script will
+#   auto-discover the node, storage, and network, create an API user/token,
+#   and download the Rocky Linux 9 ISO — fully automated.
+#
+# Advanced mode:
+#   If PROXMOX_USER and PROXMOX_TOKEN are already set, the script skips
+#   bootstrap and uses the provided credentials (backward compatible).
+#
 # Requirements:
-#   - Proxmox VE 8.x with API access
-#   - Rocky Linux 9 ISO uploaded to Proxmox storage
-#   - An API token with PVEVMAdmin role (see docs/getting-started-proxmox.md)
+#   - Proxmox VE 7.2+ with API access (8.x recommended)
+#   - root@pam password OR a pre-existing API token
 #
 # Environment variable overrides (skip prompts):
-#   PROXMOX_URL          — https://pve.example.com:8006
+#   PROXMOX_HOST         — Proxmox IP or hostname (zero-touch mode)
+#   PROXMOX_ROOT_PASS    — root@pam password (zero-touch mode, used once)
+#   PROXMOX_URL          — https://pve.example.com:8006 (advanced mode)
 #   PROXMOX_NODE         — Proxmox node name (e.g., pve)
 #   PROXMOX_USER         — API user (e.g., packer@pve!packer-token)
 #   PROXMOX_TOKEN        — API token secret
@@ -34,6 +46,8 @@
 #   SSH_KEY_PATH         — Path to SSH private key
 #   SERVER_COUNT         — Control plane nodes (default: 1)
 #   AGENT_COUNT          — Worker nodes (default: 2)
+#   ROCKY_ISO_URL        — Override Rocky Linux ISO download URL
+#   ROCKY_ISO_FILENAME   — ISO filename on storage (default: Rocky-9.5-x86_64-minimal.iso)
 #   SKIP_PACKER          — Set to 1 to skip Packer build (template already exists)
 #   SKIP_FLUX            — Set to 1 to skip Flux bootstrap
 # ============================================================================
@@ -139,7 +153,7 @@ cd "$REPO_ROOT"
 header "Phase 0: Checking Prerequisites"
 
 MISSING_TOOLS=()
-for tool in packer tofu ansible-playbook kubectl helm jq ssh-keygen; do
+for tool in packer tofu ansible-playbook kubectl helm jq ssh-keygen curl; do
     if ! command -v "$tool" &>/dev/null; then
         MISSING_TOOLS+=("$tool")
     fi
@@ -168,24 +182,305 @@ for tool in flux cosign trivy; do
     fi
 done
 
+# ── Proxmox API Helpers (Phase 1b) ────────────────────────────────────────
+# These functions use the Proxmox REST API for zero-touch bootstrap.
+# They are only called when PROXMOX_USER + PROXMOX_TOKEN are NOT provided.
+
+ROCKY_ISO_URL="${ROCKY_ISO_URL:-https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso}"
+ROCKY_ISO_FILENAME="${ROCKY_ISO_FILENAME:-Rocky-9.5-x86_64-minimal.iso}"
+
+# Authenticate to Proxmox as root@pam, sets PVE_TICKET and PVE_CSRF
+pve_authenticate() {
+    local host="$1" password="$2"
+    local url="https://${host}:8006/api2/json/access/ticket"
+    local response
+
+    response=$(curl -fsSk --connect-timeout 10 \
+        --data-urlencode "username=root@pam" \
+        --data-urlencode "password=${password}" \
+        "$url" 2>&1) || {
+        error "Failed to authenticate to Proxmox at ${host}."
+        error "Check the host IP and root password."
+        error "curl output: $response"
+        return 1
+    }
+
+    PVE_TICKET=$(echo "$response" | jq -r '.data.ticket // empty')
+    PVE_CSRF=$(echo "$response" | jq -r '.data.CSRFPreventionToken // empty')
+
+    if [[ -z "$PVE_TICKET" || -z "$PVE_CSRF" ]]; then
+        error "Authentication succeeded but no ticket received."
+        error "Response: $response"
+        return 1
+    fi
+}
+
+# Generic Proxmox API call with ticket auth
+# Usage: pve_api GET /nodes
+#        pve_api POST /access/users --data-urlencode "userid=packer@pve"
+pve_api() {
+    local method="$1" path="$2"
+    shift 2
+    local url="https://${PROXMOX_HOST}:8006/api2/json${path}"
+
+    curl -fsSk \
+        -X "$method" \
+        -b "PVEAuthCookie=${PVE_TICKET}" \
+        -H "CSRFPreventionToken: ${PVE_CSRF}" \
+        "$@" \
+        "$url"
+}
+
+# Discover the first node name
+pve_discover_node() {
+    local nodes_json
+    nodes_json=$(pve_api GET /nodes) || fatal "Failed to query Proxmox nodes."
+    PROXMOX_NODE=$(echo "$nodes_json" | jq -r '.data[0].node // empty')
+    if [[ -z "$PROXMOX_NODE" ]]; then
+        fatal "No nodes found on this Proxmox host."
+    fi
+    success "Discovered node: $PROXMOX_NODE"
+}
+
+# Discover storage pools — finds one for ISOs and one for VM disks
+pve_discover_storage() {
+    local storage_json
+    storage_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/storage") || fatal "Failed to query storage."
+
+    # Find a storage that supports ISO content
+    PVE_ISO_STORAGE=$(echo "$storage_json" | jq -r '
+        [.data[] | select(.content // "" | test("iso")) | select(.active == 1)] | .[0].storage // empty
+    ')
+    if [[ -z "$PVE_ISO_STORAGE" ]]; then
+        fatal "No ISO-capable storage found. Ensure a storage pool has 'iso' content type enabled."
+    fi
+    success "Discovered ISO storage: $PVE_ISO_STORAGE"
+
+    # If PROXMOX_STORAGE is not set, find an images-capable storage for VM disks
+    if [[ -z "${PROXMOX_STORAGE:-}" ]]; then
+        PROXMOX_STORAGE=$(echo "$storage_json" | jq -r '
+            [.data[] | select(.content // "" | test("images")) | select(.active == 1)] | .[0].storage // empty
+        ')
+        if [[ -z "$PROXMOX_STORAGE" ]]; then
+            fatal "No images-capable storage found for VM disks."
+        fi
+        success "Discovered VM storage: $PROXMOX_STORAGE"
+    else
+        log "Using VM storage from environment: $PROXMOX_STORAGE"
+    fi
+}
+
+# Discover the first active network bridge
+pve_discover_bridge() {
+    if [[ -n "${PROXMOX_BRIDGE:-}" ]]; then
+        log "Using network bridge from environment: $PROXMOX_BRIDGE"
+        return
+    fi
+
+    local net_json
+    net_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/network") || fatal "Failed to query network."
+
+    PROXMOX_BRIDGE=$(echo "$net_json" | jq -r '
+        [.data[] | select(.type == "bridge") | select(.active == 1 or .active == null)] | .[0].iface // empty
+    ')
+    if [[ -z "$PROXMOX_BRIDGE" ]]; then
+        fatal "No active network bridge found."
+    fi
+    success "Discovered bridge: $PROXMOX_BRIDGE"
+}
+
+# Create the packer@pve API user and token
+pve_create_api_user() {
+    local userid="packer@pve"
+    local tokenid="packer-token"
+
+    # Check if user already exists
+    local user_exists
+    user_exists=$(pve_api GET /access/users | jq -r ".data[] | select(.userid == \"${userid}\") | .userid // empty")
+
+    if [[ -z "$user_exists" ]]; then
+        log "Creating API user: $userid"
+        pve_api POST /access/users \
+            --data-urlencode "userid=${userid}" \
+            --data-urlencode "comment=SRE Packer image builder (auto-created)" \
+            > /dev/null || fatal "Failed to create API user ${userid}."
+        success "Created user: $userid"
+
+        # Grant PVEVMAdmin + PVEDatastoreUser on /
+        pve_api PUT "/access/acl" \
+            --data-urlencode "path=/" \
+            --data-urlencode "users=${userid}" \
+            --data-urlencode "roles=PVEVMAdmin,PVEDatastoreUser" \
+            > /dev/null || fatal "Failed to set ACL for ${userid}."
+        success "Granted PVEVMAdmin + PVEDatastoreUser roles."
+    else
+        log "API user $userid already exists."
+    fi
+
+    # Delete existing token (secret cannot be retrieved), then recreate
+    log "Creating API token: ${userid}!${tokenid}"
+    # Attempt to delete — ignore errors if it does not exist
+    pve_api DELETE "/access/users/${userid}/token/${tokenid}" > /dev/null 2>&1 || true
+
+    local token_response
+    token_response=$(pve_api POST "/access/users/${userid}/token/${tokenid}" \
+        --data-urlencode "privsep=0" \
+        --data-urlencode "comment=SRE quickstart token (auto-created)") \
+        || fatal "Failed to create API token."
+
+    PROXMOX_TOKEN=$(echo "$token_response" | jq -r '.data.value // empty')
+    if [[ -z "$PROXMOX_TOKEN" ]]; then
+        fatal "Token created but no secret returned. Response: $token_response"
+    fi
+
+    PROXMOX_USER="${userid}!${tokenid}"
+    success "API token created: $PROXMOX_USER"
+}
+
+# Ensure the Rocky Linux 9 ISO exists on Proxmox storage
+pve_ensure_iso() {
+    local storage="$PVE_ISO_STORAGE"
+
+    # Check if ISO already exists
+    local content_json
+    content_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/storage/${storage}/content" \
+        --data-urlencode "content=iso") || fatal "Failed to query storage content."
+
+    local iso_volid="${storage}:iso/${ROCKY_ISO_FILENAME}"
+    local existing
+    existing=$(echo "$content_json" | jq -r ".data[] | select(.volid == \"${iso_volid}\") | .volid // empty")
+
+    if [[ -n "$existing" ]]; then
+        success "ISO already exists: $iso_volid"
+        PROXMOX_ISO="$iso_volid"
+        return
+    fi
+
+    log "Downloading Rocky Linux 9 ISO to Proxmox storage..."
+    log "URL: $ROCKY_ISO_URL"
+    log "This may take a few minutes depending on your connection."
+
+    # Use the download-url API (available in Proxmox 7.2+)
+    local download_response
+    download_response=$(pve_api POST "/nodes/${PROXMOX_NODE}/storage/${storage}/download-url" \
+        --data-urlencode "url=${ROCKY_ISO_URL}" \
+        --data-urlencode "content=iso" \
+        --data-urlencode "filename=${ROCKY_ISO_FILENAME}" \
+        --data-urlencode "verify-certificates=0" 2>&1) || {
+        error "Failed to initiate ISO download."
+        error "This may mean your Proxmox version is older than 7.2."
+        error ""
+        error "Manual fix: Download the ISO to your Proxmox host manually:"
+        error "  ssh root@${PROXMOX_HOST} 'cd /var/lib/vz/template/iso/ && wget ${ROCKY_ISO_URL}'"
+        error ""
+        error "Then re-run this script."
+        exit 1
+    }
+
+    # Extract the UPID (task ID) from the response
+    local upid
+    upid=$(echo "$download_response" | jq -r '.data // empty')
+    if [[ -z "$upid" ]]; then
+        fatal "Download started but no task ID returned. Response: $download_response"
+    fi
+
+    # Poll the task until completion
+    local encoded_upid
+    encoded_upid=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${upid}', safe=''))" 2>/dev/null \
+        || echo "$upid" | sed 's/:/%3A/g; s/\//%2F/g')
+    local status=""
+    local elapsed=0
+    local timeout=600  # 10 minutes max for ISO download
+
+    while [[ "$status" != "stopped" ]]; do
+        if (( elapsed >= timeout )); then
+            fatal "ISO download timed out after ${timeout}s. Check Proxmox task log for UPID: $upid"
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+        printf "\r  Downloading ISO... (%ds elapsed)" "$elapsed"
+
+        local task_status
+        task_status=$(pve_api GET "/nodes/${PROXMOX_NODE}/tasks/${encoded_upid}/status" 2>/dev/null) || continue
+        status=$(echo "$task_status" | jq -r '.data.status // empty')
+
+        # Check for failure
+        local exitstatus
+        exitstatus=$(echo "$task_status" | jq -r '.data.exitstatus // empty')
+        if [[ "$status" == "stopped" && "$exitstatus" != "OK" ]]; then
+            echo
+            fatal "ISO download failed with status: $exitstatus. Check Proxmox task log."
+        fi
+    done
+
+    echo
+    PROXMOX_ISO="$iso_volid"
+    success "ISO downloaded: $PROXMOX_ISO"
+}
+
 # ============================================================================
 # Phase 1: Gather Configuration
 # ============================================================================
 
 header "Phase 1: Proxmox Configuration"
 
-echo "Enter your Proxmox VE connection details."
-echo "If you haven't created an API token yet, see:"
-echo "  docs/getting-started-proxmox.md#12-create-a-packer-api-user"
-echo
+# Detect mode: if PROXMOX_USER + PROXMOX_TOKEN are set, use advanced mode
+if [[ -n "${PROXMOX_USER:-}" && -n "${PROXMOX_TOKEN:-}" ]]; then
+    # ── Advanced Mode ─────────────────────────────────────────────────────
+    log "Advanced mode: using provided API credentials."
+    echo
 
-prompt       PROXMOX_URL     "Proxmox API URL (e.g., https://192.168.1.100:8006)"
-prompt       PROXMOX_NODE    "Proxmox node name" "pve"
-prompt       PROXMOX_USER    "API user (e.g., packer@pve!packer-token)" "packer@pve!packer-token"
-prompt_secret PROXMOX_TOKEN  "API token secret"
-prompt       PROXMOX_ISO     "Rocky Linux 9 ISO path on Proxmox storage" "local:iso/Rocky-9.5-x86_64-minimal.iso"
-prompt       PROXMOX_STORAGE "Storage pool for VM disks" "local-lvm"
-prompt       PROXMOX_BRIDGE  "Network bridge" "vmbr0"
+    prompt       PROXMOX_URL     "Proxmox API URL (e.g., https://192.168.1.100:8006)"
+    prompt       PROXMOX_NODE    "Proxmox node name" "pve"
+    log "Using PROXMOX_USER from environment: $PROXMOX_USER"
+    log "Using PROXMOX_TOKEN from environment: [hidden]"
+    prompt       PROXMOX_ISO     "Rocky Linux 9 ISO path on Proxmox storage" "local:iso/${ROCKY_ISO_FILENAME}"
+    prompt       PROXMOX_STORAGE "Storage pool for VM disks" "local-lvm"
+    prompt       PROXMOX_BRIDGE  "Network bridge" "vmbr0"
+else
+    # ── Zero-Touch Mode ───────────────────────────────────────────────────
+    echo "Zero-touch mode: the script will auto-discover your Proxmox environment,"
+    echo "create an API user, and download the Rocky Linux 9 ISO."
+    echo
+    echo "You only need the Proxmox host IP and root password."
+    echo
+
+    prompt        PROXMOX_HOST      "Proxmox host IP or hostname"
+    prompt_secret PROXMOX_ROOT_PASS "root@pam password (used once, then discarded)"
+
+    # ── Phase 1b: Proxmox API Bootstrap ───────────────────────────────────
+
+    header "Phase 1b: Proxmox API Bootstrap"
+
+    log "Authenticating to Proxmox at $PROXMOX_HOST..."
+    pve_authenticate "$PROXMOX_HOST" "$PROXMOX_ROOT_PASS" || exit 1
+    success "Authenticated to Proxmox."
+
+    # Discard root password from memory immediately
+    unset PROXMOX_ROOT_PASS
+
+    log "Auto-discovering environment..."
+    pve_discover_node
+    pve_discover_storage
+    pve_discover_bridge
+
+    echo
+    log "Creating API credentials..."
+    pve_create_api_user
+
+    echo
+    log "Ensuring Rocky Linux 9 ISO is available..."
+    pve_ensure_iso
+
+    # Clean up PVE session credentials
+    unset PVE_TICKET PVE_CSRF
+
+    # Set the URL from the host
+    PROXMOX_URL="https://${PROXMOX_HOST}:8006"
+
+    echo
+    success "Bootstrap complete. Proxmox environment is ready."
+fi
 
 echo
 log "Cluster sizing (adjust for your hardware):"
