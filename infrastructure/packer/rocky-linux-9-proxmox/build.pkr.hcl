@@ -74,7 +74,7 @@ source "proxmox-iso" "rocky9-rke2" {
     " inst.text inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks.cfg",
     "<leftCtrlOn>x<leftCtrlOff>"
   ]
-  boot_wait = "10s"
+  boot_wait = var.boot_wait
 
   ssh_username = var.ssh_username
   ssh_timeout  = var.ssh_timeout

@@ -662,7 +662,7 @@ else
     fi
     success "Packer template validated."
 
-    log "Building VM template (this takes 15-30 minutes)..."
+    log "Building VM template (this takes 15-30 minutes with KVM, longer without)..."
     echo
 
     # Try with KVM first. If it fails with a KVM error, retry with QEMU emulation.
@@ -676,9 +676,20 @@ else
             echo "$packer_output" | tail -5
             echo
             warn "KVM hardware virtualisation is not available on this host."
-            log "Retrying with QEMU emulation (build will be slower)..."
+            warn "This is common when Proxmox runs inside VMware/VirtualBox/Hyper-V."
+            log "Retrying with QEMU emulation — this will take 45-60 minutes..."
             echo
-            packer build "${PACKER_VARS[@]}" -var "image_version=1.0.0" -var "vm_disable_kvm=true" .
+            # QEMU emulation needs: longer boot wait (GRUB is slow), longer SSH timeout
+            # (full OS install under emulation), and more cores to help speed things up.
+            packer build \
+                "${PACKER_VARS[@]}" \
+                -var "image_version=1.0.0" \
+                -var "vm_disable_kvm=true" \
+                -var "boot_wait=120s" \
+                -var "ssh_timeout=90m" \
+                -var "vm_cores=4" \
+                -var "vm_memory=8192" \
+                .
         else
             # Not a KVM error — show output and fail
             echo "$packer_output"
