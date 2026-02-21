@@ -135,9 +135,15 @@ variable "ssh_username" {
   default     = "packer"
 }
 
+variable "boot_wait" {
+  type        = string
+  description = "Time to wait before typing the boot command. Increase for QEMU emulation (no KVM)."
+  default     = "10s"
+}
+
 variable "ssh_timeout" {
   type        = string
-  description = "Timeout waiting for SSH to become available."
+  description = "Timeout waiting for SSH to become available. Increase for QEMU emulation (no KVM)."
   default     = "30m"
 }
 
