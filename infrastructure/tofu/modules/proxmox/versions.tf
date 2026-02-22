@@ -2,12 +2,12 @@
 # Pin exact versions for reproducible builds.
 
 terraform {
-  required_version = "= 1.7.2"
+  required_version = ">= 1.7.0"
 
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
-      version = "= 0.66.3"
+      version = ">= 0.66.0"
     }
   }
 }

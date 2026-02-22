@@ -1,24 +1,46 @@
 ---
 # RKE2 agent installation
+# Check for the agent SERVICE (not just binary), because the rke2 binary
+# is shared between server and agent RPMs. The template may have the server
+# package installed but not the agent package.
 
-- name: Check if RKE2 is already installed
+- name: Check if RKE2 agent service exists
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/rke2-agent.service
+  register: _rke2_agent_service
+
+- name: Check if RKE2 binary exists (RPM path)
+  ansible.builtin.stat:
+    path: /usr/bin/rke2
+  register: _rke2_rpm_binary
+
+- name: Check if RKE2 binary exists (script path)
   ansible.builtin.stat:
     path: /usr/local/bin/rke2
-  register: _rke2_binary
+  register: _rke2_script_binary
+
+- name: Set RKE2 agent installed fact
+  ansible.builtin.set_fact:
+    _rke2_agent_installed: "{{ _rke2_agent_service.stat.exists }}"
+    _rke2_binary_exists: "{{ _rke2_rpm_binary.stat.exists or _rke2_script_binary.stat.exists }}"
 
 - name: Download RKE2 install script
   ansible.builtin.get_url:
     url: https://get.rke2.io
-    dest: /tmp/rke2-install.sh
+    dest: /root/rke2-install.sh
     mode: "0700"
-  when: not _rke2_binary.stat.exists
+  when: not _rke2_agent_installed
 
 - name: Run RKE2 agent install script
   ansible.builtin.command:
-    cmd: /tmp/rke2-install.sh
-    creates: /usr/local/bin/rke2
+    cmd: /root/rke2-install.sh
   environment:
     INSTALL_RKE2_VERSION: "{{ rke2_version }}"
     INSTALL_RKE2_CHANNEL: "{{ rke2_channel }}"
     INSTALL_RKE2_TYPE: "agent"
-  when: not _rke2_binary.stat.exists
+  when: not _rke2_agent_installed
+
+- name: Clean up install script
+  ansible.builtin.file:
+    path: /root/rke2-install.sh
+    state: absent

@@ -1,10 +1,11 @@
 ---
 # RKE2 Agent Role — Default Variables
 
-# RKE2 version — must match the server version
-rke2_version: "v1.28.6+rke2r1"
+# RKE2 version — leave empty to get latest from channel, or pin a specific
+# version like "v1.34.4+rke2r1". Do NOT set to "stable" (that's the channel).
+rke2_version: ""
 
-# RKE2 channel
+# RKE2 channel (stable, latest, or testing)
 rke2_channel: "stable"
 
 # Installation method: "tarball" for air-gapped, "rpm" for online

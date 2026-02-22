@@ -24,7 +24,9 @@ This guide takes you from zero to a running application on the Secure Runtime En
 
 ## Install Tools
 
-Install these on your local machine. All tools are free and open-source.
+Install these on your local machine (macOS, Linux, or Windows). All tools are free and open-source.
+
+> **Windows users:** We recommend using [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Windows Subsystem for Linux) with Ubuntu. Once inside WSL2, follow the **Linux** instructions below. Alternatively, native Windows install commands are provided where available.
 
 ### Required
 
@@ -41,9 +43,12 @@ Install these on your local machine. All tools are free and open-source.
 # macOS
 brew install kubectl
 
-# Linux
+# Linux / WSL2
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+# Windows (native — PowerShell as Administrator)
+# winget install Kubernetes.kubectl
 ```
 
 **kubelogin** (OIDC authentication plugin for kubectl):
@@ -51,10 +56,14 @@ chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 # macOS
 brew install int128/kubelogin/kubelogin
 
-# Linux
+# Linux / WSL2
 curl -LO "https://github.com/int128/kubelogin/releases/latest/download/kubelogin_linux_amd64.zip"
 unzip kubelogin_linux_amd64.zip && sudo mv kubelogin /usr/local/bin/kubectl-oidc_login
 rm kubelogin_linux_amd64.zip
+
+# Windows (native — PowerShell)
+# Download from https://github.com/int128/kubelogin/releases (kubelogin_windows_amd64.zip)
+# Rename kubelogin.exe to kubectl-oidc_login.exe and add to your PATH
 ```
 
 **helm:**
@@ -62,8 +71,11 @@ rm kubelogin_linux_amd64.zip
 # macOS
 brew install helm
 
-# Linux
+# Linux / WSL2
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Windows (native — PowerShell as Administrator)
+# winget install Helm.Helm
 ```
 
 **docker:**
@@ -71,9 +83,14 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 # macOS
 brew install --cask docker    # Docker Desktop
 
-# Linux (Ubuntu/Debian)
+# Linux (Ubuntu/Debian) / WSL2
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER  # Log out and back in after this
+
+# Windows (native)
+# Install Docker Desktop: https://docs.docker.com/desktop/setup/install/windows-install/
+# winget install Docker.DockerDesktop
+# Enable WSL2 integration in Docker Desktop settings for best performance
 ```
 
 **git:**
@@ -81,9 +98,12 @@ sudo usermod -aG docker $USER  # Log out and back in after this
 # macOS (included with Xcode CLI tools)
 xcode-select --install
 
-# Linux
+# Linux / WSL2
 sudo apt-get install git    # Debian/Ubuntu
 sudo dnf install git        # RHEL/Rocky
+
+# Windows (native — PowerShell as Administrator)
+# winget install Git.Git
 ```
 
 ### Recommended
@@ -100,8 +120,11 @@ sudo dnf install git        # RHEL/Rocky
 # macOS
 brew install fluxcd/tap/flux
 
-# Linux
+# Linux / WSL2
 curl -s https://fluxcd.io/install.sh | bash
+
+# Windows (native — PowerShell as Administrator)
+# winget install FluxCD.Flux
 ```
 
 **cosign** (image signing):
@@ -109,9 +132,12 @@ curl -s https://fluxcd.io/install.sh | bash
 # macOS
 brew install cosign
 
-# Linux
+# Linux / WSL2
 curl -LO "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
 chmod +x cosign-linux-amd64 && sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+
+# Windows (native — PowerShell as Administrator)
+# winget install sigstore.cosign
 ```
 
 **trivy** (vulnerability scanning):
@@ -119,8 +145,12 @@ chmod +x cosign-linux-amd64 && sudo mv cosign-linux-amd64 /usr/local/bin/cosign
 # macOS
 brew install trivy
 
-# Linux
+# Linux / WSL2
 curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+# Windows (native — PowerShell)
+# Download from https://github.com/aquasecurity/trivy/releases (trivy_*_windows-64bit.zip)
+# Extract and add to your PATH
 ```
 
 **syft** (SBOM generation):
@@ -128,8 +158,12 @@ curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/inst
 # macOS
 brew install syft
 
-# Linux
+# Linux / WSL2
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+# Windows (native — PowerShell)
+# Download from https://github.com/anchore/syft/releases (syft_*_windows_amd64.zip)
+# Extract and add to your PATH
 ```
 
 ### Verify installation

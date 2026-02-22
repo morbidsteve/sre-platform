@@ -3,7 +3,9 @@
 # Override these in inventory group_vars as needed.
 
 # ---- FIPS Mode ----
-os_hardening_fips_enabled: true
+# Disabled by default — enabling FIPS requires a reboot.
+# Set to true in production and handle the reboot separately.
+os_hardening_fips_enabled: false
 
 # ---- SSH Hardening (NIST AC-17, IA-2) ----
 os_hardening_ssh_port: 22
@@ -17,10 +19,7 @@ os_hardening_ssh_max_sessions: 10
 os_hardening_ssh_log_level: "VERBOSE"
 os_hardening_ssh_ciphers: "aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
 os_hardening_ssh_macs: "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com"
-os_hardening_ssh_kex_algorithms: >-
-  ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,
-  diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,
-  diffie-hellman-group18-sha512
+os_hardening_ssh_kex_algorithms: "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512"
 
 # ---- Audit Configuration (NIST AU-2, AU-3, AU-12) ----
 os_hardening_audit_max_log_file: 25
@@ -56,6 +55,11 @@ os_hardening_sysctl_settings:
   kernel.core_uses_pid: 1
   kernel.yama.ptrace_scope: 1
   vm.swappiness: 0  # Kubernetes nodes should not swap
+  # CIS profile: RKE2 requires these when protect-kernel-defaults=true
+  vm.panic_on_oom: 0
+  vm.overcommit_memory: 1
+  kernel.panic: 10
+  kernel.panic_on_oops: 1
 
 # ---- Filesystem Hardening ----
 os_hardening_tmp_mount_options: "nodev,nosuid,noexec"

@@ -9,6 +9,14 @@
       - NetworkManager
     state: present
 
+- name: Create etcd user for CIS compliance
+  ansible.builtin.user:
+    name: etcd
+    system: true
+    comment: "etcd user"
+    shell: /sbin/nologin
+    create_home: false
+
 - name: Create RKE2 config directory
   ansible.builtin.file:
     path: /etc/rancher/rke2
