@@ -60,7 +60,10 @@ resource "proxmox_virtual_environment_vm" "server" {
   }
 
   initialization {
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
+    user_account {
+      username = "sre-admin"
+      keys     = [var.ssh_public_key]
+    }
 
     ip_config {
       ipv4 {
@@ -128,7 +131,10 @@ resource "proxmox_virtual_environment_vm" "agent" {
   }
 
   initialization {
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
+    user_account {
+      username = "sre-admin"
+      keys     = [var.ssh_public_key]
+    }
 
     ip_config {
       ipv4 {

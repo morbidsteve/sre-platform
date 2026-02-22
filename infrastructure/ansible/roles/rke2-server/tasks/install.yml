@@ -1,24 +1,37 @@
 ---
 # RKE2 server installation
 
-- name: Check if RKE2 is already installed
+- name: Check if RKE2 is already installed (RPM path)
+  ansible.builtin.stat:
+    path: /usr/bin/rke2
+  register: _rke2_rpm_binary
+
+- name: Check if RKE2 is already installed (script path)
   ansible.builtin.stat:
     path: /usr/local/bin/rke2
-  register: _rke2_binary
+  register: _rke2_script_binary
+
+- name: Set RKE2 installed fact
+  ansible.builtin.set_fact:
+    _rke2_installed: "{{ _rke2_rpm_binary.stat.exists or _rke2_script_binary.stat.exists }}"
 
 - name: Download RKE2 install script
   ansible.builtin.get_url:
     url: https://get.rke2.io
-    dest: /tmp/rke2-install.sh
+    dest: /root/rke2-install.sh
     mode: "0700"
-  when: not _rke2_binary.stat.exists
+  when: not _rke2_installed
 
 - name: Run RKE2 server install script
   ansible.builtin.command:
-    cmd: /tmp/rke2-install.sh
-    creates: /usr/local/bin/rke2
+    cmd: /root/rke2-install.sh
   environment:
     INSTALL_RKE2_VERSION: "{{ rke2_version }}"
     INSTALL_RKE2_CHANNEL: "{{ rke2_channel }}"
     INSTALL_RKE2_TYPE: "server"
-  when: not _rke2_binary.stat.exists
+  when: not _rke2_installed
+
+- name: Clean up install script
+  ansible.builtin.file:
+    path: /root/rke2-install.sh
+    state: absent

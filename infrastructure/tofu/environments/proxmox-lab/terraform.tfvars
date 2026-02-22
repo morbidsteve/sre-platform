@@ -4,7 +4,7 @@
 #   export TF_VAR_proxmox_api_token="user@pve!token=secret-value"
 #   export TF_VAR_ssh_public_key="ssh-ed25519 AAAA..."
 
-proxmox_endpoint = "https://pve.example.com:8006"
+proxmox_endpoint = "https://192.168.2.67:8006"
 proxmox_insecure = true
 proxmox_node     = "pve"
 storage_pool     = "local-lvm"

@@ -4,20 +4,53 @@
 # Server nodes are installed serially to ensure the first node initializes
 # the cluster before others join.
 #
+# The server_url is computed automatically from the inventory:
+#   - First control_plane host initializes a new cluster (empty server_url)
+#   - Additional control_plane hosts join via the first server
+#   - All workers join via the first control_plane host
+#
 # NIST Controls: CM-2, CM-6
 #
+# Required extra-vars:
+#   rke2_token — Shared cluster token
+#
 # Usage:
-#   ansible-playbook playbooks/install-rke2.yml -i inventory/dev/hosts.yml
+#   ansible-playbook playbooks/install-rke2.yml -i inventory/dev/hosts.yml \
+#     --extra-vars "rke2_token=<token>"
+
+- name: Gather facts from control plane for server URL computation
+  hosts: control_plane
+  become: false
+  gather_facts: true
+  tasks:
+    - name: Gather minimal facts
+      ansible.builtin.debug:
+        msg: "Facts gathered for {{ inventory_hostname }}"
 
 - name: Install RKE2 server on control plane nodes
   hosts: control_plane
   become: true
   serial: 1
+  pre_tasks:
+    # Use set_fact in pre_tasks so the value is computed per-host
+    # and NOT overridden by extra-vars (which would break first-server logic).
+    - name: Compute server URL for this node
+      ansible.builtin.set_fact:
+        _rke2_computed_server_url: >-
+          {{ '' if groups['control_plane'].index(inventory_hostname) == 0
+             else 'https://' + hostvars[groups['control_plane'][0]].ansible_host + ':9345' }}
+    - name: Override rke2_server_url with computed value
+      ansible.builtin.set_fact:
+        rke2_server_url: "{{ _rke2_computed_server_url | trim }}"
   roles:
     - role: rke2-server
 
 - name: Install RKE2 agent on worker nodes
   hosts: workers
   become: true
+  pre_tasks:
+    - name: Set server URL for agent nodes
+      ansible.builtin.set_fact:
+        rke2_server_url: "https://{{ hostvars[groups['control_plane'][0]].ansible_host }}:9345"
   roles:
     - role: rke2-agent

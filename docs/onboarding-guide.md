@@ -362,10 +362,14 @@ Once provisioning is complete, the platform team will notify you. To access your
    # macOS
    brew install int128/kubelogin/kubelogin
 
-   # Linux
+   # Linux / WSL2
    curl -LO "https://github.com/int128/kubelogin/releases/latest/download/kubelogin_linux_amd64.zip"
    unzip kubelogin_linux_amd64.zip && sudo mv kubelogin /usr/local/bin/kubectl-oidc_login
    rm kubelogin_linux_amd64.zip
+
+   # Windows (native — PowerShell)
+   # Download from https://github.com/int128/kubelogin/releases (kubelogin_windows_amd64.zip)
+   # Rename kubelogin.exe to kubectl-oidc_login.exe and add to your PATH
    ```
 
 2. **Configure your kubeconfig.** The platform team will provide the cluster details and OIDC credentials:

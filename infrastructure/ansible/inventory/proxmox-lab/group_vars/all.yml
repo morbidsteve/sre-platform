@@ -2,13 +2,13 @@
 # Shared variables for all hosts in the proxmox-lab environment
 
 # RKE2 configuration
-rke2_version: "v1.28.6+rke2r1"
+rke2_version: ""
 rke2_token: "REPLACE_ME"  # Override via ansible-vault or --extra-vars
 rke2_api_server_lb: ""  # Set to VIP or LB address if using HA; otherwise leave empty
-rke2_profile: "cis-1.23"
-rke2_fips_enabled: true
+rke2_profile: "cis"
+rke2_fips_enabled: false
 
 # OS hardening
-os_hardening_fips_enabled: true
-os_hardening_aide_enabled: true
+os_hardening_fips_enabled: false
+os_hardening_aide_enabled: false  # Skip AIDE for quickstart (takes several minutes)
 os_hardening_firewalld_enabled: true

@@ -30,12 +30,6 @@ variable "proxmox_insecure" {
   default     = false
 }
 
-variable "proxmox_ssh_username" {
-  type        = string
-  description = "SSH username for Proxmox node access (used by provider for file uploads)."
-  default     = "root"
-}
-
 # ── Cluster Configuration ──
 
 variable "proxmox_node" {

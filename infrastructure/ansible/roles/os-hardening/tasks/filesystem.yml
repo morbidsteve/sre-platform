@@ -30,13 +30,19 @@
     group: root
     mode: "0000"
 
-- name: Ensure /tmp has restricted mount options
-  ansible.posix.mount:
-    path: /tmp
-    src: tmpfs
-    fstype: tmpfs
-    opts: "{{ os_hardening_tmp_mount_options }},size=2g"
-    state: mounted
+- name: Add /tmp tmpfs entry to fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^\s*tmpfs\s+/tmp\s+'
+    line: "tmpfs /tmp tmpfs {{ os_hardening_tmp_mount_options }},size=2g 0 0"
+    state: present
+
+- name: Mount /tmp with restricted options
+  ansible.builtin.command:
+    cmd: mount -o remount /tmp
+  register: _tmp_mount
+  changed_when: _tmp_mount.rc == 0
+  failed_when: false
 
 - name: Set sticky bit on world-writable directories
   ansible.builtin.shell:

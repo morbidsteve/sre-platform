@@ -1,6 +1,8 @@
 ---
 # Firewall Configuration — NIST SC-7
-# Configure firewalld with restrictive default zone
+# Configure firewalld with restrictive default zone.
+# Uses the active default zone (discovered at runtime) to ensure rules
+# apply to the interface that is actually carrying traffic.
 
 - name: Install firewalld
   ansible.builtin.dnf:
@@ -15,19 +17,39 @@
     enabled: true
   when: os_hardening_firewalld_enabled
 
-- name: Set default firewall zone
-  ansible.posix.firewalld:
-    zone: "{{ os_hardening_firewalld_default_zone }}"
-    permanent: true
-    state: enabled
+- name: Discover active default zone
+  ansible.builtin.command: firewall-cmd --get-default-zone
+  register: _firewalld_default_zone
+  changed_when: false
   when: os_hardening_firewalld_enabled
-  notify: Reload firewalld
 
-- name: Allow SSH in default zone
+- name: Set active zone fact
+  ansible.builtin.set_fact:
+    _firewalld_active_zone: "{{ _firewalld_default_zone.stdout | trim }}"
+  when: os_hardening_firewalld_enabled
+
+- name: Allow SSH in active zone
   ansible.posix.firewalld:
     service: ssh
-    zone: "{{ os_hardening_firewalld_default_zone }}"
+    zone: "{{ _firewalld_active_zone }}"
     permanent: true
     immediate: true
     state: enabled
+  when: os_hardening_firewalld_enabled
+
+- name: Allow RKE2 and Kubernetes ports
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    zone: "{{ _firewalld_active_zone }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - "6443/tcp"      # Kubernetes API server
+    - "9345/tcp"      # RKE2 supervisor API
+    - "10250/tcp"     # Kubelet API
+    - "2379-2380/tcp" # etcd client/peer
+    - "8472/udp"      # VXLAN (Canal/Flannel)
+    - "10254/tcp"     # Ingress controller health
+    - "30000-32767/tcp"  # NodePort range
   when: os_hardening_firewalld_enabled

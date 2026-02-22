@@ -8,7 +8,7 @@ This guide walks you through deploying the full Secure Runtime Environment platf
 > ```bash
 > ./scripts/quickstart-proxmox.sh
 > ```
-> Just provide the Proxmox host IP and root password. The script auto-discovers your environment, creates the API user/token, downloads the ISO, and handles Packer, OpenTofu, Ansible, kubeconfig retrieval, and Flux bootstrap in a single run. No SSH to the Proxmox host required. See [Quickstart Script](#quickstart-script) for details.
+> Just provide the Proxmox host IP and root password. The script auto-discovers your environment, creates the API user/token, downloads a Rocky Linux 9 cloud image, builds a VM template via the Proxmox API, and handles OpenTofu, Ansible, kubeconfig retrieval, and Flux bootstrap in a single run. No Packer, no ISO boot, no KVM required. See [Quickstart Script](#quickstart-script) for details.
 
 ---
 
@@ -33,17 +33,20 @@ The deployment pipeline for Proxmox follows this flow:
 ```
 Your Workstation                         Proxmox VE Host
 ┌──────────────────┐                    ┌──────────────────────────────┐
-│  Packer          │───builds───────────│  VM Template (Rocky Linux 9) │
+│  Cloud Image     │───imports──────────│  VM Template (Rocky Linux 9) │
 │  OpenTofu        │───clones VMs───────│  CP Node(s) + Worker Node(s) │
 │  Ansible         │───configures───────│  RKE2 Cluster (hardened)     │
 │  Flux CLI        │───bootstraps───────│  Platform Services (GitOps)  │
 └──────────────────┘                    └──────────────────────────────┘
 ```
 
-1. **Packer** builds an immutable Rocky Linux 9 VM template on Proxmox with DISA STIG hardening and RKE2 pre-staged
+The quickstart uses a **cloud image import** workflow:
+1. A Rocky Linux 9 GenericCloud qcow2 image is downloaded and imported into Proxmox via the REST API, provisioned with RKE2 via SSH, and converted to a template
 2. **OpenTofu** clones that template into control plane and worker VMs
-3. **Ansible** applies final OS hardening and bootstraps the RKE2 cluster
+3. **Ansible** applies full OS hardening and bootstraps the RKE2 cluster
 4. **Flux CD** deploys all platform services (Istio, Kyverno, monitoring, logging, secrets, etc.) from Git
+
+For production environments with KVM available, you can alternatively use the **Packer-based workflow** (`infrastructure/packer/rocky-linux-9-proxmox/`) which builds a fully STIG-hardened image from ISO with OpenSCAP validation. See [Step 2 (Manual)](#step-2-build-the-vm-template-with-packer) for details.
 
 ---
 
@@ -53,7 +56,7 @@ Your Workstation                         Proxmox VE Host
 
 | Requirement | Minimum | Recommended |
 |-------------|---------|-------------|
-| Proxmox VE version | 8.0 | 8.2+ |
+| Proxmox VE version | 8.0 (8.2+ for quickstart cloud image import) | 8.2+ |
 | CPU cores (total) | 12 | 24+ |
 | RAM (total) | 32 GB | 64 GB+ |
 | Storage | 200 GB (SSD) | 500 GB+ (NVMe) |
@@ -63,7 +66,9 @@ A minimal lab deployment (1 control plane + 2 workers) uses approximately 12 cor
 
 ### Local Workstation Tools
 
-Install these tools on your local machine (macOS, Linux, or WSL2 on Windows).
+Install these tools on your local machine (macOS, Linux, or Windows).
+
+> **Windows users:** We recommend using [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Windows Subsystem for Linux) with Ubuntu. Once inside WSL2, follow the **Linux** instructions below. Alternatively, native Windows install commands are provided where available.
 
 #### Required tools
 
@@ -72,26 +77,32 @@ Install these tools on your local machine (macOS, Linux, or WSL2 on Windows).
 # macOS
 brew install opentofu
 
-# Linux (Debian/Ubuntu)
+# Linux (Debian/Ubuntu) / WSL2
 curl -fsSL https://get.opentofu.org/install-opentofu.sh | sh -s -- --install-method deb
 
 # Linux (RHEL/Rocky)
 curl -fsSL https://get.opentofu.org/install-opentofu.sh | sh -s -- --install-method rpm
 
+# Windows (native — PowerShell as Administrator)
+# winget install OpenTofu.OpenTofu
+
 # Verify
 tofu version
 ```
 
-**Packer** (VM image builds):
+**Packer** (VM image builds — *not required for quickstart*, only for production STIG-hardened images):
 ```bash
 # macOS (Packer requires HashiCorp's tap — it is not in homebrew-core)
 brew tap hashicorp/tap
 brew install hashicorp/tap/packer
 
-# Linux
+# Linux / WSL2
 curl -fsSL https://releases.hashicorp.com/packer/1.11.2/packer_1.11.2_linux_amd64.zip -o packer.zip
 unzip packer.zip && sudo mv packer /usr/local/bin/
 rm packer.zip
+
+# Windows (native — PowerShell as Administrator)
+# winget install Hashicorp.Packer
 
 # Verify
 packer version
@@ -102,8 +113,10 @@ packer version
 # macOS
 brew install ansible
 
-# Linux (pip - works everywhere)
+# Linux / WSL2 (pip — works everywhere)
 pip3 install ansible ansible-lint
+
+# Windows (native): Ansible does not run natively on Windows. Use WSL2.
 
 # Install required collections
 ansible-galaxy collection install ansible.posix community.general
@@ -117,9 +130,12 @@ ansible --version
 # macOS
 brew install kubectl
 
-# Linux
+# Linux / WSL2
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+# Windows (native — PowerShell as Administrator)
+# winget install Kubernetes.kubectl
 
 # Verify
 kubectl version --client
@@ -130,8 +146,11 @@ kubectl version --client
 # macOS
 brew install helm
 
-# Linux
+# Linux / WSL2
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Windows (native — PowerShell as Administrator)
+# winget install Helm.Helm
 
 # Verify
 helm version
@@ -142,8 +161,11 @@ helm version
 # macOS
 brew install fluxcd/tap/flux
 
-# Linux
+# Linux / WSL2
 curl -s https://fluxcd.io/install.sh | bash
+
+# Windows (native — PowerShell as Administrator)
+# winget install FluxCD.Flux
 
 # Verify
 flux version --client
@@ -156,8 +178,11 @@ flux version --client
 # macOS
 brew install go-task
 
-# Linux
+# Linux / WSL2
 sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+# Windows (native — PowerShell as Administrator)
+# winget install Task.Task
 
 # Verify
 task --version
@@ -168,11 +193,14 @@ task --version
 # macOS
 brew install jq
 
-# Linux (Debian/Ubuntu)
+# Linux (Debian/Ubuntu) / WSL2
 sudo apt-get install jq
 
 # Linux (RHEL/Rocky)
 sudo dnf install jq
+
+# Windows (native — PowerShell as Administrator)
+# winget install jqlang.jq
 ```
 
 ### SSH Key Pair
@@ -198,9 +226,9 @@ cd sre-platform
 
 ## Step 1: Configure Proxmox
 
-> **Using the quickstart script?** Steps 1.1 through 1.4 are **fully automated** in zero-touch mode. The script authenticates to Proxmox as `root@pam`, auto-discovers the node, storage, and network bridge, creates the API user/token, and downloads the ISO. You only need the Proxmox host IP and root password. See [Quickstart Script](#quickstart-script) for details.
+> **Using the quickstart script?** Steps 1.1 through 1.4 and Step 2 are **fully automated** in zero-touch mode. The script authenticates to Proxmox as `root@pam`, auto-discovers the node, storage, and network bridge, creates the API user/token, downloads a cloud image, and builds the VM template. You only need the Proxmox host IP and root password. See [Quickstart Script](#quickstart-script) for details.
 >
-> The manual steps below are only needed if you prefer to set things up yourself or are running in **advanced mode** with pre-existing credentials.
+> The manual steps below are only needed if you prefer to set things up yourself, need a full STIG-hardened Packer build, or are running in **advanced mode** with pre-existing credentials.
 
 ### 1.1 Upload the Rocky Linux 9 ISO
 
@@ -471,7 +499,10 @@ ssh -i ~/.ssh/sre-proxmox-lab sre-admin@192.168.1.10 \
   "sudo cat /etc/rancher/rke2/rke2.yaml" > ~/.kube/sre-proxmox-lab.yaml
 
 # Update the server address from 127.0.0.1 to the actual IP
-sed -i.bak 's/127.0.0.1/192.168.1.10/g' ~/.kube/sre-proxmox-lab.yaml
+# macOS (BSD sed requires a backup extension with -i)
+sed -i.bak 's/127.0.0.1/192.168.1.10/g' ~/.kube/sre-proxmox-lab.yaml && rm ~/.kube/sre-proxmox-lab.yaml.bak
+# Linux / WSL2 (GNU sed)
+# sed -i 's/127.0.0.1/192.168.1.10/g' ~/.kube/sre-proxmox-lab.yaml
 
 export KUBECONFIG=~/.kube/sre-proxmox-lab.yaml
 ```
@@ -614,7 +645,37 @@ kubectl get policyreport -A -o wide
 
 ## Troubleshooting
 
-### Packer build fails to connect to Proxmox
+### Template build fails with "import-from" error
+
+**Symptom:** `Failed to create VM with import-from`
+
+- The `import-from` parameter requires **Proxmox VE 8.0+** (8.2+ recommended)
+- Check your Proxmox version: `pveversion`
+- If using an older version, use the Packer-based workflow instead:
+  ```bash
+  cd infrastructure/packer/rocky-linux-9-proxmox && packer build .
+  ```
+
+### Template build: SSH connection times out
+
+**Symptom:** `Timed out waiting for SSH on 192.168.x.200`
+
+- The script assigns a static IP to the template VM from the bridge subnet (default: `.200`). If this IP conflicts with an existing device, override it: `TEMPLATE_BUILD_IP=192.168.x.250 ./scripts/quickstart-proxmox.sh`
+- Verify your workstation can reach the bridge subnet (same L2 network, or a route exists)
+- Under QEMU emulation (no KVM), boot takes 3-5 minutes — the script waits up to 10 minutes
+- Check the VM console in Proxmox UI for boot errors or kernel panics
+- If the bridge has no gateway, the VM may not configure its network — check `ipconfig0` in the VM config
+
+### Template build: guest agent never reports IP (DHCP fallback)
+
+**Symptom:** `Timed out waiting for guest agent on VM 9000`
+
+- This only occurs if bridge subnet auto-detection failed (the script falls back to DHCP + guest agent)
+- The Rocky GenericCloud image has `qemu-guest-agent` installed but not enabled by default
+- Override with a static IP: `TEMPLATE_BUILD_IP=192.168.x.200 ./scripts/quickstart-proxmox.sh`
+- Or ensure the bridge has DHCP and manually enable the guest agent via the Proxmox console
+
+### Packer build fails to connect to Proxmox (manual Packer workflow)
 
 **Symptom:** `error creating virtual machine: 500 Internal Server Error`
 
@@ -622,12 +683,6 @@ kubectl get policyreport -A -o wide
 - Verify the token was created with `--privsep=0`
 - Check the Proxmox URL includes `/api2/json` at the end
 - If using self-signed certs, ensure `proxmox_insecure_skip_tls_verify = true`
-
-### Packer build hangs at "Waiting for SSH"
-
-- The VM may not be getting an IP address. Check the Proxmox console for the VM
-- Verify the ISO path is correct: `pvesh get /nodes/YOUR_NODE/storage/local/content --content iso`
-- The kickstart file may have an issue. Check the VM console for errors during OS installation
 
 ### OpenTofu fails to clone template
 
@@ -686,20 +741,20 @@ The script automatically:
 2. Auto-discovers the node name, storage pools, and network bridge
 3. Creates a `packer@pve` API user with `PVEVMAdmin` + `PVEDatastoreUser` roles
 4. Creates an API token (`packer-token`) with privilege separation disabled
-5. Downloads the Rocky Linux 9 ISO to Proxmox storage (if not already present)
+5. Downloads the Rocky Linux 9 GenericCloud qcow2 image to Proxmox storage
 6. Generates an SSH key pair (if needed)
-7. Builds a hardened Rocky Linux 9 VM template with Packer
+7. Builds a VM template by importing the cloud image, provisioning via SSH (RKE2 install), and converting to template
 8. Provisions control plane + worker VMs with OpenTofu
 9. Generates the Ansible inventory from OpenTofu output
 10. Hardens the OS and installs RKE2 with Ansible
 11. Retrieves the kubeconfig and configures it for kubectl
 12. Optionally bootstraps Flux CD for GitOps
 
-No SSH access to the Proxmox host is required -- everything is done via the REST API.
+No SSH access to the Proxmox host is required -- everything is done via the REST API. No Packer or ISO boot required -- the cloud image workflow works with or without KVM hardware virtualisation.
 
 ### Advanced mode (backward compatible)
 
-If you already have an API user and token, set `PROXMOX_USER` and `PROXMOX_TOKEN` before running the script. The bootstrap phase is skipped entirely and the script prompts for the remaining details (URL, node, ISO, storage, bridge) as before.
+If you already have an API user and token, set `PROXMOX_USER` and `PROXMOX_TOKEN` before running the script. The bootstrap phase is skipped entirely and the script prompts for the remaining details (URL, node, storage, bridge) as before.
 
 ```bash
 export PROXMOX_USER="packer@pve!packer-token"
@@ -709,9 +764,9 @@ export PROXMOX_TOKEN="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 ### Skipping steps
 
-If you already have a Packer template built, skip the Packer step:
+If you already have a VM template built, skip the template build:
 ```bash
-SKIP_PACKER=1 ./scripts/quickstart-proxmox.sh
+SKIP_TEMPLATE=1 ./scripts/quickstart-proxmox.sh
 ```
 
 To skip Flux bootstrap (deploy only the bare cluster):
@@ -731,15 +786,16 @@ All variables can be set before running the script to skip prompts. This table l
 | `PROXMOX_NODE` | Both | Proxmox node name | Auto-discovered or `pve` |
 | `PROXMOX_USER` | Advanced | API user (e.g., `packer@pve!packer-token`) | Auto-created |
 | `PROXMOX_TOKEN` | Advanced | API token secret | Auto-created |
-| `PROXMOX_ISO` | Both | ISO path on Proxmox storage | Auto-discovered or `local:iso/Rocky-9-latest-x86_64-minimal.iso` |
 | `PROXMOX_STORAGE` | Both | Storage pool for VM disks | Auto-discovered or `local-lvm` |
 | `PROXMOX_BRIDGE` | Both | Network bridge | Auto-discovered or `vmbr0` |
-| `ROCKY_ISO_URL` | Zero-touch | Override Rocky Linux ISO download URL | Rocky 9.5 minimal |
-| `ROCKY_ISO_FILENAME` | Zero-touch | ISO filename on storage | `Rocky-9-latest-x86_64-minimal.iso` |
+| `ROCKY_CLOUD_URL` | Zero-touch | Override Rocky Linux GenericCloud qcow2 download URL | Rocky 9 GenericCloud latest |
+| `ROCKY_CLOUD_FNAME` | Zero-touch | Cloud image filename on storage | `Rocky-9-GenericCloud.latest.x86_64.qcow2` |
+| `TEMPLATE_VMID` | Both | VM ID for the template | `9000` |
+| `TEMPLATE_BUILD_IP` | Both | Static IP assigned to template VM during build | Auto-detected from bridge subnet (.200) |
 | `SSH_KEY_PATH` | Both | Path to SSH private key | `~/.ssh/sre-proxmox-lab` |
 | `SERVER_COUNT` | Both | Control plane nodes | `1` |
 | `AGENT_COUNT` | Both | Worker nodes | `2` |
-| `SKIP_PACKER` | Both | Set to `1` to skip Packer build | `0` |
+| `SKIP_TEMPLATE` | Both | Set to `1` to skip template build | `0` |
 | `SKIP_FLUX` | Both | Set to `1` to skip Flux bootstrap | `0` |
 
 #### Full zero-touch example (no prompts)
@@ -760,7 +816,7 @@ export PROXMOX_URL="https://192.168.1.100:8006"
 export PROXMOX_NODE="pve"
 export PROXMOX_USER="packer@pve!packer-token"
 export PROXMOX_TOKEN="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-export PROXMOX_ISO="local:iso/Rocky-9-latest-x86_64-minimal.iso"
+export PROXMOX_ROOT_PASS="your-root-password"  # Needed for template build
 export PROXMOX_STORAGE="local-lvm"
 export PROXMOX_BRIDGE="vmbr0"
 export SSH_KEY_PATH="$HOME/.ssh/sre-proxmox-lab"
@@ -774,13 +830,15 @@ export AGENT_COUNT=2
 
 The script handles re-runs gracefully:
 - **API user**: If `packer@pve` already exists, it is reused. The token is always recreated (Proxmox does not allow retrieving token secrets after creation).
-- **ISO download**: If the ISO already exists on storage, the download is skipped.
-- **Packer template**: Set `SKIP_PACKER=1` to reuse an existing template.
+- **Cloud image download**: If the cloud image already exists on Proxmox storage, the download is skipped.
+- **VM template**: If VM `$TEMPLATE_VMID` already exists as a template, the build is skipped. Set `SKIP_TEMPLATE=1` to always skip the build.
 - **OpenTofu**: Re-applies infrastructure changes (VMs are updated or recreated as needed).
 
 ### Proxmox version requirements
 
-Zero-touch mode requires **Proxmox VE 7.2+** for the `download-url` storage API. If your Proxmox version is older, the script will give clear instructions for downloading the ISO manually.
+The cloud image template build requires **Proxmox VE 8.0+** for the `import-from` disk parameter (8.2+ recommended). The `download-url` storage API requires Proxmox VE 7.2+ (the script falls back to local download + upload if unavailable).
+
+If your Proxmox version does not support `import-from`, the script provides clear instructions for using the Packer-based workflow instead.
 
 ---
 

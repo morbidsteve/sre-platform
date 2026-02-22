@@ -40,8 +40,8 @@ variable "agent_count" {
   default     = 3
 
   validation {
-    condition     = var.agent_count >= 1 && var.agent_count <= 20
-    error_message = "Agent count must be between 1 and 20."
+    condition     = var.agent_count >= 0 && var.agent_count <= 20
+    error_message = "Agent count must be between 0 and 20."
   }
 }
 

@@ -8,14 +8,19 @@
 #   1. Checks that all required CLI tools are installed
 #   2. Connects to Proxmox and auto-discovers the environment
 #   3. Creates a dedicated API user and token (if not provided)
-#   4. Downloads the Rocky Linux 9 ISO to Proxmox storage (if not present)
+#   4. Downloads the Rocky Linux 9 cloud image to Proxmox storage
 #   5. Generates an SSH key pair (if needed)
-#   6. Builds a hardened Rocky Linux 9 VM template with Packer
+#   6. Builds a Rocky Linux 9 VM template (cloud image import + provisioning)
 #   7. Provisions control plane + worker VMs with OpenTofu
 #   8. Generates an Ansible inventory from the OpenTofu output
 #   9. Hardens the OS and installs RKE2 with Ansible
 #  10. Retrieves the kubeconfig
 #  11. (Optionally) bootstraps Flux CD for GitOps
+#
+# The quickstart uses a cloud image import workflow (no Packer, no ISO boot)
+# for speed and compatibility with nested virtualisation. For production
+# environments or full STIG-hardened images, use the Packer-based workflow:
+#   cd infrastructure/packer/rocky-linux-9-proxmox && packer build .
 #
 # Usage:
 #   ./scripts/quickstart-proxmox.sh
@@ -23,32 +28,35 @@
 # Zero-touch mode (recommended):
 #   Provide only a Proxmox host IP and root password. The script will
 #   auto-discover the node, storage, and network, create an API user/token,
-#   and download the Rocky Linux 9 ISO — fully automated.
+#   and download the Rocky Linux 9 cloud image — fully automated.
 #
 # Advanced mode:
 #   If PROXMOX_USER and PROXMOX_TOKEN are already set, the script skips
 #   bootstrap and uses the provided credentials (backward compatible).
 #
 # Requirements:
-#   - Proxmox VE 7.2+ with API access (8.x recommended)
+#   - Proxmox VE 8.0+ with API access (8.2+ recommended for import-from)
 #   - root@pam password OR a pre-existing API token
 #
 # Environment variable overrides (skip prompts):
 #   PROXMOX_HOST         — Proxmox IP or hostname (zero-touch mode)
-#   PROXMOX_ROOT_PASS    — root@pam password (zero-touch mode, used once)
+#   PROXMOX_AUTH_USER    — Authentication username (default: root@pam; e.g., user@pve)
+#   PROXMOX_AUTH_PASS    — Authentication password (zero-touch mode, used once)
+#   PROXMOX_ROOT_PASS    — Alias for PROXMOX_AUTH_PASS (backward compatible)
 #   PROXMOX_URL          — https://pve.example.com:8006 (advanced mode)
 #   PROXMOX_NODE         — Proxmox node name (e.g., pve)
 #   PROXMOX_USER         — API user (e.g., packer@pve!packer-token)
 #   PROXMOX_TOKEN        — API token secret
-#   PROXMOX_ISO          — ISO path (e.g., local:iso/Rocky-9-latest-x86_64-minimal.iso)
 #   PROXMOX_STORAGE      — Storage pool (e.g., local-lvm)
 #   PROXMOX_BRIDGE       — Network bridge (e.g., vmbr0)
 #   SSH_KEY_PATH         — Path to SSH private key
 #   SERVER_COUNT         — Control plane nodes (default: 1)
 #   AGENT_COUNT          — Worker nodes (default: 2)
-#   ROCKY_ISO_URL        — Override Rocky Linux ISO download URL
-#   ROCKY_ISO_FILENAME   — ISO filename on storage (default: Rocky-9-latest-x86_64-minimal.iso)
-#   SKIP_PACKER          — Set to 1 to skip Packer build (template already exists)
+#   ROCKY_CLOUD_URL      — Override Rocky Linux GenericCloud qcow2 download URL
+#   ROCKY_CLOUD_FNAME    — Cloud image filename on storage
+#   TEMPLATE_VMID        — VM ID for the template (default: 9000)
+#   TEMPLATE_BUILD_IP    — Static IP for template VM during build (auto-detected from bridge)
+#   SKIP_TEMPLATE        — Set to 1 to skip template build (template already exists)
 #   SKIP_FLUX            — Set to 1 to skip Flux bootstrap
 # ============================================================================
 
@@ -153,7 +161,7 @@ cd "$REPO_ROOT"
 header "Phase 0: Checking Prerequisites"
 
 MISSING_TOOLS=()
-for tool in packer tofu ansible-playbook kubectl helm jq ssh-keygen curl; do
+for tool in tofu ansible-playbook kubectl helm jq ssh-keygen curl; do
     if ! command -v "$tool" &>/dev/null; then
         MISSING_TOOLS+=("$tool")
     fi
@@ -165,12 +173,10 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     echo "Install them following the guide:"
     echo "  https://github.com/morbidsteve/sre-platform/blob/main/docs/getting-started-proxmox.md#local-workstation-tools"
     echo
-    echo "Quick install (macOS):"
-    echo "  brew tap hashicorp/tap"
-    echo "  brew install hashicorp/tap/packer opentofu ansible kubectl helm jq"
-    echo
-    echo "Quick install (Linux):"
-    echo "  See the getting-started-proxmox.md guide for distro-specific commands."
+    echo "Quick install:"
+    echo "  macOS:         brew install opentofu ansible kubectl helm jq"
+    echo "  Linux (deb):   See docs/getting-started-proxmox.md for distro-specific commands"
+    echo "  Windows:       Use WSL2 with Ubuntu, then follow the Linux instructions"
     exit 1
 fi
 
@@ -187,21 +193,30 @@ done
 # These functions use the Proxmox REST API for zero-touch bootstrap.
 # They are only called when PROXMOX_USER + PROXMOX_TOKEN are NOT provided.
 
-ROCKY_ISO_URL="${ROCKY_ISO_URL:-https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9-latest-x86_64-minimal.iso}"
-ROCKY_ISO_FILENAME="${ROCKY_ISO_FILENAME:-Rocky-9-latest-x86_64-minimal.iso}"
+ROCKY_CLOUD_URL="${ROCKY_CLOUD_URL:-https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2}"
+ROCKY_CLOUD_FNAME="${ROCKY_CLOUD_FNAME:-Rocky-9-GenericCloud.latest.x86_64.qcow2}"
+TEMPLATE_VMID="${TEMPLATE_VMID:-9000}"
+RKE2_VERSION="${RKE2_VERSION:-v1.28.6+rke2r1}"
+RKE2_CHANNEL="${RKE2_CHANNEL:-stable}"
+# Static IP assigned to the template VM during build (auto-detected from bridge subnet)
+# Override this if auto-detection picks the wrong IP or you want a specific address.
+TEMPLATE_BUILD_IP="${TEMPLATE_BUILD_IP:-}"
 
-# Authenticate to Proxmox as root@pam, sets PVE_TICKET and PVE_CSRF
+# Authenticate to Proxmox, sets PVE_TICKET and PVE_CSRF
+# Uses PROXMOX_AUTH_USER (default: root@pam) for the authentication realm.
 pve_authenticate() {
     local host="$1" password="$2"
+    local auth_user="${PROXMOX_AUTH_USER:-root@pam}"
     local url="https://${host}:8006/api2/json/access/ticket"
     local response
 
+    log "Authenticating as ${auth_user}..."
     response=$(curl -fsSk --connect-timeout 10 \
-        --data-urlencode "username=root@pam" \
+        --data-urlencode "username=${auth_user}" \
         --data-urlencode "password=${password}" \
         "$url" 2>&1) || {
         error "Failed to authenticate to Proxmox at ${host}."
-        error "Check the host IP and root password."
+        error "Check the host IP, username (${auth_user}), and password."
         error "curl output: $response"
         return 1
     }
@@ -296,6 +311,36 @@ pve_discover_bridge() {
         fatal "No active network bridge found."
     fi
     success "Discovered bridge: $PROXMOX_BRIDGE"
+}
+
+# Discover the bridge's subnet and compute a static IP for the template build.
+# The template VM needs a known IP for SSH provisioning (guest agent is not
+# available on GenericCloud images until we enable it during provisioning).
+# Sets: PVE_BRIDGE_IP, PVE_BRIDGE_MASK, PVE_BRIDGE_GW, TEMPLATE_BUILD_IP
+pve_discover_bridge_subnet() {
+    local net_json
+    net_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/network") || return 1
+
+    local bridge_info
+    bridge_info=$(echo "$net_json" | jq -r \
+        ".data[] | select(.iface == \"${PROXMOX_BRIDGE}\") | \"\(.address // \"\") \(.netmask // \"24\") \(.gateway // \"\")\"")
+
+    PVE_BRIDGE_IP=$(echo "$bridge_info" | awk '{print $1}')
+    PVE_BRIDGE_MASK=$(echo "$bridge_info" | awk '{print $2}')
+    PVE_BRIDGE_GW=$(echo "$bridge_info" | awk '{print $3}')
+
+    if [[ -z "$PVE_BRIDGE_IP" ]]; then
+        warn "Could not detect bridge subnet. Template VM will use DHCP."
+        return 1
+    fi
+
+    # If TEMPLATE_BUILD_IP is not set, derive it from the bridge subnet (.200)
+    if [[ -z "${TEMPLATE_BUILD_IP:-}" ]]; then
+        TEMPLATE_BUILD_IP=$(echo "$PVE_BRIDGE_IP" | sed 's/\.[0-9]*$/.200/')
+    fi
+
+    success "Bridge subnet: ${PVE_BRIDGE_IP}/${PVE_BRIDGE_MASK} (gw ${PVE_BRIDGE_GW})"
+    log "Template build IP: ${TEMPLATE_BUILD_IP}"
 }
 
 
@@ -411,6 +456,8 @@ pve_upload_iso() {
 }
 
 # Ensure the Rocky Linux 9 ISO exists on Proxmox storage
+# NOTE: This function is NOT used by the quickstart cloud image workflow.
+# It is retained for backward compatibility with manual/Packer-based builds.
 pve_ensure_iso() {
     local storage="$PVE_ISO_STORAGE"
 
@@ -506,6 +553,505 @@ pve_ensure_iso() {
     success "ISO available: $PROXMOX_ISO"
 }
 
+# ── Cloud Image Helpers (Phase 2 — quickstart template build) ──────────────
+# These functions build a VM template from a Rocky Linux GenericCloud qcow2
+# image via the Proxmox REST API. No Packer, no ISO boot, no KVM required.
+# For production STIG-hardened templates, use the Packer workflow instead.
+
+# Upload a disk image to Proxmox using content=import (Proxmox 8.1+)
+# This accepts .qcow2, .raw, .vmdk — unlike content=iso which only takes .iso/.img
+pve_upload_import() {
+    local storage="$1" filepath="$2" filename="$3"
+    local url="https://${PROXMOX_HOST}:8006/api2/json/nodes/${PROXMOX_NODE}/storage/${storage}/upload"
+    local filesize
+    filesize=$(du -h "$filepath" | cut -f1)
+
+    log "Uploading disk image to Proxmox storage ($filesize)..."
+    local response
+    response=$(curl -fSk --progress-bar \
+        -b "PVEAuthCookie=${PVE_TICKET}" \
+        -H "CSRFPreventionToken: ${PVE_CSRF}" \
+        -F "content=import" \
+        -F "filename=@${filepath};filename=${filename}" \
+        "$url" 2>&1) || return 1
+
+    # The upload may return a UPID for the import task
+    local upid
+    upid=$(echo "$response" | jq -r '.data // empty' 2>/dev/null || true)
+    if [[ -n "$upid" && "$upid" != "null" ]]; then
+        pve_wait_task "$upid" "Processing uploaded image..." 300 || true
+    fi
+}
+
+# Download Rocky 9 GenericCloud qcow2 to Proxmox storage.
+# Sets PVE_CLOUD_IMAGE_PATH to the filesystem path on Proxmox for import-from.
+pve_ensure_cloud_image() {
+    # The .img filename variant — Proxmox upload API accepts .img with content=iso
+    local img_fname="${ROCKY_CLOUD_FNAME%.qcow2}.img"
+
+    # Check if cloud image already exists on storage
+    # Check import content (from content=import upload/download)
+    local existing=""
+    local import_content_json
+    import_content_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/storage/${PVE_ISO_STORAGE}/content" \
+        --data-urlencode "content=import" 2>/dev/null) || true
+
+    if [[ -n "$import_content_json" ]]; then
+        existing=$(echo "$import_content_json" | jq -r "
+            [.data[] | select(.volid | test(\"${ROCKY_CLOUD_FNAME}\"))] | .[0].volid // empty
+        " 2>/dev/null || true)
+    fi
+
+    if [[ -n "$existing" ]]; then
+        success "Cloud image already exists: $existing"
+        PVE_CLOUD_IMAGE_PATH="$(pve_get_storage_path "$PVE_ISO_STORAGE")/import/${ROCKY_CLOUD_FNAME}"
+        return
+    fi
+
+    # Also check ISO storage (from .img fallback upload)
+    local iso_content_json
+    iso_content_json=$(pve_api GET "/nodes/${PROXMOX_NODE}/storage/${PVE_ISO_STORAGE}/content" \
+        --data-urlencode "content=iso" 2>/dev/null) || true
+
+    if [[ -n "$iso_content_json" ]]; then
+        existing=$(echo "$iso_content_json" | jq -r "
+            [.data[] | select(.volid | test(\"${img_fname}\"))] | .[0].volid // empty
+        " 2>/dev/null || true)
+    fi
+
+    if [[ -n "$existing" ]]; then
+        success "Cloud image already exists: $existing"
+        local actual_fname="${existing#*:iso/}"
+        PVE_CLOUD_IMAGE_PATH="$(pve_get_storage_path "$PVE_ISO_STORAGE")/template/iso/${actual_fname}"
+        return
+    fi
+
+    log "Downloading Rocky Linux 9 GenericCloud image to Proxmox storage..."
+    log "URL: $ROCKY_CLOUD_URL"
+    log "This is ~900 MB and takes a few minutes depending on your connection."
+
+    # Strategy 1: Use the download-url API (Proxmox downloads directly — fastest)
+    # Use content=import which accepts .qcow2 files (requires storage with import support)
+    local pve_download_ok=false
+    local download_response
+    download_response=$(pve_api POST "/nodes/${PROXMOX_NODE}/storage/${PVE_ISO_STORAGE}/download-url" \
+        --data-urlencode "url=${ROCKY_CLOUD_URL}" \
+        --data-urlencode "content=import" \
+        --data-urlencode "filename=${ROCKY_CLOUD_FNAME}" \
+        --data-urlencode "verify-certificates=0" 2>&1) && {
+
+        local upid
+        upid=$(echo "$download_response" | jq -r '.data // empty')
+        if [[ -n "$upid" ]]; then
+            if pve_wait_task "$upid" "Downloading cloud image on Proxmox..." 600; then
+                pve_download_ok=true
+                PVE_CLOUD_IMAGE_PATH="$(pve_get_storage_path "$PVE_ISO_STORAGE")/import/${ROCKY_CLOUD_FNAME}"
+            else
+                warn "Proxmox-side download failed: ${PVE_TASK_EXIT:-unknown}"
+            fi
+        fi
+    }
+
+    if [[ "$pve_download_ok" == "true" ]]; then
+        success "Cloud image available on Proxmox."
+        return
+    fi
+
+    # Strategy 2: Download locally, then upload to Proxmox
+    warn "Proxmox could not download the image directly. Falling back to local download + upload..."
+
+    local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/sre-platform"
+    mkdir -p "$cache_dir"
+    local cached_img="${cache_dir}/${ROCKY_CLOUD_FNAME}"
+
+    if [[ -f "$cached_img" ]]; then
+        local cached_size
+        cached_size=$(wc -c < "$cached_img")
+        # Cloud image should be at least 500 MB
+        if (( cached_size > 536870912 )); then
+            success "Using cached cloud image: $cached_img ($(du -h "$cached_img" | cut -f1))"
+        else
+            warn "Cached image looks truncated ($(du -h "$cached_img" | cut -f1)), re-downloading..."
+            rm -f "$cached_img"
+        fi
+    fi
+
+    if [[ ! -f "$cached_img" ]]; then
+        log "Downloading cloud image to local cache..."
+        if ! curl -4 -fSL --progress-bar -o "$cached_img" "$ROCKY_CLOUD_URL"; then
+            rm -f "$cached_img"
+            fatal "Failed to download cloud image. Check your internet connection and URL: $ROCKY_CLOUD_URL"
+        fi
+        success "Cloud image downloaded to cache ($(du -h "$cached_img" | cut -f1))."
+    fi
+
+    # Strategy 2a: Upload with content=import (Proxmox 8.1+, accepts .qcow2 natively)
+    local upload_ok=false
+    log "Attempting upload with content=import (Proxmox 8.1+)..."
+    if pve_upload_import "$PVE_ISO_STORAGE" "$cached_img" "$ROCKY_CLOUD_FNAME" 2>/dev/null; then
+        upload_ok=true
+        PVE_CLOUD_IMAGE_PATH="$(pve_get_storage_path "$PVE_ISO_STORAGE")/import/${ROCKY_CLOUD_FNAME}"
+    fi
+
+    # Strategy 2b: Rename to .img and upload as content=iso
+    # Proxmox upload API with content=iso accepts .iso and .img but not .qcow2
+    if [[ "$upload_ok" != "true" ]]; then
+        warn "content=import upload not supported. Trying .img rename workaround..."
+        local cached_img_renamed="${cache_dir}/${img_fname}"
+
+        # Create a copy/link with .img extension if not already there
+        if [[ ! -f "$cached_img_renamed" ]]; then
+            ln -f "$cached_img" "$cached_img_renamed" 2>/dev/null \
+                || cp "$cached_img" "$cached_img_renamed"
+        fi
+
+        if pve_upload_iso "$PVE_ISO_STORAGE" "$cached_img_renamed" "$img_fname"; then
+            upload_ok=true
+            PVE_CLOUD_IMAGE_PATH="$(pve_get_storage_path "$PVE_ISO_STORAGE")/template/iso/${img_fname}"
+        fi
+    fi
+
+    if [[ "$upload_ok" != "true" ]]; then
+        error "Failed to upload cloud image to Proxmox."
+        echo
+        error "You can manually copy the image to your Proxmox host:"
+        error "  scp ${cached_img} root@${PROXMOX_HOST}:/var/lib/vz/template/iso/${ROCKY_CLOUD_FNAME}"
+        error "Then re-run this script."
+        fatal "Cloud image upload failed."
+    fi
+
+    success "Cloud image uploaded to Proxmox."
+}
+
+# Get the filesystem path for a Proxmox storage pool
+pve_get_storage_path() {
+    local storage="$1"
+    local storage_cfg
+    storage_cfg=$(pve_api GET "/nodes/${PROXMOX_NODE}/storage/${storage}/status" 2>/dev/null) || true
+    local spath
+    spath=$(echo "$storage_cfg" | jq -r '.data.path // empty' 2>/dev/null || true)
+    if [[ -z "$spath" ]]; then
+        # Common default for 'local' storage
+        echo "/var/lib/vz"
+    else
+        echo "$spath"
+    fi
+}
+
+# Check if KVM hardware virtualisation is available on the Proxmox node
+pve_kvm_available() {
+    local cpu_info
+    cpu_info=$(pve_api GET "/nodes/${PROXMOX_NODE}/status" 2>/dev/null) || true
+    local kvm_avail
+    # Check the KVM flag from /proc/cpuinfo via node capabilities
+    kvm_avail=$(echo "$cpu_info" | jq -r '.data.kvm // empty' 2>/dev/null || true)
+    # Alternatively, check cpuinfo for vmx/svm
+    if [[ "$kvm_avail" == "true" || "$kvm_avail" == "1" ]]; then
+        return 0
+    fi
+    # If we can't determine, try to start a test and see
+    return 1
+}
+
+# Create a VM with the cloud image imported as its disk, configure cloud-init
+pve_create_template_vm() {
+    local vmid="$TEMPLATE_VMID"
+    local template_name="sre-rocky9-rke2"
+
+    # Check if the VMID already exists
+    local existing_vm
+    existing_vm=$(pve_api GET "/nodes/${PROXMOX_NODE}/qemu/${vmid}/status/current" 2>/dev/null) && {
+        local existing_name
+        existing_name=$(echo "$existing_vm" | jq -r '.data.name // empty')
+        if [[ -n "$existing_name" ]]; then
+            # Check if it is already a template
+            local is_template
+            is_template=$(echo "$existing_vm" | jq -r '.data.template // 0')
+            if [[ "$is_template" == "1" ]]; then
+                success "Template VM $vmid ($existing_name) already exists. Skipping build."
+                PVE_TEMPLATE_EXISTS=true
+                return
+            fi
+            warn "VM $vmid ($existing_name) exists but is not a template. Destroying and rebuilding..."
+            pve_api POST "/nodes/${PROXMOX_NODE}/qemu/${vmid}/status/stop" > /dev/null 2>&1 || true
+            sleep 5
+            pve_api DELETE "/nodes/${PROXMOX_NODE}/qemu/${vmid}" > /dev/null 2>&1 || true
+            sleep 3
+        fi
+    }
+
+    PVE_TEMPLATE_EXISTS=false
+
+    log "Creating VM $vmid with imported cloud image disk..."
+
+    # PVE_CLOUD_IMAGE_PATH is set by pve_ensure_cloud_image() and points to
+    # the actual filesystem path on Proxmox where the qcow2/img file lives.
+    local import_path="${PVE_CLOUD_IMAGE_PATH}"
+    if [[ -z "$import_path" ]]; then
+        fatal "PVE_CLOUD_IMAGE_PATH is not set. Run pve_ensure_cloud_image first."
+    fi
+
+    # Convert filesystem path to Proxmox volume ID for non-root API users.
+    # Proxmox rejects filesystem paths for non-root: "Only root can pass arbitrary filesystem paths."
+    # Volume ID format: <storage>:import/<filename> or <storage>:iso/<filename>
+    if [[ "$import_path" == /* ]]; then
+        local import_fname
+        import_fname=$(basename "$import_path")
+        if [[ "$import_path" == *"/import/"* ]]; then
+            import_path="${PVE_ISO_STORAGE}:import/${import_fname}"
+        elif [[ "$import_path" == *"/iso/"* ]]; then
+            import_path="${PVE_ISO_STORAGE}:iso/${import_fname}"
+        fi
+    fi
+    log "Importing disk from: $import_path"
+
+    # Detect KVM availability — nested virtualisation often lacks KVM
+    local kvm_flag="1" cpu_type="host"
+    local node_caps
+    node_caps=$(pve_api GET "/nodes/${PROXMOX_NODE}/capabilities/qemu/cpu" 2>/dev/null) || true
+    # Simple heuristic: try to check /sys/module/kvm via node status
+    # The most reliable way is to just create the VM and handle start failure,
+    # but we can check the node's reported KVM support
+    local node_status
+    node_status=$(pve_api GET "/nodes/${PROXMOX_NODE}/status" 2>/dev/null) || true
+    local kvm_supported
+    kvm_supported=$(echo "$node_status" | jq -r '.data.ksm.shared // 0' 2>/dev/null || echo "0")
+    # A more reliable check: look for 'kvm' in cpuinfo flags or check if /dev/kvm exists
+    # Since we can't SSH to the host, we'll create the VM and retry without KVM if start fails
+    log "KVM will be auto-detected at VM start (disabled automatically if unavailable)."
+
+    # URL-encode the SSH public key (Proxmox API requires pre-encoded sshkeys)
+    local ssh_encoded
+    ssh_encoded=$(printf '%s' "$SSH_PUBLIC_KEY" | python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')
+
+    # Determine ipconfig0: use static IP from bridge subnet if available,
+    # otherwise fall back to DHCP (guest agent + slower polling).
+    local ipconfig_val="ip=dhcp"
+    if [[ -n "${TEMPLATE_BUILD_IP:-}" && -n "${PVE_BRIDGE_MASK:-}" && -n "${PVE_BRIDGE_GW:-}" ]]; then
+        ipconfig_val="ip=${TEMPLATE_BUILD_IP}/${PVE_BRIDGE_MASK},gw=${PVE_BRIDGE_GW}"
+        log "Template VM will use static IP: ${TEMPLATE_BUILD_IP}"
+    else
+        log "Template VM will use DHCP (guest agent required for IP discovery)."
+    fi
+
+    # Create VM with imported disk via API
+    local create_response
+    create_response=$(pve_api POST "/nodes/${PROXMOX_NODE}/qemu" \
+        --data-urlencode "vmid=${vmid}" \
+        --data-urlencode "name=${template_name}" \
+        --data-urlencode "description=SRE Rocky Linux 9 - RKE2 pre-staged - Built by quickstart" \
+        --data-urlencode "ostype=l26" \
+        --data-urlencode "cpu=host" \
+        --data-urlencode "cores=2" \
+        --data-urlencode "memory=4096" \
+        --data-urlencode "scsihw=virtio-scsi-pci" \
+        --data-urlencode "scsi0=${PROXMOX_STORAGE}:0,import-from=${import_path}" \
+        --data-urlencode "ide2=${PROXMOX_STORAGE}:cloudinit" \
+        --data-urlencode "boot=order=scsi0" \
+        --data-urlencode "net0=virtio,bridge=${PROXMOX_BRIDGE}" \
+        --data-urlencode "serial0=socket" \
+        --data-urlencode "vga=serial0" \
+        --data-urlencode "agent=enabled=1" \
+        --data-urlencode "ipconfig0=${ipconfig_val}" \
+        --data-urlencode "ciuser=sre-admin" \
+        --data-urlencode "sshkeys=${ssh_encoded}" \
+        2>&1) || {
+        # If import-from fails, provide a clear error
+        error "Failed to create VM with import-from. This requires Proxmox 8.x."
+        error "API response: $create_response"
+        echo
+        error "If your Proxmox version does not support import-from, you can:"
+        error "  1. Upgrade to Proxmox 8.2+"
+        error "  2. Use the Packer-based workflow instead:"
+        error "     cd infrastructure/packer/rocky-linux-9-proxmox && packer build ."
+        fatal "Template build failed."
+    }
+
+    # The create call may return a UPID for the disk import task
+    local upid
+    upid=$(echo "$create_response" | jq -r '.data // empty' 2>/dev/null || true)
+    if [[ -n "$upid" && "$upid" != "null" ]]; then
+        if ! pve_wait_task "$upid" "Importing disk into VM ${vmid}..." 300; then
+            fatal "Disk import task failed: ${PVE_TASK_EXIT:-unknown}"
+        fi
+    fi
+
+    # Resize disk to 40G (cloud images ship with ~10G)
+    log "Resizing disk to 40G..."
+    pve_api PUT "/nodes/${PROXMOX_NODE}/qemu/${vmid}/resize" \
+        --data-urlencode "disk=scsi0" \
+        --data-urlencode "size=40G" \
+        > /dev/null 2>&1 || warn "Disk resize failed (may already be correct size)."
+
+    success "VM $vmid created with imported cloud image disk."
+}
+
+# Wait for QEMU guest agent to report a network interface with an IP
+pve_wait_for_guestagent() {
+    local vmid="$1"
+    local timeout="${2:-300}"
+    local elapsed=0
+
+    log "Waiting for QEMU guest agent on VM $vmid to report IP..."
+
+    while (( elapsed < timeout )); do
+        local agent_response
+        agent_response=$(pve_api GET "/nodes/${PROXMOX_NODE}/qemu/${vmid}/agent/network-get-interfaces" 2>/dev/null) || true
+
+        if [[ -n "$agent_response" ]]; then
+            # Look for a non-loopback interface with an IPv4 address
+            local ip
+            ip=$(echo "$agent_response" | jq -r '
+                [.data.result[] |
+                    select(.name != "lo") |
+                    .["ip-addresses"][]? |
+                    select(.["ip-address-type"] == "ipv4") |
+                    .["ip-address"]
+                ] | first // empty
+            ' 2>/dev/null || true)
+
+            if [[ -n "$ip" && "$ip" != "null" ]]; then
+                PVE_VM_IP="$ip"
+                success "VM $vmid is up at $PVE_VM_IP"
+                return 0
+            fi
+        fi
+
+        sleep 5
+        elapsed=$((elapsed + 5))
+        printf "\r  Waiting for guest agent... (%ds/%ds)" "$elapsed" "$timeout"
+    done
+
+    echo
+    fatal "Timed out waiting for guest agent on VM $vmid after ${timeout}s."
+}
+
+# SSH into the template VM and run provisioning (RKE2 install, SELinux, cleanup)
+pve_run_provisioning() {
+    local ip="$1"
+
+    log "Running provisioning on $ip via SSH..."
+    log "This installs RKE2, stages air-gap images, and prepares the template."
+
+    # Common SSH options for provisioning
+    local ssh_opts=(-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -i "$SSH_KEY_PATH")
+
+    # Wait for SSH to actually accept connections (guest agent IP may be up before sshd)
+    local ssh_wait=0
+    while ! ssh "${ssh_opts[@]}" sre-admin@"$ip" "exit 0" 2>/dev/null; do
+        if (( ssh_wait >= 120 )); then
+            fatal "Timed out waiting for SSH on $ip"
+        fi
+        sleep 5
+        ssh_wait=$((ssh_wait + 5))
+        printf "\r  Waiting for SSH on %s... (%ds)" "$ip" "$ssh_wait"
+    done
+    echo
+    success "SSH connection established."
+
+    # Run provisioning commands via SSH
+    ssh "${ssh_opts[@]}" sre-admin@"$ip" "sudo bash -s" <<'PROVISION_EOF'
+set -euo pipefail
+
+echo "=== Enabling QEMU guest agent ==="
+# Rocky GenericCloud has qemu-guest-agent installed but not enabled.
+# Enable it so cloned VMs will have it running on first boot.
+systemctl enable qemu-guest-agent 2>/dev/null || true
+systemctl start qemu-guest-agent 2>/dev/null || true
+
+echo "=== Waiting for cloud-init to finish ==="
+cloud-init status --wait 2>/dev/null || sleep 30
+
+echo "=== Installing RKE2 (server + agent packages) ==="
+# Install via RPM for proper systemd units and /usr/bin/rke2 path.
+# Install BOTH server and agent so cloned VMs can serve either role.
+dnf install -y container-selinux
+curl -sfL https://get.rke2.io -o /tmp/rke2-install.sh
+chmod 700 /tmp/rke2-install.sh
+INSTALL_RKE2_CHANNEL='stable' INSTALL_RKE2_TYPE='server' /tmp/rke2-install.sh
+INSTALL_RKE2_CHANNEL='stable' INSTALL_RKE2_TYPE='agent' /tmp/rke2-install.sh
+rm -f /tmp/rke2-install.sh
+echo "RKE2 server + agent installed."
+
+# Determine rke2 binary path (RPM installs to /usr/bin, script to /usr/local/bin)
+RKE2_BIN=$(command -v rke2 2>/dev/null || echo "/usr/bin/rke2")
+
+echo "=== Downloading RKE2 air-gap images ==="
+mkdir -p /var/lib/rancher/rke2/agent/images
+RKE2_FULL_VERSION=$($RKE2_BIN --version 2>/dev/null | head -1 | awk '{print $3}' || echo "")
+if [[ -n "$RKE2_FULL_VERSION" ]]; then
+    # GitHub release tags use + not - (URL-encode the +)
+    RKE2_RELEASE=$(echo "$RKE2_FULL_VERSION" | sed 's/+/%2B/')
+    curl -sfL -o /var/lib/rancher/rke2/agent/images/rke2-images-core.linux-amd64.tar.zst \
+        "https://github.com/rancher/rke2/releases/download/${RKE2_RELEASE}/rke2-images-core.linux-amd64.tar.zst" \
+        || echo "WARN: Could not download core images tarball"
+    curl -sfL -o /var/lib/rancher/rke2/agent/images/rke2-images-canal.linux-amd64.tar.zst \
+        "https://github.com/rancher/rke2/releases/download/${RKE2_RELEASE}/rke2-images-canal.linux-amd64.tar.zst" \
+        || echo "WARN: Could not download canal images tarball"
+    echo "Air-gap images staged."
+    ls -lh /var/lib/rancher/rke2/agent/images/ || true
+else
+    echo "WARN: Could not detect RKE2 version for air-gap image download"
+fi
+
+echo "=== Installing RKE2 SELinux policy ==="
+dnf install -y rke2-selinux || echo "WARN: rke2-selinux not available via dnf, will be installed at first RKE2 start"
+
+echo "=== Configuring kernel modules for RKE2 ==="
+tee /etc/modules-load.d/rke2.conf > /dev/null <<MODEOF
+br_netfilter
+overlay
+MODEOF
+
+echo "=== Ensuring sre-admin user is configured ==="
+# sre-admin was created by cloud-init, ensure it has correct sudo
+echo 'sre-admin ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/sre-admin
+chmod 0440 /etc/sudoers.d/sre-admin
+
+echo "=== Cleaning up for template snapshot ==="
+dnf clean all
+rm -rf /var/cache/dnf /tmp/* /var/tmp/*
+truncate -s 0 /var/log/messages /var/log/secure /var/log/audit/audit.log 2>/dev/null || true
+rm -f /etc/ssh/ssh_host_*
+rm -f /root/.bash_history /home/sre-admin/.bash_history
+cloud-init clean --logs --seed 2>/dev/null || true
+# Remove RKE2 runtime state (binary stays, config stays, no node identity)
+rm -rf /var/lib/rancher/rke2/server /var/lib/rancher/rke2/agent/pod-manifests
+rm -f /etc/rancher/rke2/rke2.yaml
+echo "=== Template cleanup complete ==="
+PROVISION_EOF
+
+    success "Provisioning complete."
+}
+
+# Stop VM and convert to template
+pve_convert_to_template() {
+    local vmid="$1"
+
+    log "Stopping VM $vmid..."
+    pve_api POST "/nodes/${PROXMOX_NODE}/qemu/${vmid}/status/stop" > /dev/null 2>&1 || true
+
+    # Wait for VM to actually stop
+    local stop_wait=0
+    while (( stop_wait < 60 )); do
+        local status_response
+        status_response=$(pve_api GET "/nodes/${PROXMOX_NODE}/qemu/${vmid}/status/current" 2>/dev/null) || true
+        local vm_status
+        vm_status=$(echo "$status_response" | jq -r '.data.status // empty' 2>/dev/null || true)
+        if [[ "$vm_status" == "stopped" ]]; then
+            break
+        fi
+        sleep 3
+        stop_wait=$((stop_wait + 3))
+    done
+
+    log "Converting VM $vmid to template..."
+    pve_api POST "/nodes/${PROXMOX_NODE}/qemu/${vmid}/template" > /dev/null \
+        || fatal "Failed to convert VM $vmid to template."
+
+    success "VM $vmid converted to template."
+}
+
 # ============================================================================
 # Phase 1: Gather Configuration
 # ============================================================================
@@ -522,46 +1068,79 @@ if [[ -n "${PROXMOX_USER:-}" && -n "${PROXMOX_TOKEN:-}" ]]; then
     prompt       PROXMOX_NODE    "Proxmox node name" "pve"
     log "Using PROXMOX_USER from environment: $PROXMOX_USER"
     log "Using PROXMOX_TOKEN from environment: [hidden]"
-    prompt       PROXMOX_ISO     "Rocky Linux 9 ISO path on Proxmox storage" "local:iso/${ROCKY_ISO_FILENAME}"
     prompt       PROXMOX_STORAGE "Storage pool for VM disks" "local-lvm"
     prompt       PROXMOX_BRIDGE  "Network bridge" "vmbr0"
+
+    # Derive host from URL for API calls
+    PROXMOX_HOST=$(echo "$PROXMOX_URL" | sed -E 's|^https?://||; s|:[0-9]+.*||')
+
+    # Advanced mode needs ticket auth for template build (API token may lack create perms)
+    # Try to authenticate — if it fails, we'll just need SKIP_TEMPLATE=1
+    if [[ -z "${PVE_TICKET:-}" ]]; then
+        warn "Advanced mode: cloud image template build requires root@pam authentication."
+        warn "Set SKIP_TEMPLATE=1 if you already have a template, or provide PROXMOX_AUTH_PASS."
+        if [[ -n "${PROXMOX_AUTH_PASS:-${PROXMOX_ROOT_PASS:-}}" ]]; then
+            pve_authenticate "$PROXMOX_HOST" "${PROXMOX_AUTH_PASS:-$PROXMOX_ROOT_PASS}" || true
+            unset PROXMOX_AUTH_PASS PROXMOX_ROOT_PASS
+        fi
+    fi
+
+    # Discover ISO storage for cloud image download
+    if [[ -z "${PVE_ISO_STORAGE:-}" && -n "${PVE_TICKET:-}" ]]; then
+        pve_discover_storage
+    else
+        PVE_ISO_STORAGE="${PVE_ISO_STORAGE:-local}"
+    fi
+
+    # Discover bridge subnet for template build static IP
+    if [[ -n "${PVE_TICKET:-}" && -n "${PROXMOX_NODE:-}" ]]; then
+        pve_discover_bridge_subnet || warn "Bridge subnet auto-detection failed."
+    fi
 else
     # ── Zero-Touch Mode ───────────────────────────────────────────────────
     echo "Zero-touch mode: the script will auto-discover your Proxmox environment,"
-    echo "create an API user, and download the Rocky Linux 9 ISO."
+    echo "create an API user, and download the Rocky Linux 9 cloud image."
     echo
     echo "You only need the Proxmox host IP and root password."
     echo
 
     prompt        PROXMOX_HOST      "Proxmox host IP or hostname"
-    prompt_secret PROXMOX_ROOT_PASS "root@pam password (used once, then discarded)"
+
+    # Support PROXMOX_ROOT_PASS as backward-compatible alias
+    if [[ -n "${PROXMOX_ROOT_PASS:-}" && -z "${PROXMOX_AUTH_PASS:-}" ]]; then
+        PROXMOX_AUTH_PASS="$PROXMOX_ROOT_PASS"
+    fi
+
+    prompt        PROXMOX_AUTH_USER "Proxmox username (e.g., root@pam, user@pve)" "root@pam"
+    prompt_secret PROXMOX_AUTH_PASS "Password for ${PROXMOX_AUTH_USER} (used once, then discarded)"
 
     # ── Phase 1b: Proxmox API Bootstrap ───────────────────────────────────
 
     header "Phase 1b: Proxmox API Bootstrap"
 
     log "Authenticating to Proxmox at $PROXMOX_HOST..."
-    pve_authenticate "$PROXMOX_HOST" "$PROXMOX_ROOT_PASS" || exit 1
+    pve_authenticate "$PROXMOX_HOST" "$PROXMOX_AUTH_PASS" || exit 1
     success "Authenticated to Proxmox."
 
-    # Discard root password from memory immediately
-    unset PROXMOX_ROOT_PASS
+    # Discard password from memory immediately
+    unset PROXMOX_AUTH_PASS PROXMOX_ROOT_PASS
 
     log "Auto-discovering environment..."
     pve_discover_node
     pve_discover_storage
     pve_discover_bridge
+    pve_discover_bridge_subnet || warn "Bridge subnet auto-detection failed."
 
     echo
     log "Creating API credentials..."
     pve_create_api_user
 
     echo
-    log "Ensuring Rocky Linux 9 ISO is available..."
-    pve_ensure_iso
+    log "Ensuring Rocky Linux 9 cloud image is available..."
+    pve_ensure_cloud_image
 
-    # Clean up PVE session credentials
-    unset PVE_TICKET PVE_CSRF
+    # Keep PVE_TICKET and PVE_CSRF for Phase 2 (template build uses root API)
+    # They will be cleaned up after Phase 2.
 
     # Set the URL from the host
     PROXMOX_URL="https://${PROXMOX_HOST}:8006"
@@ -604,9 +1183,9 @@ header "Configuration Summary"
 echo "  Proxmox URL:      $PROXMOX_URL"
 echo "  Proxmox node:     $PROXMOX_NODE"
 echo "  API user:         $PROXMOX_USER"
-echo "  ISO:              $PROXMOX_ISO"
 echo "  Storage pool:     $PROXMOX_STORAGE"
 echo "  Network bridge:   $PROXMOX_BRIDGE"
+echo "  Template VMID:    $TEMPLATE_VMID"
 echo "  Server nodes:     $SERVER_COUNT"
 echo "  Worker nodes:     $AGENT_COUNT"
 echo "  SSH key:          $SSH_KEY_PATH"
@@ -617,89 +1196,140 @@ if ! prompt_yesno "Proceed with deployment?"; then
     exit 0
 fi
 
-# Normalize the Proxmox URL (strip trailing slash, ensure /api2/json for Packer)
+# Normalize the Proxmox URL (strip trailing slash)
 PROXMOX_URL_BASE="${PROXMOX_URL%/}"
-PROXMOX_URL_PACKER="${PROXMOX_URL_BASE}/api2/json"
 # Tofu uses the base URL without /api2/json
 PROXMOX_URL_TOFU="$PROXMOX_URL_BASE"
 
 # ============================================================================
-# Phase 2: Build VM Template with Packer
+# Phase 2: Build VM Template (Cloud Image Import)
 # ============================================================================
+# This uses the Proxmox REST API to import a Rocky Linux GenericCloud qcow2
+# image, boot it with cloud-init, provision via SSH, and convert to template.
+# No Packer, no ISO boot, no KVM dependency.
+#
+# For full STIG-hardened production templates, use the Packer workflow:
+#   cd infrastructure/packer/rocky-linux-9-proxmox && packer build .
 
-if [[ "${SKIP_PACKER:-0}" == "1" ]]; then
-    warn "Skipping Packer build (SKIP_PACKER=1)"
+if [[ "${SKIP_TEMPLATE:-${SKIP_PACKER:-0}}" == "1" ]]; then
+    warn "Skipping template build (SKIP_TEMPLATE=1)"
 else
-    header "Phase 2: Building VM Template with Packer"
-    log "This creates a hardened Rocky Linux 9 template with RKE2 pre-staged."
-    log "This step takes 15-30 minutes."
+    header "Phase 2: Building VM Template (Cloud Image Import)"
+    log "This imports a Rocky Linux 9 cloud image, provisions it, and creates a template."
+    log "This step takes 10-15 minutes (no KVM required)."
     echo
 
-    cd "$REPO_ROOT/infrastructure/packer/rocky-linux-9-proxmox"
-
-    log "Initializing Packer plugins..."
-    packer init . > /dev/null 2>&1
-    success "Packer plugins initialized."
-
-    # Build the common Packer var args
-    PACKER_VARS=(
-        -var "proxmox_url=$PROXMOX_URL_PACKER"
-        -var "proxmox_username=$PROXMOX_USER"
-        -var "proxmox_token=$PROXMOX_TOKEN"
-        -var "proxmox_node=$PROXMOX_NODE"
-        -var "iso_file=$PROXMOX_ISO"
-        -var "vm_storage_pool=$PROXMOX_STORAGE"
-        -var "vm_network_bridge=$PROXMOX_BRIDGE"
-        -var "proxmox_insecure_skip_tls_verify=true"
-    )
-
-    log "Validating Packer template..."
-    validate_output=""
-    if ! validate_output=$(packer validate "${PACKER_VARS[@]}" . 2>&1); then
-        error "Packer validation failed:"
-        echo "$validate_output"
-        fatal "Fix the errors above and re-run."
-    fi
-    success "Packer template validated."
-
-    log "Building VM template (this takes 15-30 minutes with KVM, longer without)..."
-    echo
-
-    # Try with KVM first. If it fails with a KVM error, retry with QEMU emulation.
-    set +e
-    packer_output=$(packer build "${PACKER_VARS[@]}" -var "image_version=1.0.0" . 2>&1)
-    packer_exit=$?
-    set -e
-
-    if [[ $packer_exit -ne 0 ]]; then
-        if echo "$packer_output" | grep -qi "KVM.*not available\|kvm virtualisation"; then
-            echo "$packer_output" | tail -5
-            echo
-            warn "KVM hardware virtualisation is not available on this host."
-            warn "This is common when Proxmox runs inside VMware/VirtualBox/Hyper-V."
-            log "Retrying with QEMU emulation — this will take 45-60 minutes..."
-            echo
-            # QEMU emulation needs: longer boot wait (GRUB is slow), longer SSH timeout
-            # (full OS install under emulation), and more cores to help speed things up.
-            packer build \
-                "${PACKER_VARS[@]}" \
-                -var "image_version=1.0.0" \
-                -var "vm_disable_kvm=true" \
-                -var "boot_wait=120s" \
-                -var "ssh_timeout=90m" \
-                -var "vm_cores=4" \
-                -var "vm_memory=8192" \
-                .
+    # Ensure we have API credentials for template build
+    if [[ -z "${PVE_TICKET:-}" ]]; then
+        # In advanced mode, we may need to authenticate for template build
+        if [[ -n "${PROXMOX_AUTH_PASS:-${PROXMOX_ROOT_PASS:-}}" ]]; then
+            pve_authenticate "$PROXMOX_HOST" "${PROXMOX_AUTH_PASS:-$PROXMOX_ROOT_PASS}" || fatal "Authentication failed."
+            unset PROXMOX_AUTH_PASS PROXMOX_ROOT_PASS
         else
-            # Not a KVM error — show output and fail
-            echo "$packer_output"
-            fatal "Packer build failed. See errors above."
+            warn "No root@pam session available for template build."
+            warn "Attempting template build with API token (may fail if permissions are insufficient)."
         fi
-    else
-        echo "$packer_output"
+    fi
+
+    # Step 1: Ensure cloud image is on Proxmox storage
+    if [[ -z "${PVE_CLOUD_IMAGE_PATH:-}" ]]; then
+        pve_ensure_cloud_image
+    fi
+
+    # Step 2: Create VM with imported disk and cloud-init
+    pve_create_template_vm
+
+    if [[ "${PVE_TEMPLATE_EXISTS:-false}" != "true" ]]; then
+        # Step 3: Start the VM (with KVM auto-detection)
+        log "Starting VM $TEMPLATE_VMID..."
+        start_response=""
+        start_upid=""
+        start_ok=false
+        start_response=$(pve_api POST "/nodes/${PROXMOX_NODE}/qemu/${TEMPLATE_VMID}/status/start" 2>&1) || true
+        start_upid=$(echo "$start_response" | jq -r '.data // empty' 2>/dev/null || true)
+
+        if [[ -n "$start_upid" ]]; then
+            if pve_wait_task "$start_upid" "Starting VM..." 60; then
+                start_ok=true
+            else
+                start_err="${PVE_TASK_EXIT:-unknown}"
+                if echo "$start_err" | grep -qi "KVM.*not available\|KVM virtualisation"; then
+                    warn "KVM hardware virtualisation is not available."
+                    warn "This is normal when Proxmox runs inside VMware/VirtualBox/Hyper-V."
+                    log "Switching to QEMU emulation mode..."
+                    # Use cpu=max for best QEMU emulation compatibility.
+                    # Rocky Linux 9 needs x86-64-v2; specific CPU types like
+                    # qemu64 or x86-64-v2-AES can hang without KVM. cpu=max
+                    # exposes all features QEMU can software-emulate.
+                    pve_api PUT "/nodes/${PROXMOX_NODE}/qemu/${TEMPLATE_VMID}/config" \
+                        --data-urlencode "kvm=0" \
+                        --data-urlencode "cpu=max" \
+                        > /dev/null 2>&1 || warn "Failed to set kvm=0"
+
+                    log "Starting VM $TEMPLATE_VMID with QEMU emulation..."
+                    start_response=$(pve_api POST "/nodes/${PROXMOX_NODE}/qemu/${TEMPLATE_VMID}/status/start" 2>&1) || true
+                    start_upid=$(echo "$start_response" | jq -r '.data // empty' 2>/dev/null || true)
+                    if [[ -n "$start_upid" ]]; then
+                        if pve_wait_task "$start_upid" "Starting VM (QEMU emulation)..." 60; then
+                            start_ok=true
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        if [[ "$start_ok" != "true" ]]; then
+            fatal "Failed to start VM $TEMPLATE_VMID. Check the Proxmox task log."
+        fi
+
+        # Step 4: Wait for VM to become reachable via SSH
+        # Strategy: if we have a static IP (from bridge subnet detection), poll SSH
+        # directly — no guest agent needed. Otherwise, fall back to guest agent.
+        if [[ -n "${TEMPLATE_BUILD_IP:-}" ]]; then
+            # Static IP: poll SSH directly (no guest agent dependency)
+            log "Waiting for SSH on ${TEMPLATE_BUILD_IP}..."
+            log "(QEMU emulation is slow — this may take several minutes)"
+            ssh_wait=0
+            ssh_timeout=600
+            while ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
+                    -i "$SSH_KEY_PATH" sre-admin@"${TEMPLATE_BUILD_IP}" "exit 0" 2>/dev/null; do
+                if (( ssh_wait >= ssh_timeout )); then
+                    fatal "Timed out waiting for SSH on ${TEMPLATE_BUILD_IP} after ${ssh_timeout}s."
+                fi
+                sleep 10
+                ssh_wait=$((ssh_wait + 10))
+                printf "\r  Waiting for SSH on %s... (%ds/%ds)" "$TEMPLATE_BUILD_IP" "$ssh_wait" "$ssh_timeout"
+            done
+            echo
+            success "SSH connection established at ${TEMPLATE_BUILD_IP}."
+            PVE_VM_IP="$TEMPLATE_BUILD_IP"
+        else
+            # DHCP: fall back to guest agent IP discovery (slower, may not work
+            # on GenericCloud images without cicustom snippet)
+            warn "No static IP available — falling back to guest agent for IP discovery."
+            warn "This requires qemu-guest-agent to be running in the VM."
+            pve_wait_for_guestagent "$TEMPLATE_VMID" 600
+        fi
+
+        # Step 5: Provision via SSH
+        pve_run_provisioning "$PVE_VM_IP"
+
+        # Step 6: Reset cloud-init to DHCP before converting to template.
+        # The template used a static IP for provisioning; cloned VMs should
+        # get their IPs from DHCP or per-clone ipconfig0 (set by OpenTofu).
+        log "Resetting cloud-init network to DHCP for template..."
+        pve_api PUT "/nodes/${PROXMOX_NODE}/qemu/${TEMPLATE_VMID}/config" \
+            --data-urlencode "ipconfig0=ip=dhcp" \
+            > /dev/null 2>&1 || warn "Could not reset ipconfig0 (non-fatal)."
+
+        # Step 7: Convert to template
+        pve_convert_to_template "$TEMPLATE_VMID"
     fi
 
     success "VM template built successfully."
+
+    # Clean up PVE session credentials (no longer needed)
+    unset PVE_TICKET PVE_CSRF 2>/dev/null || true
 fi
 
 cd "$REPO_ROOT"
@@ -852,6 +1482,9 @@ cd "$REPO_ROOT/infrastructure/ansible"
 # Generate a random RKE2 cluster token
 RKE2_TOKEN=$(openssl rand -hex 32)
 
+# Note: rke2_server_url is computed automatically by install-rke2.yml from the
+# inventory (first control_plane host initializes, others join it).
+# Do NOT pass rke2_server_url via --extra-vars — it would override the per-host logic.
 ansible-playbook playbooks/site.yml \
     -i inventory/proxmox-lab/hosts.yml \
     --extra-vars "rke2_token=$RKE2_TOKEN" \
@@ -980,7 +1613,7 @@ fi
 
 echo "To access Grafana (after Flux deploys monitoring):"
 echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
-echo "  open http://localhost:3000"
+echo "  Then open http://localhost:3000 in your browser"
 echo
 
 echo "Next steps:"

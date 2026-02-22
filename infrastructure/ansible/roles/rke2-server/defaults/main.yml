@@ -1,10 +1,11 @@
 ---
 # RKE2 Server Role — Default Variables
 
-# RKE2 version — always pin explicitly
-rke2_version: "v1.28.6+rke2r1"
+# RKE2 version — leave empty to get latest from channel, or pin a specific
+# version like "v1.34.4+rke2r1". Do NOT set to "stable" (that's the channel).
+rke2_version: ""
 
-# RKE2 channel (stable, latest, or specific version)
+# RKE2 channel (stable, latest, or testing)
 rke2_channel: "stable"
 
 # Installation method: "tarball" for air-gapped, "rpm" for online
@@ -24,7 +25,7 @@ rke2_tls_san:
 rke2_api_server_lb: ""
 
 # CIS hardening profile (recommended for STIG compliance)
-rke2_profile: "cis-1.23"
+rke2_profile: "cis"
 
 # FIPS mode
 rke2_fips_enabled: true
