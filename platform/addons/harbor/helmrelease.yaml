@@ -167,8 +167,6 @@ spec:
         port: 8001
       serviceMonitor:
         enabled: true
-        additionalLabels:
-          app.kubernetes.io/part-of: sre-platform
 
     # -----------------------------------------------------------------
     # Cache layer

@@ -78,7 +78,8 @@ spec:
         repository: bitnamilegacy/postgresql
         tag: "17.4.0-debian-12-r17"
       primary:
-        # Persistence configured via environment profile ConfigMap (keycloak-env-values)
+        persistence:
+          enabled: false
 
     # ---------------------------------------------------------------
     # Prometheus Metrics
