@@ -6,3 +6,4 @@ metadata:
   labels:
     istio-injection: enabled
     app.kubernetes.io/part-of: sre-platform
+    pod-security.kubernetes.io/enforce: privileged

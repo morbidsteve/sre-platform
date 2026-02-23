@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: openbao
-      version: "0.6.0"
+      version: "0.9.0"
       sourceRef:
         kind: HelmRepository
         name: openbao
@@ -17,7 +17,7 @@ spec:
   dependsOn:
     - name: istio-base
       namespace: istio-system
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false
@@ -29,36 +29,10 @@ spec:
       retries: 3
   values:
     server:
-      ha:
+      # Dev mode for lab — uses in-memory storage, auto-unsealed
+      # For production, use HA mode with Raft storage and transit/KMS seal
+      dev:
         enabled: true
-        replicas: 3
-        raft:
-          enabled: true
-          config: |
-            ui = true
-
-            listener "tcp" {
-              address     = "0.0.0.0:8200"
-              tls_disable = 1
-            }
-
-            storage "raft" {
-              path = "/openbao/data"
-            }
-
-            service_registration "kubernetes" {}
-
-            seal "transit" {
-              address     = "REPLACE_ME"
-              token       = "REPLACE_ME"
-              key_name    = "autounseal"
-              mount_path  = "transit"
-            }
-
-            telemetry {
-              prometheus_retention_time = "30s"
-              disable_hostname         = true
-            }
       resources:
         requests:
           cpu: 100m
@@ -66,12 +40,9 @@ spec:
         limits:
           cpu: 500m
           memory: 512Mi
-      dataStorage:
-        enabled: true
-        size: 10Gi
-      auditStorage:
-        enabled: true
-        size: 10Gi
+      service:
+        type: NodePort
+        nodePort: 30200
       extraEnvironmentVars:
         OPENBAO_LOG_LEVEL: "info"
     injector:

@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: velero
-      version: "6.0.0"
+      version: "11.3.2"
       sourceRef:
         kind: HelmRepository
         name: vmware-tanzu
@@ -17,7 +17,7 @@ spec:
   dependsOn:
     - name: istio-base
       namespace: istio-system
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false
@@ -29,7 +29,26 @@ spec:
       retries: 3
   values:
     # ---------------------------------------------------------------
-    # Backup Storage Location
+    # CRD management — handled separately to avoid upgrade conflicts
+    # ---------------------------------------------------------------
+    upgradeCRDs: false
+
+    # ---------------------------------------------------------------
+    # kubectl image — Bitnami migrated to bitnamilegacy org
+    # ---------------------------------------------------------------
+    kubectl:
+      image:
+        repository: docker.io/bitnamilegacy/kubectl
+        tag: "1.33.4-debian-12-r0"
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+
+    # ---------------------------------------------------------------
+    # Backup Storage Location — configure for your environment
     # ---------------------------------------------------------------
     configuration:
       backupStorageLocation:
@@ -51,15 +70,15 @@ spec:
             region: "us-east-1"
 
     # ---------------------------------------------------------------
-    # AWS Plugin
+    # AWS Plugin — uncomment when S3 backend is configured
     # ---------------------------------------------------------------
-    initContainers:
-      - name: velero-plugin-for-aws
-        image: "velero/velero-plugin-for-aws:v1.9.1"
-        imagePullPolicy: IfNotPresent
-        volumeMounts:
-          - name: plugins
-            mountPath: /target
+    # initContainers:
+    #   - name: velero-plugin-for-aws
+    #     image: "velero/velero-plugin-for-aws:v1.9.1"
+    #     imagePullPolicy: IfNotPresent
+    #     volumeMounts:
+    #       - name: plugins
+    #         mountPath: /target
 
     # ---------------------------------------------------------------
     # Prometheus Metrics
@@ -69,11 +88,11 @@ spec:
         enabled: true
 
     # ---------------------------------------------------------------
-    # Backup Schedules
+    # Backup Schedules — enable when storage backend is configured
     # ---------------------------------------------------------------
     schedules:
       daily-backup:
-        disabled: false
+        disabled: true
         schedule: "0 2 * * *"
         template:
           ttl: "168h"
@@ -86,7 +105,7 @@ spec:
             - "default"
 
       weekly-backup:
-        disabled: false
+        disabled: true
         schedule: "0 3 * * 0"
         template:
           ttl: "672h"
@@ -99,7 +118,7 @@ spec:
             - "default"
 
       monthly-backup:
-        disabled: false
+        disabled: true
         schedule: "0 4 1 * *"
         template:
           ttl: "2160h"
@@ -113,7 +132,7 @@ spec:
   valuesFrom:
     - kind: Secret
       name: velero-s3-credentials
-      optional: false
+      optional: true
     - kind: ConfigMap
       name: velero-env-values
       optional: true

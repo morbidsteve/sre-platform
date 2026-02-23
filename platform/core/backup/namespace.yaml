@@ -5,4 +5,5 @@ metadata:
   name: velero
   labels:
     app.kubernetes.io/part-of: sre-platform
+    pod-security.kubernetes.io/enforce: privileged
     # NO istio-injection — Velero needs to work independently of service mesh

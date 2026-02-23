@@ -1,5 +1,5 @@
 ---
-# Loki — Log aggregation engine (Simple Scalable deployment mode)
+# Loki — Log aggregation engine (SingleBinary mode for lab/dev)
 # Chart: grafana/loki
 # Docs: https://grafana.com/docs/loki/latest/
 apiVersion: helm.toolkit.fluxcd.io/v2
@@ -14,7 +14,7 @@ spec:
   chart:
     spec:
       chart: loki
-      version: "5.47.2"
+      version: "6.29.0"
       sourceRef:
         kind: HelmRepository
         name: grafana
@@ -22,7 +22,7 @@ spec:
   dependsOn:
     - name: istio-base
       namespace: istio-system
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false
@@ -34,9 +34,9 @@ spec:
       retries: 3
   values:
     # ---------------------------------------------------------------
-    # Deployment Mode
+    # Deployment Mode — SingleBinary for lab/dev, SimpleScalable for prod
     # ---------------------------------------------------------------
-    deploymentMode: SimpleScalable
+    deploymentMode: SingleBinary
 
     # ---------------------------------------------------------------
     # Loki Configuration
@@ -46,23 +46,19 @@ spec:
 
       commonConfig:
         replication_factor: 1
+        path_prefix: /tmp/loki
 
       storage:
-        type: s3
-        s3:
-          endpoint: "minio.minio.svc:9000"
-          bucketnames: "loki-chunks"
-          region: "us-east-1"
-          access_key_id: "REPLACE_ME"
-          secret_access_key: "REPLACE_ME"
-          s3ForcePathStyle: true
-          insecure: true
+        type: filesystem
+        filesystem:
+          chunks_directory: /tmp/loki/chunks
+          rules_directory: /tmp/loki/rules
 
       schemaConfig:
         configs:
-          - from: "2024-01-01"
+          - from: "2024-04-01"
             store: tsdb
-            object_store: s3
+            object_store: filesystem
             schema: v13
             index:
               prefix: "loki_index_"
@@ -79,65 +75,42 @@ spec:
       rulerConfig:
         storage:
           type: local
+          local:
+            directory: /tmp/loki/rules
 
     # ---------------------------------------------------------------
-    # Read Path (Queriers)
+    # SingleBinary — single replica with emptyDir storage
+    # ---------------------------------------------------------------
+    singleBinary:
+      replicas: 1
+      persistence:
+        enabled: false
+      extraVolumeMounts:
+        - name: data
+          mountPath: /tmp/loki
+      extraVolumes:
+        - name: data
+          emptyDir: {}
+
+    # ---------------------------------------------------------------
+    # Disable scaled components (not used in SingleBinary mode)
     # ---------------------------------------------------------------
     read:
-      replicas: 2
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 500m
-          memory: 512Mi
-
-    # ---------------------------------------------------------------
-    # Write Path (Ingesters)
-    # ---------------------------------------------------------------
+      replicas: 0
     write:
-      replicas: 2
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 500m
-          memory: 512Mi
-      persistence:
-        enabled: true
-        size: 10Gi
-
-    # ---------------------------------------------------------------
-    # Backend (Compactor + Ruler + IndexGateway)
-    # ---------------------------------------------------------------
+      replicas: 0
     backend:
-      replicas: 1
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 500m
-          memory: 512Mi
-      persistence:
-        enabled: true
-        size: 10Gi
+      replicas: 0
+    gateway:
+      enabled: false
 
     # ---------------------------------------------------------------
-    # Gateway (nginx reverse proxy)
+    # Disable caches (not needed for single-node deployment)
     # ---------------------------------------------------------------
-    gateway:
-      enabled: true
-      replicas: 1
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 128Mi
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
 
     # ---------------------------------------------------------------
     # Monitoring Integration
@@ -161,9 +134,6 @@ spec:
       enabled: false
 
   valuesFrom:
-    - kind: Secret
-      name: loki-s3-credentials
-      optional: true
     - kind: ConfigMap
       name: loki-env-values
       optional: true

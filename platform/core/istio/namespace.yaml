@@ -5,4 +5,5 @@ metadata:
   name: istio-system
   labels:
     app.kubernetes.io/part-of: sre-platform
+    pod-security.kubernetes.io/enforce: privileged
     # Istio's own namespace does NOT get sidecar injection

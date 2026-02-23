@@ -19,7 +19,7 @@ spec:
       namespace: istio-system
     - name: openbao
       namespace: openbao
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false

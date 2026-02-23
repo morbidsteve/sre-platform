@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: tempo
-      version: "1.7.2"
+      version: "1.18.2"
       sourceRef:
         kind: HelmRepository
         name: grafana
@@ -17,7 +17,7 @@ spec:
   dependsOn:
     - name: istio-base
       namespace: istio-system
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false
@@ -32,15 +32,6 @@ spec:
     # Tempo Configuration
     # ---------------------------------------------------------------
     tempo:
-      storage:
-        trace:
-          backend: "s3"
-          s3:
-            endpoint: "REPLACE_ME"
-            bucket: "REPLACE_ME"
-            access_key: "REPLACE_ME"
-            secret_key: "REPLACE_ME"
-            insecure: false
       receivers:
         zipkin:
           endpoint: "0.0.0.0:9411"
@@ -52,13 +43,37 @@ spec:
               endpoint: "0.0.0.0:4318"
       metricsGenerator:
         enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
 
     # ---------------------------------------------------------------
-    # Persistence
+    # Security Context — required for PodSecurity restricted
+    # ---------------------------------------------------------------
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      runAsGroup: 10001
+      fsGroup: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+
+    # ---------------------------------------------------------------
+    # Persistence — disabled for lab (no StorageClass)
     # ---------------------------------------------------------------
     persistence:
-      enabled: true
-      size: "10Gi"
+      enabled: false
 
     # ---------------------------------------------------------------
     # Prometheus ServiceMonitor
@@ -66,9 +81,6 @@ spec:
     serviceMonitor:
       enabled: true
   valuesFrom:
-    - kind: Secret
-      name: tempo-s3-credentials
-      optional: true
     - kind: ConfigMap
       name: tempo-env-values
       optional: true

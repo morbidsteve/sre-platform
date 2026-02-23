@@ -37,6 +37,15 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
       validate:
         message: >-
           Namespace {{request.object.metadata.name}} must have at least one

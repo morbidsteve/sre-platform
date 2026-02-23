@@ -38,6 +38,15 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
       verifyImages:
         - imageReferences:
             - "harbor.sre.internal/*"

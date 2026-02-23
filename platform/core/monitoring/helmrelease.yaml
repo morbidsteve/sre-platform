@@ -2,14 +2,14 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: monitoring
+  name: kube-prometheus-stack
   namespace: monitoring
 spec:
   interval: 10m
   chart:
     spec:
       chart: kube-prometheus-stack
-      version: "57.2.0"
+      version: "72.6.2"
       sourceRef:
         kind: HelmRepository
         name: prometheus-community
@@ -20,11 +20,14 @@ spec:
     - name: kyverno
       namespace: kyverno
   install:
+    crds: CreateReplace
     createNamespace: false
     remediation:
       retries: 3
+    timeout: 10m
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
   values:
@@ -34,23 +37,15 @@ spec:
     prometheus:
       enabled: true
       prometheusSpec:
-        replicas: 2
-        retention: "15d"
+        replicas: 1
+        retention: "7d"
         resources:
           requests:
-            cpu: 500m
-            memory: 2Gi
+            cpu: 200m
+            memory: 512Mi
           limits:
-            cpu: "2"
-            memory: 8Gi
-        storageSpec:
-          volumeClaimTemplate:
-            spec:
-              accessModes:
-                - ReadWriteOnce
-              resources:
-                requests:
-                  storage: 50Gi
+            cpu: "1"
+            memory: 2Gi
         # Discover ServiceMonitors and PodMonitors across all namespaces
         serviceMonitorSelectorNilUsesHelmValues: false
         podMonitorSelectorNilUsesHelmValues: false
@@ -65,13 +60,17 @@ spec:
     grafana:
       enabled: true
       replicas: 1
-      admin:
-        existingSecret: "grafana-admin-credentials"
-        userKey: "admin-user"
-        passwordKey: "admin-password"
-      persistence:
-        enabled: true
-        size: 10Gi
+      adminPassword: "REPLACE_ME"
+      service:
+        type: NodePort
+        nodePort: 30080
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
       sidecar:
         dashboards:
           enabled: true
@@ -84,13 +83,23 @@ spec:
           enabled: true
           searchNamespace: ALL
           label: "grafana_datasource"
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 500m
-          memory: 512Mi
+      additionalDataSources:
+        - name: Loki
+          type: loki
+          url: http://loki.logging.svc.cluster.local:3100
+          access: proxy
+          jsonData:
+            maxLines: 1000
+        - name: Tempo
+          type: tempo
+          url: http://tempo.tempo.svc.cluster.local:3100
+          access: proxy
+          jsonData:
+            tracesToLogsV2:
+              datasourceUid: loki
+              enabled: true
+            lokiSearch:
+              datasourceUid: loki
 
     # ---------------------------------------------------------------
     # AlertManager
@@ -98,7 +107,7 @@ spec:
     alertmanager:
       enabled: true
       alertmanagerSpec:
-        replicas: 2
+        replicas: 1
         resources:
           requests:
             cpu: 50m
@@ -145,13 +154,33 @@ spec:
       enabled: true
 
     # ---------------------------------------------------------------
+    # Disable components not available in RKE2 lab
+    # ---------------------------------------------------------------
+    kubeEtcd:
+      enabled: false
+    kubeProxy:
+      enabled: false
+
+    # ---------------------------------------------------------------
+    # Prometheus Operator
+    # ---------------------------------------------------------------
+    prometheusOperator:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+
+    # ---------------------------------------------------------------
     # Default ServiceMonitor settings
     # ---------------------------------------------------------------
     defaultRules:
       create: true
       rules:
         alertmanager: true
-        etcd: true
+        etcd: false
         configReloaders: true
         general: true
         k8s: true
@@ -161,7 +190,7 @@ spec:
         kubeApiserverSlos: true
         kubeControllerManager: true
         kubelet: true
-        kubeProxy: true
+        kubeProxy: false
         kubePrometheusGeneral: true
         kubePrometheusNodeRecording: true
         kubernetesApps: true

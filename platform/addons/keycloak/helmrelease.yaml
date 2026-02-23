@@ -9,10 +9,11 @@ spec:
   chart:
     spec:
       chart: keycloak
-      version: "19.4.1"
+      version: "24.8.1"
       sourceRef:
+        # Bitnami charts now require OCI-type HelmRepository
         kind: HelmRepository
-        name: bitnami
+        name: bitnami-oci
         namespace: flux-system
   dependsOn:
     - name: istio-base
@@ -21,7 +22,7 @@ spec:
       namespace: cert-manager
     - name: openbao
       namespace: openbao
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false
@@ -33,6 +34,21 @@ spec:
       retries: 3
   values:
     # ---------------------------------------------------------------
+    # Global — allow bitnamilegacy images (migrated from bitnami org)
+    # ---------------------------------------------------------------
+    global:
+      security:
+        allowInsecureImages: true
+
+    # ---------------------------------------------------------------
+    # Keycloak image — Bitnami migrated images to bitnamilegacy org
+    # ---------------------------------------------------------------
+    image:
+      registry: docker.io
+      repository: bitnamilegacy/keycloak
+      tag: "26.3.2-debian-12-r0"
+
+    # ---------------------------------------------------------------
     # Authentication
     # ---------------------------------------------------------------
     auth:
@@ -42,15 +58,30 @@ spec:
     # ---------------------------------------------------------------
     # Deployment
     # ---------------------------------------------------------------
-    replicaCount: 2
-    production: true
+    replicaCount: 1
+    production: false
     proxy: "edge"
 
     # ---------------------------------------------------------------
-    # Bundled PostgreSQL
+    # Service — NodePort for lab access
+    # ---------------------------------------------------------------
+    service:
+      type: NodePort
+      nodePorts:
+        http: 30400
+
+    # ---------------------------------------------------------------
+    # Bundled PostgreSQL — bitnamilegacy images
     # ---------------------------------------------------------------
     postgresql:
       enabled: true
+      image:
+        registry: docker.io
+        repository: bitnamilegacy/postgresql
+        tag: "17.4.0-debian-12-r17"
+      primary:
+        persistence:
+          enabled: false
 
     # ---------------------------------------------------------------
     # Prometheus Metrics
@@ -62,7 +93,7 @@ spec:
   valuesFrom:
     - kind: Secret
       name: keycloak-admin-credentials
-      optional: false
+      optional: true
     - kind: ConfigMap
       name: keycloak-env-values
       optional: true

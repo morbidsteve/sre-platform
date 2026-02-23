@@ -21,10 +21,10 @@ spec:
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: monitoring-grafana
+      name: kube-prometheus-stack-grafana
       namespace: monitoring
     - apiVersion: apps/v1
       kind: StatefulSet
-      name: prometheus-monitoring-kube-prometheus-prometheus
+      name: prometheus-kube-prometheus-stack-kube-prom-prometheus
       namespace: monitoring
   timeout: 10m

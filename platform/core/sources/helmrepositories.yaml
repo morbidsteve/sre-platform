@@ -120,7 +120,7 @@ spec:
   url: https://neuvector.github.io/neuvector-helm
 
 ---
-# ── Keycloak (Bitnami) ──
+# ── Keycloak (Bitnami) — HTTPS for legacy charts ──
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -131,6 +131,20 @@ metadata:
 spec:
   interval: 1h
   url: https://charts.bitnami.com/bitnami
+
+---
+# ── Bitnami OCI — required for newer Bitnami charts that redirect HTTPS→OCI ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: bitnami-oci
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  type: oci
+  interval: 1h
+  url: oci://registry-1.docker.io/bitnamicharts
 
 ---
 # ── Velero ──

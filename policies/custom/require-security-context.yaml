@@ -37,6 +37,15 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
       validate:
         message: >-
           Pod {{request.object.metadata.name}} must set
@@ -64,6 +73,15 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must set

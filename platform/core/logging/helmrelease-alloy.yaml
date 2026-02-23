@@ -14,7 +14,7 @@ spec:
   chart:
     spec:
       chart: alloy
-      version: "0.3.2"
+      version: "0.12.2"
       sourceRef:
         kind: HelmRepository
         name: grafana
@@ -167,7 +167,7 @@ spec:
           // ============================================================
           loki.write "default" {
             endpoint {
-              url = "http://loki-gateway.logging.svc.cluster.local:80/loki/api/v1/push"
+              url = "http://loki.logging.svc.cluster.local:3100/loki/api/v1/push"
             }
           }
 

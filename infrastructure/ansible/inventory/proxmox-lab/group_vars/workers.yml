@@ -3,5 +3,5 @@
 # Note: rke2_server_url is computed automatically by install-rke2.yml
 
 rke2_node_labels:
-  - "node-role.kubernetes.io/worker=true"
+  - "node.kubernetes.io/role=worker"
   - "sre.io/environment=lab"

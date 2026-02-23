@@ -53,3 +53,17 @@
     - "10254/tcp"     # Ingress controller health
     - "30000-32767/tcp"  # NodePort range
   when: os_hardening_firewalld_enabled
+
+- name: Trust CNI interfaces for pod networking
+  ansible.posix.firewalld:
+    interface: "{{ item }}"
+    zone: trusted
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - cni0
+    - flannel.1
+    - vxlan.calico
+  when: os_hardening_firewalld_enabled
+  failed_when: false

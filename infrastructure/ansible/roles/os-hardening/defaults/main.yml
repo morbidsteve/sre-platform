@@ -60,6 +60,9 @@ os_hardening_sysctl_settings:
   vm.overcommit_memory: 1
   kernel.panic: 10
   kernel.panic_on_oops: 1
+  # NeuVector enforcer requires increased inotify limits
+  fs.inotify.max_user_instances: 512
+  fs.inotify.max_user_watches: 524288
 
 # ---- Filesystem Hardening ----
 os_hardening_tmp_mount_options: "nodev,nosuid,noexec"

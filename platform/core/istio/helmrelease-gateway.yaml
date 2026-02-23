@@ -12,7 +12,7 @@ spec:
   chart:
     spec:
       chart: gateway
-      version: "1.21.1"
+      version: "1.25.2"
       sourceRef:
         kind: HelmRepository
         name: istio
@@ -21,10 +21,14 @@ spec:
     createNamespace: false
     remediation:
       retries: 3
+    # Istio gateway chart has strict JSON schema that rejects standard
+    # values like 'resources' and 'service' at top level
+    disableSchemaValidation: true
   upgrade:
     cleanupOnFail: true
     remediation:
       retries: 3
+    disableSchemaValidation: true
   values:
     replicaCount: 2
     autoscaling:
@@ -33,16 +37,22 @@ spec:
       maxReplicas: 5
       targetCPUUtilizationPercentage: 80
     service:
-      type: LoadBalancer
+      type: NodePort
       ports:
-        - name: http
+        - name: status-port
+          port: 15021
+          protocol: TCP
+          targetPort: 15021
+        - name: http2
           port: 80
           protocol: TCP
           targetPort: 80
+          nodePort: 31080
         - name: https
           port: 443
           protocol: TCP
           targetPort: 443
+          nodePort: 31443
     resources:
       requests:
         cpu: 100m

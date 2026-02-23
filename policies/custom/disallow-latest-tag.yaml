@@ -37,6 +37,15 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
       validate:
         message: >-
           Container images in Pod {{request.object.metadata.name}} must not use
@@ -64,6 +73,15 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] | length(@) }}"

@@ -13,7 +13,7 @@ spec:
   chart:
     spec:
       chart: harbor
-      version: "1.14.2"
+      version: "1.16.3"
       sourceRef:
         kind: HelmRepository
         name: harbor
@@ -23,7 +23,7 @@ spec:
       namespace: istio-system
     - name: cert-manager
       namespace: cert-manager
-    - name: monitoring
+    - name: kube-prometheus-stack
       namespace: monitoring
   install:
     createNamespace: false
@@ -35,43 +35,24 @@ spec:
       retries: 3
   values:
     # -----------------------------------------------------------------
-    # Expose — ClusterIP only; Istio handles external ingress and TLS
+    # Expose — NodePort for lab access
     # -----------------------------------------------------------------
     expose:
-      type: clusterIP
+      type: nodePort
       tls:
         enabled: false
-      clusterIP:
-        name: harbor
+      nodePort:
+        ports:
+          http:
+            nodePort: 30500
 
-    externalURL: "https://harbor.apps.sre.example.com"
+    externalURL: "http://192.168.2.89:30500"
 
     # -----------------------------------------------------------------
-    # Persistence — S3-compatible backend for image and chart storage
+    # Persistence — disabled for lab (no StorageClass)
     # -----------------------------------------------------------------
     persistence:
-      enabled: true
-      persistentVolumeClaim:
-        registry:
-          size: 50Gi
-        database:
-          size: 5Gi
-        redis:
-          size: 2Gi
-        jobservice:
-          jobLog:
-            size: 2Gi
-      imageChartStorage:
-        type: s3
-        s3:
-          region: "REPLACE_ME"
-          bucket: "REPLACE_ME"
-          accesskey: "REPLACE_ME"
-          secretkey: "REPLACE_ME"
-          regionendpoint: "REPLACE_ME"
-          rootdirectory: "/harbor"
-          encrypt: true
-          secure: true
+      enabled: false
 
     # -----------------------------------------------------------------
     # Trivy — vulnerability scanning on every image push (NIST RA-5)
@@ -204,7 +185,7 @@ spec:
   valuesFrom:
     - kind: Secret
       name: harbor-credentials
-      optional: false
+      optional: true
     - kind: ConfigMap
       name: harbor-env-values
       optional: true
