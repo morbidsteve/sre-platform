@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neuvector-env-values
+  namespace: neuvector
+data:
+  values.yaml: |
+    controller:
+      replicas: 1
+    manager:
+      svc:
+        type: NodePort
+        nodePort: 30300

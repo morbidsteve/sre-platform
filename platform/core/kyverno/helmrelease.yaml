@@ -75,3 +75,7 @@ spec:
     features:
       policyExceptions:
         enabled: true
+  valuesFrom:
+    - kind: ConfigMap
+      name: kyverno-env-values
+      optional: true

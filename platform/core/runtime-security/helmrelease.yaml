@@ -32,7 +32,7 @@ spec:
     # Controller — cluster management and policy engine
     # ---------------------------------------------------------------
     controller:
-      replicas: 1
+      replicas: 3
       resources:
         requests:
           cpu: 100m
@@ -57,13 +57,12 @@ spec:
           memory: 512Mi
 
     # ---------------------------------------------------------------
-    # Manager — Web UI
+    # Manager — Web UI (ClusterIP; accessed via Istio VirtualService)
     # ---------------------------------------------------------------
     manager:
       enabled: true
       svc:
-        type: NodePort
-        nodePort: 30300
+        type: ClusterIP
       resources:
         requests:
           cpu: 50m

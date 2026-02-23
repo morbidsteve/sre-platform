@@ -1,0 +1,18 @@
+---
+# Single-node deployment profile
+# All-in-one: 1 host, no persistence, dev mode, NodePort services
+# Suitable for local development, demos, and CI environments
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - domain-config.yaml
+  - monitoring-env-values.yaml
+  - loki-env-values.yaml
+  - tempo-env-values.yaml
+  - openbao-env-values.yaml
+  - neuvector-env-values.yaml
+  - kyverno-env-values.yaml
+  - harbor-env-values.yaml
+  - keycloak-env-values.yaml
+  - velero-env-values.yaml
+  - istio-env-values.yaml

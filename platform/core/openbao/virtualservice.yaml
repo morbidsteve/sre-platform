@@ -1,0 +1,29 @@
+---
+# Istio VirtualService for OpenBao secrets management UI
+# Routes external traffic from the main Istio gateway to OpenBao
+# NIST SC-12 (Cryptographic Key Establishment and Management)
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: openbao
+  namespace: openbao
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "IA-5, SC-12, SC-28"
+spec:
+  hosts:
+    - "openbao.${SRE_DOMAIN}"
+  gateways:
+    - istio-system/main
+  http:
+    - route:
+        - destination:
+            host: openbao.openbao.svc.cluster.local
+            port:
+              number: 8200
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: "5xx,reset,connect-failure"

@@ -29,10 +29,26 @@ spec:
       retries: 3
   values:
     server:
-      # Dev mode for lab — uses in-memory storage, auto-unsealed
-      # For production, use HA mode with Raft storage and transit/KMS seal
+      # Production mode — HA Raft storage cluster
+      # For single-node/dev, override via environment profile ConfigMap
       dev:
+        enabled: false
+      ha:
         enabled: true
+        replicas: 3
+        raft:
+          enabled: true
+          config: |
+            ui = true
+            listener "tcp" {
+              tls_disable = 1
+              address = "[::]:8200"
+              cluster_address = "[::]:8201"
+            }
+            storage "raft" {
+              path = "/openbao/data"
+            }
+            service_registration "kubernetes" {}
       resources:
         requests:
           cpu: 100m
@@ -41,8 +57,10 @@ spec:
           cpu: 500m
           memory: 512Mi
       service:
-        type: NodePort
-        nodePort: 30200
+        type: ClusterIP
+      dataStorage:
+        enabled: true
+        size: 10Gi
       extraEnvironmentVars:
         OPENBAO_LOG_LEVEL: "info"
     injector:
@@ -57,4 +75,7 @@ spec:
   valuesFrom:
     - kind: Secret
       name: openbao-seal-credentials
+      optional: true
+    - kind: ConfigMap
+      name: openbao-env-values
       optional: true

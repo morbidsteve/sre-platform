@@ -1150,9 +1150,52 @@ else
 fi
 
 echo
+header "Deployment Profile"
+echo "  Select a deployment profile for the platform services."
+echo "  This controls replicas, persistence, and service exposure."
+echo
+echo "  1) single-node  — All-in-one (1 host, no persistence, dev mode secrets)"
+echo "  2) small         — Small cluster (2-3 hosts, persistence, standalone secrets)"
+echo "  3) production    — HA deployment (4+ hosts, full persistence, HA secrets)"
+echo
+prompt       DEPLOY_PROFILE  "Select profile (1/2/3)" "2"
+
+# Map number to profile name
+case "$DEPLOY_PROFILE" in
+    1|single-node)  DEPLOY_PROFILE="single-node" ;;
+    2|small)        DEPLOY_PROFILE="small" ;;
+    3|production)   DEPLOY_PROFILE="production" ;;
+    *)              warn "Unknown profile '$DEPLOY_PROFILE', defaulting to 'small'."; DEPLOY_PROFILE="small" ;;
+esac
+
+success "Deployment profile: $DEPLOY_PROFILE"
+
+# Set default node counts based on profile
+case "$DEPLOY_PROFILE" in
+    single-node)  DEFAULT_SERVERS=1; DEFAULT_AGENTS=0 ;;
+    small)        DEFAULT_SERVERS=1; DEFAULT_AGENTS=2 ;;
+    production)   DEFAULT_SERVERS=3; DEFAULT_AGENTS=3 ;;
+esac
+
+echo
 log "Cluster sizing (adjust for your hardware):"
-prompt       SERVER_COUNT    "Control plane nodes (1 for lab, 3 for HA)" "1"
-prompt       AGENT_COUNT     "Worker nodes" "2"
+prompt       SERVER_COUNT    "Control plane nodes" "$DEFAULT_SERVERS"
+prompt       AGENT_COUNT     "Worker nodes" "$DEFAULT_AGENTS"
+
+# Warn on profile/node mismatch
+TOTAL_NODES=$((SERVER_COUNT + AGENT_COUNT))
+case "$DEPLOY_PROFILE" in
+    production)
+        if (( TOTAL_NODES < 4 )); then
+            warn "Production profile selected but only $TOTAL_NODES node(s). HA may be degraded."
+        fi
+        ;;
+    single-node)
+        if (( TOTAL_NODES > 1 )); then
+            warn "Single-node profile selected but $TOTAL_NODES nodes configured. Profile still uses minimal resources."
+        fi
+        ;;
+esac
 
 # ── SSH Key ─────────────────────────────────────────────────────────────────
 
@@ -1186,6 +1229,7 @@ echo "  API user:         $PROXMOX_USER"
 echo "  Storage pool:     $PROXMOX_STORAGE"
 echo "  Network bridge:   $PROXMOX_BRIDGE"
 echo "  Template VMID:    $TEMPLATE_VMID"
+echo "  Deploy profile:   $DEPLOY_PROFILE"
 echo "  Server nodes:     $SERVER_COUNT"
 echo "  Worker nodes:     $AGENT_COUNT"
 echo "  SSH key:          $SSH_KEY_PATH"
@@ -1552,7 +1596,9 @@ success "Kubernetes cluster is running."
 
 if [[ "${SKIP_FLUX:-0}" == "1" ]]; then
     warn "Skipping Flux bootstrap (SKIP_FLUX=1)"
+    FLUX_BOOTSTRAPPED=false
 else
+    FLUX_BOOTSTRAPPED=false
     echo
     if command -v flux &>/dev/null; then
         if prompt_yesno "Bootstrap Flux CD for GitOps? (requires GitHub PAT with 'repo' scope)" "y"; then
@@ -1577,6 +1623,39 @@ else
                 --personal
 
             success "Flux CD bootstrapped."
+            FLUX_BOOTSTRAPPED=true
+
+            # ── Apply deployment profile ──────────────────────────────────
+            log "Applying deployment profile: $DEPLOY_PROFILE"
+
+            # Configure domain — use sslip.io for automatic DNS resolution
+            SRE_DOMAIN="${FIRST_SERVER_IP}.sslip.io"
+            log "Setting SRE_DOMAIN to: $SRE_DOMAIN"
+
+            # Apply the environment profile Flux Kustomization
+            kubectl apply -f - <<PROFILE_EOF
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-environment
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./platform/environments/${DEPLOY_PROFILE}
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: sre-platform
+PROFILE_EOF
+            success "Environment profile applied: $DEPLOY_PROFILE"
+
+            # Patch the domain ConfigMap with the actual node IP
+            kubectl create configmap sre-domain-config \
+                --from-literal="SRE_DOMAIN=${SRE_DOMAIN}" \
+                -n flux-system \
+                --dry-run=client -o yaml | kubectl apply -f -
+            success "Domain configured: $SRE_DOMAIN"
+
             log "Platform services will begin deploying via GitOps."
             log "Monitor progress with: flux get kustomizations -A --watch"
         fi
@@ -1587,12 +1666,75 @@ else
 fi
 
 # ============================================================================
+# Phase 8: Post-Flux Configuration
+# ============================================================================
+
+if [[ "$FLUX_BOOTSTRAPPED" == "true" ]]; then
+    header "Phase 8: Post-Flux Configuration"
+
+    # ── Wait for core components to deploy ────────────────────────────────
+    log "Waiting for Flux to reconcile core components..."
+    log "This may take 10-20 minutes for all HelmReleases to deploy."
+    echo
+
+    # Wait for the monitoring namespace to exist (indicates Flux is deploying)
+    FLUX_WAIT=0
+    while ! kubectl get namespace monitoring > /dev/null 2>&1; do
+        if (( FLUX_WAIT >= 300 )); then
+            warn "Monitoring namespace not created after 300s. Continuing anyway."
+            break
+        fi
+        sleep 15
+        FLUX_WAIT=$((FLUX_WAIT + 15))
+        printf "\r  Waiting for Flux to create namespaces... (%ds)" "$FLUX_WAIT"
+    done
+    echo
+
+    # Wait for key deployments to be available
+    for deploy_info in \
+        "monitoring/kube-prometheus-stack-grafana" \
+        "kyverno/kyverno-admission-controller"; do
+
+        ns="${deploy_info%%/*}"
+        deploy="${deploy_info##*/}"
+
+        if kubectl get namespace "$ns" > /dev/null 2>&1; then
+            log "Waiting for $ns/$deploy..."
+            kubectl wait --for=condition=Available deployment/"$deploy" -n "$ns" --timeout=600s 2>/dev/null \
+                || warn "$ns/$deploy not ready yet (non-fatal, may still be deploying)"
+        fi
+    done
+
+    # ── Bootstrap secrets ─────────────────────────────────────────────────
+    log "Creating platform secrets..."
+    "$REPO_ROOT/scripts/bootstrap-secrets.sh" || warn "bootstrap-secrets.sh had errors (non-fatal)"
+
+    # ── Initialize OpenBao ────────────────────────────────────────────────
+    if kubectl get namespace openbao > /dev/null 2>&1; then
+        # Wait for OpenBao pods
+        log "Waiting for OpenBao to deploy..."
+        kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=openbao -n openbao --timeout=300s 2>/dev/null \
+            || warn "OpenBao pods not ready yet"
+
+        "$REPO_ROOT/scripts/init-openbao.sh" || warn "init-openbao.sh had errors (non-fatal)"
+    fi
+
+    # ── Verify deployment ─────────────────────────────────────────────────
+    echo
+    log "Running deployment verification..."
+    SRE_DOMAIN="${SRE_DOMAIN:-}" "$REPO_ROOT/scripts/verify-deployment.sh" || warn "Some verification checks failed."
+
+    success "Phase 8 complete."
+fi
+
+# ============================================================================
 # Done
 # ============================================================================
 
 header "Deployment Complete"
 
 echo -e "  ${BOLD}Cluster:${NC}        $EXPECTED_NODES nodes ($SERVER_COUNT server + $AGENT_COUNT worker)"
+echo -e "  ${BOLD}Profile:${NC}        $DEPLOY_PROFILE"
 echo -e "  ${BOLD}API Server:${NC}     https://$FIRST_SERVER_IP:6443"
 echo -e "  ${BOLD}Kubeconfig:${NC}     $KUBECONFIG_FILE"
 echo -e "  ${BOLD}SSH Key:${NC}        $SSH_KEY_PATH"
@@ -1611,10 +1753,30 @@ if [[ "${SKIP_FLUX:-0}" != "1" ]] && command -v flux &>/dev/null; then
     echo
 fi
 
-echo "To access Grafana (after Flux deploys monitoring):"
-echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
-echo "  Then open http://localhost:3000 in your browser"
-echo
+if [[ "$FLUX_BOOTSTRAPPED" == "true" && -n "${SRE_DOMAIN:-}" ]]; then
+    echo "Platform UIs (via Istio Gateway):"
+    if [[ "$DEPLOY_PROFILE" == "single-node" ]]; then
+        echo "  Grafana:    http://$FIRST_SERVER_IP:30080"
+        echo "  OpenBao:    http://$FIRST_SERVER_IP:30200"
+        echo "  NeuVector:  https://$FIRST_SERVER_IP:30300"
+    else
+        GW_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+        echo "  Grafana:    https://grafana.${SRE_DOMAIN}:${GW_PORT}"
+        echo "  OpenBao:    https://openbao.${SRE_DOMAIN}:${GW_PORT}"
+        echo "  NeuVector:  https://neuvector.${SRE_DOMAIN}:${GW_PORT}"
+        echo "  Harbor:     https://harbor.${SRE_DOMAIN}:${GW_PORT}"
+        echo "  Keycloak:   https://keycloak.${SRE_DOMAIN}:${GW_PORT}"
+    fi
+    echo
+    echo "  Note: Use -k with curl (or accept the self-signed certificate in your browser)"
+    echo "        The internal CA certificate is auto-generated by cert-manager."
+    echo
+else
+    echo "To access Grafana (after Flux deploys monitoring):"
+    echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
+    echo "  Then open http://localhost:3000 in your browser"
+    echo
+fi
 
 echo "Next steps:"
 echo "  1. Read the Operator Guide:    docs/operator-guide.md"

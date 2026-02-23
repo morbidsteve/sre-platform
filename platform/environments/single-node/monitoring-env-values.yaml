@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-env-values
+  namespace: monitoring
+data:
+  values.yaml: |
+    prometheus:
+      prometheusSpec:
+        replicas: 1
+        retention: "7d"
+        storageSpec: {}
+    grafana:
+      replicas: 1
+      persistence:
+        enabled: false
+      service:
+        type: NodePort
+        nodePort: 30080
+    alertmanager:
+      alertmanagerSpec:
+        replicas: 1
+        storage: {}

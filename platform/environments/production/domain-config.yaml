@@ -1,0 +1,10 @@
+---
+# Domain config for production profile
+# Replace with your actual production domain
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-domain-config
+  namespace: flux-system
+data:
+  SRE_DOMAIN: "apps.sre.example.com"

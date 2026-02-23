@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kyverno-env-values
+  namespace: kyverno
+data:
+  values.yaml: |
+    admissionController:
+      replicas: 1
+    backgroundController:
+      replicas: 1
+    reportsController:
+      replicas: 1

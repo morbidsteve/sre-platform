@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-env-values
+  namespace: keycloak
+data:
+  values.yaml: |
+    replicaCount: 1
+    production: false
+    service:
+      type: NodePort
+      nodePorts:
+        http: 30400
+    postgresql:
+      primary:
+        persistence:
+          enabled: false

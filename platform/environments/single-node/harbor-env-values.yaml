@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-env-values
+  namespace: harbor
+data:
+  values.yaml: |
+    expose:
+      type: nodePort
+      nodePort:
+        ports:
+          http:
+            nodePort: 30500
+    persistence:
+      enabled: false

@@ -24,3 +24,7 @@ spec:
       name: openbao
       namespace: openbao
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

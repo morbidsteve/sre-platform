@@ -1,0 +1,11 @@
+---
+# Domain configuration for Flux postBuild variable substitution.
+# All VirtualServices, Gateway, and Certificate resources reference ${SRE_DOMAIN}.
+# Override this ConfigMap per-environment via platform/environments/<profile>/.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-domain-config
+  namespace: flux-system
+data:
+  SRE_DOMAIN: "apps.sre.example.com"

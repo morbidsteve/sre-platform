@@ -28,3 +28,7 @@ spec:
       name: prometheus-kube-prometheus-stack-kube-prom-prometheus
       namespace: monitoring
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

@@ -1,0 +1,27 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-env-values
+  namespace: monitoring
+data:
+  values.yaml: |
+    prometheus:
+      prometheusSpec:
+        replicas: 1
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 20Gi
+    grafana:
+      replicas: 1
+      persistence:
+        enabled: true
+        size: 5Gi
+    alertmanager:
+      alertmanagerSpec:
+        replicas: 1

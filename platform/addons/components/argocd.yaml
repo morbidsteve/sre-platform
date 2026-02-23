@@ -25,3 +25,7 @@ spec:
       name: argocd-server
       namespace: argocd
   timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

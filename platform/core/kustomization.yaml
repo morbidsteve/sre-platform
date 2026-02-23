@@ -9,6 +9,9 @@ resources:
   # ── Sources (HelmRepositories) ──
   - sources/helmrepositories.yaml
 
+  # ── Shared Configuration ──
+  - config/domain-config.yaml
+
   # ── Core Components (Flux Kustomization CRDs) ──
   - components/istio.yaml
   - components/cert-manager.yaml

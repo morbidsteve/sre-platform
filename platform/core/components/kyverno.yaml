@@ -28,3 +28,7 @@ spec:
       name: kyverno-reports-controller
       namespace: kyverno
   timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

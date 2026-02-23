@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-env-values
+  namespace: istio-system
+data:
+  values.yaml: |
+    pilot:
+      autoscaleMin: 1
+      autoscaleMax: 1
+      replicaCount: 1
