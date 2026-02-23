@@ -1,0 +1,29 @@
+---
+# Istio VirtualService for Grafana dashboard
+# Routes external traffic from the main Istio gateway to Grafana
+# NIST AU-6 (Audit Review, Analysis, and Reporting)
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "AU-6, CA-7, SI-4"
+spec:
+  hosts:
+    - "grafana.${SRE_DOMAIN}"
+  gateways:
+    - istio-system/main
+  http:
+    - route:
+        - destination:
+            host: kube-prometheus-stack-grafana.monitoring.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: "5xx,reset,connect-failure"

@@ -70,10 +70,11 @@ spec:
           - ALL
 
     # ---------------------------------------------------------------
-    # Persistence — disabled for lab (no StorageClass)
+    # Persistence — production default with PVC
     # ---------------------------------------------------------------
     persistence:
-      enabled: false
+      enabled: true
+      size: 10Gi
 
     # ---------------------------------------------------------------
     # Prometheus ServiceMonitor

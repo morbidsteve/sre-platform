@@ -37,8 +37,8 @@ spec:
     prometheus:
       enabled: true
       prometheusSpec:
-        replicas: 1
-        retention: "7d"
+        replicas: 2
+        retention: "15d"
         resources:
           requests:
             cpu: 200m
@@ -46,6 +46,14 @@ spec:
           limits:
             cpu: "1"
             memory: 2Gi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 50Gi
         # Discover ServiceMonitors and PodMonitors across all namespaces
         serviceMonitorSelectorNilUsesHelmValues: false
         podMonitorSelectorNilUsesHelmValues: false
@@ -59,11 +67,14 @@ spec:
     # ---------------------------------------------------------------
     grafana:
       enabled: true
-      replicas: 1
-      adminPassword: "REPLACE_ME"
+      replicas: 2
+      # Admin password injected via grafana-admin-credentials Secret (valuesFrom)
+      # Do NOT set adminPassword inline — use bootstrap-secrets.sh
       service:
-        type: NodePort
-        nodePort: 30080
+        type: ClusterIP
+      persistence:
+        enabled: true
+        size: 10Gi
       resources:
         requests:
           cpu: 100m
@@ -107,7 +118,7 @@ spec:
     alertmanager:
       enabled: true
       alertmanagerSpec:
-        replicas: 1
+        replicas: 2
         resources:
           requests:
             cpu: 50m
@@ -115,6 +126,14 @@ spec:
           limits:
             cpu: 200m
             memory: 256Mi
+        storage:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 5Gi
       config:
         global:
           resolve_timeout: "5m"
@@ -207,6 +226,9 @@ spec:
         prometheus: true
         prometheusOperator: true
   valuesFrom:
+    - kind: Secret
+      name: grafana-admin-credentials
+      optional: true
     - kind: ConfigMap
       name: monitoring-env-values
       optional: true

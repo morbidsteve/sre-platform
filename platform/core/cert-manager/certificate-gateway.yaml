@@ -14,8 +14,8 @@ spec:
     algorithm: ECDSA
     size: 256
   dnsNames:
-    - "*.apps.sre.example.com"
-    - "apps.sre.example.com"
+    - "*.${SRE_DOMAIN}"
+    - "${SRE_DOMAIN}"
   issuerRef:
     # Use internal CA for dev; switch to letsencrypt-production for prod
     name: sre-internal-ca

@@ -26,3 +26,7 @@ spec:
       name: keycloak
       namespace: keycloak
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

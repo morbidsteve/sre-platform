@@ -35,24 +35,31 @@ spec:
       retries: 3
   values:
     # -----------------------------------------------------------------
-    # Expose — NodePort for lab access
+    # Expose — ClusterIP (accessed via Istio Gateway + VirtualService)
+    # TLS is terminated at the Istio Gateway level
     # -----------------------------------------------------------------
     expose:
-      type: nodePort
+      type: clusterIP
       tls:
         enabled: false
-      nodePort:
-        ports:
-          http:
-            nodePort: 30500
 
-    externalURL: "http://192.168.2.89:30500"
+    externalURL: "https://harbor.${SRE_DOMAIN}"
 
     # -----------------------------------------------------------------
-    # Persistence — disabled for lab (no StorageClass)
+    # Persistence — production default
     # -----------------------------------------------------------------
     persistence:
-      enabled: false
+      enabled: true
+      persistentVolumeClaim:
+        registry:
+          size: 50Gi
+        database:
+          size: 5Gi
+        redis:
+          size: 5Gi
+        jobservice:
+          jobLog:
+            size: 5Gi
 
     # -----------------------------------------------------------------
     # Trivy — vulnerability scanning on every image push (NIST RA-5)

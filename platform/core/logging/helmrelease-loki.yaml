@@ -1,5 +1,5 @@
 ---
-# Loki — Log aggregation engine (SingleBinary mode for lab/dev)
+# Loki — Log aggregation engine (SingleBinary mode)
 # Chart: grafana/loki
 # Docs: https://grafana.com/docs/loki/latest/
 apiVersion: helm.toolkit.fluxcd.io/v2
@@ -34,7 +34,7 @@ spec:
       retries: 3
   values:
     # ---------------------------------------------------------------
-    # Deployment Mode — SingleBinary for lab/dev, SimpleScalable for prod
+    # Deployment Mode — SingleBinary for simplicity
     # ---------------------------------------------------------------
     deploymentMode: SingleBinary
 
@@ -46,13 +46,13 @@ spec:
 
       commonConfig:
         replication_factor: 1
-        path_prefix: /tmp/loki
+        path_prefix: /var/loki
 
       storage:
         type: filesystem
         filesystem:
-          chunks_directory: /tmp/loki/chunks
-          rules_directory: /tmp/loki/rules
+          chunks_directory: /var/loki/chunks
+          rules_directory: /var/loki/rules
 
       schemaConfig:
         configs:
@@ -76,21 +76,16 @@ spec:
         storage:
           type: local
           local:
-            directory: /tmp/loki/rules
+            directory: /var/loki/rules
 
     # ---------------------------------------------------------------
-    # SingleBinary — single replica with emptyDir storage
+    # SingleBinary — production default with PVC persistence
     # ---------------------------------------------------------------
     singleBinary:
       replicas: 1
       persistence:
-        enabled: false
-      extraVolumeMounts:
-        - name: data
-          mountPath: /tmp/loki
-      extraVolumes:
-        - name: data
-          emptyDir: {}
+        enabled: true
+        size: 50Gi
 
     # ---------------------------------------------------------------
     # Disable scaled components (not used in SingleBinary mode)

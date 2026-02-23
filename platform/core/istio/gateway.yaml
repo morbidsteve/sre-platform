@@ -19,7 +19,7 @@ spec:
         mode: SIMPLE
         credentialName: sre-wildcard-tls
       hosts:
-        - "*.apps.sre.example.com"
+        - "*.${SRE_DOMAIN}"
     # HTTP — redirect to HTTPS
     - port:
         number: 80
@@ -28,4 +28,4 @@ spec:
       tls:
         httpsRedirect: true
       hosts:
-        - "*.apps.sre.example.com"
+        - "*.${SRE_DOMAIN}"

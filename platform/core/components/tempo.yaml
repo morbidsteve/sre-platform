@@ -24,3 +24,7 @@ spec:
       name: tempo
       namespace: tempo
   timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

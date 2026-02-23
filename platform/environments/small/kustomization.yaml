@@ -1,0 +1,15 @@
+---
+# Small cluster deployment profile
+# 2-3 hosts with persistence, standalone secrets, ClusterIP via Istio
+# Suitable for staging, small production, and homelab environments
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - domain-config.yaml
+  - monitoring-env-values.yaml
+  - loki-env-values.yaml
+  - openbao-env-values.yaml
+  - kyverno-env-values.yaml
+  - keycloak-env-values.yaml
+  - neuvector-env-values.yaml
+  - velero-env-values.yaml

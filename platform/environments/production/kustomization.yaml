@@ -1,0 +1,8 @@
+---
+# Production deployment profile
+# 4+ hosts, full persistence, HA everywhere, ClusterIP via Istio
+# Base HelmRelease configs ARE the production defaults; only domain needs override
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - domain-config.yaml

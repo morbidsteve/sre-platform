@@ -28,3 +28,7 @@ spec:
       name: neuvector-enforcer-pod
       namespace: neuvector
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

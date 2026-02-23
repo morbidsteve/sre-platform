@@ -1,0 +1,29 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-env-values
+  namespace: openbao
+data:
+  values.yaml: |
+    server:
+      dev:
+        enabled: false
+      ha:
+        enabled: false
+      standalone:
+        enabled: true
+        config: |
+          ui = true
+          listener "tcp" {
+            tls_disable = 1
+            address = "[::]:8200"
+            cluster_address = "[::]:8201"
+          }
+          storage "raft" {
+            path = "/openbao/data"
+          }
+          service_registration "kubernetes" {}
+      dataStorage:
+        enabled: true
+        size: 10Gi

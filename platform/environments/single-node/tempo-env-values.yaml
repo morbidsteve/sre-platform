@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-env-values
+  namespace: tempo
+data:
+  values.yaml: |
+    persistence:
+      enabled: false

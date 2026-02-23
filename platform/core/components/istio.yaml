@@ -21,3 +21,7 @@ spec:
       name: istiod
       namespace: istio-system
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config
