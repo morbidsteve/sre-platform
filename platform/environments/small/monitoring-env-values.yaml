@@ -9,19 +9,12 @@ data:
     prometheus:
       prometheusSpec:
         replicas: 1
-        storageSpec:
-          volumeClaimTemplate:
-            spec:
-              accessModes:
-                - ReadWriteOnce
-              resources:
-                requests:
-                  storage: 20Gi
     grafana:
       replicas: 1
       persistence:
-        enabled: true
-        size: 5Gi
+        enabled: false
+      initChownData:
+        enabled: false
     alertmanager:
       alertmanagerSpec:
         replicas: 1

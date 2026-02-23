@@ -29,26 +29,8 @@ spec:
       retries: 3
   values:
     server:
-      # Production mode — HA Raft storage cluster
-      # For single-node/dev, override via environment profile ConfigMap
-      dev:
-        enabled: false
-      ha:
-        enabled: true
-        replicas: 3
-        raft:
-          enabled: true
-          config: |
-            ui = true
-            listener "tcp" {
-              tls_disable = 1
-              address = "[::]:8200"
-              cluster_address = "[::]:8201"
-            }
-            storage "raft" {
-              path = "/openbao/data"
-            }
-            service_registration "kubernetes" {}
+      # Deployment mode (dev/standalone/ha) configured via environment
+      # profile ConfigMap (openbao-env-values)
       resources:
         requests:
           cpu: 100m
@@ -58,9 +40,7 @@ spec:
           memory: 512Mi
       service:
         type: ClusterIP
-      dataStorage:
-        enabled: true
-        size: 10Gi
+      # dataStorage configured via environment profile ConfigMap (openbao-env-values)
       extraEnvironmentVars:
         OPENBAO_LOG_LEVEL: "info"
     injector:

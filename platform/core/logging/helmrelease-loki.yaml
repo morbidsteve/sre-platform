@@ -46,13 +46,13 @@ spec:
 
       commonConfig:
         replication_factor: 1
-        path_prefix: /var/loki
+        path_prefix: /tmp/loki
 
       storage:
         type: filesystem
         filesystem:
-          chunks_directory: /var/loki/chunks
-          rules_directory: /var/loki/rules
+          chunks_directory: /tmp/loki/chunks
+          rules_directory: /tmp/loki/rules
 
       schemaConfig:
         configs:
@@ -68,7 +68,6 @@ spec:
         retention_period: "720h"
         max_query_series: 500
         max_query_parallelism: 2
-        enforce_metric_name: false
         reject_old_samples: true
         reject_old_samples_max_age: "168h"
 
@@ -76,16 +75,14 @@ spec:
         storage:
           type: local
           local:
-            directory: /var/loki/rules
+            directory: /tmp/loki/rules
 
     # ---------------------------------------------------------------
     # SingleBinary — production default with PVC persistence
     # ---------------------------------------------------------------
     singleBinary:
       replicas: 1
-      persistence:
-        enabled: true
-        size: 50Gi
+      # Persistence configured via environment profile ConfigMap (loki-env-values)
 
     # ---------------------------------------------------------------
     # Disable scaled components (not used in SingleBinary mode)

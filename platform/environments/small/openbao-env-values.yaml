@@ -8,22 +8,11 @@ data:
   values.yaml: |
     server:
       dev:
-        enabled: false
+        enabled: true
+        devRootToken: "root"
       ha:
         enabled: false
       standalone:
-        enabled: true
-        config: |
-          ui = true
-          listener "tcp" {
-            tls_disable = 1
-            address = "[::]:8200"
-            cluster_address = "[::]:8201"
-          }
-          storage "raft" {
-            path = "/openbao/data"
-          }
-          service_registration "kubernetes" {}
-      dataStorage:
-        enabled: true
-        size: 10Gi
+        enabled: false
+      service:
+        type: ClusterIP

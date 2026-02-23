@@ -1,0 +1,20 @@
+---
+# DestinationRule for NeuVector Manager WebUI
+# NeuVector serves HTTPS on port 8443 with a self-signed certificate
+# and does not run an Istio sidecar (privileged DaemonSet + controller).
+# This tells the Istio gateway to use TLS without certificate verification.
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: neuvector-webui
+  namespace: neuvector
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SC-8, SI-4"
+spec:
+  host: neuvector-service-webui.neuvector.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      insecureSkipVerify: true

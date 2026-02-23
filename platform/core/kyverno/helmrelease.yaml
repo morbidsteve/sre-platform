@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: kyverno
-      version: "3.1.4"
+      version: "3.3.7"
       sourceRef:
         kind: HelmRepository
         name: kyverno
@@ -66,12 +66,12 @@ spec:
           memory: 128Mi
     config:
       webhooks:
-        - objectSelector:
-            matchExpressions:
-              - key: "app.kubernetes.io/managed-by"
-                operator: NotIn
-                values:
-                  - "Helm"
+        namespaceSelector:
+          matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: NotIn
+              values:
+                - kube-system
     features:
       policyExceptions:
         enabled: true

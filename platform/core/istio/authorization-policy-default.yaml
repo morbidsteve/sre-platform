@@ -1,32 +1,38 @@
 ---
-# Default deny-all AuthorizationPolicy for istio-system namespace
-# NIST AC-3, AC-4 — explicit allow required for all traffic
+# Default deny-all AuthorizationPolicy for istiod control plane
+# NIST AC-3, AC-4 — explicit allow required for control plane traffic
+# NOTE: This is scoped to istiod only (not the gateway) because the
+# gateway must accept external traffic and route it to upstream services.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: deny-all
-  namespace: istio-system
-spec:
-  # Empty spec = deny all traffic to workloads in this namespace
-  {}
-
----
-# Allow ingress gateway to receive external traffic
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-ingress-gateway
+  name: deny-all-istiod
   namespace: istio-system
 spec:
   selector:
     matchLabels:
-      istio: gateway
+      app: istiod
+
+---
+# Allow mesh workloads to reach istiod for xDS, CA, and webhook traffic
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-istiod-control-plane
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istiod
   action: ALLOW
   rules:
-    - from:
-        - source:
-            ipBlocks:
-              - "0.0.0.0/0"
+    - to:
+        - operation:
+            ports:
+              - "15010"
+              - "15012"
+              - "15014"
+              - "15017"
 
 ---
 # Allow Prometheus to scrape Istio metrics

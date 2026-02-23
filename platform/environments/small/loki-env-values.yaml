@@ -6,7 +6,18 @@ metadata:
   namespace: logging
 data:
   values.yaml: |
+    loki:
+      commonConfig:
+        path_prefix: /tmp/loki
+      storage:
+        filesystem:
+          chunks_directory: /tmp/loki/chunks
+          rules_directory: /tmp/loki/rules
+      rulerConfig:
+        storage:
+          type: local
+          local:
+            directory: /tmp/loki/rules
     singleBinary:
       persistence:
-        enabled: true
-        size: 20Gi
+        enabled: false

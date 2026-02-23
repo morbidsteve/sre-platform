@@ -48,18 +48,9 @@ spec:
     # -----------------------------------------------------------------
     # Persistence — production default
     # -----------------------------------------------------------------
+    # Persistence configured via environment profile ConfigMap (harbor-env-values)
     persistence:
-      enabled: true
-      persistentVolumeClaim:
-        registry:
-          size: 50Gi
-        database:
-          size: 5Gi
-        redis:
-          size: 5Gi
-        jobservice:
-          jobLog:
-            size: 5Gi
+      enabled: false
 
     # -----------------------------------------------------------------
     # Trivy — vulnerability scanning on every image push (NIST RA-5)

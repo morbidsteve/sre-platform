@@ -72,9 +72,9 @@ spec:
     # ---------------------------------------------------------------
     # Persistence — production default with PVC
     # ---------------------------------------------------------------
+    # Persistence configured via environment profile ConfigMap (tempo-env-values)
     persistence:
-      enabled: true
-      size: 10Gi
+      enabled: false
 
     # ---------------------------------------------------------------
     # Prometheus ServiceMonitor
