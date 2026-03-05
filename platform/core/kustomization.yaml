@@ -16,11 +16,14 @@ resources:
   - components/istio.yaml
   - components/istio-config.yaml
   - components/cert-manager.yaml
+  - components/cert-manager-config.yaml
   - components/kyverno.yaml
   - components/monitoring.yaml
+  - components/monitoring-config.yaml
   - components/logging.yaml
   - components/openbao.yaml
   - components/external-secrets.yaml
+  - components/external-secrets-config.yaml
   - components/runtime-security.yaml
   - components/tempo.yaml
   - components/backup.yaml

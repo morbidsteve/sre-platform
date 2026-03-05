@@ -1,0 +1,20 @@
+---
+# Flux Kustomization for monitoring CRD resources (ServiceMonitors, PrometheusRules)
+# Depends on kube-prometheus-stack being installed first
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-monitoring-config
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AU-6, CA-7, SI-4"
+spec:
+  interval: 10m
+  path: ./platform/core/monitoring-config
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-monitoring
+  timeout: 5m

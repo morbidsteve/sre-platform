@@ -1,0 +1,8 @@
+---
+# Phase 2: cert-manager custom resources (require CRDs from cert-manager HelmRelease)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - clusterissuer-selfsigned.yaml
+  - clusterissuer-letsencrypt.yaml
+  - certificate-gateway.yaml

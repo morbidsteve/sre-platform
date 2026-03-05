@@ -1,0 +1,7 @@
+---
+# Phase 2: monitoring custom resources (require CRDs from kube-prometheus-stack)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - servicemonitors.yaml
+  - prometheusrule-sre.yaml

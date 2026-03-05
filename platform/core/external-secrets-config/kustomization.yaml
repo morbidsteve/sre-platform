@@ -1,0 +1,6 @@
+---
+# Phase 2: external-secrets custom resources (require CRDs from ESO HelmRelease)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - clustersecretstore.yaml
