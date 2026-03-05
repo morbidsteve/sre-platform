@@ -3,7 +3,7 @@
 # Applies sysctl settings for network and kernel security
 
 - name: Load required kernel modules for Kubernetes
-  ansible.builtin.modprobe:
+  community.general.modprobe:
     name: "{{ item }}"
     state: present
   loop:
