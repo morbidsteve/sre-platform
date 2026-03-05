@@ -1,4 +1,5 @@
 ---
+# Phase 1: Install Istio Helm charts (CRDs + control plane + gateway)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -6,9 +7,6 @@ resources:
   - helmrelease-base.yaml
   - helmrelease-istiod.yaml
   - helmrelease-gateway.yaml
-  - peer-authentication.yaml
-  - gateway.yaml
-  - authorization-policy-default.yaml
   - network-policies/default-deny.yaml
   - network-policies/allow-istiod.yaml
   - network-policies/allow-gateway.yaml

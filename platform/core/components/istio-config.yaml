@@ -1,0 +1,24 @@
+---
+# Flux Kustomization for Istio custom resources (Gateway, PeerAuth, AuthzPolicy)
+# These require Istio CRDs to be installed first (from sre-istio)
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-istio-config
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AC-4, SC-7, SC-8, SC-13"
+spec:
+  interval: 10m
+  path: ./platform/core/istio-config
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-istio
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config
