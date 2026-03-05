@@ -25,7 +25,7 @@ spec:
       namespace: monitoring
     - apiVersion: apps/v1
       kind: StatefulSet
-      name: prometheus-kube-prometheus-stack-kube-prom-prometheus
+      name: prometheus-kube-prometheus-stack-prometheus
       namespace: monitoring
   timeout: 10m
   postBuild:

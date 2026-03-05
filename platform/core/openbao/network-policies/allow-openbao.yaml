@@ -1,58 +1,16 @@
 ---
-# Allow OpenBao pods to communicate with each other (Raft + API)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-openbao-cluster
+  name: allow-openbao-egress
   namespace: openbao
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: openbao
+  podSelector: {}
   policyTypes:
-    - Ingress
     - Egress
-  ingress:
-    # Raft peering and API from other OpenBao pods
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: openbao
-      ports:
-        - port: 8200
-          protocol: TCP
-        - port: 8201
-          protocol: TCP
-    # API access from all namespaces (ESO, app pods via K8s auth)
-    - from:
-        - namespaceSelector: {}
-      ports:
-        - port: 8200
-          protocol: TCP
-    # Prometheus scraping
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - port: 8200
-          protocol: TCP
   egress:
-    # Raft peering with other OpenBao pods
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: openbao
-      ports:
-        - port: 8200
-          protocol: TCP
-        - port: 8201
-          protocol: TCP
-    # Kubernetes API (for K8s auth method and service registration)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
+    # Kubernetes API (K8s auth method and service registration)
+    - ports:
         - port: 443
           protocol: TCP
         - port: 6443
@@ -66,4 +24,40 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    # Intra-namespace (Raft peering between OpenBao pods)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-ingress
+  namespace: openbao
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Within namespace (Raft peering, API between OpenBao pods)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+    # ESO and app pods accessing OpenBao API from any namespace
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 8200
+          protocol: TCP
+    # Prometheus scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8200
           protocol: TCP

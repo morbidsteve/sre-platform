@@ -1,15 +1,21 @@
 ---
-# Allow DNS resolution for all logging pods
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-dns
+  name: allow-logging-egress
   namespace: logging
 spec:
   podSelector: {}
   policyTypes:
     - Egress
   egress:
+    # Kubernetes API
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS
     - to:
         - namespaceSelector:
             matchLabels:
@@ -19,126 +25,20 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-
----
-# Allow Alloy DaemonSet to push logs to Loki gateway
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-alloy-to-loki
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: alloy
-  policyTypes:
-    - Egress
-  egress:
-    # Push logs to Loki gateway (HTTP)
+    # Intra-namespace (Alloy to Loki, Loki internal gRPC/gossip/gateway)
     - to:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              app.kubernetes.io/component: gateway
-      ports:
-        - port: 80
-          protocol: TCP
-    # Direct Loki HTTP API (fallback)
+              kubernetes.io/metadata.name: logging
+    # Prometheus remote write (monitoring namespace)
     - to:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              app.kubernetes.io/name: loki
+              kubernetes.io/metadata.name: monitoring
       ports:
-        - port: 3100
+        - port: 9090
           protocol: TCP
-
----
-# Allow Loki pods to communicate with each other (read/write/backend)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-loki-internal
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: loki
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    # Inter-component communication (HTTP API)
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
-        - port: 3100
-          protocol: TCP
-    # gRPC communication between read/write/backend
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
-        - port: 9095
-          protocol: TCP
-    # Memberlist gossip ring
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
-        - port: 7946
-          protocol: TCP
-    # Gateway forwarding requests to read/write/backend
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: gateway
-      ports:
-        - port: 3100
-          protocol: TCP
-  egress:
-    # Inter-component communication (HTTP API)
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
-        - port: 3100
-          protocol: TCP
-    # gRPC communication between read/write/backend
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
-        - port: 9095
-          protocol: TCP
-    # Memberlist gossip ring
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
-        - port: 7946
-          protocol: TCP
-
----
-# Allow Loki to reach S3/MinIO storage backend
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-loki-to-s3
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: loki
-  policyTypes:
-    - Egress
-  egress:
-    # MinIO S3 API (dev)
+    # S3-compatible storage backend (MinIO in dev, S3 in prod)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -146,86 +46,32 @@ spec:
       ports:
         - port: 9000
           protocol: TCP
-    # AWS S3 / S3-compatible external endpoints (production)
-    - ports:
-        - port: 443
-          protocol: TCP
 
 ---
-# Allow Loki gateway to receive ingress from monitoring namespace (Grafana queries)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-grafana-to-loki
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: gateway
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - port: 80
-          protocol: TCP
-    # Also allow direct Loki HTTP from monitoring
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - port: 3100
-          protocol: TCP
-
----
-# Allow Prometheus scraping from monitoring namespace
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-prometheus-scrape
+  name: allow-logging-ingress
   namespace: logging
 spec:
   podSelector: {}
   policyTypes:
     - Ingress
   ingress:
+    # Within namespace (Alloy to Loki, Loki internal communication)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+    # Grafana queries from monitoring namespace
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
       ports:
-        # Loki metrics endpoint
-        - port: 3100
-          protocol: TCP
-        # Alloy metrics endpoint
-        - port: 12345
-          protocol: TCP
-        # Loki gateway metrics
         - port: 80
           protocol: TCP
-
----
-# Allow Loki gateway to forward to Loki read/write/backend
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-gateway-to-loki
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: gateway
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: loki
-      ports:
         - port: 3100
+          protocol: TCP
+        - port: 12345
           protocol: TCP
