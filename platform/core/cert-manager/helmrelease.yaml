@@ -29,10 +29,7 @@ spec:
       retries: 3
   values:
     installCRDs: true
-    replicaCount: 2
-    podDisruptionBudget:
-      enabled: true
-      minAvailable: 1
+    replicaCount: 1
     resources:
       requests:
         cpu: 50m
@@ -41,7 +38,7 @@ spec:
         cpu: 200m
         memory: 256Mi
     webhook:
-      replicaCount: 2
+      replicaCount: 1
       resources:
         requests:
           cpu: 25m
@@ -50,7 +47,7 @@ spec:
           cpu: 100m
           memory: 128Mi
     cainjector:
-      replicaCount: 2
+      replicaCount: 1
       resources:
         requests:
           cpu: 50m
@@ -58,8 +55,7 @@ spec:
         limits:
           cpu: 200m
           memory: 256Mi
+    # Disable ServiceMonitor — monitoring CRDs not installed yet
+    # ServiceMonitors are added in monitoring-config phase
     prometheus:
-      enabled: true
-      servicemonitor:
-        enabled: true
-        interval: 30s
+      enabled: false
