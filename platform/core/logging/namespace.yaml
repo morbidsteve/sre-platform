@@ -4,6 +4,6 @@ kind: Namespace
 metadata:
   name: logging
   labels:
-    istio-injection: enabled
+    istio-injection: disabled
     app.kubernetes.io/part-of: sre-platform
     pod-security.kubernetes.io/enforce: privileged

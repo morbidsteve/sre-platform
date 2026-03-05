@@ -1,5 +1,5 @@
 ---
-# Allow cert-manager to reach Kubernetes API and ACME servers
+# Allow all cert-manager pods to reach Kubernetes API and ACME servers
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -8,7 +8,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/instance: cert-manager
   policyTypes:
     - Ingress
     - Egress
@@ -21,48 +21,12 @@ spec:
       ports:
         - port: 9402
           protocol: TCP
-  egress:
-    # Kubernetes API
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    # DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-
----
-# Allow cert-manager webhook to receive admission requests
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-webhook
-  namespace: cert-manager
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: webhook
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    # Admission webhook traffic from API server
+    # Webhook traffic from API server
     - ports:
         - port: 10250
           protocol: TCP
   egress:
-    # Kubernetes API
+    # Kubernetes API and ACME servers
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
