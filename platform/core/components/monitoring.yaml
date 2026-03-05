@@ -14,7 +14,7 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: sre-platform
+    name: flux-system
   dependsOn:
     - name: sre-istio
     - name: sre-kyverno
