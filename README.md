@@ -179,7 +179,28 @@ sre/
 
 ## Quick Start
 
-### Proxmox VE (one-command quickstart)
+### Option A: Deploy to Any Existing Kubernetes Cluster (easiest)
+
+If you already have a Kubernetes cluster (RKE2, K3s, EKS, etc.) with `kubectl` access:
+
+```bash
+git clone https://github.com/morbidsteve/sre-platform.git
+cd sre-platform
+./scripts/sre-deploy.sh
+```
+
+That's it. The script handles everything: storage setup, kernel modules, Flux CD bootstrap, secret generation, and waits until all 13 platform components are healthy. When it finishes, access your services:
+
+```bash
+./scripts/sre-access.sh grafana    # Open Grafana dashboards
+./scripts/sre-access.sh all        # Open all platform UIs
+./scripts/sre-access.sh status     # Quick health check
+./scripts/sre-access.sh creds      # Show all credentials
+```
+
+### Option B: Proxmox VE (from bare metal to running platform)
+
+Don't have a cluster yet? This builds one from scratch on Proxmox:
 
 ```bash
 git clone https://github.com/morbidsteve/sre-platform.git
@@ -187,92 +208,36 @@ cd sre-platform
 ./scripts/quickstart-proxmox.sh
 ```
 
-The script prompts for your Proxmox connection details, then automates the entire pipeline: Packer image build, OpenTofu VM provisioning, Ansible OS hardening + RKE2 install, kubeconfig retrieval, and Flux CD bootstrap. See the [Proxmox Getting Started Guide](docs/getting-started-proxmox.md) for details and manual steps.
+The script prompts for your Proxmox connection details, then automates the entire pipeline: VM provisioning, OS hardening, RKE2 install, and Flux CD bootstrap. See the [Proxmox Getting Started Guide](docs/getting-started-proxmox.md) for details.
 
-### Cloud (AWS / Azure / vSphere)
+### Option C: Cloud / Manual (AWS, Azure, vSphere)
 
-#### Prerequisites
-
-- A Kubernetes-capable environment (AWS, Azure, or vSphere)
-- [Task](https://taskfile.dev) installed as the command runner
-- Git for version control and GitOps workflow
-
-#### 1. Clone the repository
+For full control over each step:
 
 ```bash
 git clone https://github.com/morbidsteve/sre-platform.git
 cd sre-platform
-```
+task init                           # Install CLI tools
 
-### 2. Install required CLI tools
-
-```bash
-task init
-```
-
-This installs yamllint, ansible-lint, Kyverno CLI, Helm, Flux CLI, Trivy, and OpenTofu.
-
-### 3. Provision infrastructure
-
-**Cloud (AWS/Azure/vSphere):**
-```bash
-# Review the plan
+# 1. Provision infrastructure
 task infra-plan ENV=dev
-
-# Apply infrastructure (provisions VMs, networking, load balancers)
 task infra-apply ENV=dev
-```
 
-**Proxmox VE (on-premises / homelab):**
-```bash
-# Build the VM template first
-cd infrastructure/packer/rocky-linux-9-proxmox
-packer init .
-packer build -var 'proxmox_url=https://pve.example.com:8006/api2/json' \
-  -var 'proxmox_username=packer@pve!packer-token' \
-  -var 'proxmox_token=YOUR_TOKEN' \
-  -var 'proxmox_node=pve' \
-  -var 'iso_file=local:iso/Rocky-9.3-x86_64-minimal.iso' \
-  -var 'vm_storage_pool=local-lvm' .
-
-# Then provision VMs from the template
-cd ../../tofu/environments/proxmox-lab
-tofu init && tofu plan && tofu apply
-```
-
-### 4. Harden the OS and install RKE2
-
-```bash
-# Cloud environments
+# 2. Harden OS + install RKE2
 cd infrastructure/ansible
 ansible-playbook playbooks/site.yml -i inventory/dev/hosts.yml
 
-# Proxmox lab
-ansible-playbook playbooks/site.yml -i inventory/proxmox-lab/hosts.yml
+# 3. Deploy the platform
+cd ../..
+./scripts/sre-deploy.sh             # Handles Flux + everything else
 ```
 
-### 5. Bootstrap Flux CD
+### After Deployment
 
 ```bash
-task bootstrap-flux REPO_URL=https://github.com/morbidsteve/sre-platform
-```
-
-Flux will begin reconciling all platform services from the Git repository automatically.
-
-### 6. Validate the deployment
-
-```bash
-# Run all linters
-task lint
-
-# Run compliance and policy validation
-task validate
-
-# Check Flux reconciliation status
-task flux-status
-
-# Generate a compliance report
-task compliance-report
+./scripts/sre-access.sh status      # Health check
+./scripts/verify-deployment.sh      # Full verification
+task compliance-report              # Compliance posture
 ```
 
 ## Documentation
