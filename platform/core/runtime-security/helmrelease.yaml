@@ -29,6 +29,13 @@ spec:
       retries: 3
   values:
     # ---------------------------------------------------------------
+    # RKE2 uses containerd at the k3s socket path
+    # ---------------------------------------------------------------
+    k3s:
+      enabled: true
+      runtimePath: /run/k3s/containerd/containerd.sock
+
+    # ---------------------------------------------------------------
     # Controller — cluster management and policy engine
     # ---------------------------------------------------------------
     controller:
@@ -48,6 +55,9 @@ spec:
     # ---------------------------------------------------------------
     enforcer:
       enabled: true
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
       resources:
         requests:
           cpu: 50m
