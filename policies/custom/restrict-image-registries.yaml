@@ -12,7 +12,8 @@ metadata:
       Restricts container images to only those sourced from the internal Harbor
       registry (harbor.sre.internal/). This ensures all images have been scanned
       for vulnerabilities and signed before deployment. System namespaces are
-      excluded from this policy.
+      excluded. In Audit mode, violations are reported but not blocked — switch
+      to Enforce after Harbor is deployed and teams have migrated their images.
     policies.kyverno.io/category: Supply Chain
     policies.kyverno.io/severity: critical
     sre.io/nist-controls: "CM-11, SI-7"

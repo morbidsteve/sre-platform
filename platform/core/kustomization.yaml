@@ -18,6 +18,7 @@ resources:
   - components/cert-manager.yaml
   - components/cert-manager-config.yaml
   - components/kyverno.yaml
+  - components/kyverno-policies.yaml
   - components/monitoring.yaml
   - components/monitoring-config.yaml
   - components/logging.yaml
@@ -27,3 +28,4 @@ resources:
   - components/runtime-security.yaml
   - components/tempo.yaml
   - components/backup.yaml
+  - components/tenants.yaml

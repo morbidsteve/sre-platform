@@ -8,3 +8,4 @@ resources:
   - limit-range.yaml
   - network-policies/default-deny.yaml
   - network-policies/allow-base.yaml
+  - apps/demo-app.yaml

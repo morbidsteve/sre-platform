@@ -44,7 +44,7 @@ ingress:
   # Hostname for the application
   host: ""
   # Istio gateway reference
-  gateway: "istio-system/sre-gateway"
+  gateway: "istio-system/main"
 
 # -- Autoscaling --
 autoscaling:

@@ -1,0 +1,65 @@
+---
+# Example demo application using the sre-web-app Helm chart template.
+# Copy this file and modify the values to deploy your own application.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: demo-app
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-alpha
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/web-app
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "demo-app"
+      team: "team-alpha"
+      image:
+        repository: "nginx"
+        tag: "1.27.3-alpine"
+        pullPolicy: IfNotPresent
+      port: 80
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      probes:
+        liveness:
+          path: "/"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env: []
+    ingress:
+      enabled: false
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false

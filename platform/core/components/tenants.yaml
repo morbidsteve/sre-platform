@@ -1,0 +1,24 @@
+---
+# Flux Kustomization for tenant namespaces
+# Depends on: istio (tenants need Istio sidecar injection)
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-tenants
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AC-2, AC-3, AC-6, SC-3"
+spec:
+  interval: 10m
+  path: ./apps/tenants
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-istio
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

@@ -1,0 +1,24 @@
+---
+# Flux Kustomization for Kyverno custom policies
+# Depends on: kyverno (policies need the CRDs from kyverno)
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-kyverno-policies
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-6, CM-6, CM-7, CM-11, SI-7"
+spec:
+  interval: 10m
+  path: ./policies/custom
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-kyverno
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config
