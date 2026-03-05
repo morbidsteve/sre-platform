@@ -13,10 +13,8 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # xDS and webhook traffic from all namespaces
-    - from:
-        - namespaceSelector: {}
-      ports:
+    # xDS and webhook traffic from all namespaces (including API server)
+    - ports:
         - port: 15010
           protocol: TCP
         - port: 15012
