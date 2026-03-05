@@ -23,8 +23,8 @@
           "properties": {
             "repository": {
               "type": "string",
-              "pattern": "^harbor\\.sre\\.internal/",
-              "description": "Must be from the internal Harbor registry"
+              "minLength": 1,
+              "description": "Container image repository (use harbor.sre.internal/ when Harbor is deployed)"
             },
             "tag": {
               "type": "string",
