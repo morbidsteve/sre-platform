@@ -5,15 +5,15 @@ A hardened, compliance-ready Kubernetes platform for deploying applications in r
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![RKE2](https://img.shields.io/badge/K8s-RKE2_v1.34-blue.svg)](https://docs.rke2.io)
 [![Flux CD](https://img.shields.io/badge/GitOps-Flux_CD_v2-blue.svg)](https://fluxcd.io)
-[![Components](https://img.shields.io/badge/Platform-16_components-green.svg)](#platform-components)
+[![Components](https://img.shields.io/badge/Platform-18_components-green.svg)](#platform-components)
 
 ---
 
 ## What You Get
 
-A complete Kubernetes platform with 16 integrated components, all deployed and managed through GitOps:
+A complete Kubernetes platform with 18 integrated components, all deployed and managed through GitOps:
 
-![SRE Dashboard showing 16/16 healthy components](docs/images/dashboard.png)
+![SRE Dashboard showing all healthy components](docs/images/dashboard.png)
 
 | Category | Components | What It Does |
 |----------|-----------|-------------|
@@ -141,8 +141,13 @@ Container behavioral monitoring, network microsegmentation, and CIS benchmark sc
 
 ![NeuVector](docs/images/neuvector.png)
 
+### Keycloak — SSO & Identity
+OIDC/SAML single sign-on for all platform UIs with group-based RBAC.
+
+![Keycloak](docs/images/keycloak.png)
+
 ### Demo App — Deployed via Dashboard
-A sample nginx app deployed through the dashboard, running with Istio mTLS sidecar injection.
+A sample app deployed through the dashboard, running with Istio mTLS sidecar injection.
 
 ![Demo App](docs/images/demo-app.png)
 
@@ -346,17 +351,63 @@ No `kubectl apply` needed. No manual cluster access. Git is the single source of
 | Harbor | 1.16.3 | harbor |
 | Keycloak | 24.8.1 | keycloak |
 
-### Kyverno Policies (7 active, Audit mode)
+### Kyverno Policies (7 active)
 
-| Policy | What It Enforces |
-|--------|-----------------|
-| `disallow-default-namespace` | Blocks deployments to the `default` namespace |
-| `disallow-latest-tag` | Blocks `:latest` image tags |
-| `require-labels` | Requires `app.kubernetes.io/name` and `sre.io/team` labels |
-| `require-network-policies` | Ensures every namespace has a default-deny NetworkPolicy |
-| `require-probes` | Requires liveness and readiness probes on all containers |
-| `require-resource-limits` | Requires CPU and memory limits on all containers |
-| `restrict-image-registries` | Restricts images to approved registries |
+| Policy | Mode | What It Enforces |
+|--------|------|-----------------|
+| `disallow-latest-tag` | **Enforce** | Blocks `:latest` image tags |
+| `require-labels` | **Enforce** | Requires `app.kubernetes.io/name` and `sre.io/team` labels |
+| `require-network-policies` | **Enforce** | Ensures every namespace has a default-deny NetworkPolicy |
+| `require-security-context` | Audit | Requires non-root, drop ALL capabilities |
+| `require-istio-sidecar` | Audit | Requires Istio sidecar injection labels |
+| `restrict-image-registries` | Audit | Restricts images to approved registries |
+| `verify-image-signatures` | Audit | Verifies Cosign signatures on images |
+
+### Secrets Management
+
+| Feature | Implementation |
+|---------|---------------|
+| **Secrets Vault** | OpenBao (auto-initialized, auto-unsealed) |
+| **K8s Integration** | External Secrets Operator syncs from OpenBao to K8s Secrets |
+| **Auth Method** | Kubernetes ServiceAccount-based authentication |
+| **Engines** | KV v2 (app secrets), PKI (certificates) |
+
+### SSO / Identity (Keycloak)
+
+| Feature | Detail |
+|---------|--------|
+| **Realm** | `sre` with OIDC discovery |
+| **Groups** | `platform-admins`, `developers`, `viewers` |
+| **OIDC Clients** | Grafana, Harbor, NeuVector, Dashboard |
+| **Test Users** | `sre-admin` / `admin123`, `developer` / `dev123` |
+
+### Observability
+
+| Feature | Detail |
+|---------|--------|
+| **Grafana Dashboards** | 5 custom SRE dashboards (cluster, namespace, istio, kyverno, flux) + 31 built-in |
+| **PrometheusRules** | 22 alerts across 8 groups (certs, flux, kyverno, nodes, storage, pods, security, istio) |
+| **Alertmanager** | Severity-based routing (critical/warning/info) with inhibition rules |
+
+### CI/CD Pipeline
+
+Reusable GitHub Actions workflows in `ci/github-actions/`:
+
+1. **Build** container image with Docker Buildx
+2. **Scan** with Trivy (fail on CRITICAL)
+3. **Generate SBOM** with Syft (SPDX + CycloneDX)
+4. **Sign** with Cosign
+5. **Push** to Harbor
+6. **Update** GitOps repo (Flux auto-deploys)
+
+### Compliance Artifacts
+
+| Artifact | Path |
+|----------|------|
+| OSCAL System Security Plan | `compliance/oscal/ssp.json` |
+| NIST 800-53 Control Mapping | `compliance/nist-800-53-mappings/control-mapping.json` |
+| CMMC 2.0 Level 2 Assessment | `compliance/cmmc/level2-assessment.json` |
+| RKE2 DISA STIG Checklist | `compliance/stig-checklists/rke2-stig.json` |
 
 ---
 
@@ -366,7 +417,7 @@ No `kubectl apply` needed. No manual cluster access. Git is the single source of
 sre-platform/
 ├── platform/                     # Flux CD GitOps manifests
 │   ├── flux-system/              # Flux bootstrap
-│   ├── core/                     # 13 core platform components
+│   ├── core/                     # Core platform components
 │   │   ├── istio/                # Service mesh (mTLS, gateway, auth)
 │   │   ├── cert-manager/         # TLS certificates
 │   │   ├── kyverno/              # Policy engine
@@ -381,9 +432,12 @@ sre-platform/
 │       ├── harbor/               # Container registry
 │       └── keycloak/             # Identity / SSO
 ├── apps/
-│   ├── dashboard/                # SRE Dashboard web app
+│   ├── dashboard/                # SRE Dashboard web app (v1.3.0)
+│   ├── demo-app/                 # Go demo app with Prometheus metrics
 │   ├── templates/                # Helm chart templates (web-app, worker, cronjob, api)
 │   └── tenants/                  # Per-team app configs (team-alpha, team-beta)
+├── ci/
+│   └── github-actions/           # Reusable CI/CD workflows (build, scan, sign, deploy)
 ├── policies/                     # Kyverno policies + test suites
 ├── infrastructure/
 │   ├── tofu/                     # OpenTofu modules (AWS, Azure, vSphere, Proxmox)
@@ -432,9 +486,11 @@ Every Kyverno policy, Helm chart, and Flux manifest includes `sre.io/nist-contro
 |-------|-------------|
 | [Architecture](docs/architecture.md) | Full platform spec and design rationale |
 | [Decision Records](docs/decisions.md) | ADRs for all major technology choices |
-| [Developer Guide](docs/developer-guide.md) | Deploy your app in 5 minutes |
+| [Developer Guide](docs/developer-guide.md) | Deploy your app, secrets management, SSO, CI/CD |
 | [Proxmox Guide](docs/getting-started-proxmox.md) | Build a cluster from scratch on Proxmox VE |
 | [Session Playbook](docs/session-playbook.md) | Step-by-step build plan |
+| [CI/CD Pipelines](ci/README.md) | Reusable GitHub Actions for build/scan/sign/deploy |
+| [Istio AuthZ Policies](platform/core/istio-config/authorization-policies/README.md) | Zero-trust network policies |
 
 ---
 
