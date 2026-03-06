@@ -54,6 +54,9 @@ spec:
                     dnsPolicy: ClusterFirstWithHostNet
                     securityContext:
                       $patch: replace
+                    containers:
+                      - name: istio-proxy
+                        image: docker.io/istio/proxyv2:1.25.2
   values:
     replicaCount: 1
     autoscaling:
