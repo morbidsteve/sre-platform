@@ -20,7 +20,45 @@ const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
 const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
 const appsApi = kc.makeApiClient(k8s.AppsV1Api);
 
+// ── Sample Apps (known-good non-root images) ────────────────────────────────
+
+const SAMPLE_APPS = [
+  {
+    name: "nginx-demo",
+    description: "Static web server (Nginx)",
+    image: "nginxinc/nginx-unprivileged",
+    tag: "1.27-alpine",
+    port: 8080,
+  },
+  {
+    name: "httpbin",
+    description: "HTTP testing service — echoes requests back",
+    image: "mccutchen/go-httpbin",
+    tag: "v2.15.0",
+    port: 8080,
+  },
+  {
+    name: "podinfo",
+    description: "Go microservice demo with health checks & metrics",
+    image: "ghcr.io/stefanprodan/podinfo",
+    tag: "6.7.1",
+    port: 9898,
+  },
+  {
+    name: "whoami",
+    description: "Shows container hostname, IP, and request headers",
+    image: "traefik/whoami",
+    tag: "v1.10",
+    port: 80,
+  },
+];
+
 // ── API Routes ───────────────────────────────────────────────────────────────
+
+// Sample apps catalog
+app.get("/api/samples", (req, res) => {
+  res.json({ samples: SAMPLE_APPS });
+});
 
 // Platform health: HelmReleases, nodes, pods
 app.get("/api/health", async (req, res) => {
@@ -92,9 +130,16 @@ app.post("/api/deploy", async (req, res) => {
       });
     }
 
+    // Sanitize team name
+    const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+
+    // Auto-create namespace if it doesn't exist
+    await ensureNamespace(nsName, teamName);
+
     const manifest = generateHelmRelease({
       name,
-      team,
+      team: nsName,
       image,
       tag,
       port: port || 8080,
@@ -103,11 +148,12 @@ app.post("/api/deploy", async (req, res) => {
     });
 
     // Apply the manifest to the cluster
-    await applyManifest(manifest, team);
+    await applyManifest(manifest, nsName);
 
     res.json({
       success: true,
-      message: `App "${name}" deployed to namespace "${team}"`,
+      message: `App "${name}" deployed to namespace "${nsName}"`,
+      namespace: nsName,
       manifest,
     });
   } catch (err) {
@@ -351,6 +397,54 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
     },
   };
   return hr;
+}
+
+async function ensureNamespace(nsName, teamLabel) {
+  try {
+    await k8sApi.readNamespace(nsName);
+  } catch (err) {
+    if (err.statusCode === 404) {
+      await k8sApi.createNamespace({
+        metadata: {
+          name: nsName,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/tenant": "true",
+            "sre.io/team": teamLabel,
+          },
+        },
+      });
+      // Create default-deny NetworkPolicy
+      const netApi = kc.makeApiClient(k8s.NetworkingV1Api);
+      await netApi.createNamespacedNetworkPolicy(nsName, {
+        metadata: { name: "default-deny-all", namespace: nsName },
+        spec: {
+          podSelector: {},
+          policyTypes: ["Ingress", "Egress"],
+        },
+      }).catch(() => {});
+      // Create allow-base NetworkPolicy (DNS + istio + monitoring + same namespace)
+      await netApi.createNamespacedNetworkPolicy(nsName, {
+        metadata: { name: "allow-base", namespace: nsName },
+        spec: {
+          podSelector: {},
+          policyTypes: ["Ingress", "Egress"],
+          ingress: [
+            { from: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": nsName } } }] },
+            { from: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "istio-system" } } }] },
+            { from: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "monitoring" } } }] },
+          ],
+          egress: [
+            { to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }], ports: [{ port: 53, protocol: "UDP" }, { port: 53, protocol: "TCP" }] },
+            { to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": nsName } } }] },
+            { ports: [{ port: 443, protocol: "TCP" }, { port: 6443, protocol: "TCP" }] },
+          ],
+        },
+      }).catch(() => {});
+    } else {
+      throw err;
+    }
+  }
 }
 
 async function applyManifest(manifest, namespace) {

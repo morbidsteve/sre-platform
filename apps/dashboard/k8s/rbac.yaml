@@ -24,10 +24,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["list"]
-  # Read namespaces (for tenant listing)
+  # Namespaces — list + create + read (auto-create tenant namespaces)
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["list"]
+    verbs: ["list", "get", "create"]
   # Read services (for gateway NodePort detection)
   - apiGroups: [""]
     resources: ["services"]
@@ -40,6 +40,10 @@ rules:
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
     verbs: ["list", "create", "patch", "delete"]
+  # NetworkPolicies — create (for new tenant namespaces)
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create"]
   # Istio VirtualServices — list
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices"]

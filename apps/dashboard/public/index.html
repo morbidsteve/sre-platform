@@ -379,6 +379,48 @@
 
     .cred-row .value:hover { background: var(--surface-hover); }
 
+    /* ── Sample app cards ─────────────────────────────────────── */
+
+    .sample-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.15s;
+    }
+
+    .sample-card:hover { border-color: var(--accent); }
+
+    .sample-card .sample-info h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .sample-card .sample-info p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .sample-card .sample-info code {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .btn-success {
+      background: rgba(34,197,94,0.15);
+      color: var(--green);
+      border: 1px solid rgba(34,197,94,0.3);
+    }
+
+    .btn-success:hover { background: rgba(34,197,94,0.25); }
+
     .loading {
       text-align: center;
       padding: 40px;
@@ -480,8 +522,18 @@
   <div id="tab-deploy" class="tab-content">
     <div id="deploy-alert" class="alert"></div>
 
+    <!-- Quick Start: one-click sample apps -->
+    <div style="margin-bottom: 24px;">
+      <h2 style="margin-bottom: 4px;">Quick Start</h2>
+      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 12px;">Deploy a sample app with one click to try the platform.</p>
+      <div class="grid" id="samples-grid">
+        <div class="loading"><span class="spinner"></span></div>
+      </div>
+    </div>
+
     <div class="form-card">
-      <h2>Deploy a New Application</h2>
+      <h2>Deploy Your Own App</h2>
+      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Your image must run as non-root. Use <code>nginxinc/nginx-unprivileged</code> instead of <code>nginx</code>, or add <code>USER 1000</code> in your Dockerfile.</p>
       <form id="deploy-form" onsubmit="handleDeploy(event)">
         <div class="form-row">
           <div class="form-group">
@@ -490,23 +542,23 @@
             <div class="hint">Lowercase letters, numbers, hyphens only</div>
           </div>
           <div class="form-group">
-            <label>Team Namespace</label>
-            <select id="d-team" required>
-              <option value="">Loading...</option>
-            </select>
+            <label>Team Name</label>
+            <input type="text" id="d-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+            <datalist id="team-list"></datalist>
+            <div class="hint">Type a name — namespace is created automatically</div>
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label>Container Image</label>
-            <input type="text" id="d-image" placeholder="docker.io/library/nginx" required />
+            <input type="text" id="d-image" placeholder="nginxinc/nginx-unprivileged" required />
             <div class="hint">Full image path without tag</div>
           </div>
           <div class="form-group">
             <label>Image Tag</label>
-            <input type="text" id="d-tag" placeholder="1.27.3-alpine" required />
-            <div class="hint">Never use "latest"</div>
+            <input type="text" id="d-tag" placeholder="1.27-alpine" required />
+            <div class="hint">Pinned version, never "latest"</div>
           </div>
         </div>
 
@@ -517,14 +569,14 @@
           </div>
           <div class="form-group">
             <label>Replicas</label>
-            <input type="number" id="d-replicas" value="2" min="1" max="10" />
+            <input type="number" id="d-replicas" value="1" min="1" max="10" />
           </div>
         </div>
 
         <div class="form-group">
           <label>Ingress Hostname (optional)</label>
           <input type="text" id="d-ingress" placeholder="my-app.apps.sre.example.com" />
-          <div class="hint">Leave empty for cluster-internal only</div>
+          <div class="hint">Leave empty for cluster-internal only — add to /etc/hosts to access</div>
         </div>
 
         <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Application</button>
@@ -661,17 +713,60 @@ async function loadTenants() {
   try {
     const resp = await fetch('/api/tenants');
     const data = await resp.json();
-    const select = document.getElementById('d-team');
-    select.innerHTML = data.tenants.map(t =>
-      `<option value="${t.name}">${t.name}</option>`
+    const datalist = document.getElementById('team-list');
+    datalist.innerHTML = data.tenants.map(t =>
+      `<option value="${t.name.replace('team-', '')}">`
     ).join('');
-    if (data.tenants.length === 0) {
-      select.innerHTML = '<option value="">No tenants found</option>';
-    }
   } catch (err) {
     console.error('Failed to load tenants:', err);
   }
+  loadSamples();
   loadDeployedApps();
+}
+
+async function loadSamples() {
+  try {
+    const resp = await fetch('/api/samples');
+    const data = await resp.json();
+    const grid = document.getElementById('samples-grid');
+    grid.innerHTML = data.samples.map(s => `
+      <div class="sample-card">
+        <div class="sample-info">
+          <h4>${s.name}</h4>
+          <p>${s.description}</p>
+          <code>${s.image}:${s.tag}</code>
+        </div>
+        <button class="btn btn-success btn-sm" onclick="quickDeploy('${s.name}','${s.image}','${s.tag}',${s.port})">Deploy</button>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to load samples:', err);
+  }
+}
+
+async function quickDeploy(name, image, tag, port) {
+  const alert = document.getElementById('deploy-alert');
+  alert.className = 'alert'; alert.style.display = 'none';
+  const team = document.getElementById('d-team').value || 'demo';
+  try {
+    const resp = await fetch('/api/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, team, image, tag, port, replicas: 1 }),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      alert.className = 'alert success';
+      alert.textContent = data.message + '. Give it about 30 seconds to start.';
+      setTimeout(loadDeployedApps, 3000);
+    } else {
+      alert.className = 'alert error';
+      alert.textContent = data.error;
+    }
+  } catch (err) {
+    alert.className = 'alert error';
+    alert.textContent = 'Deploy failed: ' + err.message;
+  }
 }
 
 async function loadDeployedApps() {
