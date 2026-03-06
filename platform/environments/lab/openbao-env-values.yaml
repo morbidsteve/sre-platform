@@ -8,12 +8,8 @@ data:
   values.yaml: |
     server:
       dev:
-        enabled: false
+        enabled: true
       ha:
         enabled: false
-      standalone:
-        enabled: true
       dataStorage:
-        enabled: true
-        storageClass: local-path
-        size: 5Gi
+        enabled: false

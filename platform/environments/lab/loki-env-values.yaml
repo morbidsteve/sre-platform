@@ -8,6 +8,4 @@ data:
   values.yaml: |
     singleBinary:
       persistence:
-        enabled: true
-        storageClass: local-path
-        size: 20Gi
+        enabled: false
