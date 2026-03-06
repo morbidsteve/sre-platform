@@ -1,0 +1,212 @@
+---
+# Backstage catalog entries for all SRE platform components
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: istio
+  description: Service mesh providing mTLS, traffic management, and observability
+  annotations:
+    backstage.io/kubernetes-namespace: istio-system
+  tags:
+    - service-mesh
+    - security
+    - networking
+  links:
+    - url: https://istio.io/latest/docs/
+      title: Istio Documentation
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: kyverno
+  description: Policy engine for Kubernetes admission control and compliance
+  annotations:
+    backstage.io/kubernetes-namespace: kyverno
+  tags:
+    - policy
+    - security
+    - compliance
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: monitoring
+  description: Prometheus + Grafana + AlertManager monitoring stack
+  annotations:
+    backstage.io/kubernetes-namespace: monitoring
+  tags:
+    - monitoring
+    - observability
+    - alerting
+  links:
+    - url: https://grafana.apps.sre.example.com
+      title: Grafana
+    - url: https://prometheus.apps.sre.example.com
+      title: Prometheus
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: loki
+  description: Log aggregation engine
+  annotations:
+    backstage.io/kubernetes-namespace: logging
+  tags:
+    - logging
+    - observability
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: harbor
+  description: Container registry with vulnerability scanning and image signing
+  annotations:
+    backstage.io/kubernetes-namespace: harbor
+  tags:
+    - registry
+    - security
+    - supply-chain
+  links:
+    - url: https://harbor.apps.sre.example.com
+      title: Harbor UI
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: keycloak
+  description: Identity provider and SSO for all platform services
+  annotations:
+    backstage.io/kubernetes-namespace: keycloak
+  tags:
+    - identity
+    - sso
+    - authentication
+  links:
+    - url: https://keycloak.apps.sre.example.com
+      title: Keycloak Admin
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: openbao
+  description: Secrets management with dynamic credentials and rotation
+  annotations:
+    backstage.io/kubernetes-namespace: openbao
+  tags:
+    - secrets
+    - security
+    - encryption
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: neuvector
+  description: Runtime security with behavioral monitoring and network DLP
+  annotations:
+    backstage.io/kubernetes-namespace: neuvector
+  tags:
+    - security
+    - runtime
+    - monitoring
+  links:
+    - url: https://neuvector.apps.sre.example.com
+      title: NeuVector Console
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: velero
+  description: Backup and disaster recovery for cluster state and persistent volumes
+  annotations:
+    backstage.io/kubernetes-namespace: velero
+  tags:
+    - backup
+    - disaster-recovery
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tempo
+  description: Distributed tracing backend
+  annotations:
+    backstage.io/kubernetes-namespace: tempo
+  tags:
+    - tracing
+    - observability
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: sre-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: SRE Platform team
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-alpha
+  description: Team Alpha - application development team
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-beta
+  description: Team Beta - application development team
+spec:
+  type: team
+  children: []

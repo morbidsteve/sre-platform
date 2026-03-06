@@ -1,0 +1,27 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-env-values
+  namespace: harbor
+data:
+  values.yaml: |
+    persistence:
+      enabled: true
+      persistentVolumeClaim:
+        registry:
+          storageClass: local-path
+          size: 20Gi
+        database:
+          storageClass: local-path
+          size: 5Gi
+        redis:
+          storageClass: local-path
+          size: 2Gi
+        jobservice:
+          jobLog:
+            storageClass: local-path
+            size: 2Gi
+        trivy:
+          storageClass: local-path
+          size: 5Gi

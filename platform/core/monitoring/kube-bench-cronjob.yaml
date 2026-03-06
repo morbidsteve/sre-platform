@@ -1,0 +1,147 @@
+---
+# CIS Kubernetes Benchmark scanning via kube-bench
+# Runs weekly and stores results as a ConfigMap
+# NIST Controls: CA-7, CM-6, SI-6
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench-scan
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, CM-6, SI-6"
+spec:
+  schedule: "0 6 * * 0"  # Weekly Sunday 6 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: kube-bench
+        spec:
+          hostPID: true
+          restartPolicy: Never
+          containers:
+            - name: kube-bench
+              image: docker.io/aquasec/kube-bench:v0.8.0
+              command: ["kube-bench", "run", "--targets", "node,policies", "--json"]
+              volumeMounts:
+                - name: var-lib-etcd
+                  mountPath: /var/lib/etcd
+                  readOnly: true
+                - name: var-lib-kubelet
+                  mountPath: /var/lib/kubelet
+                  readOnly: true
+                - name: var-lib-kube-scheduler
+                  mountPath: /var/lib/kube-scheduler
+                  readOnly: true
+                - name: var-lib-kube-controller-manager
+                  mountPath: /var/lib/kube-controller-manager
+                  readOnly: true
+                - name: etc-systemd
+                  mountPath: /etc/systemd
+                  readOnly: true
+                - name: lib-systemd
+                  mountPath: /lib/systemd/
+                  readOnly: true
+                - name: etc-kubernetes
+                  mountPath: /etc/kubernetes
+                  readOnly: true
+                - name: etc-rancher
+                  mountPath: /etc/rancher
+                  readOnly: true
+                - name: results
+                  mountPath: /tmp/results
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+            - name: upload-results
+              image: docker.io/bitnami/kubectl:1.33.4
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  sleep 30
+                  if [ -f /tmp/results/results.json ]; then
+                    PASS=$(cat /tmp/results/results.json | grep -o '"status":"PASS"' | wc -l)
+                    FAIL=$(cat /tmp/results/results.json | grep -o '"status":"FAIL"' | wc -l)
+                    WARN=$(cat /tmp/results/results.json | grep -o '"status":"WARN"' | wc -l)
+                    echo "CIS Benchmark Results: PASS=$PASS FAIL=$FAIL WARN=$WARN"
+                    kubectl create configmap kube-bench-results \
+                      --from-file=results.json=/tmp/results/results.json \
+                      --from-literal=pass=$PASS \
+                      --from-literal=fail=$FAIL \
+                      --from-literal=warn=$WARN \
+                      --from-literal=scan-date=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+                      -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+                  fi
+              volumeMounts:
+                - name: results
+                  mountPath: /tmp/results
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+          volumes:
+            - name: var-lib-etcd
+              hostPath:
+                path: /var/lib/etcd
+            - name: var-lib-kubelet
+              hostPath:
+                path: /var/lib/kubelet
+            - name: var-lib-kube-scheduler
+              hostPath:
+                path: /var/lib/kube-scheduler
+            - name: var-lib-kube-controller-manager
+              hostPath:
+                path: /var/lib/kube-controller-manager
+            - name: etc-systemd
+              hostPath:
+                path: /etc/systemd
+            - name: lib-systemd
+              hostPath:
+                path: /lib/systemd
+            - name: etc-kubernetes
+              hostPath:
+                path: /etc/kubernetes
+            - name: etc-rancher
+              hostPath:
+                path: /etc/rancher
+            - name: results
+              emptyDir: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-bench-results-writer
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "update", "patch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-bench-results-writer
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-bench-results-writer
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: monitoring

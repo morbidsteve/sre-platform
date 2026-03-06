@@ -1,0 +1,178 @@
+---
+# Backstage Software Template — scaffold a new web application on SRE platform
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: sre-web-app
+  title: SRE Web Application
+  description: Create a new web application deployed to the SRE platform with full security context, monitoring, and GitOps
+  tags:
+    - web
+    - kubernetes
+    - recommended
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Application Details
+      required:
+        - name
+        - team
+        - description
+      properties:
+        name:
+          title: Application Name
+          type: string
+          pattern: "^[a-z0-9-]+$"
+          description: Lowercase alphanumeric with hyphens only
+          ui:autofocus: true
+        team:
+          title: Team
+          type: string
+          enum:
+            - team-alpha
+            - team-beta
+          description: Your team namespace
+        description:
+          title: Description
+          type: string
+          description: Brief description of the application
+        port:
+          title: Application Port
+          type: number
+          default: 8080
+          description: Port your application listens on
+
+    - title: Infrastructure
+      properties:
+        database:
+          title: Database
+          type: string
+          enum:
+            - none
+            - postgresql
+          default: none
+          description: Optional PostgreSQL database (via CloudNativePG)
+        ingress:
+          title: Enable Ingress
+          type: boolean
+          default: true
+          description: Expose the app via Istio ingress
+        canary:
+          title: Enable Canary Deployments
+          type: boolean
+          default: false
+          description: Progressive delivery via Flagger
+
+    - title: Repository
+      required:
+        - repoUrl
+      properties:
+        repoUrl:
+          title: Repository Location
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+
+  steps:
+    - id: template
+      name: Create Application Scaffold
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          team: ${{ parameters.team }}
+          description: ${{ parameters.description }}
+          port: ${{ parameters.port }}
+          database: ${{ parameters.database }}
+          ingress: ${{ parameters.ingress }}
+          canary: ${{ parameters.canary }}
+
+    - id: publish
+      name: Publish to GitHub
+      action: publish:github
+      input:
+        allowedHosts: ["github.com"]
+        repoUrl: ${{ parameters.repoUrl }}
+        description: ${{ parameters.description }}
+        defaultBranch: main
+        protectDefaultBranch: true
+
+    - id: gitops-manifest
+      name: Create GitOps Manifest
+      action: github:actions:dispatch
+      input:
+        repoUrl: github.com?owner=${{ steps.publish.output.remoteUrl | parseRepoUrl | pick('owner') }}&repo=sre-platform
+        workflowId: onboard-app.yaml
+        branchOrTagName: main
+        workflowInputs:
+          app-name: ${{ parameters.name }}
+          team: ${{ parameters.team }}
+          port: ${{ parameters.port }}
+          database: ${{ parameters.database }}
+          ingress: ${{ parameters.ingress }}
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+---
+# Backstage Software Template — scaffold a background worker
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: sre-worker
+  title: SRE Background Worker
+  description: Create a background worker service with no ingress
+  tags:
+    - worker
+    - kubernetes
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Worker Details
+      required:
+        - name
+        - team
+      properties:
+        name:
+          title: Worker Name
+          type: string
+          pattern: "^[a-z0-9-]+$"
+        team:
+          title: Team
+          type: string
+          enum:
+            - team-alpha
+            - team-beta
+        description:
+          title: Description
+          type: string
+  steps:
+    - id: template
+      name: Create Worker Scaffold
+      action: fetch:template
+      input:
+        url: ./worker-skeleton
+        values:
+          name: ${{ parameters.name }}
+          team: ${{ parameters.team }}
+  output:
+    links:
+      - title: Open in catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

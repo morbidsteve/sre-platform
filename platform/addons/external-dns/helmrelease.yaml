@@ -1,0 +1,97 @@
+---
+# ExternalDNS — automatic DNS record management from Kubernetes resources
+# Creates DNS records from Istio VirtualServices and Gateway hosts
+# NIST Controls: CM-2, CM-3
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: external-dns
+  annotations:
+    sre.io/nist-controls: "CM-2, CM-3"
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: external-dns
+      version: "1.15.0"
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # ---------------------------------------------------------------
+    # DNS Provider — configure for your environment
+    # Supports: aws (Route53), azure, cloudflare, google, rfc2136, etc.
+    # ---------------------------------------------------------------
+    provider:
+      name: rfc2136
+    # For AWS Route53:
+    # provider:
+    #   name: aws
+    # env:
+    #   - name: AWS_DEFAULT_REGION
+    #     value: us-east-1
+    # serviceAccount:
+    #   annotations:
+    #     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/external-dns
+
+    # ---------------------------------------------------------------
+    # Source — watch Istio resources for DNS records
+    # ---------------------------------------------------------------
+    sources:
+      - istio-virtualservice
+      - istio-gateway
+      - service
+      - ingress
+
+    # ---------------------------------------------------------------
+    # Policy — sync creates and deletes DNS records
+    # ---------------------------------------------------------------
+    policy: sync
+    registry: txt
+    txtOwnerId: sre-platform
+    txtPrefix: "externaldns-"
+
+    # ---------------------------------------------------------------
+    # Domain filter — only manage records for our domain
+    # ---------------------------------------------------------------
+    domainFilters:
+      - "apps.sre.example.com"
+
+    # ---------------------------------------------------------------
+    # Monitoring
+    # ---------------------------------------------------------------
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
+    # ---------------------------------------------------------------
+    # Security Context
+    # ---------------------------------------------------------------
+    securityContext:
+      runAsNonRoot: true
+      fsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  valuesFrom:
+    - kind: Secret
+      name: external-dns-credentials
+      optional: true

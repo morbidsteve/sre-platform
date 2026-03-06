@@ -73,3 +73,21 @@ networkPolicy:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
+
+# -- Canary deployments (requires Flagger) --
+canary:
+  enabled: false
+  progressDeadlineSeconds: 600
+  analysis:
+    # How often Flagger runs the analysis
+    interval: "1m"
+    # Max number of failed checks before rollback
+    threshold: 5
+    # Max traffic weight routed to canary
+    maxWeight: 50
+    # Traffic weight step increment
+    stepWeight: 10
+    # Minimum request success rate (percentage)
+    successRate: 99
+    # Maximum request duration (milliseconds)
+    latencyMax: 500

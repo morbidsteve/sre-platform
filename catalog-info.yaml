@@ -1,0 +1,28 @@
+---
+# Backstage catalog root — register this file as a Location in Backstage
+# to import the entire SRE platform into the software catalog
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: sre-platform-catalog
+  description: SRE Platform component catalog
+spec:
+  targets:
+    - ./platform/catalog/platform-components.yaml
+    - ./platform/catalog/software-templates.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: sre-platform
+  description: Secure Runtime Environment — Kubernetes platform for regulated workloads
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - kubernetes
+    - security
+    - compliance
+    - gitops
+spec:
+  owner: platform-team
+  domain: infrastructure

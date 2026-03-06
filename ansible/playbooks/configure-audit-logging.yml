@@ -1,0 +1,52 @@
+---
+# Configure Kubernetes API audit logging on RKE2 nodes
+# Enables comprehensive audit logging for NIST AU-2, AU-3, AU-12
+#
+# Usage: ansible-playbook playbooks/configure-audit-logging.yml -i inventory/lab/
+- name: Configure RKE2 API audit logging
+  hosts: control_plane
+  become: true
+  vars:
+    rke2_config_dir: /etc/rancher/rke2
+    audit_log_dir: /var/log/kube-audit
+    audit_log_max_age: 30
+    audit_log_max_backup: 10
+    audit_log_max_size: 100
+  tasks:
+    - name: Create audit log directory
+      ansible.builtin.file:
+        path: "{{ audit_log_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Deploy audit policy
+      ansible.builtin.template:
+        src: ../templates/audit-policy.yaml.j2
+        dest: "{{ rke2_config_dir }}/audit-policy.yaml"
+        owner: root
+        group: root
+        mode: "0640"
+      notify: Restart rke2-server
+
+    - name: Configure RKE2 to use audit policy
+      ansible.builtin.lineinfile:
+        path: "{{ rke2_config_dir }}/config.yaml"
+        line: "{{ item }}"
+        create: true
+        mode: "0640"
+      loop:
+        - "kube-apiserver-arg:"
+        - '  - "audit-policy-file={{ rke2_config_dir }}/audit-policy.yaml"'
+        - '  - "audit-log-path={{ audit_log_dir }}/audit.log"'
+        - '  - "audit-log-maxage={{ audit_log_max_age }}"'
+        - '  - "audit-log-maxbackup={{ audit_log_max_backup }}"'
+        - '  - "audit-log-maxsize={{ audit_log_max_size }}"'
+      notify: Restart rke2-server
+
+  handlers:
+    - name: Restart rke2-server
+      ansible.builtin.systemd:
+        name: rke2-server
+        state: restarted

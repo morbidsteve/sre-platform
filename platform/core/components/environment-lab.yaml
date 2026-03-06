@@ -1,0 +1,18 @@
+---
+# Lab environment profile — enables persistence with local-path storage
+# ConfigMaps are optional in HelmReleases, so ordering is flexible.
+# Flux will pick up new values on next reconciliation cycle.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-environment-lab
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./platform/environments/lab
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-istio

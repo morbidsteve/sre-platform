@@ -1,0 +1,92 @@
+---
+# Flux Notification Provider — Slack webhook
+# NIST Controls: IR-4, IR-5, SI-5
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: slack
+  namespace: flux-system
+spec:
+  type: slack
+  channel: sre-platform-alerts
+  secretRef:
+    name: slack-webhook-url
+---
+# Alert on HelmRelease failures
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: helmrelease-alerts
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack
+  eventSeverity: error
+  eventSources:
+    - kind: HelmRelease
+      name: "*"
+      namespace: "*"
+  summary: "SRE Platform HelmRelease Alert"
+---
+# Alert on Kustomization failures
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: kustomization-alerts
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack
+  eventSeverity: error
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+      namespace: "*"
+  summary: "SRE Platform Kustomization Alert"
+---
+# Alert on Git source failures
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: source-alerts
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack
+  eventSeverity: error
+  eventSources:
+    - kind: GitRepository
+      name: "*"
+      namespace: "*"
+    - kind: HelmRepository
+      name: "*"
+      namespace: "*"
+  summary: "SRE Platform Source Alert"
+---
+# Info-level notifications for successful deployments
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: deployment-notifications
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack
+  eventSeverity: info
+  eventSources:
+    - kind: HelmRelease
+      name: "*"
+      namespace: "*"
+  inclusionList:
+    - ".*succeeded.*"
+  summary: "SRE Platform Deployment"
+---
+# Placeholder secret for Slack webhook URL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-webhook-url
+  namespace: flux-system
+type: Opaque
+stringData:
+  address: "REPLACE_ME_SLACK_WEBHOOK_URL"

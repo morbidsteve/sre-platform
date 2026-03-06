@@ -1,0 +1,103 @@
+---
+# Kubernetes API Audit Policy
+# NIST Controls: AU-2, AU-3, AU-6, AU-12
+# Captures authentication, authorization, CRUD on sensitive resources
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+  # Don't log requests to API discovery endpoints
+  - level: None
+    resources:
+      - group: ""
+        resources: [""]
+    nonResourceURLs:
+      - "/api*"
+      - "/version"
+      - "/healthz*"
+      - "/readyz*"
+      - "/livez*"
+
+  # Don't log watch requests (too verbose)
+  - level: None
+    verbs: ["watch"]
+
+  # Don't log kube-system service account token requests
+  - level: None
+    users: ["system:kube-controller-manager", "system:kube-scheduler"]
+    verbs: ["get", "list"]
+    resources:
+      - group: ""
+        resources: ["endpoints", "services", "namespaces"]
+
+  # Log authentication failures at RequestResponse level
+  - level: RequestResponse
+    resources:
+      - group: "authentication.k8s.io"
+        resources: ["tokenreviews"]
+
+  # Log all changes to secrets (but not the data)
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log RBAC changes at RequestResponse level
+  - level: RequestResponse
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log namespace lifecycle
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["namespaces"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log pod exec/attach (potential security events)
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["pods/exec", "pods/attach", "pods/portforward"]
+
+  # Log all changes to deployments, statefulsets, daemonsets
+  - level: Request
+    resources:
+      - group: "apps"
+        resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log all changes to network policies
+  - level: Request
+    resources:
+      - group: "networking.k8s.io"
+        resources: ["networkpolicies"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log Kyverno policy changes
+  - level: RequestResponse
+    resources:
+      - group: "kyverno.io"
+        resources: ["clusterpolicies", "policies", "policyexceptions"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log Flux resource changes
+  - level: Request
+    resources:
+      - group: "helm.toolkit.fluxcd.io"
+        resources: ["helmreleases"]
+      - group: "kustomize.toolkit.fluxcd.io"
+        resources: ["kustomizations"]
+      - group: "source.toolkit.fluxcd.io"
+        resources: ["gitrepositories", "helmrepositories"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Default: log metadata for everything else that creates/modifies
+  - level: Metadata
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Don't log read-only requests by default
+  - level: None
+    verbs: ["get", "list"]

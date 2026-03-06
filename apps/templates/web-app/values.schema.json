@@ -149,6 +149,25 @@
         "enabled": { "type": "boolean" },
         "minAvailable": { "type": "integer", "minimum": 0 }
       }
+    },
+    "canary": {
+      "type": "object",
+      "description": "Canary deployment settings (requires Flagger)",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "progressDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "analysis": {
+          "type": "object",
+          "properties": {
+            "interval": { "type": "string", "description": "How often Flagger runs analysis" },
+            "threshold": { "type": "integer", "minimum": 1, "description": "Max failed checks before rollback" },
+            "maxWeight": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Max traffic weight to canary" },
+            "stepWeight": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Traffic weight step increment" },
+            "successRate": { "type": "number", "minimum": 0, "maximum": 100, "description": "Min request success rate percentage" },
+            "latencyMax": { "type": "integer", "minimum": 1, "description": "Max request duration in milliseconds" }
+          }
+        }
+      }
     }
   }
 }

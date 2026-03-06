@@ -1,0 +1,75 @@
+---
+# Kubernetes API Audit Log Pipeline
+# RKE2 writes audit logs to /var/log/kube-audit/audit.log by default
+# Alloy collects these and ships to Loki
+# NIST Controls: AU-2, AU-3, AU-6, AU-12
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-audit-config
+  namespace: logging
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    grafana_alloy: "1"
+  annotations:
+    sre.io/nist-controls: "AU-2, AU-3, AU-6, AU-12"
+data:
+  audit-pipeline.alloy: |
+    // Kubernetes API Audit Log Collection
+    // Collects RKE2 audit logs from /var/log/kube-audit/
+    local.file_match "kube_audit" {
+      path_targets = [{
+        __path__  = "/var/log/kube-audit/audit.log",
+        job       = "kube-audit",
+        component = "kubernetes-api",
+      }]
+    }
+
+    loki.source.file "kube_audit" {
+      targets    = local.file_match.kube_audit.targets
+      forward_to = [loki.process.audit_json.receiver]
+    }
+
+    loki.process "audit_json" {
+      // Parse JSON audit events and extract key fields as labels
+      stage.json {
+        expressions = {
+          level     = "level",
+          verb      = "verb",
+          user      = "user.username",
+          resource  = "objectRef.resource",
+          namespace = "objectRef.namespace",
+          code      = "responseStatus.code",
+        }
+      }
+
+      stage.labels {
+        values = {
+          audit_level = "level",
+          verb        = "verb",
+          user        = "user",
+          resource    = "resource",
+          namespace   = "namespace",
+        }
+      }
+
+      // Drop low-value events to reduce storage
+      stage.drop {
+        expression = ".*\"level\":\"Metadata\".*\"verb\":\"get\".*\"resource\":\"endpoints\".*"
+        drop_counter_reason = "noisy-endpoint-gets"
+      }
+
+      stage.static_labels {
+        values = {
+          log_type = "audit",
+        }
+      }
+
+      forward_to = [loki.write.default.receiver]
+    }
+
+    loki.write "default" {
+      endpoint {
+        url = "http://loki.logging.svc.cluster.local:3100/loki/api/v1/push"
+      }
+    }

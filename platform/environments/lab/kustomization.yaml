@@ -1,0 +1,12 @@
+---
+# Lab deployment profile (3-node Proxmox cluster)
+# Enables persistence with local-path storage, uses Istio ingress (no NodePort)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - monitoring-env-values.yaml
+  - loki-env-values.yaml
+  - tempo-env-values.yaml
+  - openbao-env-values.yaml
+  - harbor-env-values.yaml
+  - keycloak-env-values.yaml

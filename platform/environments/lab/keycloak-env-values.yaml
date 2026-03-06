@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-env-values
+  namespace: keycloak
+data:
+  values.yaml: |
+    replicaCount: 1
+    production: false
+    postgresql:
+      primary:
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 5Gi

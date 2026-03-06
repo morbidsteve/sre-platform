@@ -1,0 +1,79 @@
+---
+# NeuVector Protection Mode Configuration
+# Transitions NeuVector from Discover → Monitor → Protect mode
+# NIST Controls: SI-3, SI-4, IR-4
+#
+# NeuVector modes:
+#   Discover: Learning phase — observes all network/process activity, builds baseline
+#   Monitor: Alert-only — detects violations against learned baseline, does not block
+#   Protect: Enforcement — blocks violations against learned baseline
+#
+# Recommended workflow:
+#   1. Deploy with Discover mode (default) for 7-14 days
+#   2. Review learned rules in NeuVector UI > Policy > Groups
+#   3. Switch to Monitor for 7 days to verify no false positives
+#   4. Switch to Protect for enforcement
+#
+# To transition: NeuVector UI > Policy > Groups > Select All > Switch Mode
+# Or use the NeuVector REST API:
+#
+# curl -sk -X PATCH "https://neuvector.apps.sre.example.com/v1/group/{group}" \
+#   -H "Authorization: Bearer $TOKEN" \
+#   -H "Content-Type: application/json" \
+#   -d '{"config": {"policy_mode": "Monitor"}}'
+#
+# Script to batch-transition all groups:
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neuvector-mode-transition
+  namespace: neuvector
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SI-3, SI-4, IR-4"
+data:
+  transition-mode.sh: |
+    #!/bin/sh
+    # Transition NeuVector groups from Discover to Monitor or Protect
+    # Usage: transition-mode.sh [Monitor|Protect]
+    set -e
+    TARGET_MODE="${1:-Monitor}"
+    NV_URL="https://neuvector-controller-api.neuvector.svc.cluster.local:10443"
+
+    echo "==> Authenticating with NeuVector..."
+    TOKEN=$(curl -sk -X POST "${NV_URL}/v1/auth" \
+      -H "Content-Type: application/json" \
+      -d '{"password":{"username":"admin","password":"admin"}}' | \
+      python3 -c "import sys,json; print(json.load(sys.stdin)['token']['token'])")
+
+    echo "==> Fetching all groups..."
+    GROUPS=$(curl -sk "${NV_URL}/v1/group" \
+      -H "Authorization: Bearer ${TOKEN}" | \
+      python3 -c "
+    import sys, json
+    data = json.load(sys.stdin)
+    for g in data.get('groups', []):
+      name = g['name']
+      mode = g.get('policy_mode', 'unknown')
+      if not name.startswith('fed.') and not name.startswith('nodes'):
+        print(f'{name}|{mode}')
+    ")
+
+    echo "==> Transitioning groups to ${TARGET_MODE}..."
+    for entry in $GROUPS; do
+      NAME=$(echo "$entry" | cut -d'|' -f1)
+      CURRENT=$(echo "$entry" | cut -d'|' -f2)
+      if [ "$CURRENT" != "$TARGET_MODE" ]; then
+        echo "    ${NAME}: ${CURRENT} -> ${TARGET_MODE}"
+        curl -sk -X PATCH "${NV_URL}/v1/group/${NAME}" \
+          -H "Authorization: Bearer ${TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "{\"config\": {\"policy_mode\": \"${TARGET_MODE}\"}}" > /dev/null
+      fi
+    done
+
+    echo "==> Done. All groups set to ${TARGET_MODE}."
+
+    curl -sk -X DELETE "${NV_URL}/v1/auth" \
+      -H "Authorization: Bearer ${TOKEN}" > /dev/null

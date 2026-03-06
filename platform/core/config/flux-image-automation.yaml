@@ -1,0 +1,87 @@
+---
+# Flux Image Automation — automatically update image tags in Git
+# When Harbor receives a new image tag, Flux updates the HelmRelease
+# and commits the change back to the GitOps repo.
+# NIST Controls: CM-2, CM-3, SA-10
+#
+# Prerequisites:
+# 1. Install Flux image automation controllers:
+#    flux install --components-extra=image-reflector-controller,image-automation-controller
+# 2. Create a deploy key or PAT secret for Git push access
+#
+# Usage per app:
+# 1. Create an ImageRepository pointing to the Harbor image
+# 2. Create an ImagePolicy with the versioning strategy
+# 3. Add a marker comment in the HelmRelease for the image tag
+# 4. ImageUpdateAutomation commits the change
+---
+# Example: ImageRepository for a team-alpha app
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: demo-app
+  namespace: flux-system
+spec:
+  image: harbor.sre.internal/team-alpha/demo-app
+  interval: 5m
+  secretRef:
+    name: harbor-registry-credentials
+---
+# ImagePolicy — use semver to pick the latest stable tag
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: demo-app
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: demo-app
+  policy:
+    semver:
+      range: ">=1.0.0"
+---
+# ImageUpdateAutomation — commits tag updates back to Git
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: sre-platform
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: flux-image-automation
+        email: flux@sre.example.com
+      messageTemplate: |
+        chore(images): update {{ range .Changed.Changes }}{{ .OldValue }} -> {{ .NewValue }} {{ end }}
+    push:
+      branch: main
+  update:
+    path: ./apps/tenants
+    strategy: Setters
+---
+# Secret for Harbor registry pull credentials (for image scanning)
+# Replace with actual robot account credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-registry-credentials
+  namespace: flux-system
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {
+      "auths": {
+        "harbor.sre.internal": {
+          "username": "REPLACE_ME_HARBOR_USER",
+          "password": "REPLACE_ME_HARBOR_PASSWORD"
+        }
+      }
+    }

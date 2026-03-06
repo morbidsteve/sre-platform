@@ -31,3 +31,6 @@ resources:
   - components/tempo.yaml
   - components/backup.yaml
   - components/tenants.yaml
+
+  # ── Environment Profile ──
+  - components/environment-lab.yaml

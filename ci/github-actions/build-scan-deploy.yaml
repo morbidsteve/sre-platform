@@ -196,7 +196,68 @@ jobs:
             "${{ env.FULL_IMAGE }}"
 
       # ------------------------------------------------------------------
-      # 11. Output summary
+      # 11. Generate SLSA provenance attestation (Level 2)
+      # ------------------------------------------------------------------
+      - name: Generate SLSA provenance
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cat > /tmp/slsa-provenance.json <<PROVENANCE
+          {
+            "_type": "https://in-toto.io/Statement/v0.1",
+            "predicateType": "https://slsa.dev/provenance/v0.2",
+            "subject": [
+              {
+                "name": "${{ env.FULL_IMAGE }}",
+                "digest": {
+                  "sha256": "$(docker inspect --format='{{index .RepoDigests 0}}' ${{ env.FULL_IMAGE }} 2>/dev/null | cut -d@ -f2 | cut -d: -f2 || echo 'unknown')"
+                }
+              }
+            ],
+            "predicate": {
+              "builder": {
+                "id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              },
+              "buildType": "https://github.com/actions/runner",
+              "invocation": {
+                "configSource": {
+                  "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                  "digest": {
+                    "sha1": "${{ github.sha }}"
+                  },
+                  "entryPoint": ".github/workflows/ci.yaml"
+                }
+              },
+              "metadata": {
+                "buildInvocationId": "${{ github.run_id }}",
+                "buildStartedOn": "${{ github.event.head_commit.timestamp }}",
+                "completeness": {
+                  "parameters": true,
+                  "environment": true,
+                  "materials": true
+                },
+                "reproducible": false
+              },
+              "materials": [
+                {
+                  "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                  "digest": {
+                    "sha1": "${{ github.sha }}"
+                  }
+                }
+              ]
+            }
+          }
+          PROVENANCE
+          cosign attest --key env://COSIGN_PRIVATE_KEY \
+            --predicate /tmp/slsa-provenance.json \
+            --type slsaprovenance \
+            --yes \
+            "${{ env.FULL_IMAGE }}"
+
+      # ------------------------------------------------------------------
+      # 12. Output summary
       # ------------------------------------------------------------------
       - name: Pipeline summary
         run: |
@@ -209,3 +270,4 @@ jobs:
           echo "| SBOM | Generated (SPDX JSON) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Cosign Signature | Attached |" >> "$GITHUB_STEP_SUMMARY"
           echo "| SBOM Attestation | Attached |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SLSA Provenance | Level 2 (Attached) |" >> "$GITHUB_STEP_SUMMARY"

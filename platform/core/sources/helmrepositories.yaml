@@ -171,3 +171,42 @@ metadata:
 spec:
   interval: 1h
   url: https://kiali.org/helm-charts
+
+---
+# ── Flagger (progressive delivery) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: flagger
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://flagger.app
+
+---
+# ── CloudNativePG (PostgreSQL operator) ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cnpg
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://cloudnative-pg.github.io/charts
+
+---
+# ── ExternalDNS ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-dns
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://kubernetes-sigs.github.io/external-dns

@@ -1,0 +1,31 @@
+---
+# Template for requesting a Kyverno policy exception
+# Teams copy this, fill in details, and submit as a PR
+# The PR must be reviewed by the platform team before merge
+apiVersion: kyverno.io/v2beta1
+kind: PolicyException
+metadata:
+  name: TEAM-NAME-EXCEPTION-REASON
+  namespace: TEAM-NAMESPACE
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: "TEAM-NAME"
+  annotations:
+    sre.io/exception-reason: "Brief explanation of why this exception is needed"
+    sre.io/exception-approver: "Name of platform team member who approved"
+    sre.io/exception-expiry: "2026-06-01"
+    sre.io/ticket: "JIRA-123 or GitHub issue URL"
+spec:
+  exceptions:
+    - policyName: POLICY-NAME
+      ruleNames:
+        - RULE-NAME
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - TEAM-NAMESPACE
+          names:
+            - "specific-pod-name-*"

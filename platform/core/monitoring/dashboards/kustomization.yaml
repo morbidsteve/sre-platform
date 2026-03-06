@@ -39,3 +39,21 @@ configMapGenerator:
   - name: sre-dashboard-cert-manager-certs
     files:
       - cert-manager-certs.json
+  - name: sre-dashboard-cost-allocation
+    files:
+      - cost-allocation.json
+  - name: sre-dashboard-harbor
+    files:
+      - harbor-dashboard.json
+  - name: sre-dashboard-neuvector
+    files:
+      - neuvector-dashboard.json
+  - name: sre-dashboard-keycloak
+    files:
+      - keycloak-dashboard.json
+  - name: sre-dashboard-openbao
+    files:
+      - openbao-dashboard.json
+  - name: sre-dashboard-cert-manager
+    files:
+      - cert-manager-dashboard.json
