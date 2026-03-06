@@ -10,7 +10,7 @@ spec:
     - Ingress
     - Egress
 ---
-# MetalLB controller needs to talk to the K8s API server
+# MetalLB controller needs API server access + webhook ingress from API server
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,9 +21,12 @@ spec:
     matchLabels:
       app.kubernetes.io/component: controller
   policyTypes:
+    - Ingress
     - Egress
+  ingress:
+    - {} # Webhook calls from API server
   egress:
-    - {} # Controller needs API server + webhook traffic
+    - {} # API server + leader election + secrets
 ---
 # MetalLB speaker needs host network access for ARP announcements
 apiVersion: networking.k8s.io/v1
