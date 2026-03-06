@@ -1,40 +1,48 @@
-SRE Web Application: {{ .Values.app.name }}
-Team: {{ .Values.app.team }}
 
-Your application has been deployed successfully.
+  SRE Web Application Deployed!
 
-Image: {{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}
-Port:  {{ .Values.app.port }}
+  App:   {{ .Values.app.name }}
+  Team:  {{ .Values.app.team }}
+  Image: {{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}
 
 {{- if .Values.ingress.enabled }}
 
-Ingress is ENABLED.
-  URL: https://{{ .Values.ingress.host }}
-  Gateway: {{ .Values.ingress.gateway }}
+  External Access:
+    URL: https://{{ .Values.ingress.host }}
+    Gateway: {{ .Values.ingress.gateway }}
+
+  For lab environments (no DNS), add to /etc/hosts:
+    <node-ip> {{ .Values.ingress.host }}
+
+  Then access via:
+    curl http://{{ .Values.ingress.host }}:31080
 {{- else }}
 
-Ingress is DISABLED. The application is only accessible within the cluster.
-To enable external access, set ingress.enabled=true and ingress.host.
+  Ingress is DISABLED. Access within the cluster only.
+
+  Port-forward to access locally:
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sre-web-app.fullname" . }} {{ .Values.app.port }}:{{ .Values.app.port }}
+
+  To enable external access, update your HelmRelease:
+    ingress:
+      enabled: true
+      host: "{{ .Values.app.name }}.apps.sre.example.com"
 {{- end }}
+
+  Check status:
+    kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ .Values.app.name }}
+
+  View logs:
+    kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ .Values.app.name }} -f
 
 {{- if .Values.autoscaling.enabled }}
 
-Autoscaling is ENABLED.
-  Min replicas: {{ .Values.autoscaling.minReplicas }}
-  Max replicas: {{ .Values.autoscaling.maxReplicas }}
-  CPU target:   {{ .Values.autoscaling.targetCPUUtilization }}%
+  Autoscaling: ON ({{ .Values.autoscaling.minReplicas }}-{{ .Values.autoscaling.maxReplicas }} replicas)
 {{- else }}
 
-Autoscaling is DISABLED. Running {{ .Values.app.replicas }} replica(s).
+  Replicas: {{ .Values.app.replicas }} (autoscaling disabled)
 {{- end }}
-
 {{- if .Values.serviceMonitor.enabled }}
 
-Prometheus metrics are being scraped at {{ .Values.serviceMonitor.path }}
+  Metrics: Prometheus scraping {{ .Values.serviceMonitor.path }} every {{ .Values.serviceMonitor.interval }}
 {{- end }}
-
-To check pod status:
-  kubectl get pods -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }}
-
-To view logs:
-  kubectl logs -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }} -f

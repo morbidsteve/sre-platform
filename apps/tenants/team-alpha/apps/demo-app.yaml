@@ -54,7 +54,8 @@ spec:
           periodSeconds: 5
       env: []
     ingress:
-      enabled: false
+      enabled: true
+      host: "demo-app.${SRE_DOMAIN}"
     autoscaling:
       enabled: false
     serviceMonitor:

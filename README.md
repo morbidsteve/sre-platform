@@ -177,7 +177,34 @@ sre/
 └── CLAUDE.md                    # AI-assisted development instructions
 ```
 
-## Quick Start
+## Deploy Your App (3 commands)
+
+Once the SRE platform is running, deploying your application is this simple:
+
+```bash
+# 1. Create a team namespace (one-time)
+./scripts/sre-new-tenant.sh my-team
+
+# 2. Deploy your app (interactive — asks for image, port, etc.)
+./scripts/sre-deploy-app.sh
+
+# 3. Push to Git — Flux handles the rest
+git push
+```
+
+That's it. The platform automatically adds security contexts, network policies, Istio mTLS encryption, health probes, and monitoring. Your app runs in a hardened, compliant environment with zero extra work.
+
+**Or do it manually** — create a YAML file, commit, push. See the [Developer Guide](docs/developer-guide.md) for the full walkthrough.
+
+### What your app needs
+
+Your container must: run as **non-root**, use port **8080+** (not 80), and pin a **specific version tag** (not `:latest`). That's it. The platform handles everything else.
+
+> Can't run as non-root? Use `nginxinc/nginx-unprivileged` instead of `nginx`, or add `USER appuser` to your Dockerfile.
+
+---
+
+## Install the Platform
 
 ### Option A: Deploy to Any Existing Kubernetes Cluster (easiest)
 
@@ -246,9 +273,18 @@ task compliance-report              # Compliance posture
 
 | Guide | Audience | Description |
 |-------|----------|-------------|
+| [Developer Guide](docs/developer-guide.md) | App developers | Deploy your app in 5 minutes — container requirements, values reference, troubleshooting |
 | [Deploy to Proxmox](docs/getting-started-proxmox.md) | Platform engineers | Step-by-step: local tool setup, Packer build, OpenTofu provision, Ansible harden, Flux bootstrap |
-| [Deploy Your App](docs/getting-started-developer.md) | App developers | Tool installation, credential setup, build compliant images, deploy with SRE Helm charts, integrate with platform services |
 | [Onboarding Guide](docs/onboarding-guide.md) | Team leads | Request a tenant namespace and understand what gets provisioned |
+
+### Scripts
+
+| Script | Description |
+|--------|-------------|
+| `scripts/sre-deploy.sh` | One-button platform install on any K8s cluster |
+| `scripts/sre-deploy-app.sh` | Interactive app deployment (generates HelmRelease + commits) |
+| `scripts/sre-new-tenant.sh` | Create a new team namespace with RBAC, quotas, network policies |
+| `scripts/sre-access.sh` | Port-forward platform UIs and show credentials |
 
 ### Reference
 
