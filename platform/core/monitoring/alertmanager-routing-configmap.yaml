@@ -24,9 +24,9 @@ data:
         global:
           resolve_timeout: "5m"
           # Set ALERTMANAGER_SLACK_WEBHOOK env or replace URL below
-          slack_api_url: "REPLACE_ME_SLACK_WEBHOOK_URL"
+          # slack_api_url: "REPLACE_ME_SLACK_WEBHOOK_URL"
         route:
-          receiver: "default-slack"
+          receiver: "null"
           group_by:
             - "namespace"
             - "alertname"
@@ -56,57 +56,27 @@ data:
               repeat_interval: "30m"
               continue: false
         receivers:
-          - name: "default-slack"
-            slack_configs:
-              - channel: "#sre-alerts"
-                send_resolved: true
-                title: '{{ "{{" }} .Status | toUpper {{ "}}" }} | {{ "{{" }} .CommonLabels.alertname {{ "}}" }}'
-                text: >-
-                  *Severity:* {{ "{{" }} .CommonLabels.severity {{ "}}" }}
-                  *Namespace:* {{ "{{" }} .CommonLabels.namespace {{ "}}" }}
-                  *Description:* {{ "{{" }} .CommonAnnotations.description {{ "}}" }}
-                  *Runbook:* {{ "{{" }} .CommonAnnotations.runbook_url {{ "}}" }}
-          - name: "critical-slack"
-            slack_configs:
-              - channel: "#sre-critical"
-                send_resolved: true
-                color: '{{ "{{" }} if eq .Status "firing" {{ "}}" }}danger{{ "{{" }} else {{ "}}" }}good{{ "{{" }} end {{ "}}" }}'
-                title: 'CRITICAL | {{ "{{" }} .CommonLabels.alertname {{ "}}" }}'
-                text: >-
-                  *Namespace:* {{ "{{" }} .CommonLabels.namespace {{ "}}" }}
-                  *Description:* {{ "{{" }} .CommonAnnotations.description {{ "}}" }}
-                  *Runbook:* {{ "{{" }} .CommonAnnotations.runbook_url {{ "}}" }}
+          # Default null receiver for lab (replace with real integrations for production)
+          - name: "null"
+          # Slack receivers (uncomment and set slack_api_url in global when ready)
+          # - name: "default-slack"
+          #   slack_configs:
+          #     - channel: "#sre-alerts"
+          #       send_resolved: true
+          # - name: "critical-slack"
+          #   slack_configs:
+          #     - channel: "#sre-critical"
+          #       send_resolved: true
           - name: "critical-pagerduty"
-            pagerduty_configs:
-              - routing_key: "REPLACE_ME_PAGERDUTY_ROUTING_KEY"
-                severity: critical
-                description: '{{ "{{" }} .CommonLabels.alertname {{ "}}" }} in {{ "{{" }} .CommonLabels.namespace {{ "}}" }}'
+          # PagerDuty (uncomment when ready)
+          #   pagerduty_configs:
+          #     - routing_key: "REPLACE_ME_PAGERDUTY_ROUTING_KEY"
+          #       severity: critical
           - name: "warning-slack"
-            slack_configs:
-              - channel: "#sre-alerts"
-                send_resolved: true
-                title: 'WARNING | {{ "{{" }} .CommonLabels.alertname {{ "}}" }}'
-                text: >-
-                  *Namespace:* {{ "{{" }} .CommonLabels.namespace {{ "}}" }}
-                  *Description:* {{ "{{" }} .CommonAnnotations.description {{ "}}" }}
+          - name: "critical-slack"
           - name: "security-slack"
-            slack_configs:
-              - channel: "#sre-security"
-                send_resolved: true
-                color: danger
-                title: 'SECURITY | {{ "{{" }} .CommonLabels.alertname {{ "}}" }}'
-                text: >-
-                  *Type:* {{ "{{" }} .CommonLabels.category {{ "}}" }}
-                  *Namespace:* {{ "{{" }} .CommonLabels.namespace {{ "}}" }}
-                  *Description:* {{ "{{" }} .CommonAnnotations.description {{ "}}" }}
+          - name: "default-slack"
           - name: "email-fallback"
-            email_configs:
-              - to: "sre-team@example.com"
-                from: "alertmanager@sre.example.com"
-                smarthost: "smtp.example.com:587"
-                auth_username: "REPLACE_ME"
-                auth_password: "REPLACE_ME"
-                send_resolved: true
         inhibit_rules:
           - source_matchers:
               - severity = critical

@@ -161,6 +161,10 @@ spec:
       enabled: false
     kubeProxy:
       enabled: false
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
 
     # ---------------------------------------------------------------
     # Prometheus Operator
@@ -189,7 +193,7 @@ spec:
         kubeApiserverBurnrate: true
         kubeApiserverHistogram: true
         kubeApiserverSlos: true
-        kubeControllerManager: true
+        kubeControllerManager: false
         kubelet: true
         kubeProxy: false
         kubePrometheusGeneral: true
@@ -198,8 +202,8 @@ spec:
         kubernetesResources: true
         kubernetesStorage: true
         kubernetesSystem: true
-        kubeSchedulerAlerting: true
-        kubeSchedulerRecording: true
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
         kubeStateMetrics: true
         network: true
         node: true

@@ -29,40 +29,61 @@ spec:
           protocol: TCP
     # Scrape all namespaces (common metrics ports)
     - ports:
-        - port: 8080
+        - port: 3100    # Loki, Tempo
           protocol: TCP
-        - port: 8443
+        - port: 3500    # Loki canary
           protocol: TCP
-        - port: 9090
+        - port: 8001    # Harbor exporter
           protocol: TCP
-        - port: 9093
+        - port: 8080    # Various
           protocol: TCP
-        - port: 9094
+        - port: 8085    # Velero
           protocol: TCP
-        - port: 9100
+        - port: 8200    # OpenBao
           protocol: TCP
-        - port: 10250
+        - port: 8443    # Various HTTPS
           protocol: TCP
-        - port: 10257
+        - port: 9000    # Keycloak metrics
           protocol: TCP
-        - port: 10259
+        - port: 9090    # Prometheus
           protocol: TCP
-        - port: 15014
+        - port: 9093    # AlertManager
           protocol: TCP
-        - port: 15090
+        - port: 9094    # AlertManager cluster
+          protocol: TCP
+        - port: 9100    # Node Exporter
+          protocol: TCP
+        - port: 9153    # CoreDNS
+          protocol: TCP
+        - port: 10250   # Kubelet
+          protocol: TCP
+        - port: 10257   # kube-controller-manager
+          protocol: TCP
+        - port: 10259   # kube-scheduler
+          protocol: TCP
+        - port: 12345   # Alloy
+          protocol: TCP
+        - port: 15014   # Istio
+          protocol: TCP
+        - port: 15090   # Istio Envoy
           protocol: TCP
     # Intra-namespace communication
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-    # Loki datasource (logging namespace)
+    # Loki + Tempo datasources
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: logging
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tempo
       ports:
         - port: 3100
+          protocol: TCP
+        - port: 80
           protocol: TCP
 
 ---

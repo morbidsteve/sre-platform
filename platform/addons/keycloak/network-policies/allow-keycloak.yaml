@@ -57,13 +57,15 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
-    # Prometheus scraping
+    # Prometheus scraping (metrics on port 9000)
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
       ports:
         - port: 8080
+          protocol: TCP
+        - port: 9000
           protocol: TCP
     # Webhook traffic from API server
     - ports:
