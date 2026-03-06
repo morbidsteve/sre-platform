@@ -18,7 +18,7 @@ metadata:
     policies.kyverno.io/severity: critical
     sre.io/nist-controls: "CM-11, SI-7"
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: validate-image-registry

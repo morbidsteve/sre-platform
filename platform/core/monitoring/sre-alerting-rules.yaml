@@ -1,0 +1,236 @@
+---
+# SRE Platform alerting rules — security, compliance, and operational alerts
+# NIST Controls: IR-4, IR-5, SI-4, SI-5, CA-7
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sre-platform-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+    grafana_dashboard: "1"
+  annotations:
+    sre.io/nist-controls: "IR-4, IR-5, SI-4, SI-5, CA-7"
+spec:
+  groups:
+    # -----------------------------------------------------------------
+    # Security Alerts
+    # -----------------------------------------------------------------
+    - name: sre-security
+      rules:
+        - alert: KyvernoPolicyViolation
+          expr: increase(kyverno_policy_results_total{rule_result="fail"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+            category: security
+          annotations:
+            summary: "Kyverno policy violation detected"
+            description: "Policy {{ $labels.policy_name }} rule {{ $labels.rule_name }} failed {{ $value }} times in the last 5 minutes."
+            runbook_url: "https://docs.sre.example.com/runbooks/kyverno-violation"
+
+        - alert: KyvernoPolicyViolationCritical
+          expr: increase(kyverno_policy_results_total{rule_result="fail", policy_name=~"require-security-context|restrict-image-registries"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            category: security
+          annotations:
+            summary: "Critical security policy violation"
+            description: "Security-critical policy {{ $labels.policy_name }} was violated {{ $value }} times."
+            runbook_url: "https://docs.sre.example.com/runbooks/critical-policy-violation"
+
+        - alert: NeuVectorSecurityEvent
+          expr: increase(neuvector_security_events_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            category: security
+          annotations:
+            summary: "NeuVector security event detected"
+            description: "NeuVector detected {{ $value }} security events in the last 5 minutes."
+            runbook_url: "https://docs.sre.example.com/runbooks/neuvector-security-event"
+
+        - alert: UnauthorizedImageRegistry
+          expr: increase(kyverno_policy_results_total{rule_result="fail", policy_name="restrict-image-registries"}[10m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            category: security
+          annotations:
+            summary: "Attempt to deploy image from unauthorized registry"
+            description: "Someone attempted to deploy an image from an unapproved registry."
+
+        - alert: PrivilegedContainerDetected
+          expr: sum(kube_pod_container_status_running{namespace!~"kube-system|istio-system|neuvector|metallb-system|velero"}) by (namespace, pod) * on(namespace, pod) group_left kube_pod_spec_containers_security_context_privileged{} > 0
+          for: 5m
+          labels:
+            severity: critical
+            category: security
+          annotations:
+            summary: "Privileged container running in {{ $labels.namespace }}"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is running a privileged container."
+
+    # -----------------------------------------------------------------
+    # Certificate Alerts
+    # -----------------------------------------------------------------
+    - name: sre-certificates
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: certmanager_certificate_expiration_timestamp_seconds - time() < 30 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.name }} expiring in < 30 days"
+            description: "Certificate {{ $labels.name }} in {{ $labels.namespace }} expires in {{ $value | humanizeDuration }}."
+            runbook_url: "https://docs.sre.example.com/runbooks/cert-expiry"
+
+        - alert: CertificateExpiryCritical
+          expr: certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 24 * 3600
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Certificate {{ $labels.name }} expiring in < 7 days"
+            description: "Certificate {{ $labels.name }} in {{ $labels.namespace }} is about to expire."
+
+        - alert: CertificateNotReady
+          expr: certmanager_certificate_ready_status{condition="True"} != 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.name }} is not ready"
+            description: "cert-manager reports certificate {{ $labels.name }} in {{ $labels.namespace }} as not ready."
+
+    # -----------------------------------------------------------------
+    # Flux GitOps Alerts
+    # -----------------------------------------------------------------
+    - name: sre-flux
+      rules:
+        - alert: FluxReconciliationFailure
+          expr: gotk_reconcile_condition{status="False", type="Ready"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux reconciliation failing for {{ $labels.kind }}/{{ $labels.name }}"
+            description: "{{ $labels.kind }} {{ $labels.name }} in {{ $labels.namespace }} has been failing reconciliation for 15+ minutes."
+            runbook_url: "https://docs.sre.example.com/runbooks/flux-reconciliation"
+
+        - alert: FluxReconciliationFailureCritical
+          expr: gotk_reconcile_condition{status="False", type="Ready"} == 1
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Flux reconciliation has been failing for 1+ hour"
+            description: "{{ $labels.kind }} {{ $labels.name }} has been failing for over 1 hour. GitOps drift is likely."
+
+        - alert: HelmReleaseNotReady
+          expr: gotk_reconcile_condition{status="False", type="Ready", kind="HelmRelease"} == 1
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "HelmRelease {{ $labels.name }} is not ready"
+            description: "HelmRelease {{ $labels.name }} in {{ $labels.namespace }} has not been ready for 30 minutes."
+
+    # -----------------------------------------------------------------
+    # OpenBao / Vault Alerts
+    # -----------------------------------------------------------------
+    - name: sre-openbao
+      rules:
+        - alert: OpenBaoSealed
+          expr: vault_core_unsealed == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao is sealed"
+            description: "OpenBao instance is sealed and cannot serve secret requests. Manual unseal required."
+            runbook_url: "https://docs.sre.example.com/runbooks/openbao-unseal"
+
+        - alert: OpenBaoHighErrorRate
+          expr: rate(vault_audit_log_response_failure[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao audit log failures detected"
+            description: "OpenBao is experiencing audit log write failures."
+
+    # -----------------------------------------------------------------
+    # Harbor / Image Scanning Alerts
+    # -----------------------------------------------------------------
+    - name: sre-harbor
+      rules:
+        - alert: HarborCriticalVulnerability
+          expr: harbor_project_member_total > 0 and harbor_project_repo_count > 0
+          for: 0m
+          labels:
+            severity: info
+          annotations:
+            summary: "Harbor project {{ $labels.project_name }} has repositories to scan"
+            description: "Review Trivy scan results in Harbor for project {{ $labels.project_name }}."
+
+    # -----------------------------------------------------------------
+    # Cluster Health Alerts
+    # -----------------------------------------------------------------
+    - name: sre-cluster
+      rules:
+        - alert: HighPodRestartRate
+          expr: increase(kube_pod_container_status_restarts_total[1h]) > 5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.pod }} restarting frequently"
+            description: "Pod {{ $labels.pod }} in {{ $labels.namespace }} has restarted {{ $value }} times in the last hour."
+
+        - alert: PersistentVolumeFillingUp
+          expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PV {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full"
+            description: "PersistentVolumeClaim {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} has less than 15% free space."
+
+        - alert: PersistentVolumeFillingUpCritical
+          expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PV {{ $labels.persistentvolumeclaim }} is critically full"
+            description: "Less than 5% free space remaining."
+
+        - alert: NodeNotReady
+          expr: kube_node_status_condition{condition="Ready", status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.node }} is not ready"
+            description: "Kubernetes node {{ $labels.node }} has been in NotReady state for 5+ minutes."
+
+        - alert: HighMemoryPressure
+          expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} memory usage above 90%"
+            description: "Memory utilization on {{ $labels.instance }} is {{ $value | humanizePercentage }}."
+
+        - alert: HighCPUUsage
+          expr: (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.9
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} CPU usage above 90%"
+            description: "CPU utilization on {{ $labels.instance }} is {{ $value | humanizePercentage }}."

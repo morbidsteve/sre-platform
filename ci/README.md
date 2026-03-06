@@ -167,6 +167,8 @@ Flux will deploy your app within its reconciliation interval (default: 10 minute
 | `github-actions/build-scan-deploy.yaml` | Reusable workflow: build, scan, sign, push |
 | `github-actions/update-gitops.yaml` | Reusable workflow: update image tag in GitOps repo |
 | `github-actions/example-caller.yaml` | Example: how to call both workflows from your app repo |
+| `github-actions/preview-environment.yaml` | PR-based ephemeral preview environments |
+| `gitlab-ci/build-scan-deploy.gitlab-ci.yml` | GitLab CI equivalent of the GitHub Actions pipeline |
 
 ## Customization
 

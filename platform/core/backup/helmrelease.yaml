@@ -50,6 +50,8 @@ spec:
     # ---------------------------------------------------------------
     # Backup Storage Location — configure for your environment
     # ---------------------------------------------------------------
+    deployNodeAgent: true
+
     configuration:
       backupStorageLocation:
         - name: "default"
@@ -92,7 +94,7 @@ spec:
     # ---------------------------------------------------------------
     schedules:
       daily-backup:
-        disabled: true
+        disabled: false
         schedule: "0 2 * * *"
         template:
           ttl: "168h"
@@ -105,7 +107,7 @@ spec:
             - "default"
 
       weekly-backup:
-        disabled: true
+        disabled: false
         schedule: "0 3 * * 0"
         template:
           ttl: "672h"
@@ -118,7 +120,7 @@ spec:
             - "default"
 
       monthly-backup:
-        disabled: true
+        disabled: false
         schedule: "0 4 1 * *"
         template:
           ttl: "2160h"

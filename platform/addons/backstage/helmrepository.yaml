@@ -1,0 +1,12 @@
+---
+# Backstage Helm chart repository
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: backstage
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://backstage.github.io/charts

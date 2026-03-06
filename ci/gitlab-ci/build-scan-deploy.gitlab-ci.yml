@@ -1,0 +1,123 @@
+---
+# GitLab CI/CD pipeline for SRE Platform
+# Builds, scans, signs, and pushes container images to Harbor
+#
+# Usage: Include in your .gitlab-ci.yml:
+#   include:
+#     - project: 'sre/sre-platform'
+#       file: 'ci/gitlab-ci/build-scan-deploy.gitlab-ci.yml'
+#
+# Required CI/CD variables:
+#   HARBOR_USERNAME - Harbor robot account username
+#   HARBOR_PASSWORD - Harbor robot account password
+#   COSIGN_PRIVATE_KEY - Cosign private key (base64-encoded)
+#   COSIGN_PASSWORD - Cosign key password (can be empty)
+#   HARBOR_REGISTRY - Harbor hostname (default: harbor.sre.internal)
+#   HARBOR_PROJECT - Harbor project name (e.g., team-alpha)
+#   IMAGE_NAME - Container image name
+#   IMAGE_TAG - Image tag (e.g., v1.2.3)
+
+stages:
+  - build
+  - scan
+  - sign
+  - deploy
+
+variables:
+  HARBOR_REGISTRY: "${HARBOR_REGISTRY:-harbor.sre.internal}"
+  FULL_IMAGE: "${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
+  TRIVY_SEVERITY: "CRITICAL"
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# Build container image
+build:
+  stage: build
+  image: docker:27-dind
+  services:
+    - docker:27-dind
+  script:
+    - docker build -t "${FULL_IMAGE}" -f "${DOCKERFILE:-Dockerfile}" "${BUILD_CONTEXT:-.}"
+    - docker save "${FULL_IMAGE}" -o /tmp/image.tar
+  artifacts:
+    paths:
+      - /tmp/image.tar
+    expire_in: 1 hour
+
+# Trivy vulnerability scan
+trivy-scan:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.58.2
+    entrypoint: [""]
+  needs:
+    - build
+  script:
+    - trivy image --input /tmp/image.tar --exit-code 1 --severity "${TRIVY_SEVERITY}" --timeout 10m
+    - trivy image --input /tmp/image.tar --format json --output trivy-report.json --severity CRITICAL,HIGH,MEDIUM
+  artifacts:
+    reports:
+      container_scanning: trivy-report.json
+    paths:
+      - trivy-report.json
+    expire_in: 30 days
+
+# Generate SBOM with Syft
+sbom-generate:
+  stage: scan
+  image:
+    name: anchore/syft:v1.18.1
+    entrypoint: [""]
+  needs:
+    - build
+  script:
+    - syft /tmp/image.tar -o spdx-json=sbom-spdx.json -o cyclonedx-json=sbom-cyclonedx.json
+  artifacts:
+    paths:
+      - sbom-spdx.json
+      - sbom-cyclonedx.json
+    expire_in: 90 days
+
+# Push image to Harbor + sign with Cosign + attach SBOM
+sign-and-push:
+  stage: sign
+  image: docker:27-dind
+  services:
+    - docker:27-dind
+  needs:
+    - build
+    - trivy-scan
+    - sbom-generate
+  before_script:
+    - apk add --no-cache curl
+    - curl -sSL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+    - chmod +x /usr/local/bin/cosign
+  script:
+    # Load and push image
+    - docker load -i /tmp/image.tar
+    - docker login -u "${HARBOR_USERNAME}" -p "${HARBOR_PASSWORD}" "${HARBOR_REGISTRY}"
+    - docker push "${FULL_IMAGE}"
+    # Sign with Cosign
+    - echo "${COSIGN_PRIVATE_KEY}" | base64 -d > /tmp/cosign.key
+    - COSIGN_PASSWORD="${COSIGN_PASSWORD}" cosign sign --key /tmp/cosign.key --yes "${FULL_IMAGE}"
+    # Attach SBOM attestation
+    - COSIGN_PASSWORD="${COSIGN_PASSWORD}" cosign attest --key /tmp/cosign.key --predicate sbom-spdx.json --type spdxjson --yes "${FULL_IMAGE}"
+    - rm -f /tmp/cosign.key
+  after_script:
+    - rm -f /tmp/cosign.key
+
+# Update GitOps repo (Flux auto-deploys)
+update-gitops:
+  stage: deploy
+  image: alpine/git:2.47.2
+  needs:
+    - sign-and-push
+  script:
+    - apk add --no-cache curl jq
+    - |
+      echo "Updating GitOps manifest for ${IMAGE_NAME}:${IMAGE_TAG}"
+      # Option 1: Use Flux image automation
+      # Option 2: Commit to gitops repo
+      echo "Image ${FULL_IMAGE} is now available in Harbor"
+      echo "Flux will auto-reconcile when the HelmRelease values are updated"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

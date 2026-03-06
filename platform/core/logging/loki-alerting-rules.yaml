@@ -1,0 +1,95 @@
+---
+# Loki alerting rules for log-based security monitoring
+# These rules query Loki logs and fire alerts via Prometheus/Alertmanager
+# NIST Controls: AU-6, IR-4, IR-5, SI-4
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-alerting-rules
+  namespace: logging
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "AU-6, IR-4, IR-5, SI-4"
+data:
+  loki-rules.yaml: |
+    groups:
+      - name: sre-security-logs
+        rules:
+          - alert: FailedAuthAttempts
+            expr: |
+              sum by (namespace, pod) (
+                count_over_time({namespace=~".+"} |~ "(?i)(unauthorized|authentication failed|login failed|invalid credentials|401)" [5m])
+              ) > 10
+            for: 1m
+            labels:
+              severity: warning
+              category: security
+            annotations:
+              summary: "High rate of failed auth attempts in {{ $labels.namespace }}"
+              description: "Pod {{ $labels.pod }} in {{ $labels.namespace }} has {{ $value }} failed auth attempts in 5 minutes."
+
+          - alert: PrivilegeEscalationAttempt
+            expr: |
+              sum(
+                count_over_time({namespace=~".+"} |~ "(?i)(privilege.escalation|setuid|setgid|sudo|su root)" [5m])
+              ) > 0
+            for: 0m
+            labels:
+              severity: critical
+              category: security
+            annotations:
+              summary: "Possible privilege escalation attempt detected"
+              description: "Log entries matching privilege escalation patterns found in cluster logs."
+
+          - alert: ImagePullFromUnauthorizedRegistry
+            expr: |
+              sum by (namespace) (
+                count_over_time({namespace=~".+"} |~ "(?i)(failed to pull image|ErrImagePull|ImagePullBackOff)" [10m])
+              ) > 3
+            for: 5m
+            labels:
+              severity: warning
+              category: security
+            annotations:
+              summary: "Image pull failures in {{ $labels.namespace }}"
+              description: "Multiple image pull failures detected — may indicate use of unauthorized registries."
+
+          - alert: SuspiciousExecInContainer
+            expr: |
+              sum by (namespace, pod) (
+                count_over_time({namespace=~".+"} |~ "(?i)(exec.*sh|exec.*bash|exec.*cmd)" [5m])
+              ) > 5
+            for: 1m
+            labels:
+              severity: warning
+              category: security
+            annotations:
+              summary: "Frequent exec operations in {{ $labels.namespace }}/{{ $labels.pod }}"
+              description: "Multiple exec operations detected in pod {{ $labels.pod }}."
+
+      - name: sre-operational-logs
+        rules:
+          - alert: HighErrorRate
+            expr: |
+              sum by (namespace) (
+                count_over_time({namespace=~".+"} |~ "(?i)(error|fatal|panic|exception)" [5m])
+              ) > 50
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High error rate in {{ $labels.namespace }}"
+              description: "Namespace {{ $labels.namespace }} has {{ $value }} error log entries in 5 minutes."
+
+          - alert: OOMKillDetected
+            expr: |
+              sum by (namespace) (
+                count_over_time({namespace=~".+"} |~ "(?i)(oom|out of memory|killed process)" [10m])
+              ) > 0
+            for: 0m
+            labels:
+              severity: warning
+            annotations:
+              summary: "OOM kill detected in {{ $labels.namespace }}"
+              description: "An out-of-memory kill was detected in namespace {{ $labels.namespace }}."

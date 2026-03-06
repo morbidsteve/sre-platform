@@ -65,8 +65,17 @@ spec:
       # Default mTLS to STRICT
       defaultConfig:
         holdApplicationUntilProxyStarts: true
+        tracing:
+          sampling: 10.0
+          zipkin:
+            address: "tempo.tempo.svc.cluster.local:9411"
       # Outbound traffic policy — REGISTRY_ONLY for zero-trust
       outboundTrafficPolicy:
         mode: REGISTRY_ONLY
       # Enable tracing
       enableTracing: true
+      extensionProviders:
+        - name: tempo-zipkin
+          zipkin:
+            service: tempo.tempo.svc.cluster.local
+            port: 9411

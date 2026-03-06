@@ -1,0 +1,27 @@
+---
+# Istio VirtualService for Backstage developer portal
+# Routes external traffic from the main Istio gateway to Backstage backend
+# NIST SC-7 (Boundary Protection)
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  hosts:
+    - "backstage.apps.${SRE_DOMAIN}"
+  gateways:
+    - istio-system/main
+  http:
+    - route:
+        - destination:
+            host: backstage.backstage.svc.cluster.local
+            port:
+              number: 7007
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: "5xx,reset,connect-failure"

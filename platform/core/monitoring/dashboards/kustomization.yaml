@@ -24,3 +24,18 @@ configMapGenerator:
   - name: sre-dashboard-flux-gitops
     files:
       - flux-gitops.json
+  - name: sre-dashboard-harbor-registry
+    files:
+      - harbor-registry.json
+  - name: sre-dashboard-neuvector-security
+    files:
+      - neuvector-security.json
+  - name: sre-dashboard-keycloak-identity
+    files:
+      - keycloak-identity.json
+  - name: sre-dashboard-openbao-secrets
+    files:
+      - openbao-secrets.json
+  - name: sre-dashboard-cert-manager-certs
+    files:
+      - cert-manager-certs.json

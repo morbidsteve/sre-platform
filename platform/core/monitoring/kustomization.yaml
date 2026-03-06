@@ -9,3 +9,7 @@ resources:
   - network-policies/default-deny.yaml
   - network-policies/allow-monitoring.yaml
   - dashboards/
+  - sre-alerting-rules.yaml
+  - compliance-scan-cronjob.yaml
+  - ha-config.yaml
+  - network-policies/allow-grafana-keycloak.yaml

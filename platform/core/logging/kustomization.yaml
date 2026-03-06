@@ -8,3 +8,4 @@ resources:
   - grafana-datasource.yaml
   - network-policies/default-deny.yaml
   - network-policies/allow-logging.yaml
+  - loki-alerting-rules.yaml

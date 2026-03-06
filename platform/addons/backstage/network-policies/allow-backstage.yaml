@@ -1,0 +1,101 @@
+---
+# Allow Backstage pods egress (API server + DNS + platform services)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backstage-egress
+  namespace: backstage
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Intra-namespace (backstage <-> postgresql)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backstage
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Kubernetes API server
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # Harbor API (container registry integration)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: harbor
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    # Grafana API (dashboard integration)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 3000
+          protocol: TCP
+    # Keycloak (OIDC/SSO when configured)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    # External HTTPS (GitHub catalog, TechDocs, plugin downloads)
+    - ports:
+        - port: 443
+          protocol: TCP
+
+---
+# Allow ingress from Istio gateway, monitoring, and within namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backstage-ingress
+  namespace: backstage
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Within backstage namespace (backstage <-> postgresql)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backstage
+    # Istio gateway for web UI
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 7007
+          protocol: TCP
+    # Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 7007
+          protocol: TCP

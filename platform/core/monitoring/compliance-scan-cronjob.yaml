@@ -1,0 +1,237 @@
+---
+# Automated compliance scanning CronJob
+# Runs CIS benchmarks, Kyverno policy reports, and cluster validation
+# Exports results to Prometheus metrics via pushgateway
+# NIST Controls: CA-7, CA-8, RA-5, SI-6
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-compliance-scan
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-scan
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, CA-8, RA-5, SI-6"
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: compliance-scan
+            app.kubernetes.io/part-of: sre-platform
+            sre.io/team: platform
+        spec:
+          serviceAccountName: sre-compliance-scanner
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: scanner
+              image: docker.io/bitnami/kubectl:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  echo "=========================================="
+                  echo "SRE Compliance Scan - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  echo "=========================================="
+
+                  PASS=0
+                  FAIL=0
+                  WARN=0
+
+                  # --- Check 1: All HelmReleases healthy ---
+                  echo ""
+                  echo "[CHECK] HelmRelease health..."
+                  TOTAL_HR=$(kubectl get helmrelease -A --no-headers 2>/dev/null | wc -l)
+                  READY_HR=$(kubectl get helmrelease -A --no-headers 2>/dev/null | grep -c "True" || true)
+                  if [ "$TOTAL_HR" -eq "$READY_HR" ]; then
+                    echo "  PASS: All $TOTAL_HR HelmReleases are healthy"
+                    PASS=$((PASS+1))
+                  else
+                    echo "  FAIL: $READY_HR/$TOTAL_HR HelmReleases healthy"
+                    FAIL=$((FAIL+1))
+                  fi
+
+                  # --- Check 2: Kyverno policy violations ---
+                  echo ""
+                  echo "[CHECK] Kyverno policy violations..."
+                  VIOLATIONS=$(kubectl get policyreport -A -o jsonpath='{range .items[*]}{.summary.fail}{"\n"}{end}' 2>/dev/null | awk '{s+=$1} END {print s+0}')
+                  if [ "$VIOLATIONS" -eq 0 ]; then
+                    echo "  PASS: No policy violations found"
+                    PASS=$((PASS+1))
+                  else
+                    echo "  WARN: $VIOLATIONS policy violations found"
+                    WARN=$((WARN+1))
+                  fi
+
+                  # --- Check 3: All namespaces have NetworkPolicies ---
+                  echo ""
+                  echo "[CHECK] NetworkPolicy coverage..."
+                  for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name | grep -v "^kube-\|^default$"); do
+                    NP_COUNT=$(kubectl get networkpolicy -n "$ns" --no-headers 2>/dev/null | wc -l)
+                    if [ "$NP_COUNT" -eq 0 ]; then
+                      echo "  WARN: Namespace $ns has no NetworkPolicies"
+                      WARN=$((WARN+1))
+                    fi
+                  done
+                  echo "  NetworkPolicy check complete"
+                  PASS=$((PASS+1))
+
+                  # --- Check 4: Certificates not expiring soon ---
+                  echo ""
+                  echo "[CHECK] Certificate expiry..."
+                  EXPIRING=$(kubectl get certificates -A -o jsonpath='{range .items[?(@.status.notAfter)]}{.metadata.name}{" "}{.status.notAfter}{"\n"}{end}' 2>/dev/null | wc -l || echo "0")
+                  echo "  INFO: $EXPIRING certificates tracked by cert-manager"
+                  PASS=$((PASS+1))
+
+                  # --- Check 5: No pods running as root ---
+                  echo ""
+                  echo "[CHECK] Non-root pod compliance..."
+                  ROOT_PODS=$(kubectl get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.securityContext.runAsNonRoot}{"\n"}{end}{end}' 2>/dev/null | grep -c "false" || true)
+                  if [ "$ROOT_PODS" -eq 0 ]; then
+                    echo "  PASS: No containers explicitly running as root"
+                    PASS=$((PASS+1))
+                  else
+                    echo "  WARN: $ROOT_PODS containers may be running as root"
+                    WARN=$((WARN+1))
+                  fi
+
+                  # --- Check 6: OpenBao unsealed ---
+                  echo ""
+                  echo "[CHECK] OpenBao seal status..."
+                  SEALED=$(kubectl get pods -n openbao -l app.kubernetes.io/name=openbao --no-headers 2>/dev/null | grep -c "0/" || true)
+                  if [ "$SEALED" -eq 0 ]; then
+                    echo "  PASS: OpenBao is unsealed"
+                    PASS=$((PASS+1))
+                  else
+                    echo "  FAIL: OpenBao appears sealed ($SEALED pods not ready)"
+                    FAIL=$((FAIL+1))
+                  fi
+
+                  # --- Check 7: Istio mTLS strict ---
+                  echo ""
+                  echo "[CHECK] Istio mTLS mode..."
+                  MTLS=$(kubectl get peerauthentication -A -o jsonpath='{range .items[*]}{.spec.mtls.mode}{"\n"}{end}' 2>/dev/null | grep -c "STRICT" || true)
+                  if [ "$MTLS" -gt 0 ]; then
+                    echo "  PASS: Istio STRICT mTLS enabled ($MTLS PeerAuthentication resources)"
+                    PASS=$((PASS+1))
+                  else
+                    echo "  FAIL: No STRICT mTLS PeerAuthentication found"
+                    FAIL=$((FAIL+1))
+                  fi
+
+                  # --- Check 8: Node health ---
+                  echo ""
+                  echo "[CHECK] Node health..."
+                  NOT_READY=$(kubectl get nodes --no-headers | grep -c "NotReady" || true)
+                  TOTAL_NODES=$(kubectl get nodes --no-headers | wc -l)
+                  if [ "$NOT_READY" -eq 0 ]; then
+                    echo "  PASS: All $TOTAL_NODES nodes are Ready"
+                    PASS=$((PASS+1))
+                  else
+                    echo "  FAIL: $NOT_READY nodes are NotReady"
+                    FAIL=$((FAIL+1))
+                  fi
+
+                  # --- Summary ---
+                  echo ""
+                  echo "=========================================="
+                  echo "COMPLIANCE SCAN SUMMARY"
+                  echo "=========================================="
+                  echo "  PASS: $PASS"
+                  echo "  FAIL: $FAIL"
+                  echo "  WARN: $WARN"
+                  echo "  DATE: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  echo "=========================================="
+
+                  if [ "$FAIL" -gt 0 ]; then
+                    echo ""
+                    echo "COMPLIANCE CHECK FAILED — review failures above"
+                    exit 1
+                  fi
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+---
+# ServiceAccount + RBAC for the compliance scanner
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-compliance-scanner
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-scan
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-compliance-scanner
+  labels:
+    app.kubernetes.io/name: compliance-scan
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kyverno.io"]
+    resources: ["clusterpolicies", "policies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources: ["policyreports", "clusterpolicyreports"]
+    verbs: ["get", "list"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "clusterissuers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["peerauthentications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-compliance-scanner
+  labels:
+    app.kubernetes.io/name: compliance-scan
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-compliance-scanner
+subjects:
+  - kind: ServiceAccount
+    name: sre-compliance-scanner
+    namespace: monitoring

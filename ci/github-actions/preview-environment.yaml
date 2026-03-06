@@ -1,0 +1,87 @@
+---
+# GitHub Actions workflow for ephemeral preview environments
+# Creates a preview namespace on PR open, destroys on PR close
+#
+# Usage: Copy to .github/workflows/preview.yaml in your app repo
+
+name: "Preview Environment"
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+
+env:
+  TEAM: "team-alpha"  # Override per repo
+  APP_NAME: "${{ github.event.repository.name }}"
+
+jobs:
+  preview-create:
+    name: "Create Preview"
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout SRE platform
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+        with:
+          repository: ${{ github.repository_owner }}/sre-platform
+          path: sre-platform
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f  # v4.0.0
+
+      - name: Create preview environment
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+        run: |
+          cd sre-platform
+          bash scripts/preview-env.sh create \
+            "${{ env.TEAM }}" \
+            "${{ env.APP_NAME }}" \
+            "${{ github.event.pull_request.head.repo.clone_url }}" \
+            "${{ github.head_ref }}" \
+            "${{ github.event.number }}"
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Preview Environment
+            | Item | Value |
+            |------|-------|
+            | Namespace | \`preview-${{ env.TEAM }}-${{ env.APP_NAME }}-pr${{ github.event.number }}\` |
+            | URL | \`https://pr-${{ github.event.number }}-${{ env.APP_NAME }}.apps.sre.example.com\` |
+            | Branch | \`${{ github.head_ref }}\` |
+
+            Preview will be destroyed when this PR is closed.`
+            })
+
+  preview-destroy:
+    name: "Destroy Preview"
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout SRE platform
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+        with:
+          repository: ${{ github.repository_owner }}/sre-platform
+          path: sre-platform
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f  # v4.0.0
+
+      - name: Destroy preview environment
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+        run: |
+          cd sre-platform
+          bash scripts/preview-env.sh destroy \
+            "${{ env.TEAM }}" \
+            "${{ env.APP_NAME }}" \
+            "${{ github.event.number }}"

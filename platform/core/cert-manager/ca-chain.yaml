@@ -1,0 +1,78 @@
+---
+# Step 1: Bootstrap self-signed ClusterIssuer
+# This issuer is only used to create the root CA certificate.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: sre-selfsigned
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SC-12, SC-13, IA-5"
+spec:
+  selfSigned: {}
+---
+# Step 2: Root CA certificate issued by the self-signed issuer
+# 10-year lifetime, stored in sre-root-ca-secret
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sre-root-ca
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SC-12, SC-13, IA-5"
+spec:
+  isCA: true
+  commonName: "SRE Platform Root CA"
+  duration: 87600h
+  renewBefore: 8760h
+  secretName: sre-root-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: sre-selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# Step 3: ClusterIssuer backed by the root CA
+# All platform and workload certificates are issued by this CA.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: sre-ca-issuer
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SC-12, SC-13, IA-5"
+spec:
+  ca:
+    secretName: sre-root-ca-secret
+---
+# Step 4: Wildcard certificate for Istio ingress gateway
+# 90-day lifetime with 30-day renewal window
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sre-wildcard
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SC-8, SC-12, SC-13"
+spec:
+  dnsNames:
+    - "*.apps.sre.example.com"
+    - "apps.sre.example.com"
+  duration: 2160h
+  renewBefore: 720h
+  secretName: sre-wildcard-tls
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: sre-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

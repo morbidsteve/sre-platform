@@ -1,0 +1,143 @@
+---
+# OpenBao auto-unseal CronJob
+# Checks seal status every 5 minutes and auto-unseals using stored keys.
+# For production, replace with transit auto-unseal or cloud KMS.
+# NIST Controls: SC-12, SC-28
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openbao-auto-unseal
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-auto-unseal
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "SC-12, SC-28"
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openbao-auto-unseal
+            app.kubernetes.io/part-of: sre-platform
+            sre.io/team: platform
+        spec:
+          serviceAccountName: openbao-auto-unseal
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: unseal
+              image: docker.io/bitnami/kubectl:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  # Check if the init keys secret exists
+                  if ! kubectl get secret openbao-init-keys -n openbao &>/dev/null; then
+                    echo "No init keys secret found. Skipping auto-unseal."
+                    exit 0
+                  fi
+
+                  # Get unseal keys from secret
+                  UNSEAL_KEY=$(kubectl get secret openbao-init-keys -n openbao \
+                    -o jsonpath='{.data.unseal-key-0}' 2>/dev/null | base64 -d)
+
+                  if [ -z "$UNSEAL_KEY" ]; then
+                    echo "No unseal key found in secret. Skipping."
+                    exit 0
+                  fi
+
+                  # Check each OpenBao pod
+                  for pod in $(kubectl get pods -n openbao -l app.kubernetes.io/name=openbao \
+                    --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+
+                    # Check seal status
+                    SEALED=$(kubectl exec -n openbao "$pod" -- \
+                      sh -c 'export VAULT_ADDR=http://127.0.0.1:8200; vault status -format=json 2>/dev/null | grep -o "\"sealed\":[a-z]*" | cut -d: -f2' 2>/dev/null || echo "unknown")
+
+                    if [ "$SEALED" = "true" ]; then
+                      echo "Pod $pod is sealed. Unsealing..."
+                      kubectl exec -n openbao "$pod" -- \
+                        sh -c "export VAULT_ADDR=http://127.0.0.1:8200; vault operator unseal $UNSEAL_KEY" 2>&1 || true
+                      echo "Unseal command sent to $pod"
+                    elif [ "$SEALED" = "false" ]; then
+                      echo "Pod $pod is already unsealed."
+                    else
+                      echo "Pod $pod seal status unknown: $SEALED"
+                    fi
+                  done
+
+                  echo "Auto-unseal check complete."
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-auto-unseal
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-auto-unseal
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-auto-unseal
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-auto-unseal
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["openbao-init-keys"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-auto-unseal
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-auto-unseal
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openbao-auto-unseal
+subjects:
+  - kind: ServiceAccount
+    name: openbao-auto-unseal
+    namespace: openbao

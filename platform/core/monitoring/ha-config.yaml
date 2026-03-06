@@ -1,0 +1,32 @@
+---
+# HA configuration overrides for monitoring stack
+# Apply as a valuesFrom ConfigMap to enable production-grade HA
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-ha-values
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+data:
+  values.yaml: |
+    prometheus:
+      prometheusSpec:
+        replicas: 2
+        podAntiAffinity: "hard"
+    alertmanager:
+      alertmanagerSpec:
+        replicas: 2
+        podAntiAffinity: "hard"
+    grafana:
+      replicas: 2
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - grafana
+              topologyKey: kubernetes.io/hostname

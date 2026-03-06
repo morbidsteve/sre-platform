@@ -1,0 +1,132 @@
+---
+# Backstage app-config.yaml mounted into the Backstage pod
+# Contains integrations with SRE platform services.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-app-config
+  namespace: backstage
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: backstage
+data:
+  app-config.sre.yaml: |
+    app:
+      title: "SRE Platform Developer Portal"
+      baseUrl: "https://backstage.apps.${SRE_DOMAIN}"
+
+    organization:
+      name: "SRE Platform"
+
+    backend:
+      baseUrl: "https://backstage.apps.${SRE_DOMAIN}"
+      listen:
+        port: 7007
+      cors:
+        origin: "https://backstage.apps.${SRE_DOMAIN}"
+        methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+        credentials: true
+      database:
+        client: pg
+        connection:
+          host: backstage-postgresql
+          port: 5432
+          user: backstage
+          password: ${POSTGRES_PASSWORD}
+
+    # -----------------------------------------------------------------
+    # Auth — guest provider for dev; replace with Keycloak OIDC in prod
+    # -----------------------------------------------------------------
+    auth:
+      environment: development
+      providers:
+        guest: {}
+
+    # -----------------------------------------------------------------
+    # Harbor container registry integration
+    # -----------------------------------------------------------------
+    integrations: {}
+
+    proxy:
+      endpoints:
+        # Harbor API proxy — browse projects, repositories, and scan results
+        "/harbor/api":
+          target: "http://harbor-core.harbor.svc.cluster.local"
+          pathRewrite:
+            "^/api/proxy/harbor/api": "/api/v2.0"
+          headers:
+            Accept: "application/json"
+          changeOrigin: true
+          allowedMethods: ["GET"]
+
+        # Grafana API proxy — embed dashboards and query metrics
+        "/grafana/api":
+          target: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local"
+          pathRewrite:
+            "^/api/proxy/grafana/api": "/api"
+          headers:
+            Accept: "application/json"
+          changeOrigin: true
+          allowedMethods: ["GET"]
+
+    # -----------------------------------------------------------------
+    # Kubernetes plugin — discover workloads on the local cluster
+    # -----------------------------------------------------------------
+    kubernetes:
+      serviceLocatorMethod:
+        type: multiTenant
+      clusterLocatorMethods:
+        - type: config
+          clusters:
+            - url: "https://kubernetes.default.svc.cluster.local"
+              name: sre-cluster
+              authProvider: serviceAccount
+              skipTLSVerify: true
+              skipMetricsLookup: false
+              dashboardUrl: "https://grafana.apps.${SRE_DOMAIN}"
+              dashboardApp: grafana
+
+    # -----------------------------------------------------------------
+    # Catalog — discover services from tenants directory
+    # -----------------------------------------------------------------
+    catalog:
+      rules:
+        - allow:
+            - Component
+            - System
+            - API
+            - Resource
+            - Location
+            - Template
+            - Group
+            - User
+
+      locations:
+        # SRE platform system definition
+        - type: url
+          target: "https://github.com/${GIT_ORG}/${GIT_REPO}/blob/main/apps/tenants/**/catalog-info.yaml"
+          rules:
+            - allow: [Component, System, API, Resource]
+
+        # App templates for scaffolding
+        - type: url
+          target: "https://github.com/${GIT_ORG}/${GIT_REPO}/blob/main/apps/templates/**/template.yaml"
+          rules:
+            - allow: [Template]
+
+    # -----------------------------------------------------------------
+    # Grafana plugin — link to platform dashboards
+    # -----------------------------------------------------------------
+    grafana:
+      domain: "https://grafana.apps.${SRE_DOMAIN}"
+      unifiedAlerting: true
+
+    # -----------------------------------------------------------------
+    # TechDocs — basic (build locally in Backstage pod)
+    # -----------------------------------------------------------------
+    techdocs:
+      builder: local
+      generator:
+        runIn: local
+      publisher:
+        type: local
