@@ -17,7 +17,7 @@ metadata:
     policies.kyverno.io/severity: high
     sre.io/nist-controls: "SC-7, AC-4"
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: check-network-policy-exists

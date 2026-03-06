@@ -847,7 +847,7 @@ async function handleDeploy(e) {
 async function deleteApp(namespace, name) {
   if (!confirm(`Delete app "${name}" from "${namespace}"?`)) return;
   try {
-    await fetch(`/api/deploy/${namespace}/${name}`, { method: 'DELETE' });
+    await fetch(`/api/apps/${namespace}/${name}`, { method: 'DELETE' });
     setTimeout(loadDeployedApps, 1000);
   } catch (err) {
     alert('Delete failed: ' + err.message);
@@ -871,6 +871,7 @@ function renderServices() {
   if (!d) return;
 
   const grid = document.getElementById('services-grid');
+  const grafanaUrl = `https://grafana.apps.sre.example.com:${d.httpsPort}`;
   grid.innerHTML = d.routes.map(r => {
     const host = r.hosts[0] || '';
     const url = `https://${host}:${d.httpsPort}`;
@@ -880,7 +881,10 @@ function renderServices() {
           <div class="service-name">${r.name}</div>
           <div class="service-url">${host}</div>
         </div>
-        <a href="${url}" target="_blank">Open &rarr;</a>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <a href="${grafanaUrl}/d/sre-cluster-overview" target="_blank" title="Grafana Dashboard" style="font-size:12px;color:var(--text-dim);">Grafana</a>
+          <a href="${url}" target="_blank">Open &rarr;</a>
+        </div>
       </div>
     `;
   }).join('');

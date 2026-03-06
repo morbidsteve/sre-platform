@@ -478,6 +478,24 @@ async function applyManifest(manifest, namespace) {
   }
 }
 
+// ── Delete App ──────────────────────────────────────────────────────────────
+
+app.delete("/api/apps/:namespace/:name", async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    await customApi.deleteNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io",
+      "v2",
+      namespace,
+      "helmreleases",
+      name
+    );
+    res.json({ ok: true, message: `Deleted ${name} from ${namespace}` });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 async function getCredentials() {
   const creds = {};
 
