@@ -156,6 +156,7 @@ sre/
 │       ├── backstage/           # Developer portal
 │       └── argocd/              # Alternative GitOps UI for app teams
 ├── apps/                        # Application deployment
+│   ├── dashboard/               # SRE Dashboard — web UI for deploy, health, credentials
 │   ├── templates/               # Standardized Helm chart templates
 │   │   ├── sre-web-app/         # Web application chart
 │   │   ├── sre-api-service/     # Internal API chart
@@ -177,9 +178,25 @@ sre/
 └── CLAUDE.md                    # AI-assisted development instructions
 ```
 
-## Deploy Your App (3 commands)
+## Deploy Your App
 
-Once the SRE platform is running, deploying your application is this simple:
+Once the SRE platform is running, deploying your application takes 30 seconds.
+
+### Option A: Web Dashboard (easiest)
+
+Open the SRE Dashboard and use the **Deploy App** tab — fill in name, image, tag, and click Deploy.
+
+```bash
+# Port-forward to access the dashboard
+kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001
+# Open http://localhost:3001
+```
+
+Or via ingress at `https://dashboard.apps.sre.example.com:31443` (add to `/etc/hosts`).
+
+The dashboard also shows platform health, all service URLs, and credentials.
+
+### Option B: CLI (3 commands)
 
 ```bash
 # 1. Create a team namespace (one-time)
@@ -192,7 +209,7 @@ Once the SRE platform is running, deploying your application is this simple:
 git push
 ```
 
-That's it. The platform automatically adds security contexts, network policies, Istio mTLS encryption, health probes, and monitoring. Your app runs in a hardened, compliant environment with zero extra work.
+The platform automatically adds security contexts, network policies, Istio mTLS encryption, health probes, and monitoring. Your app runs in a hardened, compliant environment with zero extra work.
 
 **Or do it manually** — create a YAML file, commit, push. See the [Developer Guide](docs/developer-guide.md) for the full walkthrough.
 
@@ -262,6 +279,11 @@ cd ../..
 ### After Deployment
 
 ```bash
+# Open the web dashboard — shows health, deploy form, service URLs, credentials
+kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001
+# Open http://localhost:3001
+
+# Or use the CLI tools
 ./scripts/sre-access.sh             # Show all service URLs and credentials
 ./scripts/sre-access.sh status      # Health check
 ./scripts/verify-deployment.sh      # Full verification
@@ -287,6 +309,7 @@ All platform UIs are accessible via Istio ingress at `https://<service>.apps.sre
 | `scripts/sre-deploy-app.sh` | Interactive app deployment (generates HelmRelease + commits) |
 | `scripts/sre-new-tenant.sh` | Create a new team namespace with RBAC, quotas, network policies |
 | `scripts/sre-access.sh` | Show ingress URLs, port-forward platform UIs, and show credentials |
+| `apps/dashboard/build-and-deploy.sh` | Build and deploy the SRE Dashboard web UI to the cluster |
 
 ### Reference
 

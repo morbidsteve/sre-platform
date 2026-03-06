@@ -383,6 +383,35 @@ if [[ -n "$GRAFANA_PASS" ]]; then
     echo
 fi
 
+# ── Deploy SRE Dashboard ──────────────────────────────────────────────────────
+if command -v docker &>/dev/null; then
+    log "Building and deploying SRE Dashboard..."
+    DASHBOARD_DIR="$(cd "$(dirname "$0")/../apps/dashboard" && pwd)"
+    if [[ -f "$DASHBOARD_DIR/Dockerfile" ]]; then
+        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v1.0.0 . 2>/dev/null) && \
+        docker save sre-dashboard:v1.0.0 -o /tmp/sre-dashboard.tar 2>/dev/null && \
+        for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
+            SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"
+            if [[ -f "$SSH_KEY" ]]; then
+                scp -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 /tmp/sre-dashboard.tar "sre-admin@${node_ip}:/tmp/sre-dashboard.tar" 2>/dev/null && \
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "sre-admin@${node_ip}" \
+                    "sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/sre-dashboard.tar && rm -f /tmp/sre-dashboard.tar" 2>/dev/null || true
+            fi
+        done
+        rm -f /tmp/sre-dashboard.tar
+        kubectl apply -f "$DASHBOARD_DIR/k8s/" 2>/dev/null && \
+        kubectl rollout status deployment/sre-dashboard -n sre-dashboard --timeout=60s 2>/dev/null && \
+        success "SRE Dashboard deployed" || warn "Dashboard deploy failed (non-critical, deploy manually later with apps/dashboard/build-and-deploy.sh)"
+    fi
+else
+    warn "Docker not found — skipping SRE Dashboard build. Deploy manually later with apps/dashboard/build-and-deploy.sh"
+fi
+
+echo -e "  ${BOLD}Dashboard:${NC}"
+echo -e "    ${CYAN}kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001${NC}"
+echo -e "    Then open: ${CYAN}http://localhost:3001${NC}"
+echo
+
 echo -e "  ${BOLD}Documentation:${NC}"
 echo -e "    https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
 echo

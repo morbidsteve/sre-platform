@@ -2,9 +2,37 @@
 
 This guide takes you from "I have a container image" to "my app is running on the SRE platform" in under 5 minutes.
 
-## Quick Deploy (Recommended)
+## Quick Deploy via Dashboard (Recommended)
 
-The fastest way to deploy an application:
+The fastest way to deploy is the **SRE Dashboard** — a web UI that lets you deploy apps, monitor platform health, and access service credentials with zero CLI knowledge.
+
+**Open the dashboard:**
+
+```bash
+# Option 1: Via Istio ingress (add to /etc/hosts first)
+# echo "<NODE_IP> dashboard.apps.sre.example.com" | sudo tee -a /etc/hosts
+# Then open: https://dashboard.apps.sre.example.com:31443
+
+# Option 2: Via port-forward (no DNS setup needed)
+kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001
+# Then open: http://localhost:3001
+```
+
+From the **Deploy App** tab:
+1. Enter your app name, team namespace, container image, tag, port, and replicas
+2. Optionally set an ingress hostname for external access
+3. Click **Deploy** — Flux picks it up within seconds
+
+The dashboard also shows:
+- **Overview** — all HelmReleases, node status, and problem pods in real time
+- **Services** — clickable links to Grafana, Prometheus, Alertmanager, NeuVector, and all ingress routes
+- **Credentials** — Grafana admin password, NeuVector login, OpenBao root token (click to copy)
+
+---
+
+## Quick Deploy via CLI
+
+If you prefer the command line:
 
 ```bash
 ./scripts/sre-deploy-app.sh
