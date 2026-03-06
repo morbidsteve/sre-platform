@@ -42,15 +42,18 @@ spec:
           - target:
               kind: Deployment
               name: istio-gateway
-            patch: |-
-              - op: add
-                path: /spec/template/spec/hostNetwork
-                value: true
-              - op: add
-                path: /spec/template/spec/dnsPolicy
-                value: ClusterFirstWithHostNet
-              - op: remove
-                path: /spec/template/spec/securityContext/sysctls
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: istio-gateway
+              spec:
+                template:
+                  spec:
+                    hostNetwork: true
+                    dnsPolicy: ClusterFirstWithHostNet
+                    securityContext:
+                      $patch: replace
   values:
     replicaCount: 1
     autoscaling:
