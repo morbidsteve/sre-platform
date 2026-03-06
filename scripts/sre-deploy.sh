@@ -9,6 +9,7 @@
 #   2. Checks cluster connectivity and readiness
 #   3. Installs local-path-provisioner (if no default StorageClass)
 #   4. Loads kernel modules for Istio (if accessible)
+#   4b. Configures firewalld to trust pod/service CIDRs (RKE2+Canal fix)
 #   5. Bootstraps Flux CD from this Git repo
 #   6. Waits for all platform components to become healthy
 #   7. Creates bootstrap secrets (Grafana, etc.)
@@ -172,6 +173,33 @@ if (( MODULES_LOADED > 0 )); then
     success "Kernel modules loaded on $MODULES_LOADED node(s)"
 else
     warn "Could not SSH to nodes to load kernel modules (may already be loaded)"
+fi
+
+# --- Firewalld: trust pod and service CIDRs ---
+# On RKE2 with Canal (Calico + Flannel), Calico creates cali* veth interfaces
+# per pod that are NOT in any firewalld zone. Firewalld's nftables rules run
+# AFTER Calico's iptables rules and REJECT cross-node pod traffic.
+# Fix: add pod/service CIDRs as trusted sources so firewalld allows the traffic.
+log "Configuring firewalld trusted zone for pod/service CIDRs..."
+FW_FIXED=0
+for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
+    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "sre-admin@${node_ip}" \
+        "if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then \
+           sudo firewall-cmd --zone=trusted --add-source=10.42.0.0/16 --permanent 2>/dev/null; \
+           sudo firewall-cmd --zone=trusted --add-source=10.43.0.0/16 --permanent 2>/dev/null; \
+           sudo firewall-cmd --zone=trusted --add-source=10.42.0.0/16 2>/dev/null; \
+           sudo firewall-cmd --zone=trusted --add-source=10.43.0.0/16 2>/dev/null; \
+           echo 'firewalld configured'; \
+         else \
+           echo 'firewalld not active'; \
+         fi" \
+        2>/dev/null && FW_FIXED=$((FW_FIXED + 1)) || true
+done
+
+if (( FW_FIXED > 0 )); then
+    success "Firewalld configured on $FW_FIXED node(s) — pod CIDRs trusted"
+else
+    warn "Could not configure firewalld on nodes (may not be running)"
 fi
 
 # ============================================================================
