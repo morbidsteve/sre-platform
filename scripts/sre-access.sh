@@ -52,6 +52,8 @@ INGRESS_ROUTES=(
     "alertmanager|alertmanager.apps.sre.example.com"
     "neuvector|neuvector.apps.sre.example.com"
     "openbao|openbao.apps.sre.example.com"
+    "harbor|harbor.apps.sre.example.com"
+    "keycloak|keycloak.apps.sre.example.com"
 )
 
 # ── Functions ───────────────────────────────────────────────────────────────
@@ -160,6 +162,25 @@ show_credentials() {
         echo
     fi
 
+    # Harbor
+    HARBOR_PASS=$(kubectl get secret harbor-core-envvars -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    if [[ -z "$HARBOR_PASS" ]]; then
+        HARBOR_PASS="Harbor12345"
+    fi
+    echo -e "  ${BOLD}Harbor${NC}"
+    echo -e "    Username: admin"
+    echo -e "    Password: $HARBOR_PASS"
+    echo
+
+    # Keycloak
+    KC_PASS=$(kubectl get secret keycloak -n keycloak -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    if [[ -n "$KC_PASS" ]]; then
+        echo -e "  ${BOLD}Keycloak${NC}"
+        echo -e "    Username: admin"
+        echo -e "    Password: $KC_PASS"
+        echo
+    fi
+
     # NeuVector (default)
     echo -e "  ${BOLD}NeuVector${NC}"
     echo -e "    Username: admin"
@@ -224,7 +245,7 @@ show_ingress_info() {
 
     echo
     echo -e "  ${BOLD}DNS Setup (add to /etc/hosts):${NC}"
-    echo -e "    ${CYAN}echo \"${node_ip}  grafana.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
+    echo -e "    ${CYAN}echo \"${node_ip}  grafana.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
 
     if [[ -n "$tenant_vs" ]]; then
         local tenant_hosts=""

@@ -774,7 +774,7 @@ async function loadDeployedApps() {
     const resp = await fetch('/api/health');
     const data = await resp.json();
     const tenantApps = data.helmReleases.filter(hr =>
-      !['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero'].includes(hr.namespace)
+      !['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero','harbor','keycloak'].includes(hr.namespace)
     );
 
     if (tenantApps.length === 0) {

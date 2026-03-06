@@ -531,6 +531,37 @@ async function getCredentials() {
     creds.openbao = { token: "(not initialized)" };
   }
 
+  // Harbor
+  try {
+    const secret = await k8sApi.readNamespacedSecret(
+      "harbor-core-envvars",
+      "harbor"
+    );
+    creds.harbor = {
+      username: "admin",
+      password: Buffer.from(
+        secret.body.data.HARBOR_ADMIN_PASSWORD,
+        "base64"
+      ).toString(),
+    };
+  } catch {
+    creds.harbor = { username: "admin", password: "Harbor12345" };
+  }
+
+  // Keycloak
+  try {
+    const secret = await k8sApi.readNamespacedSecret("keycloak", "keycloak");
+    creds.keycloak = {
+      username: "admin",
+      password: Buffer.from(
+        secret.body.data["admin-password"],
+        "base64"
+      ).toString(),
+    };
+  } catch {
+    creds.keycloak = { username: "admin", password: "(not found)" };
+  }
+
   return creds;
 }
 
