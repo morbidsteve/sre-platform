@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-dashboard
+  namespace: sre-dashboard
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sre-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sre-dashboard
+        app.kubernetes.io/part-of: sre-platform
+        sre.io/team: platform
+    spec:
+      serviceAccountName: sre-dashboard
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: docker.io/library/sre-dashboard:v1.0.0
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 3001
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-dashboard
+  namespace: sre-dashboard
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  selector:
+    app.kubernetes.io/name: sre-dashboard
+  ports:
+    - port: 3001
+      targetPort: 3001
+      name: http

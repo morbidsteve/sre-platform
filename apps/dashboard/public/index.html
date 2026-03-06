@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRE Platform</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-hover: #334155;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --radius: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ──────────────────────────────────────────────── */
+
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header h1 .shield { font-size: 24px; }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .status-dot.green { background: var(--green); }
+    .status-dot.red { background: var(--red); }
+    .status-dot.yellow { background: var(--yellow); }
+
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      gap: 0;
+    }
+
+    nav button {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      padding: 12px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    nav button:hover { color: var(--text); }
+    nav button.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Cards ────────────────────────────────────────────────── */
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .card h3 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .card .big-number {
+      font-size: 36px;
+      font-weight: 700;
+    }
+
+    .card .big-number.green { color: var(--green); }
+    .card .big-number.red { color: var(--red); }
+
+    /* ── Tables ───────────────────────────────────────────────── */
+
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .table-card .table-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .table-card .table-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 10px 20px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,0.2);
+    }
+
+    td {
+      padding: 12px 20px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background: var(--surface-hover); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .badge.green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge.red { background: rgba(239,68,68,0.15); color: var(--red); }
+    .badge.yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+
+    /* ── Forms ────────────────────────────────────────────────── */
+
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 600px;
+    }
+
+    .form-card h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--accent);
+    }
+
+    .form-group .hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-danger {
+      background: rgba(239,68,68,0.15);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,0.3);
+    }
+
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+
+    /* ── Alerts ───────────────────────────────────────────────── */
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .alert.success {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.3);
+      color: var(--green);
+      display: block;
+    }
+
+    .alert.error {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: var(--red);
+      display: block;
+    }
+
+    /* ── Services grid ────────────────────────────────────────── */
+
+    .service-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.15s;
+    }
+
+    .service-card:hover { border-color: var(--accent); }
+
+    .service-card .service-name {
+      font-weight: 600;
+      font-size: 15px;
+      margin-bottom: 2px;
+    }
+
+    .service-card .service-url {
+      font-size: 12px;
+      color: var(--text-dim);
+      word-break: break-all;
+    }
+
+    .service-card a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .service-card a:hover { text-decoration: underline; }
+
+    /* ── Credentials ──────────────────────────────────────────── */
+
+    .cred-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+
+    .cred-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .cred-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      padding: 4px 0;
+    }
+
+    .cred-row .label { color: var(--text-dim); }
+
+    .cred-row .value {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .cred-row .value:hover { background: var(--surface-hover); }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-dim);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="shield">&#x1f6e1;</span> SRE Platform</h1>
+  <div class="header-status">
+    <span id="header-health"></span>
+    <span id="header-time"></span>
+  </div>
+</div>
+
+<nav>
+  <button class="active" onclick="switchTab('overview')">Overview</button>
+  <button onclick="switchTab('deploy')">Deploy App</button>
+  <button onclick="switchTab('services')">Services</button>
+  <button onclick="switchTab('credentials')">Credentials</button>
+</nav>
+
+<main>
+  <!-- Overview Tab -->
+  <div id="tab-overview" class="tab-content active">
+    <div class="grid" id="summary-cards">
+      <div class="card">
+        <h3>Components</h3>
+        <div class="big-number" id="hr-count">--</div>
+      </div>
+      <div class="card">
+        <h3>Nodes</h3>
+        <div class="big-number" id="node-count">--</div>
+      </div>
+      <div class="card">
+        <h3>Problem Pods</h3>
+        <div class="big-number" id="pod-count">--</div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <h2>Platform Components</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Component</th>
+            <th>Namespace</th>
+            <th>Chart</th>
+            <th>Version</th>
+          </tr>
+        </thead>
+        <tbody id="hr-table">
+          <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <h2>Nodes</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Name</th>
+            <th>Role</th>
+            <th>IP</th>
+            <th>Version</th>
+          </tr>
+        </thead>
+        <tbody id="nodes-table">
+          <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Deploy Tab -->
+  <div id="tab-deploy" class="tab-content">
+    <div id="deploy-alert" class="alert"></div>
+
+    <div class="form-card">
+      <h2>Deploy a New Application</h2>
+      <form id="deploy-form" onsubmit="handleDeploy(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label>App Name</label>
+            <input type="text" id="d-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+            <div class="hint">Lowercase letters, numbers, hyphens only</div>
+          </div>
+          <div class="form-group">
+            <label>Team Namespace</label>
+            <select id="d-team" required>
+              <option value="">Loading...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Container Image</label>
+            <input type="text" id="d-image" placeholder="docker.io/library/nginx" required />
+            <div class="hint">Full image path without tag</div>
+          </div>
+          <div class="form-group">
+            <label>Image Tag</label>
+            <input type="text" id="d-tag" placeholder="1.27.3-alpine" required />
+            <div class="hint">Never use "latest"</div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Container Port</label>
+            <input type="number" id="d-port" value="8080" min="1" max="65535" />
+          </div>
+          <div class="form-group">
+            <label>Replicas</label>
+            <input type="number" id="d-replicas" value="2" min="1" max="10" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Ingress Hostname (optional)</label>
+          <input type="text" id="d-ingress" placeholder="my-app.apps.sre.example.com" />
+          <div class="hint">Leave empty for cluster-internal only</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Application</button>
+      </form>
+    </div>
+
+    <!-- Deployed Apps -->
+    <div class="table-card" style="margin-top: 24px;">
+      <div class="table-header">
+        <h2>Deployed Applications</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>App</th>
+            <th>Namespace</th>
+            <th>Image</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="apps-table">
+          <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Services Tab -->
+  <div id="tab-services" class="tab-content">
+    <h2 style="margin-bottom: 16px;">Platform Services</h2>
+    <div class="grid" id="services-grid">
+      <div class="loading"><span class="spinner"></span></div>
+    </div>
+
+    <div style="margin-top: 24px;">
+      <h2 style="margin-bottom: 12px;">DNS Setup</h2>
+      <div class="card">
+        <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px;">Add this to <code>/etc/hosts</code> to access services by hostname:</p>
+        <code id="hosts-entry" style="font-size: 13px; background: var(--bg); padding: 8px 12px; border-radius: 6px; display: block; cursor: pointer; word-break: break-all;" onclick="copyText(this)"></code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credentials Tab -->
+  <div id="tab-credentials" class="tab-content">
+    <h2 style="margin-bottom: 16px;">Platform Credentials</h2>
+    <div class="grid" id="creds-grid">
+      <div class="loading"><span class="spinner"></span></div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+
+let healthData = null;
+let ingressData = null;
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.target.classList.add('active');
+
+  if (tab === 'deploy') loadTenants();
+  if (tab === 'services') loadServices();
+  if (tab === 'credentials') loadCredentials();
+}
+
+// ── Overview ─────────────────────────────────────────────────────────────────
+
+async function loadHealth() {
+  try {
+    const resp = await fetch('/api/health');
+    healthData = await resp.json();
+    renderHealth();
+  } catch (err) {
+    console.error('Failed to load health:', err);
+  }
+}
+
+function renderHealth() {
+  const d = healthData;
+  if (!d) return;
+
+  const s = d.summary;
+
+  // Header
+  const allGood = s.helmReleasesReady === s.helmReleasesTotal && s.problemPodCount === 0;
+  document.getElementById('header-health').innerHTML =
+    `<span class="status-dot ${allGood ? 'green' : 'yellow'}"></span> ${s.helmReleasesReady}/${s.helmReleasesTotal} components`;
+
+  // Summary cards
+  document.getElementById('hr-count').textContent = `${s.helmReleasesReady}/${s.helmReleasesTotal}`;
+  document.getElementById('hr-count').className = 'big-number ' + (s.helmReleasesReady === s.helmReleasesTotal ? 'green' : 'red');
+
+  document.getElementById('node-count').textContent = `${s.nodesReady}/${s.nodesTotal}`;
+  document.getElementById('node-count').className = 'big-number green';
+
+  document.getElementById('pod-count').textContent = s.problemPodCount;
+  document.getElementById('pod-count').className = 'big-number ' + (s.problemPodCount === 0 ? 'green' : 'red');
+
+  // HelmRelease table
+  document.getElementById('hr-table').innerHTML = d.helmReleases
+    .sort((a, b) => a.namespace.localeCompare(b.namespace))
+    .map(hr => `
+      <tr>
+        <td><span class="badge ${hr.ready ? 'green' : 'red'}">${hr.ready ? 'Healthy' : 'Unhealthy'}</span></td>
+        <td><strong>${hr.name}</strong></td>
+        <td>${hr.namespace}</td>
+        <td>${hr.chart}</td>
+        <td>${hr.version}</td>
+      </tr>
+    `).join('');
+
+  // Nodes table
+  document.getElementById('nodes-table').innerHTML = d.nodes.map(n => `
+    <tr>
+      <td><span class="badge ${n.ready ? 'green' : 'red'}">${n.ready ? 'Ready' : 'NotReady'}</span></td>
+      <td><strong>${n.name}</strong></td>
+      <td>${n.roles}</td>
+      <td><code>${n.ip}</code></td>
+      <td>${n.version}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Deploy ───────────────────────────────────────────────────────────────────
+
+async function loadTenants() {
+  try {
+    const resp = await fetch('/api/tenants');
+    const data = await resp.json();
+    const select = document.getElementById('d-team');
+    select.innerHTML = data.tenants.map(t =>
+      `<option value="${t.name}">${t.name}</option>`
+    ).join('');
+    if (data.tenants.length === 0) {
+      select.innerHTML = '<option value="">No tenants found</option>';
+    }
+  } catch (err) {
+    console.error('Failed to load tenants:', err);
+  }
+  loadDeployedApps();
+}
+
+async function loadDeployedApps() {
+  try {
+    const resp = await fetch('/api/health');
+    const data = await resp.json();
+    const tenantApps = data.helmReleases.filter(hr =>
+      !['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero'].includes(hr.namespace)
+    );
+
+    if (tenantApps.length === 0) {
+      document.getElementById('apps-table').innerHTML =
+        '<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No apps deployed yet</td></tr>';
+      return;
+    }
+
+    document.getElementById('apps-table').innerHTML = tenantApps.map(app => `
+      <tr>
+        <td><span class="badge ${app.ready ? 'green' : 'red'}">${app.ready ? 'Running' : 'Deploying'}</span></td>
+        <td><strong>${app.name}</strong></td>
+        <td>${app.namespace}</td>
+        <td><code>${app.chart || 'web-app'}</code></td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteApp('${app.namespace}', '${app.name}')">Delete</button></td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to load apps:', err);
+  }
+}
+
+async function handleDeploy(e) {
+  e.preventDefault();
+  const btn = document.getElementById('deploy-btn');
+  const alert = document.getElementById('deploy-alert');
+  btn.disabled = true;
+  btn.textContent = 'Deploying...';
+  alert.className = 'alert';
+  alert.style.display = 'none';
+
+  try {
+    const body = {
+      name: document.getElementById('d-name').value,
+      team: document.getElementById('d-team').value,
+      image: document.getElementById('d-image').value,
+      tag: document.getElementById('d-tag').value,
+      port: parseInt(document.getElementById('d-port').value),
+      replicas: parseInt(document.getElementById('d-replicas').value),
+      ingress: document.getElementById('d-ingress').value,
+    };
+
+    const resp = await fetch('/api/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await resp.json();
+    if (data.success) {
+      alert.className = 'alert success';
+      alert.textContent = data.message + '. Flux will deploy it within a few minutes.';
+      document.getElementById('deploy-form').reset();
+      document.getElementById('d-port').value = '8080';
+      document.getElementById('d-replicas').value = '2';
+      setTimeout(loadDeployedApps, 3000);
+    } else {
+      alert.className = 'alert error';
+      alert.textContent = data.error;
+    }
+  } catch (err) {
+    alert.className = 'alert error';
+    alert.textContent = 'Deploy failed: ' + err.message;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Deploy Application';
+}
+
+async function deleteApp(namespace, name) {
+  if (!confirm(`Delete app "${name}" from "${namespace}"?`)) return;
+  try {
+    await fetch(`/api/deploy/${namespace}/${name}`, { method: 'DELETE' });
+    setTimeout(loadDeployedApps, 1000);
+  } catch (err) {
+    alert('Delete failed: ' + err.message);
+  }
+}
+
+// ── Services ─────────────────────────────────────────────────────────────────
+
+async function loadServices() {
+  try {
+    const resp = await fetch('/api/ingress');
+    ingressData = await resp.json();
+    renderServices();
+  } catch (err) {
+    console.error('Failed to load services:', err);
+  }
+}
+
+function renderServices() {
+  const d = ingressData;
+  if (!d) return;
+
+  const grid = document.getElementById('services-grid');
+  grid.innerHTML = d.routes.map(r => {
+    const host = r.hosts[0] || '';
+    const url = `https://${host}:${d.httpsPort}`;
+    return `
+      <div class="service-card">
+        <div>
+          <div class="service-name">${r.name}</div>
+          <div class="service-url">${host}</div>
+        </div>
+        <a href="${url}" target="_blank">Open &rarr;</a>
+      </div>
+    `;
+  }).join('');
+
+  // /etc/hosts entry
+  const allHosts = d.routes.map(r => r.hosts[0]).filter(Boolean).join(' ');
+  document.getElementById('hosts-entry').textContent = `${d.nodeIp}  ${allHosts}`;
+}
+
+// ── Credentials ──────────────────────────────────────────────────────────────
+
+async function loadCredentials() {
+  try {
+    const resp = await fetch('/api/credentials');
+    const data = await resp.json();
+    renderCredentials(data);
+  } catch (err) {
+    console.error('Failed to load credentials:', err);
+  }
+}
+
+function renderCredentials(data) {
+  const grid = document.getElementById('creds-grid');
+  grid.innerHTML = '';
+
+  for (const [service, creds] of Object.entries(data)) {
+    const rows = Object.entries(creds).map(([k, v]) => `
+      <div class="cred-row">
+        <span class="label">${k}</span>
+        <span class="value" onclick="copyText(this)" title="Click to copy">${v}</span>
+      </div>
+    `).join('');
+
+    grid.innerHTML += `
+      <div class="cred-card">
+        <h4>${service.charAt(0).toUpperCase() + service.slice(1)}</h4>
+        ${rows}
+      </div>
+    `;
+  }
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+function copyText(el) {
+  navigator.clipboard.writeText(el.textContent).catch(() => {});
+  const orig = el.style.background;
+  el.style.background = 'rgba(34,197,94,0.2)';
+  setTimeout(() => el.style.background = orig, 300);
+}
+
+function updateTime() {
+  document.getElementById('header-time').textContent = new Date().toLocaleTimeString();
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+loadHealth();
+setInterval(loadHealth, 15000);
+setInterval(updateTime, 1000);
+updateTime();
+</script>
+
+</body>
+</html>

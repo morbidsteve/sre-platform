@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: sre-dashboard
+  namespace: sre-dashboard
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  hosts:
+    - "dashboard.apps.sre.example.com"
+  gateways:
+    - istio-system/main
+  http:
+    - route:
+        - destination:
+            host: sre-dashboard.sre-dashboard.svc.cluster.local
+            port:
+              number: 3001

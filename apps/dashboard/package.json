@@ -1,0 +1,14 @@
+{
+  "name": "sre-dashboard",
+  "version": "1.0.0",
+  "description": "SRE Platform Dashboard — deploy apps and monitor platform health",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^0.21.0",
+    "express": "^4.21.0"
+  }
+}
