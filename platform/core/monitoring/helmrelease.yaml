@@ -67,6 +67,9 @@ spec:
         server:
           root_url: "https://grafana.apps.sre.example.com"
           serve_from_sub_path: false
+        security:
+          cookie_samesite: none
+          cookie_secure: true
       service:
         type: ClusterIP
       # Persistence configured via environment profile ConfigMap (monitoring-env-values)
