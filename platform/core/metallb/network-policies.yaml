@@ -1,0 +1,44 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: metallb-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# MetalLB controller needs to talk to the K8s API server
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metallb-controller
+  namespace: metallb-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+  policyTypes:
+    - Egress
+  egress:
+    - {} # Controller needs API server + webhook traffic
+---
+# MetalLB speaker needs host network access for ARP announcements
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metallb-speaker
+  namespace: metallb-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: speaker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {} # Speaker receives memberlist traffic from other speakers
+  egress:
+    - {} # Speaker needs API server + ARP + memberlist
