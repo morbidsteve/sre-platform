@@ -57,6 +57,11 @@ spec:
               port: http
             initialDelaySeconds: {{ .Values.app.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache
           env:
             {{- range .Values.app.env }}
             {{- if .value }}
@@ -71,3 +76,8 @@ spec:
                   key: value
             {{- end }}
             {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
