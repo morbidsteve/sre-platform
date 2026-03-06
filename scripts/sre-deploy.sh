@@ -393,6 +393,69 @@ if [[ -n "$GRAFANA_PASS" ]]; then
     echo
 fi
 
+# ── Initialize OpenBao ────────────────────────────────────────────────────────
+log "Initializing OpenBao secrets engine..."
+if kubectl get pod -n openbao openbao-0 --no-headers 2>/dev/null | grep -q Running; then
+    BAO_STATUS=$(kubectl exec -n openbao openbao-0 -- bao status -format=json 2>/dev/null || echo '{}')
+    BAO_INIT=$(echo "$BAO_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('initialized', False))" 2>/dev/null || echo "False")
+    BAO_SEALED=$(echo "$BAO_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed', True))" 2>/dev/null || echo "True")
+
+    if [[ "$BAO_INIT" == "False" ]]; then
+        log "Initializing OpenBao (1 key share for dev)..."
+        INIT_JSON=$(kubectl exec -n openbao openbao-0 -- bao operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null)
+        UNSEAL_KEY=$(echo "$INIT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
+        ROOT_TOKEN=$(echo "$INIT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
+
+        kubectl exec -n openbao openbao-0 -- bao operator unseal "$UNSEAL_KEY" >/dev/null 2>&1
+
+        # Store unseal key and token as a K8s secret for recovery
+        kubectl create secret generic openbao-init-keys -n openbao \
+            --from-literal=unseal-key="$UNSEAL_KEY" \
+            --from-literal=root-token="$ROOT_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
+
+        # Enable secrets engines and K8s auth
+        kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao secrets enable -path=sre kv-v2 >/dev/null 2>&1 || true
+        kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao secrets enable pki >/dev/null 2>&1 || true
+        kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao auth enable kubernetes >/dev/null 2>&1 || true
+        kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao write auth/kubernetes/config \
+            kubernetes_host="https://kubernetes.default.svc:443" >/dev/null 2>&1 || true
+
+        # Create platform-admin policy
+        kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" sh -c '
+bao policy write platform-admin /dev/stdin <<EOF
+path "sre/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "pki/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+EOF
+' >/dev/null 2>&1
+
+        # Create external-secrets role
+        kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao write auth/kubernetes/role/external-secrets \
+            bound_service_account_names=external-secrets \
+            bound_service_account_namespaces=external-secrets \
+            policies=platform-admin \
+            ttl=1h >/dev/null 2>&1
+
+        # Restart ESO to pick up newly-initialized OpenBao
+        kubectl rollout restart deployment -n external-secrets >/dev/null 2>&1
+
+        success "OpenBao initialized, unsealed, and configured"
+    elif [[ "$BAO_SEALED" == "True" ]]; then
+        # Try to unseal from stored key
+        UNSEAL_KEY=$(kubectl get secret openbao-init-keys -n openbao -o jsonpath='{.data.unseal-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        if [[ -n "$UNSEAL_KEY" ]]; then
+            kubectl exec -n openbao openbao-0 -- bao operator unseal "$UNSEAL_KEY" >/dev/null 2>&1
+            success "OpenBao unsealed from stored key"
+        else
+            warn "OpenBao is sealed and no unseal key found. Run: kubectl exec -n openbao openbao-0 -- bao operator unseal <KEY>"
+        fi
+    else
+        success "OpenBao already initialized and unsealed"
+    fi
+else
+    warn "OpenBao pod not running — will be initialized on next deploy"
+fi
+
 # ── Deploy SRE Dashboard ──────────────────────────────────────────────────────
 if command -v docker &>/dev/null; then
     log "Building and deploying SRE Dashboard..."

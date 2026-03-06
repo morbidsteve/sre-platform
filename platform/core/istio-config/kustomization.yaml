@@ -6,3 +6,4 @@ resources:
   - peer-authentication.yaml
   - gateway.yaml
   - authorization-policy-default.yaml
+  - authorization-policies/

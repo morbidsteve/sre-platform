@@ -482,3 +482,116 @@ flux logs --kind=HelmRelease --name=my-app -n my-team
 | `networkPolicy.enabled` | bool | `true` | Enable NetworkPolicy |
 | `podDisruptionBudget.enabled` | bool | `true` | Enable PDB |
 | `podDisruptionBudget.minAvailable` | int | `1` | Minimum available pods |
+
+## Secrets Management
+
+The platform uses **OpenBao** (open-source Vault fork) with **External Secrets Operator** to deliver secrets to your apps.
+
+### How it works
+
+1. An admin stores a secret in OpenBao at `sre/<team>/<app>/<key>`
+2. You create an `ExternalSecret` resource referencing the OpenBao path
+3. ESO syncs it into a standard Kubernetes Secret in your namespace
+4. Your app reads it as an environment variable or mounted file
+
+### Example: Using a secret in your app
+
+```yaml
+# 1. Ask your platform admin to store the secret:
+#    bao kv put sre/team-alpha/my-app database-url="postgres://..."
+
+# 2. Create an ExternalSecret in your namespace:
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: my-app-secrets
+  namespace: team-alpha
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: my-app-secrets
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: team-alpha/my-app
+        property: database-url
+```
+
+```yaml
+# 3. Reference in your Deployment:
+env:
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: my-app-secrets
+        key: DATABASE_URL
+```
+
+### Verify your secret synced
+
+```bash
+kubectl get externalsecret -n team-alpha
+# Should show STATUS: SecretSynced, READY: True
+```
+
+## SSO / Authentication
+
+The platform uses **Keycloak** for single sign-on. All platform UIs (Grafana, Harbor, NeuVector) can authenticate via OIDC.
+
+### Keycloak SRE Realm
+
+| Setting | Value |
+|---------|-------|
+| Realm | `sre` |
+| OIDC Discovery | `https://keycloak.apps.sre.example.com:31443/realms/sre/.well-known/openid-configuration` |
+| Groups | `platform-admins`, `developers`, `viewers` |
+
+### Test Users
+
+| Username | Password | Group |
+|----------|----------|-------|
+| `sre-admin` | `admin123` | platform-admins |
+| `developer` | `dev123` | developers |
+
+### OIDC Clients
+
+| Client ID | Used By |
+|-----------|---------|
+| `grafana` | Grafana SSO login |
+| `harbor` | Harbor SSO login |
+| `sre-dashboard` | SRE Dashboard |
+| `neuvector` | NeuVector SSO login |
+
+## CI/CD Pipeline
+
+The platform includes reusable GitHub Actions workflows in `ci/github-actions/`.
+
+### Quick start
+
+```yaml
+# .github/workflows/deploy.yaml in your app repo
+name: Deploy
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-and-deploy:
+    uses: <org>/sre-platform/.github/workflows/build-scan-deploy.yaml@main
+    with:
+      image-name: my-app
+      image-tag: ${{ github.ref_name }}
+      harbor-project: team-alpha
+    secrets: inherit
+```
+
+The pipeline will:
+1. Build your Docker image
+2. Scan with Trivy (fails on CRITICAL vulnerabilities)
+3. Generate SBOM (SPDX + CycloneDX)
+4. Sign with Cosign
+5. Push to Harbor
+6. Update the GitOps repo (Flux auto-deploys)
