@@ -461,8 +461,8 @@ if command -v docker &>/dev/null; then
     log "Building and deploying SRE Dashboard..."
     DASHBOARD_DIR="$(cd "$(dirname "$0")/../apps/dashboard" && pwd)"
     if [[ -f "$DASHBOARD_DIR/Dockerfile" ]]; then
-        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v1.3.0 . 2>/dev/null) && \
-        docker save sre-dashboard:v1.3.0 -o /tmp/sre-dashboard.tar 2>/dev/null && \
+        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v1.3.1 . 2>/dev/null) && \
+        docker save sre-dashboard:v1.3.1 -o /tmp/sre-dashboard.tar 2>/dev/null && \
         for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
             scp $SSH_OPTS /tmp/sre-dashboard.tar "${SSH_USER}@${node_ip}:/tmp/sre-dashboard.tar" 2>/dev/null && \
             ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \

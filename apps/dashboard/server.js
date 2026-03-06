@@ -483,13 +483,70 @@ async function applyManifest(manifest, namespace) {
 app.delete("/api/apps/:namespace/:name", async (req, res) => {
   try {
     const { namespace, name } = req.params;
-    await customApi.deleteNamespacedCustomObject(
-      "helm.toolkit.fluxcd.io",
-      "v2",
-      namespace,
-      "helmreleases",
-      name
-    );
+
+    // Step 1: Remove finalizers so the HelmRelease can be deleted even if
+    // helm uninstall fails (prevents stuck Terminating state)
+    try {
+      await customApi.patchNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io",
+        "v2",
+        namespace,
+        "helmreleases",
+        name,
+        { metadata: { finalizers: null } },
+        undefined,
+        undefined,
+        undefined,
+        { headers: { "Content-Type": "application/merge-patch+json" } }
+      );
+    } catch (e) {
+      // Ignore if already gone
+    }
+
+    // Step 2: Delete the HelmRelease
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io",
+        "v2",
+        namespace,
+        "helmreleases",
+        name
+      );
+    } catch (e) {
+      if (e.statusCode !== 404) throw e;
+    }
+
+    // Step 3: Clean up orphaned Helm release secrets
+    try {
+      const secrets = await k8sApi.listNamespacedSecret(
+        namespace,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        `owner=helm,name=${name}`
+      );
+      for (const s of secrets.body.items) {
+        if (s.metadata.name.startsWith(`sh.helm.release.v1.${name}.`)) {
+          await k8sApi.deleteNamespacedSecret(s.metadata.name, namespace);
+        }
+      }
+    } catch (e) {
+      // Non-critical — just orphaned secrets
+    }
+
+    // Step 4: Clean up any pods/deployments left behind
+    try {
+      const deps = await appsApi.listNamespacedDeployment(namespace);
+      for (const d of deps.body.items) {
+        if (d.metadata.name.startsWith(`${name}-`)) {
+          await appsApi.deleteNamespacedDeployment(d.metadata.name, namespace);
+        }
+      }
+    } catch (e) {
+      // Non-critical
+    }
+
     res.json({ ok: true, message: `Deleted ${name} from ${namespace}` });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
