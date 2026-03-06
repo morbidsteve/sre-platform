@@ -262,10 +262,12 @@ cd ../..
 ### After Deployment
 
 ```bash
+./scripts/sre-access.sh             # Show all service URLs and credentials
 ./scripts/sre-access.sh status      # Health check
 ./scripts/verify-deployment.sh      # Full verification
-task compliance-report              # Compliance posture
 ```
+
+All platform UIs are accessible via Istio ingress at `https://<service>.apps.sre.example.com:<nodeport>`. Add DNS entries to `/etc/hosts` using any cluster node IP (the access script shows the exact command).
 
 ## Documentation
 
@@ -284,7 +286,7 @@ task compliance-report              # Compliance posture
 | `scripts/sre-deploy.sh` | One-button platform install on any K8s cluster |
 | `scripts/sre-deploy-app.sh` | Interactive app deployment (generates HelmRelease + commits) |
 | `scripts/sre-new-tenant.sh` | Create a new team namespace with RBAC, quotas, network policies |
-| `scripts/sre-access.sh` | Port-forward platform UIs and show credentials |
+| `scripts/sre-access.sh` | Show ingress URLs, port-forward platform UIs, and show credentials |
 
 ### Reference
 

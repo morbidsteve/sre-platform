@@ -82,13 +82,19 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-    # Istio gateway for Grafana
+    # Istio gateway for Grafana, Prometheus, Alertmanager
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
       ports:
+        - port: 80
+          protocol: TCP
         - port: 3000
+          protocol: TCP
+        - port: 9090
+          protocol: TCP
+        - port: 9093
           protocol: TCP
     # Webhook traffic from API server
     - ports:

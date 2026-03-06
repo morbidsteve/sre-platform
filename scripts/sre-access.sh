@@ -44,6 +44,16 @@ SERVICES=(
     "openbao|openbao|svc/openbao|8200|8200|http"
 )
 
+# Ingress routes (services accessible via Istio gateway)
+# Format: name|hostname
+INGRESS_ROUTES=(
+    "grafana|grafana.apps.sre.example.com"
+    "prometheus|prometheus.apps.sre.example.com"
+    "alertmanager|alertmanager.apps.sre.example.com"
+    "neuvector|neuvector.apps.sre.example.com"
+    "openbao|openbao.apps.sre.example.com"
+)
+
 # ── Functions ───────────────────────────────────────────────────────────────
 
 get_field() {
@@ -169,10 +179,85 @@ show_credentials() {
     fi
 }
 
+show_ingress_info() {
+    # Find any cluster node IP
+    local node_ip
+    node_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
+    if [[ -z "$node_ip" ]]; then
+        warn "Could not detect node IP"
+        return
+    fi
+
+    # Get NodePort for HTTPS
+    local https_port
+    https_port=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+
+    echo -e "\n${BOLD}${CYAN}═══ SRE Platform — Ingress Access ═══${NC}\n"
+    echo -e "  All services are accessible via Istio ingress (HTTPS with self-signed cert).\n"
+
+    echo -e "  ${BOLD}Platform UIs:${NC}"
+    echo
+    for route in "${INGRESS_ROUTES[@]}"; do
+        local name host
+        name=$(echo "$route" | cut -d'|' -f1)
+        host=$(echo "$route" | cut -d'|' -f2)
+        printf "    %-15s https://%s:%s\n" "$name" "$host" "$https_port"
+    done
+
+    # Show any tenant app VirtualServices
+    local tenant_vs
+    tenant_vs=$(kubectl get virtualservice -A --no-headers 2>/dev/null | grep -v "monitoring\|neuvector\|openbao" || true)
+    if [[ -n "$tenant_vs" ]]; then
+        echo
+        echo -e "  ${BOLD}Tenant Apps:${NC}"
+        echo
+        while IFS= read -r line; do
+            local vs_ns vs_name vs_host
+            vs_ns=$(echo "$line" | awk '{print $1}')
+            vs_name=$(echo "$line" | awk '{print $2}')
+            vs_host=$(kubectl get virtualservice "$vs_name" -n "$vs_ns" -o jsonpath='{.spec.hosts[0]}' 2>/dev/null || echo "")
+            if [[ -n "$vs_host" ]]; then
+                printf "    %-15s https://%s:%s\n" "$vs_name" "$vs_host" "$https_port"
+            fi
+        done <<< "$tenant_vs"
+    fi
+
+    echo
+    echo -e "  ${BOLD}DNS Setup (add to /etc/hosts):${NC}"
+    echo -e "    ${CYAN}echo \"${node_ip}  grafana.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
+
+    if [[ -n "$tenant_vs" ]]; then
+        local tenant_hosts=""
+        while IFS= read -r line; do
+            local vs_ns vs_name h
+            vs_ns=$(echo "$line" | awk '{print $1}')
+            vs_name=$(echo "$line" | awk '{print $2}')
+            h=$(kubectl get virtualservice "$vs_name" -n "$vs_ns" -o jsonpath='{.spec.hosts[0]}' 2>/dev/null || echo "")
+            [[ -n "$h" ]] && tenant_hosts="$tenant_hosts $h"
+        done <<< "$tenant_vs"
+        if [[ -n "$tenant_hosts" ]]; then
+            echo -e "    ${CYAN}echo \"${node_ip} ${tenant_hosts}\" | sudo tee -a /etc/hosts${NC}"
+        fi
+    fi
+
+    echo
+    echo -e "  ${BOLD}Node IPs (use any):${NC}"
+    kubectl get nodes -o jsonpath='{range .items[*]}    {.metadata.name}  {.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null
+    echo
+
+    echo -e "  ${DIM}TLS uses a self-signed cert. Use ${NC}${CYAN}curl -k${NC}${DIM} or accept the browser warning.${NC}"
+    echo
+}
+
 show_access_info() {
     echo -e "\n${BOLD}${CYAN}═══ SRE Platform — Access Info ═══${NC}\n"
 
-    echo -e "  ${BOLD}Services:${NC}"
+    # Check if Istio gateway is running
+    if kubectl get svc istio-gateway -n istio-system &>/dev/null 2>&1; then
+        show_ingress_info
+    fi
+
+    echo -e "  ${BOLD}Port-Forward Access (alternative):${NC}"
     echo
     for svc_def in "${SERVICES[@]}"; do
         local name proto local_port
@@ -183,10 +268,13 @@ show_access_info() {
     done
 
     echo
-    echo -e "  ${BOLD}To open a service:${NC}"
-    echo -e "    ${CYAN}./scripts/sre-access.sh grafana${NC}       # Open Grafana"
-    echo -e "    ${CYAN}./scripts/sre-access.sh all${NC}           # Open everything"
-    echo -e "    ${CYAN}./scripts/sre-access.sh stop${NC}          # Stop port-forwards"
+    echo -e "  ${BOLD}Commands:${NC}"
+    echo -e "    ${CYAN}./scripts/sre-access.sh${NC}              # This info"
+    echo -e "    ${CYAN}./scripts/sre-access.sh status${NC}       # Health check"
+    echo -e "    ${CYAN}./scripts/sre-access.sh creds${NC}        # Credentials"
+    echo -e "    ${CYAN}./scripts/sre-access.sh grafana${NC}      # Port-forward Grafana"
+    echo -e "    ${CYAN}./scripts/sre-access.sh all${NC}          # Port-forward everything"
+    echo -e "    ${CYAN}./scripts/sre-access.sh stop${NC}         # Stop port-forwards"
     echo
 
     show_credentials
