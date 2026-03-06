@@ -1,5 +1,7 @@
 ---
 # Istio Ingress Gateway — north-south traffic entry point
+# Uses hostNetwork so the gateway pod binds directly to node ports 443/80
+# — no NodePort or LoadBalancer needed.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -17,6 +19,7 @@ spec:
         kind: HelmRepository
         name: istio
         namespace: flux-system
+      reconcileStrategy: Revision
   install:
     createNamespace: false
     remediation:
@@ -29,12 +32,31 @@ spec:
     remediation:
       retries: 3
     disableSchemaValidation: true
+  # Patch the rendered Deployment to add hostNetwork (not a native chart value)
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: istio-gateway
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: istio-gateway
+              spec:
+                template:
+                  spec:
+                    hostNetwork: true
+                    dnsPolicy: ClusterFirstWithHostNet
   values:
     replicaCount: 1
     autoscaling:
       enabled: false
     service:
-      type: NodePort
+      # ClusterIP is sufficient — hostNetwork means pods listen on the node
+      # directly on ports 443/80. The Service is only for in-cluster routing.
+      type: ClusterIP
       ports:
         - name: status-port
           port: 15021
@@ -44,12 +66,12 @@ spec:
           port: 80
           protocol: TCP
           targetPort: 80
-          nodePort: 31080
         - name: https
           port: 443
           protocol: TCP
           targetPort: 443
-          nodePort: 31443
+    podAnnotations:
+      traffic.sidecar.istio.io/includeInboundPorts: ""
     resources:
       requests:
         cpu: 100m
