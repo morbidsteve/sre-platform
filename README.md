@@ -5,13 +5,13 @@ A hardened, compliance-ready Kubernetes platform for deploying applications in r
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![RKE2](https://img.shields.io/badge/K8s-RKE2_v1.34-blue.svg)](https://docs.rke2.io)
 [![Flux CD](https://img.shields.io/badge/GitOps-Flux_CD_v2-blue.svg)](https://fluxcd.io)
-[![Components](https://img.shields.io/badge/Platform-18_components-green.svg)](#platform-components)
+[![Components](https://img.shields.io/badge/Platform-16_components-green.svg)](#platform-components)
 
 ---
 
 ## What You Get
 
-A complete Kubernetes platform with 18 integrated components, all deployed and managed through GitOps:
+A complete Kubernetes platform with 16 integrated components, all deployed and managed through GitOps:
 
 ![SRE Dashboard showing all healthy components](docs/images/dashboard.png)
 
@@ -28,6 +28,7 @@ A complete Kubernetes platform with 18 integrated components, all deployed and m
 | **Identity** | Keycloak | Single sign-on (SSO) with OIDC/SAML for all platform UIs |
 | **Registry** | Harbor + Trivy | Container image storage with vulnerability scanning on push |
 | **Backup** | Velero | Scheduled cluster backup and disaster recovery |
+| **Load Balancer** | MetalLB | Provides LoadBalancer IPs on bare metal (cloud uses native LB) |
 | **GitOps** | Flux CD | Continuously reconciles cluster state from this Git repo |
 
 ---
@@ -119,10 +120,12 @@ One-click app deployment, platform health monitoring, service discovery, and cre
 
 ![Dashboard](docs/images/dashboard.png)
 
-### Grafana — Metrics & Dashboards
-Cluster health, namespace resource usage, Istio traffic, Kyverno violations, and custom dashboards.
+### Grafana — Dashboards & Cluster Overview
+30+ dashboards for cluster health, namespace resources, Istio traffic, Kyverno violations, and more.
 
-![Grafana](docs/images/grafana.png)
+![Grafana Dashboards](docs/images/grafana.png)
+
+![Grafana Cluster Overview](docs/images/grafana-cluster.png)
 
 ### Prometheus — Metrics Query
 Direct PromQL access for ad-hoc queries and debugging.
@@ -149,10 +152,6 @@ OIDC/SAML single sign-on for all platform UIs with group-based RBAC.
 
 ![Keycloak](docs/images/keycloak.png)
 
-### Demo App — Deployed via Dashboard
-A sample app deployed through the dashboard, running with Istio mTLS sidecar injection.
-
-![Demo App](docs/images/demo-app.png)
 
 ---
 
@@ -353,6 +352,7 @@ No `kubectl apply` needed. No manual cluster access. Git is the single source of
 | Velero | 11.3.2 | velero |
 | Harbor | 1.16.3 | harbor |
 | Keycloak | 24.8.1 | keycloak |
+| MetalLB | 0.14.9 | metallb-system |
 
 ### Kyverno Policies (7 active)
 
