@@ -1,365 +1,1248 @@
 {
   "system-security-plan": {
-    "uuid": "sre-ssp-001",
+    "uuid": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
     "metadata": {
-      "title": "Secure Runtime Environment System Security Plan",
-      "version": "1.0.0",
+      "title": "Secure Runtime Environment (SRE) System Security Plan",
+      "last-modified": "2026-03-06T00:00:00Z",
+      "version": "2.0.0",
       "oscal-version": "1.1.2",
       "published": "2025-02-19T00:00:00Z",
-      "last-modified": "2025-02-19T00:00:00Z",
+      "remarks": "OSCAL System Security Plan for the SRE Platform. This document describes the security controls implemented by the platform to satisfy NIST 800-53 Rev 5 Moderate baseline requirements.",
       "roles": [
-        { "id": "system-owner", "title": "System Owner" },
-        { "id": "platform-admin", "title": "Platform Administrator" },
-        { "id": "security-officer", "title": "Information System Security Officer" }
+        {
+          "id": "system-owner",
+          "title": "System Owner",
+          "description": "Individual responsible for the overall operation and security of the SRE platform."
+        },
+        {
+          "id": "platform-admin",
+          "title": "Platform Administrator",
+          "description": "Responsible for day-to-day platform operations, upgrades, and incident response."
+        },
+        {
+          "id": "isso",
+          "title": "Information System Security Officer",
+          "description": "Responsible for ensuring the system meets all applicable security requirements and maintaining the authorization to operate."
+        },
+        {
+          "id": "developer",
+          "title": "Application Developer",
+          "description": "Deploys and manages application workloads on the platform via GitOps workflows."
+        },
+        {
+          "id": "auditor",
+          "title": "Compliance Auditor",
+          "description": "Reviews security controls, policy reports, and audit logs for compliance verification."
+        }
+      ],
+      "parties": [
+        {
+          "uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+          "type": "organization",
+          "name": "SRE Platform Team",
+          "remarks": "Open-source platform development and operations team."
+        }
+      ],
+      "responsible-parties": [
+        {
+          "role-id": "system-owner",
+          "party-uuids": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"]
+        },
+        {
+          "role-id": "platform-admin",
+          "party-uuids": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"]
+        },
+        {
+          "role-id": "isso",
+          "party-uuids": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"]
+        }
       ]
     },
+    "import-profile": {
+      "href": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_MODERATE-baseline_profile.json",
+      "remarks": "NIST 800-53 Rev 5 Moderate baseline profile."
+    },
     "system-characteristics": {
-      "system-name": "Secure Runtime Environment",
-      "description": "A Kubernetes-based platform providing a hardened, compliant runtime for deploying applications. Targets ATO, CMMC, FedRAMP, NIST 800-53, DISA STIGs.",
+      "system-ids": [
+        {
+          "identifier-type": "https://ietf.org/rfc/rfc4122",
+          "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a"
+        }
+      ],
+      "system-name": "Secure Runtime Environment (SRE)",
+      "system-name-short": "SRE",
+      "description": "A Kubernetes-based platform providing a hardened, compliant runtime for deploying applications. Built on RKE2, Flux CD, and the CNCF ecosystem. Targets ATO, CMMC, FedRAMP, NIST 800-53, and DISA STIGs. The platform is 100% open-source, vendor-neutral, and designed for government and regulated commercial deployments.",
       "security-sensitivity-level": "moderate",
       "system-information": {
         "information-types": [
           {
+            "uuid": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
             "title": "Controlled Unclassified Information (CUI)",
-            "confidentiality-impact": { "base": "moderate" },
-            "integrity-impact": { "base": "moderate" },
-            "availability-impact": { "base": "moderate" }
+            "description": "The platform processes, stores, and transmits CUI in accordance with NIST SP 800-171 and CMMC 2.0 Level 2 requirements.",
+            "categorizations": [
+              {
+                "system": "https://doi.org/10.6028/NIST.SP.800-60v2r1",
+                "information-type-ids": ["C.3.5.8"]
+              }
+            ],
+            "confidentiality-impact": {
+              "base": "moderate",
+              "selected": "moderate"
+            },
+            "integrity-impact": {
+              "base": "moderate",
+              "selected": "moderate"
+            },
+            "availability-impact": {
+              "base": "moderate",
+              "selected": "moderate"
+            }
           }
         ]
       },
+      "security-impact-level": {
+        "security-objective-confidentiality": "moderate",
+        "security-objective-integrity": "moderate",
+        "security-objective-availability": "moderate"
+      },
+      "status": {
+        "state": "operational",
+        "remarks": "The SRE platform is operational with all core platform services deployed and reconciled via Flux CD GitOps."
+      },
       "authorization-boundary": {
-        "description": "The SRE platform boundary includes all RKE2 cluster nodes, platform services (Istio, Kyverno, monitoring stack, OpenBao, Harbor, NeuVector), and tenant application workloads running within the cluster."
+        "description": "The SRE platform authorization boundary encompasses all RKE2 Kubernetes cluster nodes (control plane and worker), the underlying Rocky Linux 9 operating system, all platform services deployed within the cluster (Istio, Kyverno, Prometheus, Grafana, Loki, Alloy, OpenBao, Harbor, NeuVector, Keycloak, cert-manager, Tempo, Velero), Flux CD GitOps engine, tenant application workloads running within cluster namespaces, and the Git repository serving as the source of truth for all configurations. External dependencies (cloud provider infrastructure, DNS, NTP sources) are outside the boundary.",
+        "diagrams": [
+          {
+            "uuid": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+            "description": "The authorization boundary includes the Kubernetes cluster, all platform services, tenant workloads, and the GitOps pipeline. Network boundaries are enforced by Istio gateways and NetworkPolicies.",
+            "caption": "SRE Platform Authorization Boundary"
+          }
+        ]
+      },
+      "network-architecture": {
+        "description": "The platform uses a multi-layer network architecture: (1) External traffic enters through the Istio ingress gateway with TLS termination, (2) Internal service-to-service communication is encrypted via Istio mTLS STRICT mode with SPIFFE identities, (3) NetworkPolicies enforce default-deny with explicit allow rules per namespace, (4) NeuVector provides Layer 7 network microsegmentation and DLP capabilities. All cluster nodes reside in private subnets with no direct internet access except through NAT gateways."
+      },
+      "data-flow": {
+        "description": "Data flow is controlled at multiple layers: (1) Istio gateway controls north-south traffic ingress/egress, (2) Istio AuthorizationPolicies control east-west service-to-service communication, (3) Kubernetes NetworkPolicies provide namespace-level isolation with default-deny, (4) Kyverno policies restrict egress destinations, (5) NeuVector DLP sensors detect and block sensitive data exfiltration. All data in transit is encrypted via mTLS. Data at rest is encrypted via RKE2 secrets encryption and OpenBao encrypted storage."
       }
     },
     "system-implementation": {
+      "users": [
+        {
+          "uuid": "a1b2c3d4-0001-4e5f-6a7b-8c9d0e1f2a3b",
+          "title": "Platform Administrator",
+          "role-ids": ["platform-admin"],
+          "authorized-privileges": [
+            {
+              "title": "Full cluster administration",
+              "functions-performed": [
+                "Manage platform services via GitOps",
+                "Access all monitoring and logging dashboards",
+                "Manage Keycloak realms and clients",
+                "Perform backup and restore operations",
+                "Respond to security incidents"
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "a1b2c3d4-0002-4e5f-6a7b-8c9d0e1f2a3b",
+          "title": "Application Developer",
+          "role-ids": ["developer"],
+          "authorized-privileges": [
+            {
+              "title": "Namespace-scoped application deployment",
+              "functions-performed": [
+                "Deploy applications via GitOps to assigned namespace",
+                "View application logs and metrics in Grafana",
+                "Manage application secrets via OpenBao",
+                "View Kyverno policy reports for their namespace"
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "a1b2c3d4-0003-4e5f-6a7b-8c9d0e1f2a3b",
+          "title": "Compliance Auditor",
+          "role-ids": ["auditor"],
+          "authorized-privileges": [
+            {
+              "title": "Read-only compliance and audit access",
+              "functions-performed": [
+                "Review audit logs in Grafana/Loki",
+                "View Kyverno PolicyReports",
+                "View NeuVector security reports",
+                "Export compliance dashboards"
+              ]
+            }
+          ]
+        }
+      ],
       "components": [
         {
-          "uuid": "comp-rke2",
-          "title": "RKE2 Kubernetes",
-          "description": "DISA STIG-certified Kubernetes distribution with FIPS 140-2 compliance",
-          "type": "software"
+          "uuid": "c0mp-0001-rke2-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "RKE2 Kubernetes Distribution",
+          "description": "DISA STIG-certified Kubernetes distribution with FIPS 140-2 compliance via GoBoring crypto module. Provides the cluster foundation with embedded etcd, CIS 1.23 hardening profile enabled by default, and SELinux support. Version v1.34.4.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ],
+          "props": [
+            {
+              "name": "version",
+              "value": "v1.34.4"
+            },
+            {
+              "name": "vendor",
+              "value": "Rancher Government Solutions"
+            }
+          ]
         },
         {
-          "uuid": "comp-istio",
-          "title": "Istio Service Mesh",
-          "description": "mTLS STRICT mode, AuthorizationPolicy, traffic management",
-          "type": "software"
+          "uuid": "c0mp-0002-rky9-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Rocky Linux 9 (STIG-Hardened)",
+          "description": "Base operating system for all cluster nodes. Binary-compatible with RHEL 9 and uses the same DISA STIG. Hardened via Ansible roles applying DISA STIG controls including FIPS mode, SELinux enforcing, auditd, PAM, SSH hardening, and filesystem permissions. Version 9.7.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ],
+          "props": [
+            {
+              "name": "version",
+              "value": "9.7"
+            }
+          ]
         },
         {
-          "uuid": "comp-kyverno",
-          "title": "Kyverno Policy Engine",
-          "description": "Kubernetes-native policy enforcement and image verification",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-monitoring",
-          "title": "Monitoring Stack",
-          "description": "Prometheus, Grafana, AlertManager for metrics and alerting",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-logging",
-          "title": "Logging Stack",
-          "description": "Loki and Alloy for centralized log aggregation",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-openbao",
-          "title": "OpenBao",
-          "description": "Secrets management with auto-unseal, K8s auth, and rotation",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-harbor",
-          "title": "Harbor Registry",
-          "description": "Container registry with Trivy scanning and Cosign verification",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-neuvector",
-          "title": "NeuVector",
-          "description": "Runtime security with behavioral monitoring and network DLP",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-keycloak",
-          "title": "Keycloak",
-          "description": "SSO/OIDC identity provider with MFA and RBAC",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-certmanager",
-          "title": "cert-manager",
-          "description": "Automated certificate lifecycle management",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-velero",
-          "title": "Velero",
-          "description": "Cluster backup and disaster recovery",
-          "type": "software"
-        },
-        {
-          "uuid": "comp-flux",
+          "uuid": "c0mp-0003-flux-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
           "title": "Flux CD",
-          "description": "GitOps continuous delivery and drift detection",
-          "type": "software"
+          "description": "CNCF graduated GitOps engine that continuously reconciles cluster state against the Git repository. Provides drift detection, automated rollback, and a complete audit trail of all configuration changes. Version v2.8.1.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ],
+          "props": [
+            {
+              "name": "version",
+              "value": "v2.8.1"
+            }
+          ]
         },
         {
-          "uuid": "comp-rocky",
-          "title": "Rocky Linux 9",
-          "description": "STIG-hardened base operating system with FIPS mode",
-          "type": "software"
+          "uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Istio Service Mesh",
+          "description": "CNCF graduated service mesh providing mTLS STRICT mode for zero-trust pod-to-pod encryption, AuthorizationPolicy CRDs for fine-grained service-to-service access control, RequestAuthentication for JWT validation, ingress/egress gateways for north-south traffic control, and automatic telemetry (metrics, traces, access logs) for all mesh traffic.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Kyverno Policy Engine",
+          "description": "Kubernetes-native policy engine enforcing Pod Security Standards (baseline and restricted profiles), image registry restrictions, image signature verification via Cosign, resource labeling requirements, network policy requirements, and custom security policies. Provides PolicyReport CRDs for continuous compliance monitoring.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0006-prom-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Monitoring Stack (kube-prometheus-stack)",
+          "description": "Prometheus Operator with Prometheus for metrics collection, Grafana for dashboards and visualization, and AlertManager for alert routing. Includes ServiceMonitors for all platform components, pre-built dashboards for cluster health, Istio traffic, Kyverno violations, and NeuVector alerts. Prometheus configured with 15-day in-cluster retention.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0007-loki-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Logging Stack (Loki + Alloy)",
+          "description": "Grafana Loki for log aggregation and querying with S3-compatible storage backend. Grafana Alloy DaemonSet for log collection from all node journals and container stdout/stderr. Captures Kubernetes API audit logs, Istio access logs, and application logs. Retention: 30 days default, 90 days for audit namespace.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0008-obao-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "OpenBao Secrets Management",
+          "description": "Linux Foundation open-source fork of HashiCorp Vault with compatible APIs. Deployed in HA mode with Raft storage and auto-unseal. Provides KV v2 secrets engine for application secrets, PKI secrets engine for internal certificates, Kubernetes auth method for workload authentication, and audit logging forwarded to Loki.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0009-eso0-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "External Secrets Operator (ESO)",
+          "description": "Syncs secrets from OpenBao into native Kubernetes Secrets via ClusterSecretStore. Applications consume secrets without code changes or SDK dependencies. Supports automatic refresh and rotation.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0010-cert-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "cert-manager",
+          "description": "Automated certificate lifecycle management for TLS certificates. Provides ClusterIssuers for internal CA and Let's Encrypt. Manages Istio ingress gateway certificates and workload certificates. Supports automatic rotation and renewal.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0011-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "NeuVector Runtime Security",
+          "description": "Full lifecycle container security providing runtime behavioral monitoring, network microsegmentation with DLP/WAF, CIS benchmark scanning, process and file activity monitoring, and admission control. Operates in Discover/Monitor/Protect modes with behavioral learning baselines.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0012-harb-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Harbor Container Registry",
+          "description": "CNCF graduated container registry with integrated Trivy vulnerability scanning on push, Cosign/Notation image signing, replication from upstream registries, project-based RBAC, robot accounts for CI/CD, SBOM storage (SPDX + CycloneDX), and garbage collection. Acts as the single approved image source for the platform.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0013-keyc-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Keycloak Identity Provider",
+          "description": "SSO/OIDC provider for all platform UIs (Grafana, Harbor, NeuVector, Kiali). Provides SAML/LDAP federation for Active Directory integration, group-based RBAC mapped to Kubernetes ClusterRoles, and MFA enforcement for all privileged access.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0014-temp-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Grafana Tempo",
+          "description": "Distributed tracing backend receiving traces from Istio via OpenTelemetry/Zipkin protocol. Integrated into Grafana for unified observability across metrics, logs, and traces.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0015-velr-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Velero Backup",
+          "description": "Cluster state and persistent volume backup to S3-compatible storage. Configured with daily (retain 7), weekly (retain 4), and monthly (retain 3) backup schedules. Supports disaster recovery with automated restore testing.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        },
+        {
+          "uuid": "c0mp-0016-ansi-4a7b-8c9d-0e1f2a3b4c5d",
+          "type": "software",
+          "title": "Ansible OS Hardening",
+          "description": "Ansible roles applying DISA STIG for Rocky Linux 9 / RHEL 9. Covers SSH hardening, auditd configuration, filesystem permissions, kernel parameters, PAM configuration, FIPS mode enablement, SELinux enforcement, firewalld, AIDE, and crypto policy.",
+          "status": {
+            "state": "operational"
+          },
+          "responsible-roles": [
+            {
+              "role-id": "platform-admin"
+            }
+          ]
+        }
+      ],
+      "inventory-items": [
+        {
+          "uuid": "inv0-0001-cp01-4a7b-8c9d-0e1f2a3b4c5d",
+          "description": "RKE2 control plane node 1",
+          "props": [
+            {
+              "name": "ipv4-address",
+              "value": "192.168.2.10"
+            },
+            {
+              "name": "os-name",
+              "value": "Rocky Linux"
+            },
+            {
+              "name": "os-version",
+              "value": "9.7"
+            },
+            {
+              "name": "fips-mode",
+              "value": "enabled"
+            },
+            {
+              "name": "selinux-mode",
+              "value": "enforcing"
+            }
+          ],
+          "responsible-parties": [
+            {
+              "role-id": "platform-admin",
+              "party-uuids": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"]
+            }
+          ],
+          "implemented-components": [
+            {
+              "component-uuid": "c0mp-0001-rke2-4a7b-8c9d-0e1f2a3b4c5d"
+            },
+            {
+              "component-uuid": "c0mp-0002-rky9-4a7b-8c9d-0e1f2a3b4c5d"
+            }
+          ]
+        },
+        {
+          "uuid": "inv0-0002-wk01-4a7b-8c9d-0e1f2a3b4c5d",
+          "description": "RKE2 worker/agent node 1",
+          "props": [
+            {
+              "name": "ipv4-address",
+              "value": "192.168.2.11"
+            },
+            {
+              "name": "os-name",
+              "value": "Rocky Linux"
+            },
+            {
+              "name": "os-version",
+              "value": "9.7"
+            },
+            {
+              "name": "fips-mode",
+              "value": "enabled"
+            },
+            {
+              "name": "selinux-mode",
+              "value": "enforcing"
+            }
+          ],
+          "responsible-parties": [
+            {
+              "role-id": "platform-admin",
+              "party-uuids": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"]
+            }
+          ],
+          "implemented-components": [
+            {
+              "component-uuid": "c0mp-0001-rke2-4a7b-8c9d-0e1f2a3b4c5d"
+            },
+            {
+              "component-uuid": "c0mp-0002-rky9-4a7b-8c9d-0e1f2a3b4c5d"
+            }
+          ]
+        },
+        {
+          "uuid": "inv0-0003-wk02-4a7b-8c9d-0e1f2a3b4c5d",
+          "description": "RKE2 worker/agent node 2",
+          "props": [
+            {
+              "name": "ipv4-address",
+              "value": "192.168.2.12"
+            },
+            {
+              "name": "os-name",
+              "value": "Rocky Linux"
+            },
+            {
+              "name": "os-version",
+              "value": "9.7"
+            },
+            {
+              "name": "fips-mode",
+              "value": "enabled"
+            },
+            {
+              "name": "selinux-mode",
+              "value": "enforcing"
+            }
+          ],
+          "responsible-parties": [
+            {
+              "role-id": "platform-admin",
+              "party-uuids": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"]
+            }
+          ],
+          "implemented-components": [
+            {
+              "component-uuid": "c0mp-0001-rke2-4a7b-8c9d-0e1f2a3b4c5d"
+            },
+            {
+              "component-uuid": "c0mp-0002-rky9-4a7b-8c9d-0e1f2a3b4c5d"
+            }
+          ]
         }
       ]
     },
     "control-implementation": {
-      "description": "NIST 800-53 Rev 5 Moderate baseline control implementation",
+      "description": "NIST 800-53 Rev 5 Moderate baseline control implementations for the Secure Runtime Environment platform. Each implemented requirement references the platform components that satisfy the control and describes the technical implementation.",
       "implemented-requirements": [
         {
-          "uuid": "ir-ac-2",
+          "uuid": "ir01-ac02-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ac-2",
-          "description": "Account Management: Keycloak provides centralized identity management with group-based access control, automated deprovisioning, and integration with Active Directory/LDAP."
+          "statements": [
+            {
+              "statement-id": "ac-2_smt",
+              "uuid": "st01-ac02-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Keycloak provides centralized identity management with SSO/OIDC for all platform UIs. User accounts are managed through Keycloak realms with group-based access control mapping to Kubernetes ClusterRoles and namespaced Roles. Account provisioning and deprovisioning is managed through Keycloak admin console or federated from enterprise Active Directory/LDAP. Inactive accounts are automatically disabled based on configurable policies. All account management actions are logged and forwarded to Loki for audit.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0013-keyc-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc01-ac02-keyc-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Keycloak provides centralized identity management with group-based RBAC, automated deprovisioning, LDAP/AD federation, and comprehensive audit logging of all account lifecycle events.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ac-3",
+          "uuid": "ir02-ac03-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ac-3",
-          "description": "Access Enforcement: Kubernetes RBAC restricts namespace-scoped operations. Istio AuthorizationPolicy enforces service-to-service access. Kyverno policies isolate tenant namespaces."
+          "statements": [
+            {
+              "statement-id": "ac-3_smt",
+              "uuid": "st02-ac03-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Access enforcement is implemented at multiple layers: (1) Kubernetes RBAC with namespace-scoped Roles and ClusterRoles mapped to Keycloak groups, (2) Istio AuthorizationPolicy CRDs controlling service-to-service communication with allow/deny rules based on source identity, namespace, and request attributes, (3) Kyverno policies isolating tenant namespaces and preventing cross-tenant resource access. All access decisions are logged via Kubernetes audit logs and Istio access logs.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc02-ac03-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Istio AuthorizationPolicy CRDs enforce fine-grained service-to-service access control based on SPIFFE identity, namespace, HTTP method, and path.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc02-ac03-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kyverno policies enforce namespace isolation, prevent cross-tenant resource access, and restrict resource creation to authorized namespaces.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0001-rke2-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc02-ac03-rke2-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kubernetes RBAC enabled by default in RKE2, with namespace-scoped Roles and ClusterRoles mapped to Keycloak groups via OIDC.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ac-4",
+          "uuid": "ir03-ac04-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ac-4",
-          "description": "Information Flow Enforcement: Istio mTLS STRICT mode encrypts all in-cluster traffic. NetworkPolicies (default deny) restrict pod communication. Kyverno egress restrictions prevent unauthorized data flows."
+          "statements": [
+            {
+              "statement-id": "ac-4_smt",
+              "uuid": "st03-ac04-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Information flow is enforced through Istio mTLS STRICT mode encrypting all in-cluster pod-to-pod communication, Kubernetes NetworkPolicies with default-deny in all namespaces and explicit allow rules for required traffic, and Kyverno policies restricting egress to approved destinations. NeuVector provides Layer 7 DLP to detect and block sensitive data in transit.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc03-ac04-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Istio mTLS STRICT mode encrypts all in-cluster traffic. PeerAuthentication CRD set to STRICT by default. AuthorizationPolicies control allowed communication paths.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc03-ac04-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kyverno policies enforce that all namespaces have NetworkPolicies defined, preventing unrestricted network flows.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ac-6",
+          "uuid": "ir04-ac06-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ac-6",
-          "description": "Least Privilege: RBAC roles are scoped to namespaces. Pod security contexts enforce non-root, drop ALL capabilities. ServiceAccounts are per-workload with no auto-mounted tokens."
+          "statements": [
+            {
+              "statement-id": "ac-6_smt",
+              "uuid": "st04-ac06-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Least privilege is enforced at every layer: (1) Kubernetes RBAC roles scoped to individual namespaces, (2) Pod security contexts enforce runAsNonRoot, readOnlyRootFilesystem, and drop ALL capabilities, (3) automountServiceAccountToken set to false by default, (4) Each workload uses a dedicated ServiceAccount, (5) Kyverno policies enforce these security context requirements on all pods.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc04-ac06-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kyverno ClusterPolicies enforce require-run-as-nonroot, require-drop-all-capabilities, and disallow-privilege-escalation on all pods in tenant namespaces.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ac-6-1",
-          "control-id": "ac-6.1",
-          "description": "Authorize Access to Security Functions: Flux RBAC restricts platform namespace modifications to flux-system ServiceAccount only. Kyverno policies protect platform resources from unauthorized changes."
-        },
-        {
-          "uuid": "ir-ac-6-9",
-          "control-id": "ac-6.9",
-          "description": "Auditing Use of Privileged Functions: Kubernetes audit logging captures all privileged operations and forwards to Loki. Istio access logs record all service mesh traffic."
-        },
-        {
-          "uuid": "ir-ac-6-10",
-          "control-id": "ac-6.10",
-          "description": "Prohibit Non-Privileged Users from Executing Privileged Functions: Kyverno enforces disallow-privileged and disallow-privilege-escalation policies. Pod Security Standards restricted profile is applied to all tenant namespaces."
-        },
-        {
-          "uuid": "ir-ac-14",
-          "control-id": "ac-14",
-          "description": "Permitted Actions Without Identification: Istio PeerAuthentication STRICT mode prevents unauthenticated service-to-service communication."
-        },
-        {
-          "uuid": "ir-ac-17",
-          "control-id": "ac-17",
-          "description": "Remote Access: Keycloak SSO/MFA for all management interfaces. Istio gateway provides TLS termination for all external traffic."
-        },
-        {
-          "uuid": "ir-au-2",
+          "uuid": "ir05-au02-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "au-2",
-          "description": "Audit Events: Kubernetes API audit policy captures authentication, authorization, and CRUD operations on all resources. Istio access logs capture all service mesh traffic."
+          "statements": [
+            {
+              "statement-id": "au-2_smt",
+              "uuid": "st05-au02-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "The platform generates audit events from multiple sources: (1) Kubernetes API server audit policy captures all authentication, authorization, and CRUD operations on resources, (2) Istio access logs record all service mesh HTTP/gRPC traffic with source/destination identity, method, path, and response code, (3) OS-level auditd captures privileged operations, file access, and system calls on all nodes, (4) OpenBao audit logs capture all secrets access and management operations.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0007-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc05-au02-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Alloy DaemonSet collects audit logs from Kubernetes API server, node journals (auditd), and container stdout/stderr. All logs are forwarded to Loki for centralized storage and querying.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc05-au02-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Istio generates detailed access logs for all mesh traffic including source/destination SPIFFE identity, HTTP method, path, response code, and latency.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-au-3",
+          "uuid": "ir06-au03-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "au-3",
-          "description": "Content of Audit Records: All logs are structured JSON with timestamp, source, user identity, action, resource, and outcome fields."
+          "statements": [
+            {
+              "statement-id": "au-3_smt",
+              "uuid": "st06-au03-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "All audit records contain structured JSON with the following fields: timestamp (UTC), source component, user/service identity, action performed, target resource, outcome (success/failure), and source IP address. Kubernetes audit logs follow the k8s.io/apiserver/pkg/apis/audit/v1 schema. Istio access logs follow Envoy access log format. Application logs are required to output structured JSON to stdout/stderr.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0007-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc06-au03-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Alloy collects structured JSON logs and forwards to Loki with labels for namespace, pod, container, and log level, enabling rich querying via LogQL.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-au-4",
-          "control-id": "au-4",
-          "description": "Audit Storage Capacity: Loki with object storage backend (S3/MinIO) provides scalable retention. Configurable retention policies (30d default, 90d for audit)."
-        },
-        {
-          "uuid": "ir-au-5",
-          "control-id": "au-5",
-          "description": "Response to Audit Processing Failures: Prometheus alerts on Loki ingestion failures and disk pressure. AlertManager routes audit processing failure alerts to platform administrators."
-        },
-        {
-          "uuid": "ir-au-6",
+          "uuid": "ir07-au06-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "au-6",
-          "description": "Audit Review, Analysis, and Reporting: Grafana dashboards provide real-time audit log analysis with pre-built compliance report queries."
+          "statements": [
+            {
+              "statement-id": "au-6_smt",
+              "uuid": "st07-au06-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Grafana provides centralized audit review with pre-built dashboards for: Kubernetes API audit logs, Istio traffic analysis, authentication failures, privilege escalation attempts, and policy violations. LogQL queries in Grafana enable ad-hoc investigation. Compliance report dashboards are exportable for auditor review.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0006-prom-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc07-au06-prom-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Grafana dashboards provide real-time audit log analysis and compliance reporting with pre-built queries for common audit scenarios.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-au-8",
-          "control-id": "au-8",
-          "description": "Time Stamps: NTP is enforced on all cluster nodes via Ansible. All logs use UTC timestamps."
-        },
-        {
-          "uuid": "ir-au-9",
-          "control-id": "au-9",
-          "description": "Protection of Audit Information: Loki log storage is encrypted at rest. RBAC restricts log access to the audit team."
-        },
-        {
-          "uuid": "ir-au-12",
+          "uuid": "ir08-au12-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "au-12",
-          "description": "Audit Generation: All platform components output structured JSON logs to stdout/stderr, collected by Alloy DaemonSet on every node."
+          "statements": [
+            {
+              "statement-id": "au-12_smt",
+              "uuid": "st08-au12-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Audit generation is implemented at every layer: (1) All platform components output structured JSON logs to stdout/stderr, (2) Alloy DaemonSet runs on every node to collect logs, (3) Kubernetes API server audit logging is enabled by default in RKE2, (4) OS-level auditd runs on all nodes configured via Ansible, (5) Istio sidecar proxies generate access logs for all mesh traffic.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0007-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc08-au12-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Alloy DaemonSet on every node collects all container logs and node journal entries, forwarding to Loki for centralized aggregation.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0016-ansi-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc08-au12-ansi-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Ansible os-hardening role configures auditd on all nodes with rules for privileged command execution, file access, and system call monitoring.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ca-7",
-          "control-id": "ca-7",
-          "description": "Continuous Monitoring: Prometheus and Grafana provide real-time metrics. NeuVector performs runtime anomaly detection. Kyverno policy reports enable continuous compliance assessment."
-        },
-        {
-          "uuid": "ir-ca-8",
-          "control-id": "ca-8",
-          "description": "Penetration Testing: NeuVector vulnerability scanning identifies runtime weaknesses. Trivy image scanning in Harbor detects known CVEs before deployment."
-        },
-        {
-          "uuid": "ir-cm-2",
+          "uuid": "ir09-cm02-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "cm-2",
-          "description": "Baseline Configuration: The Git repository is the single source of truth. Flux CD continuously reconciles cluster state to match Git."
+          "statements": [
+            {
+              "statement-id": "cm-2_smt",
+              "uuid": "st09-cm02-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "The Git repository is the authoritative baseline configuration for the entire platform. Flux CD continuously reconciles the cluster state to match the Git repository, detecting and remediating any configuration drift. Every change is version-controlled with full Git history providing a complete audit trail of baseline modifications.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0003-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc09-cm02-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Flux CD reconciles cluster state to match the Git repository every 10 minutes. HelmRelease and Kustomization CRDs pin exact versions. Drift is automatically detected and remediated.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-cm-3",
+          "uuid": "ir10-cm03-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "cm-3",
-          "description": "Configuration Change Control: All changes go through Git PR workflow with branch protection, conventional commits, and Flux audit trail."
+          "statements": [
+            {
+              "statement-id": "cm-3_smt",
+              "uuid": "st10-cm03-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "All configuration changes follow the Git pull request workflow: changes are proposed as branches, reviewed by peers, validated by CI (linting, policy tests, compliance checks), merged via conventional commits, and automatically applied by Flux CD. Branch protection rules prevent direct pushes to main. The complete change history is preserved in Git with author attribution and timestamps.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0003-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc10-cm03-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Flux CD applies only changes that are merged to the main branch, enforcing the PR-based change control workflow. All reconciliation events are logged.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-cm-5",
-          "control-id": "cm-5",
-          "description": "Access Restrictions for Change: Branch protection rules enforce code review. Flux RBAC restricts reconciliation scope. Kyverno prevents manual kubectl changes to platform resources."
-        },
-        {
-          "uuid": "ir-cm-6",
+          "uuid": "ir11-cm06-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "cm-6",
-          "description": "Configuration Settings: Ansible STIG roles harden the OS. RKE2 CIS benchmark profile is enabled by default. Kyverno policies enforce Kubernetes configurations."
+          "statements": [
+            {
+              "statement-id": "cm-6_smt",
+              "uuid": "st11-cm06-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Configuration settings are enforced at three layers: (1) Ansible STIG roles apply DISA STIG for Rocky Linux 9 on all nodes covering SSH, auditd, PAM, filesystem, kernel, and crypto policy, (2) RKE2 CIS 1.23 benchmark profile is enabled by default hardening the Kubernetes control plane, (3) Kyverno policies enforce Kubernetes workload configuration including security contexts, resource limits, labels, and image restrictions.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0016-ansi-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc11-cm06-ansi-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Ansible os-hardening role applies DISA STIG controls for Rocky Linux 9 covering SSH, auditd, PAM, filesystem, kernel parameters, FIPS mode, SELinux, and crypto policy.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc11-cm06-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kyverno ClusterPolicies enforce workload configuration standards including security contexts, resource limits, required labels, and image restrictions.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-cm-7",
+          "uuid": "ir12-cm07-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "cm-7",
-          "description": "Least Functionality: Kyverno restricts container capabilities, volumes, and host access. NeuVector blocks unexpected processes via behavioral learning."
+          "statements": [
+            {
+              "statement-id": "cm-7_smt",
+              "uuid": "st12-cm07-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Least functionality is enforced through: (1) Kyverno policies restricting container capabilities (drop ALL), disallowing privileged containers, restricting volume types, and preventing host namespace access, (2) NeuVector behavioral learning creates process whitelists and blocks unexpected processes in protect mode, (3) SELinux enforcing mode on all nodes restricts process capabilities at the OS level.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc12-cm07-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kyverno restricts capabilities, volumes, host access, and privilege escalation via Pod Security Standards restricted profile policies.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0011-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc12-cm07-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "NeuVector blocks unexpected processes via behavioral learning baselines promoted to enforcement rules.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-cm-8",
-          "control-id": "cm-8",
-          "description": "Information System Component Inventory: Flux tracks all deployed components with version pinning. Harbor maintains a complete image inventory with SBOMs attached."
-        },
-        {
-          "uuid": "ir-cm-11",
-          "control-id": "cm-11",
-          "description": "User-Installed Software: Kyverno restricts image sources to harbor.sre.internal only. Image signature verification via Cosign prevents unsigned software deployment."
-        },
-        {
-          "uuid": "ir-ia-2",
+          "uuid": "ir13-ia02-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ia-2",
-          "description": "Identification and Authentication (Organizational Users): Keycloak SSO with MFA. OIDC integration with Kubernetes API server."
+          "statements": [
+            {
+              "statement-id": "ia-2_smt",
+              "uuid": "st13-ia02-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "All organizational users authenticate via Keycloak SSO with OIDC integration to the Kubernetes API server. MFA is enforced for all users accessing platform management interfaces. Keycloak supports federation with Active Directory and LDAP for enterprise identity integration.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0013-keyc-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc13-ia02-keyc-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Keycloak provides SSO with OIDC for Kubernetes API, Grafana, Harbor, NeuVector, and all platform UIs. MFA enforcement is configured for all privileged access.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ia-3",
+          "uuid": "ir14-ia03-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ia-3",
-          "description": "Device Identification and Authentication: Istio mTLS with SPIFFE identities provides cryptographic workload identity for all mesh services."
+          "statements": [
+            {
+              "statement-id": "ia-3_smt",
+              "uuid": "st14-ia03-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Workload (device) identification is provided by Istio mTLS with SPIFFE (Secure Production Identity Framework For Everyone) identities. Every workload in the mesh receives a cryptographic identity certificate in the form spiffe://cluster.local/ns/<namespace>/sa/<serviceaccount>, enabling mutual authentication between services without application code changes.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc14-ia03-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Istio issues SPIFFE identity certificates to all mesh workloads via the istiod control plane, enabling cryptographic mutual authentication.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ia-5",
+          "uuid": "ir15-ia05-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ia-5",
-          "description": "Authenticator Management: Keycloak enforces password policies. cert-manager automates certificate rotation. OpenBao provides secret rotation policies."
+          "statements": [
+            {
+              "statement-id": "ia-5_smt",
+              "uuid": "st15-ia05-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Authenticator management is handled by: (1) Keycloak password policies enforcing complexity, expiration, and history, (2) cert-manager automating TLS certificate issuance and rotation with configurable lifetimes, (3) OpenBao providing secret rotation policies for database credentials, API keys, and other sensitive authenticators, (4) Istio workload certificates are automatically rotated by istiod.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0010-cert-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc15-ia05-cert-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "cert-manager automates certificate lifecycle including issuance, renewal, and revocation for TLS certificates across the platform.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0008-obao-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc15-ia05-obao-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "OpenBao provides dynamic secret generation and automatic rotation for database credentials, API keys, and PKI certificates.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-ia-8",
-          "control-id": "ia-8",
-          "description": "Identification and Authentication (Non-Organizational Users): Istio gateway enforces authentication for all external traffic via RequestAuthentication and AuthorizationPolicy."
-        },
-        {
-          "uuid": "ir-ir-4",
-          "control-id": "ir-4",
-          "description": "Incident Handling: NeuVector alerts feed Prometheus then Grafana alerting pipeline. Runbooks are linked from alerts for guided response."
-        },
-        {
-          "uuid": "ir-ir-5",
-          "control-id": "ir-5",
-          "description": "Incident Monitoring: NeuVector runtime security events, Kyverno policy violations, and Prometheus alert history provide continuous incident monitoring."
-        },
-        {
-          "uuid": "ir-ir-6",
-          "control-id": "ir-6",
-          "description": "Incident Reporting: Grafana dashboards provide exportable incident reports with timeline views, affected resources, and remediation status."
-        },
-        {
-          "uuid": "ir-mp-2",
-          "control-id": "mp-2",
-          "description": "Media Access: OpenBao access policies restrict secret retrieval to authorized workloads. Kubernetes Secrets are encrypted at rest via RKE2 default configuration."
-        },
-        {
-          "uuid": "ir-ra-5",
+          "uuid": "ir16-ra05-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "ra-5",
-          "description": "Vulnerability Scanning: Harbor + Trivy scan all images on push. NeuVector provides runtime vulnerability scanning. CIS benchmark scanning runs on all nodes."
+          "statements": [
+            {
+              "statement-id": "ra-5_smt",
+              "uuid": "st16-ra05-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Vulnerability scanning is performed at multiple stages: (1) Harbor with integrated Trivy scans all container images on push, blocking deployment of images with CRITICAL/HIGH CVEs, (2) NeuVector performs runtime vulnerability scanning of running containers, (3) NeuVector CIS benchmark scanning validates node and container security configurations, (4) Kyverno policies prevent deployment of unscanned or failed images.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0012-harb-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc16-ra05-harb-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Harbor with Trivy scanner performs automated vulnerability scanning on all image pushes with configurable severity thresholds.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0011-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc16-ra05-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "NeuVector provides runtime vulnerability scanning and CIS benchmark assessments for running containers and nodes.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-sa-10",
-          "control-id": "sa-10",
-          "description": "Developer Configuration Management: GitOps workflow ensures all changes are tracked in Git. Flux reconciliation provides a complete audit trail of applied configurations."
-        },
-        {
-          "uuid": "ir-sa-11",
-          "control-id": "sa-11",
-          "description": "Developer Testing and Evaluation: Kyverno policy tests validate enforcement rules. Helm chart tests verify deployment correctness. Infrastructure validation pipeline checks compliance before merge."
-        },
-        {
-          "uuid": "ir-sc-3",
-          "control-id": "sc-3",
-          "description": "Security Function Isolation: Namespace isolation separates workloads. NetworkPolicies restrict cross-namespace traffic. Istio AuthorizationPolicy enforces service-level boundaries."
-        },
-        {
-          "uuid": "ir-sc-7",
+          "uuid": "ir17-sc07-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "sc-7",
-          "description": "Boundary Protection: Istio gateway provides a single ingress point. NetworkPolicies enforce default deny egress. NeuVector provides network segmentation visualization."
+          "statements": [
+            {
+              "statement-id": "sc-7_smt",
+              "uuid": "st17-sc07-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Boundary protection is enforced through: (1) Istio ingress gateway as the single entry point for all external traffic with TLS termination, (2) Kubernetes NetworkPolicies with default-deny in all namespaces restricting both ingress and egress, (3) NeuVector network microsegmentation providing Layer 7 visibility and enforcement, (4) Istio egress gateway controlling all outbound traffic from the cluster.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc17-sc07-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Istio ingress/egress gateways provide controlled entry and exit points for all cluster traffic with TLS termination and traffic routing.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0011-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc17-sc07-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "NeuVector provides network microsegmentation with Layer 7 DLP/WAF capabilities for data loss prevention.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-sc-8",
+          "uuid": "ir18-sc08-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "sc-8",
-          "description": "Transmission Confidentiality and Integrity: Istio mTLS STRICT encrypts all in-cluster traffic. TLS terminates at the Istio gateway for external traffic."
+          "statements": [
+            {
+              "statement-id": "sc-8_smt",
+              "uuid": "st18-sc08-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Transmission confidentiality and integrity is ensured through Istio mTLS STRICT mode which encrypts all in-cluster pod-to-pod communication using TLS 1.2+ with FIPS-compliant cipher suites. External traffic is TLS-terminated at the Istio ingress gateway with certificates managed by cert-manager. RKE2 control plane communication uses mTLS for etcd, API server, and kubelet.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0004-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc18-sc08-isto-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Istio PeerAuthentication set to STRICT mode cluster-wide, encrypting all pod-to-pod traffic with mTLS.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-sc-12",
+          "uuid": "ir19-sc12-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "sc-12",
-          "description": "Cryptographic Key Establishment and Management: cert-manager automates the certificate lifecycle. OpenBao provides centralized secret and key management with rotation."
+          "statements": [
+            {
+              "statement-id": "sc-12_smt",
+              "uuid": "st19-sc12-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Cryptographic key management is handled by: (1) cert-manager for automated TLS certificate lifecycle management with ClusterIssuers for internal CA and Let's Encrypt, (2) OpenBao PKI secrets engine for internal certificate issuance and rotation, (3) OpenBao auto-unseal using cloud KMS for seal key management, (4) Istio for automatic workload certificate issuance and rotation.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0010-cert-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc19-sc12-cert-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "cert-manager provides automated certificate lifecycle management with support for multiple issuers and automatic renewal.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0008-obao-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc19-sc12-obao-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "OpenBao provides PKI secrets engine for internal certificate management and KMS-based auto-unseal for cryptographic key protection.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-sc-13",
+          "uuid": "ir20-sc13-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "sc-13",
-          "description": "Cryptographic Protection: RKE2 runs in FIPS 140-2 mode. Rocky Linux 9 is configured with FIPS crypto policy via Ansible."
+          "statements": [
+            {
+              "statement-id": "sc-13_smt",
+              "uuid": "st20-sc13-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "FIPS 140-2 validated cryptographic modules are used throughout: (1) RKE2 compiled with GoBoring Go compiler providing FIPS 140-2 validated cryptography, (2) Rocky Linux 9 configured with FIPS crypto policy via Ansible restricting all system cryptography to FIPS-approved algorithms, (3) TLS 1.2+ enforced for all communications with FIPS-compliant cipher suites.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0001-rke2-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc20-sc13-rke2-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "RKE2 uses GoBoring Go compiler for FIPS 140-2 validated cryptography in all control plane and data plane components.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0002-rky9-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc20-sc13-rky9-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Rocky Linux 9 FIPS mode enabled via Ansible with system-wide FIPS crypto policy enforcing FIPS-approved algorithms for all OS-level cryptographic operations.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-sc-28",
-          "control-id": "sc-28",
-          "description": "Protection of Information at Rest: Kubernetes Secrets are encrypted at rest (RKE2 default). OpenBao uses an encrypted storage backend. Loki uses encrypted object storage."
-        },
-        {
-          "uuid": "ir-si-2",
+          "uuid": "ir21-si02-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "si-2",
-          "description": "Flaw Remediation: Harbor + Trivy scanning triggers alerts on new CVEs. Image update automation via Flux. Automated patching via Ansible."
+          "statements": [
+            {
+              "statement-id": "si-2_smt",
+              "uuid": "st21-si02-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Flaw remediation is automated through: (1) Harbor + Trivy scanning all images on push with severity-based alerts for CRITICAL and HIGH CVEs, (2) Flux CD GitOps enabling automated image tag updates when patched versions are available, (3) Ansible playbooks for OS-level security patching, (4) Prometheus alerts on new vulnerability discoveries in running workloads via NeuVector.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0012-harb-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc21-si02-harb-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Harbor with Trivy provides automated vulnerability scanning with configurable severity gates to block deployment of vulnerable images.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0003-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc21-si02-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Flux CD enables automated image updates via GitOps when patched container images are published to Harbor.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-si-3",
+          "uuid": "ir22-si03-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "si-3",
-          "description": "Malicious Code Protection: NeuVector provides runtime process monitoring, file system integrity monitoring, and behavioral anomaly detection."
+          "statements": [
+            {
+              "statement-id": "si-3_smt",
+              "uuid": "st22-si03-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Malicious code protection is provided by NeuVector runtime security: (1) Process monitoring detects and blocks unauthorized processes based on behavioral learning baselines, (2) File system integrity monitoring detects unexpected file modifications, (3) Network DLP sensors detect sensitive data patterns in network traffic, (4) Behavioral anomaly detection alerts on deviations from learned application behavior.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0011-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc22-si03-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "NeuVector provides runtime process monitoring, file integrity monitoring, network DLP, and behavioral anomaly detection with automatic enforcement.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-si-4",
+          "uuid": "ir23-si04-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "si-4",
-          "description": "System Monitoring: Prometheus metrics, Loki logs, Tempo traces, NeuVector runtime events, and Kyverno policy reports provide comprehensive monitoring."
+          "statements": [
+            {
+              "statement-id": "si-4_smt",
+              "uuid": "st23-si04-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Comprehensive system monitoring is provided by: (1) Prometheus for metrics collection from all platform components with 15-day retention, (2) Loki for centralized log aggregation with 30-90 day retention, (3) Tempo for distributed tracing of service-to-service calls, (4) NeuVector for runtime security events and behavioral monitoring, (5) Kyverno PolicyReports for continuous compliance monitoring. Grafana provides a unified visualization layer for all monitoring data.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0006-prom-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc23-si04-prom-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Prometheus collects metrics from all platform components via ServiceMonitors. AlertManager routes alerts to configured receivers.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0007-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc23-si04-loki-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Loki provides centralized log aggregation from all cluster nodes and workloads with configurable retention policies.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0011-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc23-si04-nuvr-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "NeuVector generates runtime security events for process anomalies, network violations, and file system modifications.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
-          "uuid": "ir-si-5",
-          "control-id": "si-5",
-          "description": "Security Alerts, Advisories, and Directives: Grafana alerting routes notifications to Slack and email. NeuVector CVE alerts notify teams of newly discovered vulnerabilities."
-        },
-        {
-          "uuid": "ir-si-6",
-          "control-id": "si-6",
-          "description": "Security Function Verification: NeuVector CIS benchmark scanning validates runtime security posture. Kyverno background policy scanning reports on non-compliant existing resources."
-        },
-        {
-          "uuid": "ir-si-7",
+          "uuid": "ir24-si07-0001-4a7b-8c9d-0e1f2a3b4c5d",
           "control-id": "si-7",
-          "description": "Software, Firmware, and Information Integrity: Cosign image signatures verified by Kyverno. SBOM generation in Harbor. GitOps drift detection via Flux."
+          "statements": [
+            {
+              "statement-id": "si-7_smt",
+              "uuid": "st24-si07-0001-4a7b-8c9d-0e1f2a3b4c5d",
+              "description": "Software integrity is ensured through: (1) Cosign image signatures verified by Kyverno imageVerify policy on all pod admissions, (2) SBOM (Software Bill of Materials) generated at build time and stored in Harbor as OCI artifacts, (3) Flux CD drift detection and remediation ensures deployed state matches Git source of truth, (4) Kyverno policies restrict image sources to the approved Harbor registry only.",
+              "by-components": [
+                {
+                  "component-uuid": "c0mp-0005-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc24-si07-kyvn-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Kyverno verify-image-signatures ClusterPolicy enforces Cosign signature verification on all pod images at admission time.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0012-harb-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc24-si07-harb-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Harbor stores Cosign signatures and SBOM artifacts alongside container images, providing a complete supply chain record.",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                },
+                {
+                  "component-uuid": "c0mp-0003-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "uuid": "bc24-si07-flux-4a7b-8c9d-0e1f2a3b4c5d",
+                  "description": "Flux CD continuously reconciles cluster state to Git, detecting and remediating any unauthorized modifications (drift).",
+                  "implementation-status": {
+                    "state": "implemented"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "back-matter": {
+      "resources": [
+        {
+          "uuid": "res0-0001-nist-4a7b-8c9d-0e1f2a3b4c5d",
+          "title": "NIST SP 800-53 Rev 5",
+          "citation": {
+            "text": "Joint Task Force. Security and Privacy Controls for Information Systems and Organizations. NIST Special Publication 800-53, Revision 5. September 2020."
+          },
+          "rlinks": [
+            {
+              "href": "https://doi.org/10.6028/NIST.SP.800-53r5"
+            }
+          ]
+        },
+        {
+          "uuid": "res0-0002-stig-4a7b-8c9d-0e1f2a3b4c5d",
+          "title": "DISA STIG for Kubernetes",
+          "citation": {
+            "text": "Defense Information Systems Agency. Kubernetes Security Technical Implementation Guide. Version 1, Release 11."
+          },
+          "rlinks": [
+            {
+              "href": "https://public.cyber.mil/stigs/"
+            }
+          ]
+        },
+        {
+          "uuid": "res0-0003-cmmc-4a7b-8c9d-0e1f2a3b4c5d",
+          "title": "CMMC 2.0 Model",
+          "citation": {
+            "text": "Department of Defense. Cybersecurity Maturity Model Certification (CMMC) 2.0."
+          },
+          "rlinks": [
+            {
+              "href": "https://dodcio.defense.gov/CMMC/"
+            }
+          ]
+        },
+        {
+          "uuid": "res0-0004-n171-4a7b-8c9d-0e1f2a3b4c5d",
+          "title": "NIST SP 800-171 Rev 2",
+          "citation": {
+            "text": "Ross, R., et al. Protecting Controlled Unclassified Information in Nonfederal Systems and Organizations. NIST Special Publication 800-171, Revision 2. February 2020."
+          },
+          "rlinks": [
+            {
+              "href": "https://doi.org/10.6028/NIST.SP.800-171r2"
+            }
+          ]
         }
       ]
     }

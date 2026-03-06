@@ -1,0 +1,1277 @@
+{
+  "metadata": {
+    "title": "CMMC 2.0 Level 2 Self-Assessment",
+    "description": "Self-assessment of the SRE platform against CMMC 2.0 Level 2 requirements. CMMC Level 2 aligns with NIST SP 800-171 Rev 2, which contains 110 security requirements derived from NIST SP 800-53.",
+    "version": "2.0.0",
+    "organization": "SRE Platform",
+    "assessment-date": "2026-03-06",
+    "cmmc-level": 2,
+    "framework-reference": "NIST SP 800-171 Rev 2",
+    "assessor": "Self-Assessment (C3PAO assessment required for certification)",
+    "remarks": "This self-assessment covers security requirements that are directly addressed by the SRE platform technical controls. Organizational and procedural controls (e.g., personnel security PS, physical protection PE, media protection MP beyond encryption) require additional policy documentation outside the scope of this platform assessment."
+  },
+  "summary": {
+    "total-practices": 110,
+    "implemented": 72,
+    "partially-implemented": 18,
+    "planned": 8,
+    "not-applicable": 12,
+    "domains-assessed": 14
+  },
+  "domains": [
+    {
+      "id": "AC",
+      "name": "Access Control",
+      "nist-family": "3.1",
+      "total-practices": 22,
+      "implemented": 18,
+      "partially-implemented": 3,
+      "planned": 1,
+      "practices": [
+        {
+          "id": "AC.L2-3.1.1",
+          "title": "Authorized Access Control",
+          "nist-171-ref": "3.1.1",
+          "nist-800-53-ref": "AC-2",
+          "status": "implemented",
+          "implementation": "Keycloak provides centralized identity management with group-based RBAC. Kubernetes RBAC scopes access to namespaces. User accounts are provisioned through Keycloak admin console or federated from enterprise AD/LDAP.",
+          "components": ["platform/addons/keycloak", "apps/tenants/*/rbac.yaml"],
+          "evidence": ["Keycloak realm configuration", "Kubernetes RoleBindings per tenant namespace"]
+        },
+        {
+          "id": "AC.L2-3.1.2",
+          "title": "Transaction and Function Control",
+          "nist-171-ref": "3.1.2",
+          "nist-800-53-ref": "AC-3",
+          "status": "implemented",
+          "implementation": "Istio AuthorizationPolicy CRDs enforce transaction-level access control based on source identity, HTTP method, and path. Kubernetes RBAC restricts API operations to authorized roles.",
+          "components": ["platform/core/istio", "apps/tenants/*/rbac.yaml"],
+          "evidence": ["Istio AuthorizationPolicy manifests", "Kubernetes Role/RoleBinding manifests"]
+        },
+        {
+          "id": "AC.L2-3.1.3",
+          "title": "Control CUI Flow",
+          "nist-171-ref": "3.1.3",
+          "nist-800-53-ref": "AC-4",
+          "status": "implemented",
+          "implementation": "Kubernetes NetworkPolicies enforce default-deny in all namespaces with explicit allow rules. Istio mTLS STRICT mode encrypts and authenticates all data flows. NeuVector provides network DLP to detect sensitive data in transit.",
+          "components": ["platform/core/istio", "platform/core/runtime-security", "apps/tenants/*/network-policies/"],
+          "evidence": ["NetworkPolicy manifests", "Istio PeerAuthentication", "NeuVector DLP rules"]
+        },
+        {
+          "id": "AC.L2-3.1.4",
+          "title": "Separation of Duties",
+          "nist-171-ref": "3.1.4",
+          "nist-800-53-ref": "AC-5",
+          "status": "implemented",
+          "implementation": "Keycloak groups map to distinct Kubernetes RBAC roles: platform-admins, developers, viewers, and auditors. Flux RBAC separates platform configuration from application deployment. Tenant namespaces isolate team resources.",
+          "components": ["platform/addons/keycloak", "platform/flux-system"],
+          "evidence": ["Keycloak group configuration", "Kubernetes ClusterRoleBindings"]
+        },
+        {
+          "id": "AC.L2-3.1.5",
+          "title": "Least Privilege",
+          "nist-171-ref": "3.1.5",
+          "nist-800-53-ref": "AC-6",
+          "status": "implemented",
+          "implementation": "Pod security contexts enforce non-root execution, drop ALL capabilities, read-only root filesystem. RBAC roles scoped to individual namespaces. ServiceAccounts per workload with automountServiceAccountToken disabled. Kyverno policies enforce these requirements.",
+          "components": ["policies/restricted", "policies/custom/require-security-context.yaml"],
+          "evidence": ["Kyverno ClusterPolicy manifests", "Pod SecurityContext in Helm templates"]
+        },
+        {
+          "id": "AC.L2-3.1.6",
+          "title": "Non-Privileged Account Use",
+          "nist-171-ref": "3.1.6",
+          "nist-800-53-ref": "AC-6(2)",
+          "status": "implemented",
+          "implementation": "Kyverno policies enforce non-root container execution and block privileged containers. SSH access to nodes requires individual user accounts (no shared root). Keycloak enforces role-based access with separate privileged and non-privileged groups.",
+          "components": ["policies/restricted/require-run-as-nonroot.yaml", "policies/baseline/disallow-privileged.yaml"],
+          "evidence": ["Kyverno ClusterPolicy manifests", "Ansible SSH hardening configuration"]
+        },
+        {
+          "id": "AC.L2-3.1.7",
+          "title": "Privileged Functions",
+          "nist-171-ref": "3.1.7",
+          "nist-800-53-ref": "AC-6(9), AC-6(10)",
+          "status": "implemented",
+          "implementation": "Kyverno disallow-privileged and disallow-privilege-escalation policies prevent non-privileged users from executing privileged functions. Kubernetes audit logging captures all privileged operations. Istio access logs record privileged API calls.",
+          "components": ["policies/baseline/disallow-privileged.yaml", "policies/restricted/disallow-privilege-escalation.yaml", "platform/core/logging"],
+          "evidence": ["Kyverno ClusterPolicy manifests", "Kubernetes audit policy"]
+        },
+        {
+          "id": "AC.L2-3.1.8",
+          "title": "Unsuccessful Logon Attempts",
+          "nist-171-ref": "3.1.8",
+          "nist-800-53-ref": "AC-7",
+          "status": "implemented",
+          "implementation": "Keycloak enforces brute force protection with configurable lockout thresholds, lockout duration, and IP-based rate limiting. Failed login attempts are logged and forwarded to Loki. Prometheus alerts on excessive failed authentication attempts.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak brute force configuration", "Prometheus alert rules"]
+        },
+        {
+          "id": "AC.L2-3.1.9",
+          "title": "Privacy and Security Notices",
+          "nist-171-ref": "3.1.9",
+          "nist-800-53-ref": "AC-8",
+          "status": "partially-implemented",
+          "implementation": "Keycloak login page can display privacy and security notices. SSH login banners are configured via Ansible os-hardening role. Additional notices on platform UIs require per-application configuration.",
+          "components": ["platform/addons/keycloak", "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"],
+          "evidence": ["Keycloak theme configuration", "SSH banner template"]
+        },
+        {
+          "id": "AC.L2-3.1.10",
+          "title": "Session Lock",
+          "nist-171-ref": "3.1.10",
+          "nist-800-53-ref": "AC-11",
+          "status": "implemented",
+          "implementation": "Keycloak enforces session timeouts with configurable idle and absolute session lifetimes. SSH sessions have idle timeouts configured via Ansible (ClientAliveInterval/ClientAliveCountMax). Grafana sessions expire based on Keycloak SSO session.",
+          "components": ["platform/addons/keycloak", "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"],
+          "evidence": ["Keycloak session policy", "SSH configuration"]
+        },
+        {
+          "id": "AC.L2-3.1.11",
+          "title": "Session Termination",
+          "nist-171-ref": "3.1.11",
+          "nist-800-53-ref": "AC-12",
+          "status": "implemented",
+          "implementation": "Keycloak automatically terminates sessions after configurable inactivity period. Users can manually terminate sessions via Keycloak account console. Administrator can revoke active sessions. SSH sessions terminated after inactivity timeout.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak session configuration"]
+        },
+        {
+          "id": "AC.L2-3.1.12",
+          "title": "Control Remote Access",
+          "nist-171-ref": "3.1.12",
+          "nist-800-53-ref": "AC-17",
+          "status": "implemented",
+          "implementation": "All management access through Keycloak SSO with MFA. Istio gateway provides TLS termination for all external access. SSH hardened via Ansible with key-only authentication, restricted ciphers, and session timeouts.",
+          "components": ["platform/addons/keycloak", "platform/core/istio", "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"],
+          "evidence": ["Keycloak OIDC configuration", "Istio Gateway manifest", "SSH configuration"]
+        },
+        {
+          "id": "AC.L2-3.1.13",
+          "title": "Remote Access Confidentiality",
+          "nist-171-ref": "3.1.13",
+          "nist-800-53-ref": "AC-17(2)",
+          "status": "implemented",
+          "implementation": "All remote access encrypted via TLS 1.2+ at the Istio gateway. SSH connections use FIPS-approved cryptographic algorithms. VPN or bastion host required for direct node access in production environments.",
+          "components": ["platform/core/istio", "platform/core/cert-manager", "infrastructure/ansible/roles/os-hardening/tasks/crypto-policy.yml"],
+          "evidence": ["Istio Gateway TLS configuration", "cert-manager Certificate resources"]
+        },
+        {
+          "id": "AC.L2-3.1.14",
+          "title": "Remote Access Routing",
+          "nist-171-ref": "3.1.14",
+          "nist-800-53-ref": "AC-17(3)",
+          "status": "implemented",
+          "implementation": "All external access routes through the Istio ingress gateway as a managed access control point. No direct access to internal services from external networks. NetworkPolicies enforce traffic routing through approved paths.",
+          "components": ["platform/core/istio"],
+          "evidence": ["Istio Gateway and VirtualService manifests", "NetworkPolicy manifests"]
+        },
+        {
+          "id": "AC.L2-3.1.15",
+          "title": "Privileged Remote Access",
+          "nist-171-ref": "3.1.15",
+          "nist-800-53-ref": "AC-17(4)",
+          "status": "implemented",
+          "implementation": "Privileged remote access to management interfaces requires Keycloak MFA. SSH access to nodes requires key-based authentication with no password fallback. All privileged remote sessions are logged to Loki.",
+          "components": ["platform/addons/keycloak", "infrastructure/ansible/roles/os-hardening"],
+          "evidence": ["Keycloak MFA configuration", "SSH key-only auth configuration"]
+        },
+        {
+          "id": "AC.L2-3.1.16",
+          "title": "Wireless Access Authorization",
+          "nist-171-ref": "3.1.16",
+          "nist-800-53-ref": "AC-18",
+          "status": "not-applicable",
+          "implementation": "The SRE platform is a software platform running on infrastructure. Wireless access control is the responsibility of the hosting environment's physical security controls.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "AC.L2-3.1.17",
+          "title": "Wireless Access Protection",
+          "nist-171-ref": "3.1.17",
+          "nist-800-53-ref": "AC-18(1)",
+          "status": "not-applicable",
+          "implementation": "Wireless access protection is the responsibility of the hosting environment's physical and network security controls.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "AC.L2-3.1.18",
+          "title": "Mobile Device Connection",
+          "nist-171-ref": "3.1.18",
+          "nist-800-53-ref": "AC-19",
+          "status": "not-applicable",
+          "implementation": "Mobile device management is outside the scope of the SRE platform. Platform UIs accessed via mobile devices are protected by Keycloak SSO with MFA.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "AC.L2-3.1.19",
+          "title": "Encrypt CUI on Mobile",
+          "nist-171-ref": "3.1.19",
+          "nist-800-53-ref": "AC-19(5)",
+          "status": "not-applicable",
+          "implementation": "Mobile device encryption is outside the scope of the SRE platform.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "AC.L2-3.1.20",
+          "title": "External Connections",
+          "nist-171-ref": "3.1.20",
+          "nist-800-53-ref": "AC-20",
+          "status": "implemented",
+          "implementation": "External system connections are controlled via Istio egress gateway and NetworkPolicies. Kyverno policies restrict egress destinations. NeuVector monitors and can block unauthorized external connections.",
+          "components": ["platform/core/istio", "platform/core/runtime-security"],
+          "evidence": ["Istio egress configuration", "NetworkPolicy egress rules"]
+        },
+        {
+          "id": "AC.L2-3.1.21",
+          "title": "Portable Storage",
+          "nist-171-ref": "3.1.21",
+          "nist-800-53-ref": "AC-20(2)",
+          "status": "not-applicable",
+          "implementation": "Portable storage device control is outside the scope of the SRE platform and is the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "AC.L2-3.1.22",
+          "title": "Control Public Information",
+          "nist-171-ref": "3.1.22",
+          "nist-800-53-ref": "AC-22",
+          "status": "partially-implemented",
+          "implementation": "Istio AuthorizationPolicies and NetworkPolicies control which information is publicly accessible. Further organizational policy is required to define what constitutes public information.",
+          "components": ["platform/core/istio"],
+          "evidence": ["Istio AuthorizationPolicy manifests"]
+        }
+      ]
+    },
+    {
+      "id": "AT",
+      "name": "Awareness and Training",
+      "nist-family": "3.2",
+      "total-practices": 3,
+      "implemented": 0,
+      "partially-implemented": 1,
+      "planned": 2,
+      "practices": [
+        {
+          "id": "AT.L2-3.2.1",
+          "title": "Role-Based Risk Awareness",
+          "nist-171-ref": "3.2.1",
+          "nist-800-53-ref": "AT-2",
+          "status": "planned",
+          "implementation": "Platform documentation provides security awareness for platform administrators and developers. Formal role-based security awareness training program to be established.",
+          "components": ["docs/"],
+          "evidence": ["Developer guide", "Operator guide", "Security guide"]
+        },
+        {
+          "id": "AT.L2-3.2.2",
+          "title": "Role-Based Training",
+          "nist-171-ref": "3.2.2",
+          "nist-800-53-ref": "AT-3",
+          "status": "partially-implemented",
+          "implementation": "Platform documentation and onboarding guides provide role-specific technical training. Formal cybersecurity training program to be established as an organizational control.",
+          "components": ["docs/developer-guide.md", "docs/operator-guide.md"],
+          "evidence": ["Documentation files"]
+        },
+        {
+          "id": "AT.L2-3.2.3",
+          "title": "Insider Threat Awareness",
+          "nist-171-ref": "3.2.3",
+          "nist-800-53-ref": "AT-2(2)",
+          "status": "planned",
+          "implementation": "NeuVector behavioral monitoring provides technical insider threat detection. Formal insider threat awareness training to be established as an organizational control.",
+          "components": ["platform/core/runtime-security"],
+          "evidence": ["NeuVector behavioral learning profiles"]
+        }
+      ]
+    },
+    {
+      "id": "AU",
+      "name": "Audit and Accountability",
+      "nist-family": "3.3",
+      "total-practices": 9,
+      "implemented": 9,
+      "partially-implemented": 0,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "AU.L2-3.3.1",
+          "title": "System Auditing",
+          "nist-171-ref": "3.3.1",
+          "nist-800-53-ref": "AU-2",
+          "status": "implemented",
+          "implementation": "Kubernetes API audit policy captures all authentication, authorization, and CRUD operations. Istio access logs capture all mesh traffic. OS auditd captures privileged operations. All events forwarded to Loki via Alloy.",
+          "components": ["platform/core/logging", "infrastructure/ansible/roles/os-hardening/tasks/auditd.yml"],
+          "evidence": ["Alloy DaemonSet configuration", "auditd rules"]
+        },
+        {
+          "id": "AU.L2-3.3.2",
+          "title": "User Accountability",
+          "nist-171-ref": "3.3.2",
+          "nist-800-53-ref": "AU-3, AU-3(1)",
+          "status": "implemented",
+          "implementation": "Structured JSON logs include user identity (Keycloak subject, Kubernetes user, SPIFFE identity), timestamp, action, resource, and outcome. Correlation IDs enable tracing actions across components.",
+          "components": ["platform/core/logging"],
+          "evidence": ["Alloy log pipeline configuration", "Loki LogQL queries"]
+        },
+        {
+          "id": "AU.L2-3.3.3",
+          "title": "Event Review",
+          "nist-171-ref": "3.3.3",
+          "nist-800-53-ref": "AU-6",
+          "status": "implemented",
+          "implementation": "Grafana dashboards provide audit event review with pre-built queries for authentication events, privileged operations, policy violations, and security incidents. LogQL enables ad-hoc investigation.",
+          "components": ["platform/core/monitoring"],
+          "evidence": ["Grafana dashboard configurations"]
+        },
+        {
+          "id": "AU.L2-3.3.4",
+          "title": "Audit Failure Alerting",
+          "nist-171-ref": "3.3.4",
+          "nist-800-53-ref": "AU-5",
+          "status": "implemented",
+          "implementation": "Prometheus alerts on Loki ingestion failures, Alloy DaemonSet pod failures, disk pressure, and auditd service failures. AlertManager routes to configured receivers.",
+          "components": ["platform/core/monitoring", "platform/core/logging"],
+          "evidence": ["PrometheusRule for audit pipeline health"]
+        },
+        {
+          "id": "AU.L2-3.3.5",
+          "title": "Audit Correlation",
+          "nist-171-ref": "3.3.5",
+          "nist-800-53-ref": "AU-6(3)",
+          "status": "implemented",
+          "implementation": "Grafana provides unified view of metrics (Prometheus), logs (Loki), and traces (Tempo) enabling correlation across data sources. Request IDs and trace IDs enable cross-component event correlation.",
+          "components": ["platform/core/monitoring", "platform/core/logging"],
+          "evidence": ["Grafana data source configurations", "Tempo trace integration"]
+        },
+        {
+          "id": "AU.L2-3.3.6",
+          "title": "Reduction and Reporting",
+          "nist-171-ref": "3.3.6",
+          "nist-800-53-ref": "AU-7",
+          "status": "implemented",
+          "implementation": "Loki provides on-demand audit log reduction via LogQL queries with filtering, aggregation, and pattern matching. Grafana dashboards generate compliance reports. Reports exportable as PDF/PNG.",
+          "components": ["platform/core/logging", "platform/core/monitoring"],
+          "evidence": ["Grafana dashboard exports", "LogQL query library"]
+        },
+        {
+          "id": "AU.L2-3.3.7",
+          "title": "Authoritative Time Source",
+          "nist-171-ref": "3.3.7",
+          "nist-800-53-ref": "AU-8",
+          "status": "implemented",
+          "implementation": "NTP (chronyd) configured on all nodes via Ansible. All logs use UTC timestamps. NTP synchronization status monitored via Prometheus.",
+          "components": ["infrastructure/ansible/roles/os-hardening"],
+          "evidence": ["Chrony configuration", "NTP Prometheus metrics"]
+        },
+        {
+          "id": "AU.L2-3.3.8",
+          "title": "Audit Protection",
+          "nist-171-ref": "3.3.8",
+          "nist-800-53-ref": "AU-9",
+          "status": "implemented",
+          "implementation": "Loki log storage encrypted at rest. RBAC restricts access to logging namespace. Retention policies prevent premature deletion. Kubernetes RBAC prevents tenant access to audit data.",
+          "components": ["platform/core/logging"],
+          "evidence": ["Loki storage configuration", "Namespace RBAC"]
+        },
+        {
+          "id": "AU.L2-3.3.9",
+          "title": "Audit Management",
+          "nist-171-ref": "3.3.9",
+          "nist-800-53-ref": "AU-9(4)",
+          "status": "implemented",
+          "implementation": "Audit log management limited to platform-admin role via Keycloak group mapping. Logging namespace protected by NetworkPolicies and Kubernetes RBAC. Audit configuration managed exclusively via GitOps.",
+          "components": ["platform/core/logging", "platform/addons/keycloak"],
+          "evidence": ["Kubernetes RBAC for logging namespace", "Keycloak group mappings"]
+        }
+      ]
+    },
+    {
+      "id": "CM",
+      "name": "Configuration Management",
+      "nist-family": "3.4",
+      "total-practices": 9,
+      "implemented": 9,
+      "partially-implemented": 0,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "CM.L2-3.4.1",
+          "title": "System Baselining",
+          "nist-171-ref": "3.4.1",
+          "nist-800-53-ref": "CM-2",
+          "status": "implemented",
+          "implementation": "Git repository is the authoritative baseline. Flux CD reconciles cluster state continuously. All component versions pinned. Complete change history in Git.",
+          "components": ["platform/flux-system"],
+          "evidence": ["Flux Kustomization manifests", "HelmRelease version pins"]
+        },
+        {
+          "id": "CM.L2-3.4.2",
+          "title": "Security Configuration Enforcement",
+          "nist-171-ref": "3.4.2",
+          "nist-800-53-ref": "CM-6",
+          "status": "implemented",
+          "implementation": "Ansible STIG roles harden OS. RKE2 CIS profile hardens Kubernetes. Kyverno policies enforce workload configurations. Flux ensures configurations are not manually overridden.",
+          "components": ["infrastructure/ansible/roles/os-hardening", "platform/core/kyverno", "policies/"],
+          "evidence": ["Ansible role tasks", "Kyverno ClusterPolicies", "Flux reconciliation status"]
+        },
+        {
+          "id": "CM.L2-3.4.3",
+          "title": "System Change Management",
+          "nist-171-ref": "3.4.3",
+          "nist-800-53-ref": "CM-3",
+          "status": "implemented",
+          "implementation": "All changes via Git PR workflow with branch protection, peer review, CI validation, and conventional commits. Flux automatically applies approved changes.",
+          "components": ["platform/flux-system"],
+          "evidence": ["Git commit history", "PR review records"]
+        },
+        {
+          "id": "CM.L2-3.4.4",
+          "title": "Security Impact Analysis",
+          "nist-171-ref": "3.4.4",
+          "nist-800-53-ref": "CM-4",
+          "status": "implemented",
+          "implementation": "CI pipeline runs linting, policy tests, and compliance validation before merge. Flux provides dry-run capability (flux diff). Kyverno policy tests validate security impact of configuration changes.",
+          "components": ["policies/tests/", "platform/flux-system"],
+          "evidence": ["CI pipeline results", "Kyverno test results"]
+        },
+        {
+          "id": "CM.L2-3.4.5",
+          "title": "Access Restrictions for Change",
+          "nist-171-ref": "3.4.5",
+          "nist-800-53-ref": "CM-5",
+          "status": "implemented",
+          "implementation": "Branch protection requires peer review. Flux RBAC restricts reconciliation scope. Kyverno prevents direct kubectl modifications to platform resources. Keycloak RBAC limits change authority.",
+          "components": ["platform/flux-system", "policies/custom/"],
+          "evidence": ["Branch protection rules", "Kubernetes RBAC", "Kyverno policies"]
+        },
+        {
+          "id": "CM.L2-3.4.6",
+          "title": "Least Functionality",
+          "nist-171-ref": "3.4.6",
+          "nist-800-53-ref": "CM-7",
+          "status": "implemented",
+          "implementation": "Kyverno restricts capabilities, volumes, and host access. NeuVector blocks unauthorized processes. SELinux enforces mandatory access control. Minimal base images (distroless/Chainguard) reduce attack surface.",
+          "components": ["policies/restricted", "platform/core/runtime-security"],
+          "evidence": ["Kyverno ClusterPolicies", "NeuVector process profiles"]
+        },
+        {
+          "id": "CM.L2-3.4.7",
+          "title": "Nonessential Functionality",
+          "nist-171-ref": "3.4.7",
+          "nist-800-53-ref": "CM-7(1)",
+          "status": "implemented",
+          "implementation": "Container images use minimal base images with only essential packages. Kyverno blocks containers with unnecessary capabilities. NeuVector behavioral learning identifies and can block non-essential processes.",
+          "components": ["policies/restricted/require-drop-all-capabilities.yaml", "platform/core/runtime-security"],
+          "evidence": ["Container image manifests", "NeuVector process whitelists"]
+        },
+        {
+          "id": "CM.L2-3.4.8",
+          "title": "Application Execution Policy",
+          "nist-171-ref": "3.4.8",
+          "nist-800-53-ref": "CM-7(5)",
+          "status": "implemented",
+          "implementation": "Kyverno restrict-image-registries allows only approved Harbor registry. Kyverno verify-image-signatures enforces Cosign verification. NeuVector admission control provides additional image validation.",
+          "components": ["policies/custom/restrict-image-registries.yaml", "policies/custom/verify-image-signatures.yaml"],
+          "evidence": ["Kyverno ClusterPolicies", "NeuVector admission rules"]
+        },
+        {
+          "id": "CM.L2-3.4.9",
+          "title": "User-Installed Software",
+          "nist-171-ref": "3.4.9",
+          "nist-800-53-ref": "CM-11",
+          "status": "implemented",
+          "implementation": "Kyverno restricts images to harbor.sre.internal only. Image signature verification prevents unsigned software. Tenants can only deploy to their authorized namespaces via GitOps.",
+          "components": ["policies/custom/restrict-image-registries.yaml", "policies/custom/verify-image-signatures.yaml"],
+          "evidence": ["Kyverno PolicyReports showing enforcement"]
+        }
+      ]
+    },
+    {
+      "id": "IA",
+      "name": "Identification and Authentication",
+      "nist-family": "3.5",
+      "total-practices": 11,
+      "implemented": 9,
+      "partially-implemented": 2,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "IA.L2-3.5.1",
+          "title": "Identification",
+          "nist-171-ref": "3.5.1",
+          "nist-800-53-ref": "IA-2",
+          "status": "implemented",
+          "implementation": "Keycloak SSO with OIDC provides unique identification for all users. OIDC integration with Kubernetes API server maps Keycloak identities to Kubernetes subjects.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak realm configuration", "Kubernetes OIDC configuration"]
+        },
+        {
+          "id": "IA.L2-3.5.2",
+          "title": "Authentication",
+          "nist-171-ref": "3.5.2",
+          "nist-800-53-ref": "IA-2",
+          "status": "implemented",
+          "implementation": "Keycloak authenticates all users with configurable authentication flows. Supports password, MFA (TOTP, WebAuthn), Kerberos, and certificate-based authentication.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak authentication flow configuration"]
+        },
+        {
+          "id": "IA.L2-3.5.3",
+          "title": "Multifactor Authentication",
+          "nist-171-ref": "3.5.3",
+          "nist-800-53-ref": "IA-2(1), IA-2(2)",
+          "status": "implemented",
+          "implementation": "Keycloak enforces MFA (TOTP or WebAuthn) for all privileged access to platform management interfaces including Grafana, Harbor, NeuVector, and Kubernetes API.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak MFA authentication flow"]
+        },
+        {
+          "id": "IA.L2-3.5.4",
+          "title": "Replay-Resistant Authentication",
+          "nist-171-ref": "3.5.4",
+          "nist-800-53-ref": "IA-2(8)",
+          "status": "implemented",
+          "implementation": "Keycloak OIDC tokens include nonce and expiration to prevent replay. Istio mTLS uses ephemeral session keys. SSH connections use challenge-response with key exchange.",
+          "components": ["platform/addons/keycloak", "platform/core/istio"],
+          "evidence": ["OIDC token configuration", "Istio mTLS settings"]
+        },
+        {
+          "id": "IA.L2-3.5.5",
+          "title": "Identifier Management",
+          "nist-171-ref": "3.5.5",
+          "nist-800-53-ref": "IA-4",
+          "status": "implemented",
+          "implementation": "Keycloak manages user identifiers with unique usernames. Kubernetes ServiceAccounts provide workload identifiers. Istio SPIFFE provides cryptographic workload identity.",
+          "components": ["platform/addons/keycloak", "platform/core/istio"],
+          "evidence": ["Keycloak user management", "ServiceAccount manifests"]
+        },
+        {
+          "id": "IA.L2-3.5.6",
+          "title": "Authenticator Management",
+          "nist-171-ref": "3.5.6",
+          "nist-800-53-ref": "IA-5",
+          "status": "implemented",
+          "implementation": "Keycloak password policies enforce complexity and expiration. cert-manager automates certificate rotation. OpenBao provides dynamic secret generation and rotation.",
+          "components": ["platform/addons/keycloak", "platform/core/cert-manager", "platform/core/openbao"],
+          "evidence": ["Keycloak password policy", "cert-manager Certificate resources", "OpenBao rotation policies"]
+        },
+        {
+          "id": "IA.L2-3.5.7",
+          "title": "Password Complexity",
+          "nist-171-ref": "3.5.7",
+          "nist-800-53-ref": "IA-5(1)",
+          "status": "implemented",
+          "implementation": "Keycloak enforces password complexity: minimum length, character diversity (uppercase, lowercase, digits, special characters), and password history to prevent reuse.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak password policy configuration"]
+        },
+        {
+          "id": "IA.L2-3.5.8",
+          "title": "Password Reuse",
+          "nist-171-ref": "3.5.8",
+          "nist-800-53-ref": "IA-5(1)",
+          "status": "implemented",
+          "implementation": "Keycloak maintains password history and prevents reuse of previously used passwords based on configurable history depth.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak password history configuration"]
+        },
+        {
+          "id": "IA.L2-3.5.9",
+          "title": "Temporary Passwords",
+          "nist-171-ref": "3.5.9",
+          "nist-800-53-ref": "IA-5(1)",
+          "status": "partially-implemented",
+          "implementation": "Keycloak supports temporary passwords that require change on first login. Organizational procedures for temporary password distribution to be documented.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak temporary password feature"]
+        },
+        {
+          "id": "IA.L2-3.5.10",
+          "title": "Cryptographically-Protected Passwords",
+          "nist-171-ref": "3.5.10",
+          "nist-800-53-ref": "IA-5(2)",
+          "status": "implemented",
+          "implementation": "Keycloak stores password hashes using PBKDF2. All authentication traffic encrypted via TLS. OpenBao secrets encrypted at rest and in transit.",
+          "components": ["platform/addons/keycloak", "platform/core/openbao"],
+          "evidence": ["Keycloak password hashing configuration", "TLS configuration"]
+        },
+        {
+          "id": "IA.L2-3.5.11",
+          "title": "Obscure Feedback",
+          "nist-171-ref": "3.5.11",
+          "nist-800-53-ref": "IA-6",
+          "status": "partially-implemented",
+          "implementation": "Keycloak login page obscures password entry. Platform UIs inherit Keycloak SSO behavior. Custom applications should be configured to follow this pattern.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak login page configuration"]
+        }
+      ]
+    },
+    {
+      "id": "IR",
+      "name": "Incident Response",
+      "nist-family": "3.6",
+      "total-practices": 3,
+      "implemented": 2,
+      "partially-implemented": 1,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "IR.L2-3.6.1",
+          "title": "Incident Handling",
+          "nist-171-ref": "3.6.1",
+          "nist-800-53-ref": "IR-2, IR-4, IR-5, IR-6",
+          "status": "implemented",
+          "implementation": "NeuVector alerts integrated into Prometheus/Grafana alerting pipeline. AlertManager routes incidents to configured receivers with linked runbooks for guided response.",
+          "components": ["platform/core/runtime-security", "platform/core/monitoring"],
+          "evidence": ["PrometheusRule manifests", "AlertManager routing configuration"]
+        },
+        {
+          "id": "IR.L2-3.6.2",
+          "title": "Incident Reporting",
+          "nist-171-ref": "3.6.2",
+          "nist-800-53-ref": "IR-6",
+          "status": "implemented",
+          "implementation": "Grafana dashboards provide exportable incident reports with timeline views and affected resources. Kyverno PolicyReports provide compliance violation history.",
+          "components": ["platform/core/monitoring", "platform/core/kyverno"],
+          "evidence": ["Grafana dashboard configurations"]
+        },
+        {
+          "id": "IR.L2-3.6.3",
+          "title": "Incident Response Testing",
+          "nist-171-ref": "3.6.3",
+          "nist-800-53-ref": "IR-3",
+          "status": "partially-implemented",
+          "implementation": "NeuVector provides simulated attack detection capabilities. Formal incident response testing procedures to be documented and scheduled.",
+          "components": ["platform/core/runtime-security"],
+          "evidence": ["NeuVector attack simulation capabilities"]
+        }
+      ]
+    },
+    {
+      "id": "MA",
+      "name": "Maintenance",
+      "nist-family": "3.7",
+      "total-practices": 6,
+      "implemented": 3,
+      "partially-implemented": 2,
+      "planned": 1,
+      "practices": [
+        {
+          "id": "MA.L2-3.7.1",
+          "title": "Perform Maintenance",
+          "nist-171-ref": "3.7.1",
+          "nist-800-53-ref": "MA-2",
+          "status": "implemented",
+          "implementation": "Platform maintenance performed via GitOps (Flux CD). HelmRelease version updates are tracked in Git. Ansible playbooks provide OS-level maintenance with idempotent execution.",
+          "components": ["platform/flux-system", "infrastructure/ansible"],
+          "evidence": ["Git commit history", "Ansible playbook run logs"]
+        },
+        {
+          "id": "MA.L2-3.7.2",
+          "title": "System Maintenance Control",
+          "nist-171-ref": "3.7.2",
+          "nist-800-53-ref": "MA-3",
+          "status": "partially-implemented",
+          "implementation": "All maintenance tools (kubectl, flux CLI, ansible) accessed via authenticated sessions. Tool versions pinned. Additional organizational controls for maintenance tool approval to be documented.",
+          "components": ["platform/flux-system"],
+          "evidence": ["Tool version configuration"]
+        },
+        {
+          "id": "MA.L2-3.7.3",
+          "title": "Maintenance Tool Oversight",
+          "nist-171-ref": "3.7.3",
+          "nist-800-53-ref": "MA-3(1)",
+          "status": "partially-implemented",
+          "implementation": "Kubernetes audit logs capture all kubectl commands. Flux logs capture all reconciliation events. Additional organizational oversight procedures to be documented.",
+          "components": ["platform/core/logging"],
+          "evidence": ["Kubernetes audit logs"]
+        },
+        {
+          "id": "MA.L2-3.7.4",
+          "title": "Media Inspection",
+          "nist-171-ref": "3.7.4",
+          "nist-800-53-ref": "MA-3(2)",
+          "status": "implemented",
+          "implementation": "All container images scanned by Harbor/Trivy before deployment. Image signatures verified by Kyverno. No external media introduced to the platform without scanning.",
+          "components": ["platform/addons/harbor", "policies/custom/verify-image-signatures.yaml"],
+          "evidence": ["Harbor scan results", "Kyverno image verification"]
+        },
+        {
+          "id": "MA.L2-3.7.5",
+          "title": "Nonlocal Maintenance",
+          "nist-171-ref": "3.7.5",
+          "nist-800-53-ref": "MA-4",
+          "status": "implemented",
+          "implementation": "All maintenance performed remotely via authenticated, encrypted sessions (SSH with key auth, kubectl via Keycloak OIDC, Flux GitOps). MFA required for privileged maintenance.",
+          "components": ["platform/addons/keycloak", "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"],
+          "evidence": ["SSH configuration", "Keycloak MFA settings"]
+        },
+        {
+          "id": "MA.L2-3.7.6",
+          "title": "Maintenance Personnel",
+          "nist-171-ref": "3.7.6",
+          "nist-800-53-ref": "MA-5",
+          "status": "planned",
+          "implementation": "Keycloak provides role-based access for maintenance personnel. Organizational policies for maintenance personnel authorization to be documented.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak role assignments"]
+        }
+      ]
+    },
+    {
+      "id": "MP",
+      "name": "Media Protection",
+      "nist-family": "3.8",
+      "total-practices": 9,
+      "implemented": 4,
+      "partially-implemented": 2,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "MP.L2-3.8.1",
+          "title": "Media Protection",
+          "nist-171-ref": "3.8.1",
+          "nist-800-53-ref": "MP-2",
+          "status": "implemented",
+          "implementation": "OpenBao access policies restrict secret retrieval to authorized workloads. Kubernetes Secrets encrypted at rest. Persistent volume data protected by storage-level encryption.",
+          "components": ["platform/core/openbao"],
+          "evidence": ["OpenBao access policies", "RKE2 encryption configuration"]
+        },
+        {
+          "id": "MP.L2-3.8.2",
+          "title": "Media Access",
+          "nist-171-ref": "3.8.2",
+          "nist-800-53-ref": "MP-2",
+          "status": "implemented",
+          "implementation": "Digital media access controlled via Kubernetes RBAC and OpenBao policies. Physical media access is the responsibility of the hosting environment.",
+          "components": ["platform/core/openbao"],
+          "evidence": ["Kubernetes RBAC", "OpenBao policies"]
+        },
+        {
+          "id": "MP.L2-3.8.3",
+          "title": "Media Sanitization",
+          "nist-171-ref": "3.8.3",
+          "nist-800-53-ref": "MP-6",
+          "status": "partially-implemented",
+          "implementation": "Container image layers are immutable and garbage collected by Harbor. Persistent volume cleanup is handled by Kubernetes. Physical media sanitization is an organizational responsibility.",
+          "components": ["platform/addons/harbor"],
+          "evidence": ["Harbor garbage collection policy"]
+        },
+        {
+          "id": "MP.L2-3.8.4",
+          "title": "Media Marking",
+          "nist-171-ref": "3.8.4",
+          "nist-800-53-ref": "MP-3",
+          "status": "not-applicable",
+          "implementation": "Physical media marking is outside the scope of the SRE platform.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "MP.L2-3.8.5",
+          "title": "Media Accountability",
+          "nist-171-ref": "3.8.5",
+          "nist-800-53-ref": "MP-4",
+          "status": "partially-implemented",
+          "implementation": "Harbor maintains a complete inventory of container images with SBOMs. Digital media tracking is automated. Physical media accountability is an organizational responsibility.",
+          "components": ["platform/addons/harbor"],
+          "evidence": ["Harbor image inventory", "SBOM records"]
+        },
+        {
+          "id": "MP.L2-3.8.6",
+          "title": "Portable Storage Encryption",
+          "nist-171-ref": "3.8.6",
+          "nist-800-53-ref": "MP-5(4)",
+          "status": "not-applicable",
+          "implementation": "Portable storage device encryption is outside the scope of the SRE platform.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "MP.L2-3.8.7",
+          "title": "Removable Media",
+          "nist-171-ref": "3.8.7",
+          "nist-800-53-ref": "MP-7",
+          "status": "not-applicable",
+          "implementation": "Removable media restrictions are the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "MP.L2-3.8.8",
+          "title": "Shared Media",
+          "nist-171-ref": "3.8.8",
+          "nist-800-53-ref": "MP-7(1)",
+          "status": "not-applicable",
+          "implementation": "Shared media prohibitions are the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "MP.L2-3.8.9",
+          "title": "Protect Backups",
+          "nist-171-ref": "3.8.9",
+          "nist-800-53-ref": "CP-9",
+          "status": "implemented",
+          "implementation": "Velero backups stored in S3-compatible storage with encryption at rest. Backup access controlled via RBAC and cloud IAM policies. Backup integrity verified via restore testing.",
+          "components": ["platform/core/backup"],
+          "evidence": ["Velero backup configuration", "S3 encryption settings"]
+        }
+      ]
+    },
+    {
+      "id": "PE",
+      "name": "Physical Protection",
+      "nist-family": "3.10",
+      "total-practices": 6,
+      "implemented": 0,
+      "partially-implemented": 0,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "PE.L2-3.10.1",
+          "title": "Limit Physical Access",
+          "nist-171-ref": "3.10.1",
+          "nist-800-53-ref": "PE-2, PE-6",
+          "status": "not-applicable",
+          "implementation": "Physical access control is the responsibility of the hosting environment (data center, cloud provider).",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "PE.L2-3.10.2",
+          "title": "Monitor Physical Facility",
+          "nist-171-ref": "3.10.2",
+          "nist-800-53-ref": "PE-6",
+          "status": "not-applicable",
+          "implementation": "Physical facility monitoring is the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "PE.L2-3.10.3",
+          "title": "Escort Visitors",
+          "nist-171-ref": "3.10.3",
+          "nist-800-53-ref": "PE-3",
+          "status": "not-applicable",
+          "implementation": "Visitor escort is the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "PE.L2-3.10.4",
+          "title": "Physical Access Logs",
+          "nist-171-ref": "3.10.4",
+          "nist-800-53-ref": "PE-8",
+          "status": "not-applicable",
+          "implementation": "Physical access logging is the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "PE.L2-3.10.5",
+          "title": "Manage Physical Access",
+          "nist-171-ref": "3.10.5",
+          "nist-800-53-ref": "PE-3",
+          "status": "not-applicable",
+          "implementation": "Physical access management is the responsibility of the hosting environment.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "PE.L2-3.10.6",
+          "title": "Alternative Work Sites",
+          "nist-171-ref": "3.10.6",
+          "nist-800-53-ref": "PE-17",
+          "status": "not-applicable",
+          "implementation": "Alternative work site controls are the responsibility of the organization.",
+          "components": [],
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "PS",
+      "name": "Personnel Security",
+      "nist-family": "3.9",
+      "total-practices": 2,
+      "implemented": 0,
+      "partially-implemented": 2,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "PS.L2-3.9.1",
+          "title": "Screen Individuals",
+          "nist-171-ref": "3.9.1",
+          "nist-800-53-ref": "PS-3",
+          "status": "partially-implemented",
+          "implementation": "Personnel screening is an organizational control. The platform supports access restrictions through Keycloak RBAC that can be applied after screening decisions.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak user management"]
+        },
+        {
+          "id": "PS.L2-3.9.2",
+          "title": "Personnel Actions",
+          "nist-171-ref": "3.9.2",
+          "nist-800-53-ref": "PS-4, PS-5",
+          "status": "partially-implemented",
+          "implementation": "Keycloak supports account deactivation and group removal for personnel transfers/terminations. Automated account deprovisioning can be configured via LDAP/AD federation sync.",
+          "components": ["platform/addons/keycloak"],
+          "evidence": ["Keycloak account lifecycle configuration"]
+        }
+      ]
+    },
+    {
+      "id": "RA",
+      "name": "Risk Assessment",
+      "nist-family": "3.11",
+      "total-practices": 3,
+      "implemented": 2,
+      "partially-implemented": 1,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "RA.L2-3.11.1",
+          "title": "Risk Assessments",
+          "nist-171-ref": "3.11.1",
+          "nist-800-53-ref": "RA-3",
+          "status": "partially-implemented",
+          "implementation": "Technical risk assessment is supported by NeuVector vulnerability scanning, Trivy image analysis, and Kyverno compliance reports. Formal organizational risk assessment process to be documented.",
+          "components": ["platform/core/runtime-security", "platform/addons/harbor"],
+          "evidence": ["NeuVector risk reports", "Harbor vulnerability reports"]
+        },
+        {
+          "id": "RA.L2-3.11.2",
+          "title": "Vulnerability Scanning",
+          "nist-171-ref": "3.11.2",
+          "nist-800-53-ref": "RA-5",
+          "status": "implemented",
+          "implementation": "Harbor + Trivy for image scanning on push. NeuVector for runtime vulnerability scanning. CIS benchmark scanning on all nodes. Kyverno prevents deployment of unscanned images.",
+          "components": ["platform/addons/harbor", "platform/core/runtime-security"],
+          "evidence": ["Harbor scan results", "NeuVector vulnerability dashboard"]
+        },
+        {
+          "id": "RA.L2-3.11.3",
+          "title": "Vulnerability Remediation",
+          "nist-171-ref": "3.11.3",
+          "nist-800-53-ref": "RA-5",
+          "status": "implemented",
+          "implementation": "Trivy severity-based alerts trigger remediation workflows. Flux enables automated image updates. Ansible applies OS patches. Prometheus alerts on CRITICAL/HIGH CVEs.",
+          "components": ["platform/addons/harbor", "platform/flux-system"],
+          "evidence": ["Alert rules", "Flux image update automation"]
+        }
+      ]
+    },
+    {
+      "id": "CA",
+      "name": "Security Assessment",
+      "nist-family": "3.12",
+      "total-practices": 4,
+      "implemented": 3,
+      "partially-implemented": 1,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "CA.L2-3.12.1",
+          "title": "Security Control Assessment",
+          "nist-171-ref": "3.12.1",
+          "nist-800-53-ref": "CA-2",
+          "status": "implemented",
+          "implementation": "Kyverno PolicyReports provide continuous security control assessment. NeuVector CIS benchmarks validate configuration. OSCAL SSP documents control implementations. STIG validation scripts automate compliance checking.",
+          "components": ["platform/core/kyverno", "platform/core/runtime-security", "compliance/oscal/"],
+          "evidence": ["Kyverno PolicyReports", "NeuVector CIS scan results", "OSCAL SSP"]
+        },
+        {
+          "id": "CA.L2-3.12.2",
+          "title": "Plan of Action",
+          "nist-171-ref": "3.12.2",
+          "nist-800-53-ref": "CA-5",
+          "status": "partially-implemented",
+          "implementation": "Kyverno background scanning identifies non-compliant resources requiring remediation. Formal POA&M tracking to be established as an organizational process.",
+          "components": ["platform/core/kyverno"],
+          "evidence": ["Kyverno PolicyReports"]
+        },
+        {
+          "id": "CA.L2-3.12.3",
+          "title": "Security Control Monitoring",
+          "nist-171-ref": "3.12.3",
+          "nist-800-53-ref": "CA-7",
+          "status": "implemented",
+          "implementation": "Prometheus + Grafana for real-time metrics. NeuVector for runtime anomaly detection. Kyverno for continuous policy compliance. Loki for log analysis. All integrated into Grafana dashboards.",
+          "components": ["platform/core/monitoring", "platform/core/runtime-security", "platform/core/kyverno"],
+          "evidence": ["Grafana dashboards", "Prometheus alerts"]
+        },
+        {
+          "id": "CA.L2-3.12.4",
+          "title": "System Security Plan",
+          "nist-171-ref": "3.12.4",
+          "nist-800-53-ref": "PL-2",
+          "status": "implemented",
+          "implementation": "OSCAL System Security Plan (SSP) documents all security control implementations. Control-to-component mapping maintained in machine-readable JSON format.",
+          "components": ["compliance/oscal/ssp.json", "compliance/nist-800-53-mappings/control-mapping.json"],
+          "evidence": ["OSCAL SSP", "Control mapping file"]
+        }
+      ]
+    },
+    {
+      "id": "SC",
+      "name": "System and Communications Protection",
+      "nist-family": "3.13",
+      "total-practices": 16,
+      "implemented": 13,
+      "partially-implemented": 2,
+      "planned": 1,
+      "practices": [
+        {
+          "id": "SC.L2-3.13.1",
+          "title": "Boundary Protection",
+          "nist-171-ref": "3.13.1",
+          "nist-800-53-ref": "SC-7",
+          "status": "implemented",
+          "implementation": "Istio ingress gateway provides single entry point. NetworkPolicies enforce default deny. NeuVector provides network microsegmentation. Istio egress gateway controls outbound traffic.",
+          "components": ["platform/core/istio", "platform/core/runtime-security"],
+          "evidence": ["Istio Gateway manifest", "NetworkPolicy manifests"]
+        },
+        {
+          "id": "SC.L2-3.13.2",
+          "title": "Security Engineering",
+          "nist-171-ref": "3.13.2",
+          "nist-800-53-ref": "SA-8",
+          "status": "implemented",
+          "implementation": "Platform designed with defense-in-depth: multiple security layers (Istio mTLS, NetworkPolicies, Kyverno policies, NeuVector runtime security, RBAC). Security architecture documented in docs/architecture.md.",
+          "components": ["docs/architecture.md"],
+          "evidence": ["Architecture documentation", "Security design documentation"]
+        },
+        {
+          "id": "SC.L2-3.13.3",
+          "title": "Security Function Separation",
+          "nist-171-ref": "3.13.3",
+          "nist-800-53-ref": "SC-3",
+          "status": "implemented",
+          "implementation": "Namespaces isolate platform components and tenant workloads. NetworkPolicies restrict cross-namespace traffic. Istio AuthorizationPolicies enforce service-level boundaries. Platform namespaces protected from tenant access.",
+          "components": ["platform/core/istio", "apps/tenants/*/network-policies/"],
+          "evidence": ["Namespace definitions", "NetworkPolicy manifests"]
+        },
+        {
+          "id": "SC.L2-3.13.4",
+          "title": "Shared Resource Control",
+          "nist-171-ref": "3.13.4",
+          "nist-800-53-ref": "SC-4",
+          "status": "implemented",
+          "implementation": "ResourceQuotas and LimitRanges prevent resource exhaustion. Each tenant namespace has isolated resource quotas. Kubernetes scheduler ensures fair resource distribution.",
+          "components": ["apps/tenants/*/resource-quota.yaml", "apps/tenants/*/limit-range.yaml"],
+          "evidence": ["ResourceQuota manifests", "LimitRange manifests"]
+        },
+        {
+          "id": "SC.L2-3.13.5",
+          "title": "Public Access System Separation",
+          "nist-171-ref": "3.13.5",
+          "nist-800-53-ref": "SC-5",
+          "status": "implemented",
+          "implementation": "Istio gateway separates public-facing services from internal services. NetworkPolicies enforce isolation between public and internal namespaces. AuthorizationPolicies restrict access to internal APIs.",
+          "components": ["platform/core/istio", "apps/tenants/*/network-policies/"],
+          "evidence": ["Istio VirtualService routing", "NetworkPolicy manifests"]
+        },
+        {
+          "id": "SC.L2-3.13.6",
+          "title": "Network Communication by Exception",
+          "nist-171-ref": "3.13.6",
+          "nist-800-53-ref": "SC-7(5)",
+          "status": "implemented",
+          "implementation": "All namespaces start with default-deny NetworkPolicies. Network communication only allowed via explicit NetworkPolicy rules. Istio AuthorizationPolicies provide additional allow-listing at the service level.",
+          "components": ["apps/tenants/*/network-policies/default-deny.yaml"],
+          "evidence": ["default-deny NetworkPolicy manifests", "explicit allow NetworkPolicies"]
+        },
+        {
+          "id": "SC.L2-3.13.7",
+          "title": "Split Tunneling",
+          "nist-171-ref": "3.13.7",
+          "nist-800-53-ref": "SC-7(7)",
+          "status": "partially-implemented",
+          "implementation": "Istio egress gateway can be configured to route all outbound traffic through a central point. NetworkPolicies restrict egress to approved destinations. Full split tunneling prevention requires additional network infrastructure controls.",
+          "components": ["platform/core/istio"],
+          "evidence": ["Istio egress gateway configuration"]
+        },
+        {
+          "id": "SC.L2-3.13.8",
+          "title": "CUI Encryption in Transit",
+          "nist-171-ref": "3.13.8",
+          "nist-800-53-ref": "SC-8",
+          "status": "implemented",
+          "implementation": "Istio mTLS STRICT mode encrypts all in-cluster traffic with TLS 1.2+ and FIPS-compliant cipher suites. TLS termination at Istio gateway for external traffic. RKE2 control plane communication uses mTLS.",
+          "components": ["platform/core/istio", "platform/core/cert-manager"],
+          "evidence": ["Istio PeerAuthentication", "cert-manager Certificate resources"]
+        },
+        {
+          "id": "SC.L2-3.13.9",
+          "title": "Network Disconnect",
+          "nist-171-ref": "3.13.9",
+          "nist-800-53-ref": "SC-10",
+          "status": "implemented",
+          "implementation": "Keycloak session timeouts terminate inactive connections. SSH ClientAliveInterval terminates idle SSH sessions. Istio circuit breakers handle connection failures.",
+          "components": ["platform/addons/keycloak", "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"],
+          "evidence": ["Keycloak session settings", "SSH configuration"]
+        },
+        {
+          "id": "SC.L2-3.13.10",
+          "title": "Key Management",
+          "nist-171-ref": "3.13.10",
+          "nist-800-53-ref": "SC-12",
+          "status": "implemented",
+          "implementation": "cert-manager automates TLS certificate lifecycle. OpenBao manages secrets and PKI certificates with automatic rotation. Istio istiod manages workload certificates. FIPS 140-2 validated crypto modules used.",
+          "components": ["platform/core/cert-manager", "platform/core/openbao"],
+          "evidence": ["cert-manager ClusterIssuers", "OpenBao PKI configuration"]
+        },
+        {
+          "id": "SC.L2-3.13.11",
+          "title": "CUI Encryption at Rest",
+          "nist-171-ref": "3.13.11",
+          "nist-800-53-ref": "SC-28",
+          "status": "implemented",
+          "implementation": "Kubernetes Secrets encrypted at rest via RKE2 default AES-CBC encryption. OpenBao data encrypted with seal key protected by KMS. Loki storage encrypted via S3 server-side encryption.",
+          "components": ["platform/core/openbao"],
+          "evidence": ["RKE2 encryption configuration", "OpenBao seal configuration"]
+        },
+        {
+          "id": "SC.L2-3.13.12",
+          "title": "Collaborative Device Control",
+          "nist-171-ref": "3.13.12",
+          "nist-800-53-ref": "SC-15",
+          "status": "not-applicable",
+          "implementation": "Collaborative computing device control is outside the scope of the SRE platform.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "SC.L2-3.13.13",
+          "title": "Mobile Code",
+          "nist-171-ref": "3.13.13",
+          "nist-800-53-ref": "SC-18",
+          "status": "partially-implemented",
+          "implementation": "Container image restrictions via Kyverno prevent unauthorized code execution. NeuVector process monitoring blocks unexpected executables. Mobile code in web UIs is managed per-application.",
+          "components": ["policies/custom/restrict-image-registries.yaml", "platform/core/runtime-security"],
+          "evidence": ["Kyverno image registry policy", "NeuVector process profiles"]
+        },
+        {
+          "id": "SC.L2-3.13.14",
+          "title": "Voice over IP",
+          "nist-171-ref": "3.13.14",
+          "nist-800-53-ref": "SC-19",
+          "status": "not-applicable",
+          "implementation": "VoIP is outside the scope of the SRE platform.",
+          "components": [],
+          "evidence": []
+        },
+        {
+          "id": "SC.L2-3.13.15",
+          "title": "Communications Authenticity",
+          "nist-171-ref": "3.13.15",
+          "nist-800-53-ref": "SC-23",
+          "status": "implemented",
+          "implementation": "Istio mTLS provides session authenticity via cryptographic mutual authentication with SPIFFE identities. TLS certificates managed by cert-manager ensure server authentication. Keycloak OIDC tokens prevent session hijacking.",
+          "components": ["platform/core/istio", "platform/core/cert-manager", "platform/addons/keycloak"],
+          "evidence": ["Istio PeerAuthentication", "cert-manager Certificate resources"]
+        },
+        {
+          "id": "SC.L2-3.13.16",
+          "title": "Data at Rest",
+          "nist-171-ref": "3.13.16",
+          "nist-800-53-ref": "SC-28",
+          "status": "implemented",
+          "implementation": "All persistent data encrypted via storage encryption. OpenBao seals data at rest with auto-unseal via KMS. Kubernetes Secrets encrypted by RKE2.",
+          "components": ["platform/core/openbao"],
+          "evidence": ["OpenBao seal configuration", "RKE2 encryption configuration"]
+        }
+      ]
+    },
+    {
+      "id": "SI",
+      "name": "System and Information Integrity",
+      "nist-family": "3.14",
+      "total-practices": 7,
+      "implemented": 7,
+      "partially-implemented": 0,
+      "planned": 0,
+      "practices": [
+        {
+          "id": "SI.L2-3.14.1",
+          "title": "Flaw Remediation",
+          "nist-171-ref": "3.14.1",
+          "nist-800-53-ref": "SI-2",
+          "status": "implemented",
+          "implementation": "Trivy scanning in Harbor with severity-based alerts. Flux automates image updates via GitOps. Ansible applies OS patches. NeuVector tracks runtime CVEs.",
+          "components": ["platform/addons/harbor", "platform/flux-system", "infrastructure/ansible"],
+          "evidence": ["Harbor scan results", "Flux image update history"]
+        },
+        {
+          "id": "SI.L2-3.14.2",
+          "title": "Malicious Code Protection",
+          "nist-171-ref": "3.14.2",
+          "nist-800-53-ref": "SI-3",
+          "status": "implemented",
+          "implementation": "NeuVector runtime protection monitors processes, file systems, and network traffic. Behavioral learning creates baselines for anomaly detection. DLP sensors detect malicious patterns.",
+          "components": ["platform/core/runtime-security"],
+          "evidence": ["NeuVector security policies", "Behavioral learning profiles"]
+        },
+        {
+          "id": "SI.L2-3.14.3",
+          "title": "Security Alerts",
+          "nist-171-ref": "3.14.3",
+          "nist-800-53-ref": "SI-5",
+          "status": "implemented",
+          "implementation": "Grafana alerting to Slack/email/PagerDuty. NeuVector CVE alerts. Prometheus AlertManager with configurable receivers and escalation policies.",
+          "components": ["platform/core/monitoring", "platform/core/runtime-security"],
+          "evidence": ["PrometheusRule manifests", "AlertManager configuration"]
+        },
+        {
+          "id": "SI.L2-3.14.4",
+          "title": "Update Malicious Code Protection",
+          "nist-171-ref": "3.14.4",
+          "nist-800-53-ref": "SI-3",
+          "status": "implemented",
+          "implementation": "NeuVector scanner definitions updated automatically. Trivy vulnerability database updated on each scan. Harbor replication keeps base images current from upstream sources.",
+          "components": ["platform/core/runtime-security", "platform/addons/harbor"],
+          "evidence": ["NeuVector update configuration", "Trivy DB update logs"]
+        },
+        {
+          "id": "SI.L2-3.14.5",
+          "title": "System and File Scanning",
+          "nist-171-ref": "3.14.5",
+          "nist-800-53-ref": "SI-3",
+          "status": "implemented",
+          "implementation": "NeuVector performs real-time file system monitoring and integrity checking on running containers. Harbor/Trivy scans all images on push. CIS benchmark scanning validates configurations.",
+          "components": ["platform/core/runtime-security", "platform/addons/harbor"],
+          "evidence": ["NeuVector file monitoring alerts", "Harbor scan reports"]
+        },
+        {
+          "id": "SI.L2-3.14.6",
+          "title": "Monitor Communications",
+          "nist-171-ref": "3.14.6",
+          "nist-800-53-ref": "SI-4",
+          "status": "implemented",
+          "implementation": "Prometheus metrics, Loki logs, Tempo traces, NeuVector runtime events, and Kyverno policy reports provide comprehensive monitoring. Grafana provides unified visualization.",
+          "components": ["platform/core/monitoring", "platform/core/logging", "platform/core/runtime-security"],
+          "evidence": ["Grafana dashboards", "Prometheus alerts"]
+        },
+        {
+          "id": "SI.L2-3.14.7",
+          "title": "Identify Unauthorized Use",
+          "nist-171-ref": "3.14.7",
+          "nist-800-53-ref": "SI-4",
+          "status": "implemented",
+          "implementation": "NeuVector behavioral monitoring identifies unauthorized processes and network connections. Kyverno reports unauthorized image sources. Kubernetes audit logs capture unauthorized API access attempts. Istio reports unauthorized service-to-service calls.",
+          "components": ["platform/core/runtime-security", "platform/core/kyverno", "platform/core/logging"],
+          "evidence": ["NeuVector alerts", "Kyverno PolicyReports", "Kubernetes audit logs"]
+        }
+      ]
+    }
+  ]
+}
