@@ -289,9 +289,9 @@ async function getGatewayNodePort() {
       "istio-system"
     );
     const httpsPort = resp.body.spec.ports.find((p) => p.name === "https");
-    return httpsPort?.nodePort || 31443;
+    return httpsPort?.nodePort || 30443;
   } catch {
-    return 31443;
+    return 30443;
   }
 }
 

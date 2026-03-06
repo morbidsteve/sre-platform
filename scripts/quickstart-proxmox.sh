@@ -1760,7 +1760,7 @@ if [[ "$FLUX_BOOTSTRAPPED" == "true" && -n "${SRE_DOMAIN:-}" ]]; then
         echo "  OpenBao:    http://$FIRST_SERVER_IP:30200"
         echo "  NeuVector:  https://$FIRST_SERVER_IP:30300"
     else
-        GW_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+        GW_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
         echo "  Grafana:    https://grafana.${SRE_DOMAIN}:${GW_PORT}"
         echo "  OpenBao:    https://openbao.${SRE_DOMAIN}:${GW_PORT}"
         echo "  NeuVector:  https://neuvector.${SRE_DOMAIN}:${GW_PORT}"

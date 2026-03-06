@@ -1,7 +1,10 @@
 ---
 # Istio Ingress Gateway — north-south traffic entry point
-# Uses hostNetwork so the gateway pod binds directly to node ports 443/80
-# — no NodePort or LoadBalancer needed.
+#
+# Environment adaptation:
+#   - Cloud: Change service.type to LoadBalancer (removes need for NodePort)
+#   - Bare metal / Proxmox: NodePort (default) — access via <nodeIP>:30443
+#   - Enterprise on-prem: MetalLB + LoadBalancer or NodePort
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -32,39 +35,12 @@ spec:
     remediation:
       retries: 3
     disableSchemaValidation: true
-  # Patch the rendered Deployment to add hostNetwork (not a native chart value).
-  # Also remove the net.ipv4.ip_unprivileged_port_start sysctl which conflicts
-  # with hostNetwork. For cloud deployments, remove this postRenderers block
-  # and set service.type: LoadBalancer instead.
-  postRenderers:
-    - kustomize:
-        patches:
-          - target:
-              kind: Deployment
-              name: istio-gateway
-            patch: |
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: istio-gateway
-              spec:
-                template:
-                  spec:
-                    hostNetwork: true
-                    dnsPolicy: ClusterFirstWithHostNet
-                    securityContext:
-                      $patch: replace
-                    containers:
-                      - name: istio-proxy
-                        image: docker.io/istio/proxyv2:1.25.2
   values:
     replicaCount: 1
     autoscaling:
       enabled: false
     service:
-      # ClusterIP is sufficient — hostNetwork means pods listen on the node
-      # directly on ports 443/80. The Service is only for in-cluster routing.
-      type: ClusterIP
+      type: NodePort
       ports:
         - name: status-port
           port: 15021
@@ -74,10 +50,12 @@ spec:
           port: 80
           protocol: TCP
           targetPort: 80
+          nodePort: 30080
         - name: https
           port: 443
           protocol: TCP
           targetPort: 443
+          nodePort: 30443
     podAnnotations:
       traffic.sidecar.istio.io/includeInboundPorts: ""
     resources:

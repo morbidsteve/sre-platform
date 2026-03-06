@@ -485,7 +485,7 @@ header "How to Access Your Platform"
 
 # Get a node IP and the HTTPS NodePort
 NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "YOUR_NODE_IP")
-HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
 
 echo -e "${BOLD}Step 1: Add DNS entries to your machine${NC}"
 echo

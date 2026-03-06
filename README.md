@@ -34,7 +34,7 @@ A complete Kubernetes platform with 18 integrated components, all deployed and m
 
 ## Accessing the Platform
 
-All platform UIs are exposed through a single Istio ingress gateway using HTTPS on NodePort **31443**. Here's how to access everything.
+All platform UIs are exposed through a single Istio ingress gateway using HTTPS on NodePort **30443**. Here's how to access everything.
 
 ### Step 1: Add DNS entries
 
@@ -45,21 +45,21 @@ Pick any cluster node IP and add these to your `/etc/hosts`:
 echo "192.168.2.104  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com" | sudo tee -a /etc/hosts
 ```
 
-> **How it works:** The Istio ingress gateway listens on every node's port 31443. When a request arrives, Istio reads the `Host` header and routes it to the correct backend service via VirtualService rules. All traffic is TLS-encrypted with a self-signed wildcard certificate for `*.apps.sre.example.com`.
+> **How it works:** The Istio ingress gateway listens on every node's port 30443. When a request arrives, Istio reads the `Host` header and routes it to the correct backend service via VirtualService rules. All traffic is TLS-encrypted with a self-signed wildcard certificate for `*.apps.sre.example.com`.
 
 ### Step 2: Open any service
 
-All URLs follow the pattern: `https://<service>.apps.sre.example.com:31443`
+All URLs follow the pattern: `https://<service>.apps.sre.example.com:30443`
 
 | Service | URL | Default Credentials |
 |---------|-----|-------------------|
-| **Dashboard** | `https://dashboard.apps.sre.example.com:31443` | No login required |
-| **Grafana** | `https://grafana.apps.sre.example.com:31443` | `admin` / `prom-operator` |
-| **Prometheus** | `https://prometheus.apps.sre.example.com:31443` | No login required |
-| **Alertmanager** | `https://alertmanager.apps.sre.example.com:31443` | No login required |
-| **Harbor** | `https://harbor.apps.sre.example.com:31443` | `admin` / `Harbor12345` |
-| **Keycloak** | `https://keycloak.apps.sre.example.com:31443` | `admin` / (auto-generated, see below) |
-| **NeuVector** | `https://neuvector.apps.sre.example.com:31443` | `admin` / `admin` |
+| **Dashboard** | `https://dashboard.apps.sre.example.com:30443` | No login required |
+| **Grafana** | `https://grafana.apps.sre.example.com:30443` | `admin` / `prom-operator` |
+| **Prometheus** | `https://prometheus.apps.sre.example.com:30443` | No login required |
+| **Alertmanager** | `https://alertmanager.apps.sre.example.com:30443` | No login required |
+| **Harbor** | `https://harbor.apps.sre.example.com:30443` | `admin` / `Harbor12345` |
+| **Keycloak** | `https://keycloak.apps.sre.example.com:30443` | `admin` / (auto-generated, see below) |
+| **NeuVector** | `https://neuvector.apps.sre.example.com:30443` | `admin` / `admin` |
 
 > Your browser will warn about the self-signed certificate — click through it or use `curl -k`.
 
@@ -82,7 +82,7 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com:31443`
                     Internet / LAN
                          │
                     ┌────▼────┐
-                    │  Node   │  (any node IP, port 31443)
+                    │  Node   │  (any node IP, port 30443)
                     │ NodePort│
                     └────┬────┘
                          │
@@ -99,9 +99,9 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com:31443`
     └─────────┘    └─────────┘    └─────────┘
 ```
 
-**Traffic flow for `https://grafana.apps.sre.example.com:31443`:**
+**Traffic flow for `https://grafana.apps.sre.example.com:30443`:**
 1. DNS resolves to a cluster node IP (from `/etc/hosts` or real DNS)
-2. HTTPS hits NodePort 31443 on that node
+2. HTTPS hits NodePort 30443 on that node
 3. Istio Gateway terminates TLS using the wildcard certificate
 4. Istio reads the `Host: grafana.apps.sre.example.com` header
 5. VirtualService rule matches and routes to `kube-prometheus-stack-grafana.monitoring.svc:80`
@@ -210,7 +210,7 @@ cd ../..
 
 ### Option A: Web Dashboard (30 seconds)
 
-1. Open `https://dashboard.apps.sre.example.com:31443`
+1. Open `https://dashboard.apps.sre.example.com:30443`
 2. Click **Deploy App**
 3. Fill in: name, team, image, tag, port
 4. Click **Deploy**

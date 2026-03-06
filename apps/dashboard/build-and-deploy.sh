@@ -53,7 +53,7 @@ echo ""
 echo "==> SRE Dashboard deployed!"
 echo ""
 NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
 echo "    Ingress: https://dashboard.apps.sre.example.com:${HTTPS_PORT}"
 echo ""
 echo "    Add to /etc/hosts:"

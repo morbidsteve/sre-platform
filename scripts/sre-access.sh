@@ -211,7 +211,7 @@ show_ingress_info() {
 
     # Get NodePort for HTTPS
     local https_port
-    https_port=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+    https_port=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
 
     echo -e "\n${BOLD}${CYAN}═══ SRE Platform — Ingress Access ═══${NC}\n"
     echo -e "  All services are accessible via Istio ingress (HTTPS with self-signed cert).\n"

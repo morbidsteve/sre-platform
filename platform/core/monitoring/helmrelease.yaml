@@ -65,7 +65,7 @@ spec:
       # Do NOT set adminPassword inline — use bootstrap-secrets.sh
       grafana.ini:
         server:
-          root_url: "https://grafana.apps.sre.example.com"
+          root_url: "https://grafana.apps.sre.example.com:30443"
           serve_from_sub_path: false
       service:
         type: ClusterIP
