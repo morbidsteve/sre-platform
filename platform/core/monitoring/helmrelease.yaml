@@ -37,7 +37,7 @@ spec:
     prometheus:
       enabled: true
       prometheusSpec:
-        replicas: 2
+        replicas: 1
         retention: "15d"
         resources:
           requests:
@@ -60,7 +60,7 @@ spec:
     # ---------------------------------------------------------------
     grafana:
       enabled: true
-      replicas: 2
+      replicas: 1
       # Admin password injected via grafana-admin-credentials Secret (valuesFrom)
       # Do NOT set adminPassword inline — use bootstrap-secrets.sh
       grafana.ini:
@@ -129,7 +129,7 @@ spec:
     alertmanager:
       enabled: true
       alertmanagerSpec:
-        replicas: 2
+        replicas: 1
         resources:
           requests:
             cpu: 50m
