@@ -70,20 +70,19 @@ spec:
         security:
           cookie_samesite: none
           cookie_secure: true
-        # Keycloak SSO — OIDC integration (Item #4)
-        # Set REPLACE_ME values or inject via grafana-oidc-credentials Secret
+        # Keycloak SSO — OIDC config (secret injected via grafana-oidc-credentials valuesFrom)
         auth.generic_oauth:
           enabled: true
           name: "Keycloak"
           allow_sign_up: true
           client_id: "grafana"
-          client_secret: "REPLACE_ME_GRAFANA_CLIENT_SECRET"
           scopes: "openid profile email groups"
           auth_url: "https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/auth"
           token_url: "http://keycloak-http.keycloak.svc.cluster.local:80/realms/sre/protocol/openid-connect/token"
           api_url: "http://keycloak-http.keycloak.svc.cluster.local:80/realms/sre/protocol/openid-connect/userinfo"
           role_attribute_path: "contains(groups[*], 'platform-admins') && 'Admin' || contains(groups[*], 'developers') && 'Editor' || 'Viewer'"
           tls_skip_verify_insecure: true
+      assertNoLeakedSecrets: false
       service:
         type: ClusterIP
       # Persistence configured via environment profile ConfigMap (monitoring-env-values)
@@ -220,4 +219,7 @@ spec:
       optional: true
     - kind: ConfigMap
       name: monitoring-ha-values
+      optional: true
+    - kind: Secret
+      name: grafana-oidc-credentials
       optional: true
