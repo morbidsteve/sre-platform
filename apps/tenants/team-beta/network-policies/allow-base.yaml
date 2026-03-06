@@ -73,6 +73,27 @@ spec:
     - to:
         - podSelector: {}
 ---
+# Allow Istio sidecar egress to istiod control plane
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-control-plane
+  namespace: team-beta
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 15012
+          protocol: TCP
+        - port: 15014
+          protocol: TCP
+---
 # Allow HTTPS egress (for external APIs)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

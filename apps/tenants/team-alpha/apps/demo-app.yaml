@@ -31,10 +31,10 @@ spec:
       name: "demo-app"
       team: "team-alpha"
       image:
-        repository: "nginx"
+        repository: "docker.io/nginxinc/nginx-unprivileged"
         tag: "1.27.3-alpine"
         pullPolicy: IfNotPresent
-      port: 80
+      port: 8080
       replicas: 1
       resources:
         requests:
