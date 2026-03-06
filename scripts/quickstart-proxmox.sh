@@ -1760,12 +1760,13 @@ if [[ "$FLUX_BOOTSTRAPPED" == "true" && -n "${SRE_DOMAIN:-}" ]]; then
         echo "  OpenBao:    http://$FIRST_SERVER_IP:30200"
         echo "  NeuVector:  https://$FIRST_SERVER_IP:30300"
     else
-        GW_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
-        echo "  Grafana:    https://grafana.${SRE_DOMAIN}:${GW_PORT}"
-        echo "  OpenBao:    https://openbao.${SRE_DOMAIN}:${GW_PORT}"
-        echo "  NeuVector:  https://neuvector.${SRE_DOMAIN}:${GW_PORT}"
-        echo "  Harbor:     https://harbor.${SRE_DOMAIN}:${GW_PORT}"
-        echo "  Keycloak:   https://keycloak.${SRE_DOMAIN}:${GW_PORT}"
+        GW_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "$FIRST_SERVER_IP")
+        echo "  Gateway IP: ${GW_IP}"
+        echo "  Grafana:    https://grafana.${SRE_DOMAIN}"
+        echo "  OpenBao:    https://openbao.${SRE_DOMAIN}"
+        echo "  NeuVector:  https://neuvector.${SRE_DOMAIN}"
+        echo "  Harbor:     https://harbor.${SRE_DOMAIN}"
+        echo "  Keycloak:   https://keycloak.${SRE_DOMAIN}"
     fi
     echo
     echo "  Note: Use -k with curl (or accept the self-signed certificate in your browser)"

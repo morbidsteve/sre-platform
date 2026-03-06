@@ -201,20 +201,28 @@ show_credentials() {
 }
 
 show_ingress_info() {
-    # Find any cluster node IP
-    local node_ip
-    node_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
-    if [[ -z "$node_ip" ]]; then
-        warn "Could not detect node IP"
+    # Get gateway IP — prefer LoadBalancer external IP, fall back to node IP
+    local gateway_ip=""
+    local https_port="443"
+    gateway_ip=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+    if [[ -z "$gateway_ip" ]]; then
+        # No LoadBalancer IP — fall back to NodePort mode
+        gateway_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
+        https_port=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "443")
+    fi
+
+    if [[ -z "$gateway_ip" ]]; then
+        warn "Could not detect gateway IP"
         return
     fi
 
-    # Get NodePort for HTTPS
-    local https_port
-    https_port=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
+    # Build URL suffix (no port shown for standard 443)
+    local port_suffix=""
+    [[ "$https_port" != "443" ]] && port_suffix=":${https_port}"
 
     echo -e "\n${BOLD}${CYAN}═══ SRE Platform — Ingress Access ═══${NC}\n"
-    echo -e "  All services are accessible via Istio ingress (HTTPS with self-signed cert).\n"
+    echo -e "  Gateway IP: ${BOLD}${gateway_ip}${NC}  Port: ${BOLD}${https_port}${NC}\n"
 
     echo -e "  ${BOLD}Platform UIs:${NC}"
     echo
@@ -222,7 +230,7 @@ show_ingress_info() {
         local name host
         name=$(echo "$route" | cut -d'|' -f1)
         host=$(echo "$route" | cut -d'|' -f2)
-        printf "    %-15s https://%s:%s\n" "$name" "$host" "$https_port"
+        printf "    %-15s https://%s%s\n" "$name" "$host" "$port_suffix"
     done
 
     # Show any tenant app VirtualServices
@@ -238,14 +246,14 @@ show_ingress_info() {
             vs_name=$(echo "$line" | awk '{print $2}')
             vs_host=$(kubectl get virtualservice "$vs_name" -n "$vs_ns" -o jsonpath='{.spec.hosts[0]}' 2>/dev/null || echo "")
             if [[ -n "$vs_host" ]]; then
-                printf "    %-15s https://%s:%s\n" "$vs_name" "$vs_host" "$https_port"
+                printf "    %-15s https://%s%s\n" "$vs_name" "$vs_host" "$port_suffix"
             fi
         done <<< "$tenant_vs"
     fi
 
     echo
     echo -e "  ${BOLD}DNS Setup (add to /etc/hosts):${NC}"
-    echo -e "    ${CYAN}echo \"${node_ip}  grafana.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
+    echo -e "    ${CYAN}echo \"${gateway_ip}  grafana.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
 
     if [[ -n "$tenant_vs" ]]; then
         local tenant_hosts=""
@@ -257,15 +265,11 @@ show_ingress_info() {
             [[ -n "$h" ]] && tenant_hosts="$tenant_hosts $h"
         done <<< "$tenant_vs"
         if [[ -n "$tenant_hosts" ]]; then
-            echo -e "    ${CYAN}echo \"${node_ip} ${tenant_hosts}\" | sudo tee -a /etc/hosts${NC}"
+            echo -e "    ${CYAN}echo \"${gateway_ip} ${tenant_hosts}\" | sudo tee -a /etc/hosts${NC}"
         fi
     fi
 
     echo
-    echo -e "  ${BOLD}Node IPs (use any):${NC}"
-    kubectl get nodes -o jsonpath='{range .items[*]}    {.metadata.name}  {.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null
-    echo
-
     echo -e "  ${DIM}TLS uses a self-signed cert. Use ${NC}${CYAN}curl -k${NC}${DIM} or accept the browser warning.${NC}"
     echo
 }

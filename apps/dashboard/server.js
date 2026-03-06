@@ -92,7 +92,7 @@ app.get("/api/ingress", async (req, res) => {
   try {
     const routes = await getIngressRoutes();
     const nodeIp = await getFirstNodeIp();
-    const httpsPort = await getGatewayNodePort();
+    const httpsPort = await getGatewayPort();
     res.json({ routes, nodeIp, httpsPort });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -282,16 +282,22 @@ async function getFirstNodeIp() {
   return ip?.address || "unknown";
 }
 
-async function getGatewayNodePort() {
+async function getGatewayPort() {
   try {
     const resp = await k8sApi.readNamespacedService(
       "istio-gateway",
       "istio-system"
     );
+    // If LoadBalancer has an external IP, use standard port 443
+    const ingress = resp.body.status?.loadBalancer?.ingress;
+    if (ingress && ingress.length > 0) {
+      return 443;
+    }
+    // Fallback to NodePort if no LoadBalancer
     const httpsPort = resp.body.spec.ports.find((p) => p.name === "https");
-    return httpsPort?.nodePort || 30443;
+    return httpsPort?.nodePort || 443;
   } catch {
-    return 30443;
+    return 443;
   }
 }
 

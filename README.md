@@ -34,32 +34,35 @@ A complete Kubernetes platform with 18 integrated components, all deployed and m
 
 ## Accessing the Platform
 
-All platform UIs are exposed through a single Istio ingress gateway using HTTPS on NodePort **30443**. Here's how to access everything.
+All platform UIs are exposed through a single Istio ingress gateway on standard HTTPS (port 443). No custom ports needed.
 
 ### Step 1: Add DNS entries
 
-Pick any cluster node IP and add these to your `/etc/hosts`:
+Get the gateway IP and add DNS entries:
 
 ```bash
-# Replace 192.168.2.104 with your node IP
-echo "192.168.2.104  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com" | sudo tee -a /etc/hosts
+# Get the gateway's external IP (assigned by MetalLB on bare metal, or cloud LB on AWS/Azure)
+GATEWAY_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+# Add to /etc/hosts (or configure real DNS in production)
+echo "$GATEWAY_IP  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com" | sudo tee -a /etc/hosts
 ```
 
-> **How it works:** The Istio ingress gateway listens on every node's port 30443. When a request arrives, Istio reads the `Host` header and routes it to the correct backend service via VirtualService rules. All traffic is TLS-encrypted with a self-signed wildcard certificate for `*.apps.sre.example.com`.
+> **How it works:** The Istio ingress gateway gets a dedicated IP via LoadBalancer (MetalLB on bare metal, cloud LB on AWS/Azure). When a request arrives on port 443, Istio reads the `Host` header and routes it to the correct backend service via VirtualService rules. All traffic is TLS-encrypted with a wildcard certificate for `*.apps.sre.example.com`.
 
 ### Step 2: Open any service
 
-All URLs follow the pattern: `https://<service>.apps.sre.example.com:30443`
+All URLs follow the pattern: `https://<service>.apps.sre.example.com`
 
 | Service | URL | Default Credentials |
 |---------|-----|-------------------|
-| **Dashboard** | `https://dashboard.apps.sre.example.com:30443` | No login required |
-| **Grafana** | `https://grafana.apps.sre.example.com:30443` | `admin` / `prom-operator` |
-| **Prometheus** | `https://prometheus.apps.sre.example.com:30443` | No login required |
-| **Alertmanager** | `https://alertmanager.apps.sre.example.com:30443` | No login required |
-| **Harbor** | `https://harbor.apps.sre.example.com:30443` | `admin` / `Harbor12345` |
-| **Keycloak** | `https://keycloak.apps.sre.example.com:30443` | `admin` / (auto-generated, see below) |
-| **NeuVector** | `https://neuvector.apps.sre.example.com:30443` | `admin` / `admin` |
+| **Dashboard** | `https://dashboard.apps.sre.example.com` | No login required |
+| **Grafana** | `https://grafana.apps.sre.example.com` | `admin` / `prom-operator` |
+| **Prometheus** | `https://prometheus.apps.sre.example.com` | No login required |
+| **Alertmanager** | `https://alertmanager.apps.sre.example.com` | No login required |
+| **Harbor** | `https://harbor.apps.sre.example.com` | `admin` / `Harbor12345` |
+| **Keycloak** | `https://keycloak.apps.sre.example.com` | `admin` / (auto-generated, see below) |
+| **NeuVector** | `https://neuvector.apps.sre.example.com` | `admin` / `admin` |
 
 > Your browser will warn about the self-signed certificate — click through it or use `curl -k`.
 
@@ -81,10 +84,10 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com:30443`
 ```
                     Internet / LAN
                          │
-                    ┌────▼────┐
-                    │  Node   │  (any node IP, port 30443)
-                    │ NodePort│
-                    └────┬────┘
+                  ┌──────▼──────┐
+                  │ LoadBalancer │  Dedicated IP (MetalLB / cloud LB)
+                  │  :443 :80   │  Standard HTTPS/HTTP ports
+                  └──────┬──────┘
                          │
                 ┌────────▼────────┐
                 │  Istio Gateway  │  TLS termination
@@ -99,9 +102,9 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com:30443`
     └─────────┘    └─────────┘    └─────────┘
 ```
 
-**Traffic flow for `https://grafana.apps.sre.example.com:30443`:**
-1. DNS resolves to a cluster node IP (from `/etc/hosts` or real DNS)
-2. HTTPS hits NodePort 30443 on that node
+**Traffic flow for `https://grafana.apps.sre.example.com`:**
+1. DNS resolves to the gateway's LoadBalancer IP
+2. HTTPS hits port 443 on that IP
 3. Istio Gateway terminates TLS using the wildcard certificate
 4. Istio reads the `Host: grafana.apps.sre.example.com` header
 5. VirtualService rule matches and routes to `kube-prometheus-stack-grafana.monitoring.svc:80`
@@ -210,7 +213,7 @@ cd ../..
 
 ### Option A: Web Dashboard (30 seconds)
 
-1. Open `https://dashboard.apps.sre.example.com:30443`
+1. Open `https://dashboard.apps.sre.example.com`
 2. Click **Deploy App**
 3. Fill in: name, team, image, tag, port
 4. Click **Deploy**

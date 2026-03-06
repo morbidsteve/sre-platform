@@ -1,0 +1,23 @@
+---
+# MetalLB IP address pool for LoadBalancer services.
+# Adjust this range to match your network — pick IPs that are
+# NOT used by any other host, DHCP range, or node.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: sre-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.168.2.200-192.168.2.210
+---
+# L2Advertisement tells MetalLB to announce these IPs via ARP
+# on the local network — works on any L2 network (Proxmox, bare metal, VMs).
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: sre-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - sre-pool

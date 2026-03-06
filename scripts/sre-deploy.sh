@@ -483,33 +483,38 @@ fi
 
 header "How to Access Your Platform"
 
-# Get a node IP and the HTTPS NodePort
-NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "YOUR_NODE_IP")
-HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
+# Get the gateway IP — prefer LoadBalancer, fall back to node IP
+GATEWAY_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+PORT_SUFFIX=""
+if [[ -z "$GATEWAY_IP" ]]; then
+    GATEWAY_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "YOUR_NODE_IP")
+    HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "443")
+    [[ "$HTTPS_PORT" != "443" ]] && PORT_SUFFIX=":${HTTPS_PORT}"
+fi
 
 echo -e "${BOLD}Step 1: Add DNS entries to your machine${NC}"
 echo
 echo -e "  Run this on the machine where you'll open a browser:"
 echo
-echo -e "  ${CYAN}echo \"${NODE_IP}  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
+echo -e "  ${CYAN}echo \"${GATEWAY_IP}  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
 echo
 
 echo -e "${BOLD}Step 2: Open the Dashboard${NC}"
 echo
-echo -e "  ${CYAN}https://dashboard.apps.sre.example.com:${HTTPS_PORT}${NC}"
+echo -e "  ${CYAN}https://dashboard.apps.sre.example.com${PORT_SUFFIX}${NC}"
 echo
 echo -e "  (Accept the self-signed certificate warning in your browser)"
 echo
 
 echo -e "${BOLD}All Platform UIs:${NC}"
 echo
-printf "  %-15s %s\n" "Dashboard" "https://dashboard.apps.sre.example.com:${HTTPS_PORT}"
-printf "  %-15s %s  (%s)\n" "Grafana" "https://grafana.apps.sre.example.com:${HTTPS_PORT}" "admin / prom-operator"
-printf "  %-15s %s\n" "Prometheus" "https://prometheus.apps.sre.example.com:${HTTPS_PORT}"
-printf "  %-15s %s\n" "Alertmanager" "https://alertmanager.apps.sre.example.com:${HTTPS_PORT}"
-printf "  %-15s %s  (%s)\n" "Harbor" "https://harbor.apps.sre.example.com:${HTTPS_PORT}" "admin / Harbor12345"
-printf "  %-15s %s  (%s)\n" "Keycloak" "https://keycloak.apps.sre.example.com:${HTTPS_PORT}" "admin / auto-generated"
-printf "  %-15s %s  (%s)\n" "NeuVector" "https://neuvector.apps.sre.example.com:${HTTPS_PORT}" "admin / admin"
+printf "  %-15s %s\n" "Dashboard" "https://dashboard.apps.sre.example.com${PORT_SUFFIX}"
+printf "  %-15s %s  (%s)\n" "Grafana" "https://grafana.apps.sre.example.com${PORT_SUFFIX}" "admin / prom-operator"
+printf "  %-15s %s\n" "Prometheus" "https://prometheus.apps.sre.example.com${PORT_SUFFIX}"
+printf "  %-15s %s\n" "Alertmanager" "https://alertmanager.apps.sre.example.com${PORT_SUFFIX}"
+printf "  %-15s %s  (%s)\n" "Harbor" "https://harbor.apps.sre.example.com${PORT_SUFFIX}" "admin / Harbor12345"
+printf "  %-15s %s  (%s)\n" "Keycloak" "https://keycloak.apps.sre.example.com${PORT_SUFFIX}" "admin / auto-generated"
+printf "  %-15s %s  (%s)\n" "NeuVector" "https://neuvector.apps.sre.example.com${PORT_SUFFIX}" "admin / admin"
 echo
 
 echo -e "${BOLD}Useful commands:${NC}"

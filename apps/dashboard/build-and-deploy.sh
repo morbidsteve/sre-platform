@@ -52,12 +52,11 @@ kubectl rollout status deployment/sre-dashboard -n sre-dashboard --timeout=60s
 echo ""
 echo "==> SRE Dashboard deployed!"
 echo ""
-NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "30443")
-echo "    Ingress: https://dashboard.apps.sre.example.com:${HTTPS_PORT}"
+GATEWAY_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+echo "    Ingress: https://dashboard.apps.sre.example.com"
 echo ""
 echo "    Add to /etc/hosts:"
-echo "    echo \"${NODE_IP} dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts"
+echo "    echo \"${GATEWAY_IP} dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts"
 echo ""
 echo "    Or port-forward: kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001"
 echo "    Then open: http://localhost:3001"

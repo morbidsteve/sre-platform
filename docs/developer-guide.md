@@ -11,7 +11,7 @@ The fastest way to deploy is the **SRE Dashboard** — a web UI that lets you de
 ```bash
 # Option 1: Via Istio ingress (add to /etc/hosts first)
 # echo "<NODE_IP> dashboard.apps.sre.example.com" | sudo tee -a /etc/hosts
-# Then open: https://dashboard.apps.sre.example.com:30443
+# Then open: https://dashboard.apps.sre.example.com
 
 # Option 2: Via port-forward (no DNS setup needed)
 kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001
@@ -241,7 +241,7 @@ Add these values to expose your app via a URL:
       host: "my-app.apps.sre.example.com"
 ```
 
-The Istio gateway routes traffic through NodePort services on ports **30080** (HTTP) and **30443** (HTTPS).
+The Istio gateway routes traffic through NodePort services on standard ports **80** (HTTP) and **443** (HTTPS).
 
 For a lab environment, add DNS entries to `/etc/hosts`:
 ```bash
@@ -249,7 +249,7 @@ For a lab environment, add DNS entries to `/etc/hosts`:
 echo "192.168.2.104 my-app.apps.sre.example.com" | sudo tee -a /etc/hosts
 
 # Access your app
-curl http://my-app.apps.sre.example.com:30080
+curl http://my-app.apps.sre.example.com
 ```
 
 ### Environment variables
@@ -546,7 +546,7 @@ The platform uses **Keycloak** for single sign-on. All platform UIs (Grafana, Ha
 | Setting | Value |
 |---------|-------|
 | Realm | `sre` |
-| OIDC Discovery | `https://keycloak.apps.sre.example.com:30443/realms/sre/.well-known/openid-configuration` |
+| OIDC Discovery | `https://keycloak.apps.sre.example.com/realms/sre/.well-known/openid-configuration` |
 | Groups | `platform-admins`, `developers`, `viewers` |
 
 ### Test Users

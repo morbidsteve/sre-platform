@@ -1,0 +1,24 @@
+---
+# Flux Kustomization for MetalLB load balancer
+# First in the dependency chain — provides LoadBalancer service type
+# for bare metal / on-prem environments (Proxmox, vSphere, etc.).
+# On cloud (AWS, Azure), remove this component — the cloud controller
+# manager provides LoadBalancer natively.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-metallb
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./platform/core/metallb
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: metallb-controller
+      namespace: metallb-system
+  timeout: 5m

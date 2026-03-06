@@ -13,6 +13,7 @@ resources:
   - config/domain-config.yaml
 
   # ── Core Components (Flux Kustomization CRDs) ──
+  - components/metallb.yaml
   - components/istio.yaml
   - components/istio-config.yaml
   - components/cert-manager.yaml
