@@ -1,0 +1,111 @@
+---
+# NOTE: These policies are INACTIVE — platform namespaces do not have
+# Istio sidecar injection enabled. See platform/README.md for details.
+# They document the intended zero-trust posture for future reference.
+#
+# Default deny-all for platform namespaces
+# NIST AC-3, AC-4 — all traffic denied unless explicitly allowed
+
+# --- monitoring ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+# --- logging ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: logging
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+# --- tempo ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: tempo
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+# --- openbao ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: openbao
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+# --- external-secrets ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: external-secrets
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+# --- harbor ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: harbor
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+# --- keycloak ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}

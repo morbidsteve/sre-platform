@@ -1,0 +1,67 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow Keycloak to reach its PostgreSQL database
+# NIST IA-2, AC-2 — identity management requires database access
+#
+# Keycloak stores identity data, sessions, and realm configurations
+# in PostgreSQL. This policy permits only the Keycloak pods to access
+# the database, preventing other services from querying identity data.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-keycloak-to-postgres
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "IA-2, AC-2, SC-28"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - keycloak
+            principals:
+              - "cluster.local/ns/keycloak/sa/keycloak"
+      to:
+        - operation:
+            ports:
+              - "5432"
+
+---
+# Allow Keycloak internal clustering (Infinispan cache replication)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-keycloak-cluster
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "IA-2"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - keycloak
+            principals:
+              - "cluster.local/ns/keycloak/sa/keycloak"
+      to:
+        - operation:
+            ports:
+              - "7800"   # JGroups TCP
+              - "57800"  # JGroups TCP FD

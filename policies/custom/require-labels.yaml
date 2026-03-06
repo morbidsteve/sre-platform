@@ -17,7 +17,7 @@ metadata:
     policies.kyverno.io/severity: medium
     sre.io/nist-controls: "CM-8"
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: check-required-labels
@@ -46,6 +46,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       validate:
         message: >-
           Pod {{request.object.metadata.name}} in namespace

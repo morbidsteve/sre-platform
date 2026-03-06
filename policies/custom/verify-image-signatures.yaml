@@ -47,6 +47,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       verifyImages:
         - imageReferences:
             - "harbor.sre.internal/*"

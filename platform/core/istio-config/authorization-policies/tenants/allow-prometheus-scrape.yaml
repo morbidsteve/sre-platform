@@ -1,0 +1,58 @@
+---
+# Allow Prometheus to scrape metrics from tenant pods
+# NIST AU-2, CA-7 — continuous monitoring requires metrics collection
+#
+# Prometheus runs in the monitoring namespace and scrapes application
+# metrics endpoints. Common ports: 8080 (app), 9090 (prometheus), 15090
+# (Istio sidecar stats). The Istio sidecar proxy exposes its own metrics
+# on port 15090, which Prometheus also scrapes.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "8080"
+              - "9090"
+              - "15014"
+              - "15090"
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: team-beta
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "8080"
+              - "9090"
+              - "15014"
+              - "15090"

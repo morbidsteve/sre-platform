@@ -1,0 +1,165 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow Prometheus to scrape metrics from all platform namespaces
+# NIST AU-2, CA-7 — continuous monitoring requires metrics collection
+
+# --- logging namespace ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: logging
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "3100"   # Loki HTTP API
+              - "9095"   # Loki gRPC
+              - "12345"  # Alloy metrics
+              - "15090"  # Istio sidecar stats
+
+---
+# --- tempo namespace ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: tempo
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "3200"   # Tempo HTTP API
+              - "9095"   # Tempo metrics
+              - "15090"  # Istio sidecar stats
+
+---
+# --- openbao namespace ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: openbao
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "8200"   # OpenBao API (telemetry endpoint)
+              - "15090"  # Istio sidecar stats
+
+---
+# --- external-secrets namespace ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: external-secrets
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "8080"   # ESO metrics
+              - "15090"  # Istio sidecar stats
+
+---
+# --- harbor namespace ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: harbor
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "8080"   # Harbor core metrics
+              - "9090"   # Harbor exporter
+              - "15090"  # Istio sidecar stats
+
+---
+# --- keycloak namespace ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-2, CA-7, SI-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "8080"   # Keycloak HTTP
+              - "9000"   # Keycloak management/metrics
+              - "15090"  # Istio sidecar stats

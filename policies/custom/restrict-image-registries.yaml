@@ -47,6 +47,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       validate:
         message: >-
           All container images in Pod {{request.object.metadata.name}} must be
@@ -83,6 +85,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] | length(@) }}"

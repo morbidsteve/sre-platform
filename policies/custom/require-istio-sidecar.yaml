@@ -46,6 +46,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
                 - default
           - resources:
               selector:

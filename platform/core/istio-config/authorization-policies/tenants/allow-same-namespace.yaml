@@ -1,0 +1,43 @@
+---
+# Allow pod-to-pod communication within the same tenant namespace
+# NIST AC-4 — services within a team boundary may communicate freely
+#
+# This permits all traffic between pods in the same namespace. Tenants
+# often have multiple microservices that need to call each other.
+# Cross-namespace communication requires separate, explicit ALLOW policies.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - team-alpha
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: team-beta
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - team-beta

@@ -1,0 +1,55 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow trace ingestion to Tempo
+# NIST AU-12, SI-4 — audit generation and system monitoring
+#
+# Traces come from Istio sidecars (all namespaces) and from Alloy
+# (acting as an OpenTelemetry collector). Grafana queries Tempo for
+# trace visualization.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-trace-ingestion
+  namespace: tempo
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-12, SI-4"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  action: ALLOW
+  rules:
+    # Allow Alloy/OTel collector to push traces
+    - from:
+        - source:
+            namespaces:
+              - logging
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "4317"   # OTLP gRPC
+              - "4318"   # OTLP HTTP
+              - "9411"   # Zipkin (used by Istio)
+              - "14268"  # Jaeger HTTP
+    # Allow all mesh namespaces to send Zipkin traces (from Istio sidecars)
+    - to:
+        - operation:
+            ports:
+              - "9411"   # Zipkin receiver
+    # Allow Grafana to query traces
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "3200"   # Tempo HTTP API (query endpoint)
+            methods:
+              - GET

@@ -1,0 +1,30 @@
+---
+# Default deny-all AuthorizationPolicy for tenant namespaces
+# NIST AC-3, AC-4 — all traffic denied unless explicitly allowed
+#
+# This policy is applied to each tenant namespace that has Istio injection
+# enabled. An empty spec means deny all requests not matched by an ALLOW policy.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: team-beta
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AC-3, AC-4, SC-7"
+spec: {}

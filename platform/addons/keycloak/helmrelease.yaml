@@ -56,11 +56,25 @@ spec:
       # adminPassword is injected via valuesFrom Secret
 
     # ---------------------------------------------------------------
-    # Deployment — production defaults
+    # Deployment — dev mode for lab
     # ---------------------------------------------------------------
     replicaCount: 1
     production: false
     proxy: "edge"
+
+    # ---------------------------------------------------------------
+    # Hostname — must include NodePort so redirects work correctly
+    # Without this, Keycloak redirects to port 443 which is unreachable
+    # ---------------------------------------------------------------
+    extraEnvVars:
+      - name: KC_HOSTNAME
+        value: "keycloak.${SRE_DOMAIN}"
+      - name: KC_HOSTNAME_PORT
+        value: "31443"
+      - name: KC_HOSTNAME_STRICT
+        value: "false"
+      - name: KC_HTTP_RELATIVE_PATH
+        value: "/"
 
     # ---------------------------------------------------------------
     # Service — ClusterIP (accessed via Istio Gateway + VirtualService)

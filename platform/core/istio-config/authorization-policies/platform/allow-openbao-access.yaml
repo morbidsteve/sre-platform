@@ -1,0 +1,80 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow External Secrets Operator to access OpenBao
+# NIST IA-5, SC-12, SC-28 — authenticator management and key management
+#
+# ESO syncs secrets from OpenBao into Kubernetes Secrets. ESO runs in
+# the external-secrets namespace and authenticates via Kubernetes auth.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-eso-to-openbao
+  namespace: openbao
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "IA-5, SC-12, SC-28"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+  action: ALLOW
+  rules:
+    # Allow ESO to authenticate and read secrets
+    - from:
+        - source:
+            namespaces:
+              - external-secrets
+      to:
+        - operation:
+            ports:
+              - "8200"   # OpenBao API
+            methods:
+              - GET
+              - POST
+              - PUT
+    # Allow cert-manager to use PKI secrets engine
+    - from:
+        - source:
+            namespaces:
+              - cert-manager
+      to:
+        - operation:
+            ports:
+              - "8200"
+            methods:
+              - GET
+              - POST
+              - PUT
+
+---
+# Allow OpenBao cluster members to communicate (Raft consensus)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-openbao-raft
+  namespace: openbao
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "SC-12"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - openbao
+      to:
+        - operation:
+            ports:
+              - "8200"   # API (forwarding)
+              - "8201"   # Cluster (Raft)

@@ -1,0 +1,42 @@
+---
+# Allow Istio sidecar proxies to communicate with istiod control plane
+# Required for xDS config distribution, certificate rotation, and telemetry
+#
+# Without this policy, sidecars cannot receive configuration updates from
+# istiod and mTLS certificate rotation will fail.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-istio-control-plane
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "SC-8, SC-12"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-istio-control-plane
+  namespace: team-beta
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "SC-8, SC-12"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system

@@ -1,0 +1,43 @@
+---
+# Allow Istio ingress gateway to reach tenant application pods
+# NIST SC-7 — external traffic enters only through the gateway
+#
+# This permits the Istio gateway (in istio-system) to forward requests
+# to services in tenant namespaces. Without this policy, external users
+# cannot reach tenant applications through the gateway.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-ingress
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AC-3, SC-7"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-ingress
+  namespace: team-beta
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+  annotations:
+    sre.io/nist-controls: "AC-3, SC-7"
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system

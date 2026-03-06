@@ -1,0 +1,29 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Active policies for tenant namespaces (Istio injection enabled)
+  - tenants/default-deny.yaml
+  - tenants/allow-gateway-ingress.yaml
+  - tenants/allow-prometheus-scrape.yaml
+  - tenants/allow-same-namespace.yaml
+  - tenants/allow-istio-control-plane.yaml
+  # Platform namespace policies are NOT included here because those
+  # namespaces have istio-injection: disabled. They are stored in
+  # platform/ as reference documentation. To activate them, uncomment
+  # the lines below after enabling Istio injection on the target
+  # namespace and restarting its pods.
+  #
+  # - platform/default-deny.yaml
+  # - platform/allow-monitoring-scrape.yaml
+  # - platform/allow-grafana-ingress.yaml
+  # - platform/allow-prometheus-ingress.yaml
+  # - platform/allow-alertmanager-ingress.yaml
+  # - platform/allow-harbor-ingress.yaml
+  # - platform/allow-keycloak-ingress.yaml
+  # - platform/allow-neuvector-ingress.yaml
+  # - platform/allow-loki-ingestion.yaml
+  # - platform/allow-tempo-traces.yaml
+  # - platform/allow-openbao-access.yaml
+  # - platform/allow-harbor-internal.yaml
+  # - platform/allow-keycloak-internal.yaml

@@ -1,0 +1,26 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "SRE Platform"
+configMapGenerator:
+  - name: sre-dashboard-cluster-overview
+    files:
+      - cluster-overview.json
+  - name: sre-dashboard-namespace-resources
+    files:
+      - namespace-resources.json
+  - name: sre-dashboard-istio-mesh
+    files:
+      - istio-mesh.json
+  - name: sre-dashboard-kyverno-compliance
+    files:
+      - kyverno-compliance.json
+  - name: sre-dashboard-flux-gitops
+    files:
+      - flux-gitops.json

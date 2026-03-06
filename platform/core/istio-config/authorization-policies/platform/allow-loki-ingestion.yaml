@@ -1,0 +1,48 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow Alloy to push logs to Loki
+# NIST AU-3, AU-4, AU-12 — log collection and storage
+#
+# Alloy runs as a DaemonSet in the logging namespace and pushes logs
+# to Loki's HTTP push endpoint. Grafana (in monitoring) also queries
+# Loki for log visualization.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-alloy-to-loki
+  namespace: logging
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AU-3, AU-4, AU-12"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  action: ALLOW
+  rules:
+    # Allow Alloy to push logs
+    - from:
+        - source:
+            namespaces:
+              - logging
+      to:
+        - operation:
+            ports:
+              - "3100"   # Loki HTTP API (push endpoint)
+              - "9095"   # Loki gRPC
+    # Allow Grafana to query logs
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports:
+              - "3100"   # Loki HTTP API (query endpoint)
+            methods:
+              - GET
+              - POST

@@ -1,0 +1,65 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow Istio gateway to reach Keycloak for external SSO access
+# NIST SC-7, IA-2 — boundary protection + centralized authentication
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-to-keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, SC-7, IA-2"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+      to:
+        - operation:
+            ports:
+              - "8080"
+              - "8443"
+
+---
+# Allow platform services to reach Keycloak for OIDC token validation
+# Grafana, Harbor, and other UIs validate tokens against Keycloak
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-platform-oidc
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "IA-2, IA-8"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - harbor
+              - openbao
+      to:
+        - operation:
+            ports:
+              - "8080"
+            methods:
+              - GET
+              - POST

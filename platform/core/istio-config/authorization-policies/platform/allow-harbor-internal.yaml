@@ -1,0 +1,68 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow Harbor internal component communication
+# NIST CM-8, SI-7 — component inventory and software integrity
+#
+# Harbor consists of multiple microservices (core, portal, registry,
+# jobservice, trivy scanner, redis, postgresql) that must communicate
+# within the harbor namespace.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-harbor-internal
+  namespace: harbor
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "CM-8, SI-7"
+spec:
+  action: ALLOW
+  rules:
+    # Allow all Harbor components to communicate within the namespace
+    - from:
+        - source:
+            namespaces:
+              - harbor
+      to:
+        - operation:
+            ports:
+              - "5432"    # PostgreSQL
+              - "6379"    # Redis
+              - "5000"    # Registry
+              - "8080"    # Core, Portal
+              - "8443"    # Core HTTPS
+              - "10443"   # Job service
+
+---
+# Allow Kubernetes nodes to pull images from Harbor registry
+# Kubelet pulls images directly, not through the mesh
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-image-pull
+  namespace: harbor
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "CM-11, SI-7"
+spec:
+  selector:
+    matchLabels:
+      app: harbor
+      component: nginx
+  action: ALLOW
+  rules:
+    # Allow all namespaces to pull images (read-only registry access)
+    - to:
+        - operation:
+            ports:
+              - "8080"
+              - "8443"
+            methods:
+              - GET
+              - HEAD

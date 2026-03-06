@@ -1,0 +1,52 @@
+---
+# Example CI workflow that calls the SRE reusable build pipeline.
+#
+# Place this file in your application repo at:
+#   .github/workflows/ci.yaml
+#
+# This workflow triggers on version tags (e.g., v1.0.0) and calls the
+# SRE build-scan-deploy workflow to build, scan, sign, and push the image.
+# It then updates the GitOps repo so Flux can deploy the new version.
+
+name: "My App CI"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------
+  # Step 1: Build, scan, sign, and push the container image
+  # ------------------------------------------------------------------
+  build:
+    name: "Build & Push"
+    uses: ./.github/workflows/build-scan-deploy.yaml
+    with:
+      image-name: "my-app"
+      image-tag: "${{ github.ref_name }}"
+      harbor-project: "team-alpha"
+      # Optional overrides:
+      # dockerfile: "./build/Dockerfile"
+      # build-context: "."
+      # trivy-severity: "CRITICAL,HIGH"
+      # harbor-registry: "harbor.sre.internal"
+    secrets: inherit
+
+  # ------------------------------------------------------------------
+  # Step 2: Update the GitOps repo to trigger Flux deployment
+  # ------------------------------------------------------------------
+  deploy:
+    name: "Update GitOps"
+    needs: build
+    uses: ./.github/workflows/update-gitops.yaml
+    with:
+      image-name: "my-app"
+      image-tag: "${{ github.ref_name }}"
+      team: "team-alpha"
+      # Optional: create a PR instead of committing directly
+      # create-pr: true
+    secrets: inherit

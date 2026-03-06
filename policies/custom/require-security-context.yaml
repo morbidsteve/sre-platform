@@ -46,6 +46,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       validate:
         message: >-
           Pod {{request.object.metadata.name}} must set
@@ -82,6 +84,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must set

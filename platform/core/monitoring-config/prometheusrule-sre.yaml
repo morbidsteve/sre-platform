@@ -7,13 +7,124 @@ metadata:
   labels:
     app.kubernetes.io/part-of: sre-platform
     release: monitoring
+  annotations:
+    sre.io/nist-controls: "IR-4, IR-5, SI-4, SI-5, CA-7, RA-5"
 spec:
   groups:
-    - name: sre-platform-alerts
+    # =================================================================
+    # Certificate alerts (cert-manager)
+    # NIST: IA-5, SC-12
+    # =================================================================
+    - name: sre.certificates
       rules:
-        # ---------------------------------------------------------------
-        # Kyverno policy violations
-        # ---------------------------------------------------------------
+        - alert: CertificateExpiringSoon
+          expr: |
+            certmanager_certificate_expiration_timestamp_seconds - time() < 86400 * 30
+          for: 1h
+          labels:
+            severity: "warning"
+            component: "cert-manager"
+          annotations:
+            summary: "Certificate {{ $labels.name }} in {{ $labels.namespace }} expires in less than 30 days"
+            description: >-
+              Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+              will expire in less than 30 days. Verify cert-manager is renewing
+              it automatically, or manually trigger renewal.
+            runbook_url: "https://docs.sre.internal/runbooks/certificate-expiry"
+
+        - alert: CertificateExpiringCritical
+          expr: |
+            certmanager_certificate_expiration_timestamp_seconds - time() < 86400 * 7
+          for: 10m
+          labels:
+            severity: "critical"
+            component: "cert-manager"
+          annotations:
+            summary: "Certificate {{ $labels.name }} in {{ $labels.namespace }} expires in less than 7 days"
+            description: >-
+              Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+              will expire in less than 7 days. Immediate action required.
+              Check cert-manager logs and certificate status:
+              kubectl describe certificate {{ $labels.name }} -n {{ $labels.namespace }}
+            runbook_url: "https://docs.sre.internal/runbooks/certificate-expiry"
+
+        - alert: CertificateNotReady
+          expr: |
+            certmanager_certificate_ready_status{condition="True"} == 0
+          for: 30m
+          labels:
+            severity: "warning"
+            component: "cert-manager"
+          annotations:
+            summary: "Certificate {{ $labels.name }} in {{ $labels.namespace }} is not ready"
+            description: >-
+              Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+              has not been in Ready state for 30 minutes. Check cert-manager
+              events and issuer configuration.
+            runbook_url: "https://docs.sre.internal/runbooks/certificate-expiry"
+
+    # =================================================================
+    # Flux CD reconciliation alerts
+    # NIST: CM-2, CM-3, SI-7
+    # =================================================================
+    - name: sre.flux
+      rules:
+        - alert: FluxReconciliationFailed
+          expr: |
+            gotk_reconcile_condition{type="Ready", status="False"} == 1
+          for: 15m
+          labels:
+            severity: "warning"
+            component: "flux"
+          annotations:
+            summary: "Flux {{ $labels.kind }}/{{ $labels.name }} reconciliation failed"
+            description: >-
+              Flux {{ $labels.kind }} {{ $labels.name }} in namespace
+              {{ $labels.namespace }} has not been ready for 15 minutes.
+              Check flux logs: flux logs --kind={{ $labels.kind }}
+              --name={{ $labels.name }} -n {{ $labels.namespace }}
+            runbook_url: "https://docs.sre.internal/runbooks/flux-reconciliation-failure"
+
+        - alert: FluxReconciliationStalled
+          expr: |
+            gotk_reconcile_condition{type="Ready", status="False"} == 1
+          for: 1h
+          labels:
+            severity: "critical"
+            component: "flux"
+          annotations:
+            summary: "Flux {{ $labels.kind }}/{{ $labels.name }} has been failing for over 1 hour"
+            description: >-
+              Flux {{ $labels.kind }} {{ $labels.name }} in namespace
+              {{ $labels.namespace }} has been in a failed state for over
+              1 hour. This indicates a persistent reconciliation problem.
+              Immediate investigation required.
+              Check: flux get all -A --status-selector ready=false
+            runbook_url: "https://docs.sre.internal/runbooks/flux-reconciliation-failure"
+
+        - alert: FluxSuspended
+          expr: |
+            gotk_suspend_status == 1
+          for: 24h
+          labels:
+            severity: "warning"
+            component: "flux"
+          annotations:
+            summary: "Flux {{ $labels.kind }}/{{ $labels.name }} has been suspended for over 24 hours"
+            description: >-
+              Flux {{ $labels.kind }} {{ $labels.name }} in namespace
+              {{ $labels.namespace }} has been suspended for more than 24 hours.
+              If this is intentional, acknowledge this alert. Otherwise, resume
+              reconciliation: flux resume {{ $labels.kind }} {{ $labels.name }}
+              -n {{ $labels.namespace }}
+            runbook_url: "https://docs.sre.internal/runbooks/flux-suspended"
+
+    # =================================================================
+    # Kyverno policy enforcement alerts
+    # NIST: AC-3, CM-6, SI-4
+    # =================================================================
+    - name: sre.kyverno
+      rules:
         - alert: KyvernoPolicyViolation
           expr: |
             sum(increase(kyverno_policy_results_total{rule_result="fail"}[15m])) > 0
@@ -29,47 +140,195 @@ spec:
               kubectl get policyreport -A
             runbook_url: "https://docs.sre.internal/runbooks/kyverno-policy-violation"
 
-        # ---------------------------------------------------------------
-        # Certificate expiry warning
-        # ---------------------------------------------------------------
-        - alert: CertificateExpiringSoon
+        - alert: KyvernoPolicyViolationSpike
           expr: |
-            certmanager_certificate_expiration_timestamp_seconds - time() < 2592000
-          for: 1h
+            rate(kyverno_policy_results_total{rule_result="fail"}[5m]) > 0.5
+          for: 10m
           labels:
             severity: "warning"
-            component: "cert-manager"
+            component: "kyverno"
           annotations:
-            summary: "Certificate {{ $labels.name }} expires in less than 30 days"
+            summary: "High rate of Kyverno policy violations"
             description: >-
-              Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
-              will expire in less than 30 days. Verify cert-manager is renewing
-              it automatically, or manually trigger renewal.
-            runbook_url: "https://docs.sre.internal/runbooks/certificate-expiry"
+              Kyverno is experiencing a high rate of policy violations
+              (more than 0.5 per second over 5 minutes). This may indicate
+              a misconfigured deployment or an active security incident.
+              Review policy reports: kubectl get policyreport -A
+            runbook_url: "https://docs.sre.internal/runbooks/kyverno-policy-violation"
 
-        # ---------------------------------------------------------------
-        # Flux reconciliation failures
-        # ---------------------------------------------------------------
-        - alert: FluxReconciliationFailure
+        - alert: KyvernoAdmissionControllerDown
           expr: |
-            gotk_reconcile_condition{type="Ready",status="False"} == 1
-          for: 30m
+            absent(up{job=~".*kyverno.*"} == 1)
+          for: 5m
           labels:
             severity: "critical"
-            component: "flux"
+            component: "kyverno"
           annotations:
-            summary: "Flux {{ $labels.kind }} {{ $labels.name }} reconciliation failing"
+            summary: "Kyverno admission controller is down"
             description: >-
-              Flux {{ $labels.kind }} {{ $labels.name }} in namespace
-              {{ $labels.namespace }} has not been ready for 30 minutes.
-              Check flux logs: flux logs --kind={{ $labels.kind }}
-              --name={{ $labels.name }} -n {{ $labels.namespace }}
-            runbook_url: "https://docs.sre.internal/runbooks/flux-reconciliation-failure"
+              Kyverno admission controller appears to be down. Policy
+              enforcement is not active. This is a critical security gap.
+              Check kyverno namespace: kubectl get pods -n kyverno
+            runbook_url: "https://docs.sre.internal/runbooks/kyverno-down"
 
-        # ---------------------------------------------------------------
-        # Pod running as root
-        # ---------------------------------------------------------------
-        - alert: PodSecurityViolation
+    # =================================================================
+    # Node resource alerts
+    # NIST: SI-4, CA-7
+    # =================================================================
+    - name: sre.nodes
+      rules:
+        - alert: NodeMemoryHigh
+          expr: |
+            (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+          for: 5m
+          labels:
+            severity: "warning"
+            component: "infrastructure"
+          annotations:
+            summary: "Node {{ $labels.instance }} memory usage above 85%"
+            description: >-
+              Node {{ $labels.instance }} is using more than 85% of available
+              memory. Consider scaling the cluster or investigating memory-hungry
+              workloads: kubectl top pods -A --sort-by=memory
+            runbook_url: "https://docs.sre.internal/runbooks/node-resources"
+
+        - alert: NodeMemoryCritical
+          expr: |
+            (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.95
+          for: 5m
+          labels:
+            severity: "critical"
+            component: "infrastructure"
+          annotations:
+            summary: "Node {{ $labels.instance }} memory usage above 95%"
+            description: >-
+              Node {{ $labels.instance }} is using more than 95% of available
+              memory. OOM kills are imminent. Immediate action required.
+            runbook_url: "https://docs.sre.internal/runbooks/node-resources"
+
+        - alert: NodeDiskSpaceLow
+          expr: |
+            (1 - node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"}) > 0.8
+          for: 10m
+          labels:
+            severity: "warning"
+            component: "infrastructure"
+          annotations:
+            summary: "Node {{ $labels.instance }} disk usage above 80% on {{ $labels.mountpoint }}"
+            description: >-
+              Node {{ $labels.instance }} filesystem at {{ $labels.mountpoint }}
+              is over 80% full. Investigate disk usage and consider cleanup
+              or volume expansion.
+            runbook_url: "https://docs.sre.internal/runbooks/node-resources"
+
+        - alert: NodeDiskSpaceCritical
+          expr: |
+            (1 - node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"}) > 0.9
+          for: 5m
+          labels:
+            severity: "critical"
+            component: "infrastructure"
+          annotations:
+            summary: "Node {{ $labels.instance }} disk usage above 90% on {{ $labels.mountpoint }}"
+            description: >-
+              Node {{ $labels.instance }} filesystem at {{ $labels.mountpoint }}
+              is over 90% full. Immediate action required to prevent node failure.
+            runbook_url: "https://docs.sre.internal/runbooks/node-resources"
+
+        - alert: NodeCPUHigh
+          expr: |
+            (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.9
+          for: 15m
+          labels:
+            severity: "warning"
+            component: "infrastructure"
+          annotations:
+            summary: "Node {{ $labels.instance }} CPU usage above 90%"
+            description: >-
+              Node {{ $labels.instance }} has sustained CPU usage above 90%
+              for 15 minutes. Check for CPU-intensive workloads:
+              kubectl top pods -A --sort-by=cpu
+            runbook_url: "https://docs.sre.internal/runbooks/node-resources"
+
+    # =================================================================
+    # Storage / PVC alerts
+    # NIST: SI-4, CA-7
+    # =================================================================
+    - name: sre.storage
+      rules:
+        - alert: PVCUsageHigh
+          expr: |
+            kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.8
+          for: 15m
+          labels:
+            severity: "warning"
+            component: "storage"
+          annotations:
+            summary: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} is over 80% full"
+            description: >-
+              PersistentVolumeClaim {{ $labels.persistentvolumeclaim }} in
+              namespace {{ $labels.namespace }} is over 80% full. Consider
+              expanding the volume or cleaning up data.
+            runbook_url: "https://docs.sre.internal/runbooks/pvc-usage"
+
+        - alert: PVCUsageCritical
+          expr: |
+            kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.9
+          for: 5m
+          labels:
+            severity: "critical"
+            component: "storage"
+          annotations:
+            summary: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} is over 90% full"
+            description: >-
+              PersistentVolumeClaim {{ $labels.persistentvolumeclaim }} in
+              namespace {{ $labels.namespace }} is over 90% full. Immediate
+              action required to prevent data loss or service disruption.
+            runbook_url: "https://docs.sre.internal/runbooks/pvc-usage"
+
+    # =================================================================
+    # Pod health alerts
+    # NIST: SI-4, IR-4
+    # =================================================================
+    - name: sre.pods
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total[15m]) > 0
+          for: 15m
+          labels:
+            severity: "warning"
+            component: "application"
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+            description: >-
+              Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is
+              restarting repeatedly. Check container logs:
+              kubectl logs {{ $labels.pod }} -n {{ $labels.namespace }} --previous
+            runbook_url: "https://docs.sre.internal/runbooks/pod-crash-loop"
+
+        - alert: PodNotReady
+          expr: |
+            kube_pod_status_ready{condition="true"} == 0
+          for: 15m
+          labels:
+            severity: "warning"
+            component: "application"
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been not ready for 15 minutes"
+            description: >-
+              Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has
+              not been in Ready state for 15 minutes. Check pod events:
+              kubectl describe pod {{ $labels.pod }} -n {{ $labels.namespace }}
+            runbook_url: "https://docs.sre.internal/runbooks/pod-not-ready"
+
+    # =================================================================
+    # Security alerts
+    # NIST: AC-6, SI-3, SI-4
+    # =================================================================
+    - name: sre.security
+      rules:
+        - alert: PodRunningAsRoot
           expr: |
             kube_pod_container_info{container!="istio-init"} unless on(pod, namespace)
             kube_pod_container_status_running{container!="istio-init"} == 0
@@ -88,9 +347,12 @@ spec:
               the pod security context sets runAsNonRoot: true.
             runbook_url: "https://docs.sre.internal/runbooks/pod-security-violation"
 
-        # ---------------------------------------------------------------
-        # High HTTP 5xx error rate
-        # ---------------------------------------------------------------
+    # =================================================================
+    # Istio service mesh alerts
+    # NIST: SC-8, SI-4
+    # =================================================================
+    - name: sre.istio
+      rules:
         - alert: HighErrorRate
           expr: |
             (
@@ -110,3 +372,33 @@ spec:
               than 5% HTTP 5xx responses over the last 10 minutes. Investigate
               application logs and traces in Grafana.
             runbook_url: "https://docs.sre.internal/runbooks/high-error-rate"
+
+        - alert: HighRequestLatency
+          expr: |
+            histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket[5m])) by (le, destination_service_name, destination_service_namespace)) > 5000
+          for: 10m
+          labels:
+            severity: "warning"
+            component: "application"
+          annotations:
+            summary: "High p99 latency for {{ $labels.destination_service_name }}"
+            description: >-
+              Service {{ $labels.destination_service_name }} in namespace
+              {{ $labels.destination_service_namespace }} has p99 latency
+              above 5 seconds. Check service health and downstream dependencies.
+            runbook_url: "https://docs.sre.internal/runbooks/high-latency"
+
+        - alert: IstiodDown
+          expr: |
+            absent(up{job="istiod"} == 1)
+          for: 5m
+          labels:
+            severity: "critical"
+            component: "istio"
+          annotations:
+            summary: "Istio control plane (istiod) is down"
+            description: >-
+              Istiod is not responding to scrapes. The Istio control plane
+              may be down, which prevents sidecar configuration updates
+              and certificate rotation. Check: kubectl get pods -n istio-system
+            runbook_url: "https://docs.sre.internal/runbooks/istiod-down"

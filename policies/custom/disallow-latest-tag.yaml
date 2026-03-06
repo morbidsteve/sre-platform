@@ -17,7 +17,7 @@ metadata:
     policies.kyverno.io/severity: medium
     sre.io/nist-controls: "CM-2"
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: validate-image-tag
@@ -46,6 +46,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       validate:
         message: >-
           Container images in Pod {{request.object.metadata.name}} must not use
@@ -82,6 +84,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] | length(@) }}"

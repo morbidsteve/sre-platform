@@ -46,6 +46,8 @@ spec:
                 - harbor
                 - velero
                 - keycloak
+                - sre-dashboard
+                - local-path-storage
       validate:
         message: >-
           Namespace {{request.object.metadata.name}} must have at least one

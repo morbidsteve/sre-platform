@@ -118,31 +118,9 @@ spec:
             cpu: 200m
             memory: 256Mi
         # Storage configured via environment profile ConfigMap (monitoring-env-values)
-      config:
-        global:
-          resolve_timeout: "5m"
-        route:
-          group_by:
-            - "namespace"
-            - "alertname"
-          group_wait: "30s"
-          group_interval: "5m"
-          repeat_interval: "12h"
-          receiver: "default-webhook"
-          routes:
-            - receiver: "critical-webhook"
-              match:
-                severity: "critical"
-              repeat_interval: "1h"
-        receivers:
-          - name: "default-webhook"
-            webhook_configs:
-              - url: "http://REPLACE_ME:9095/webhook"
-                send_resolved: true
-          - name: "critical-webhook"
-            webhook_configs:
-              - url: "http://REPLACE_ME:9095/webhook"
-                send_resolved: true
+      # Alertmanager routing config is managed via the alertmanager-routing-values
+      # ConfigMap (valuesFrom below). Edit alertmanager-routing-configmap.yaml
+      # to change receivers, routes, or inhibit rules.
 
     # ---------------------------------------------------------------
     # Node Exporter
@@ -215,4 +193,7 @@ spec:
       optional: true
     - kind: ConfigMap
       name: monitoring-env-values
+      optional: true
+    - kind: ConfigMap
+      name: alertmanager-routing-values
       optional: true

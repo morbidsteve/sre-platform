@@ -1,0 +1,204 @@
+---
+# Reusable workflow to update the image tag in the SRE GitOps repo.
+#
+# After the build-scan-deploy workflow pushes a signed image to Harbor,
+# this workflow updates the HelmRelease values in the sre-platform repo
+# so that Flux CD picks up the new image tag and deploys it automatically.
+#
+# Supports two modes:
+#   - Direct commit to main (default, for dev/staging)
+#   - Pull request (for production, when create-pr is true)
+
+name: "Update GitOps Repo"
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: "Name of the container image"
+        required: true
+        type: string
+      image-tag:
+        description: "New image tag to deploy"
+        required: true
+        type: string
+      team:
+        description: "Team/tenant name (e.g., team-alpha)"
+        required: true
+        type: string
+      gitops-repo:
+        description: "GitOps repository (org/repo format)"
+        required: false
+        type: string
+        default: "morbidsteve/sre-platform"
+      gitops-branch:
+        description: "Target branch in the GitOps repo"
+        required: false
+        type: string
+        default: "main"
+      create-pr:
+        description: "Create a PR instead of committing directly"
+        required: false
+        type: boolean
+        default: false
+      harbor-registry:
+        description: "Harbor registry hostname"
+        required: false
+        type: string
+        default: "harbor.sre.internal"
+    secrets:
+      GITOPS_TOKEN:
+        description: "GitHub PAT with write access to the GitOps repo"
+        required: true
+
+jobs:
+  update-gitops:
+    name: "Update Image Tag"
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout the GitOps repo
+      # ------------------------------------------------------------------
+      - name: Checkout GitOps repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+        with:
+          repository: ${{ inputs.gitops-repo }}
+          ref: ${{ inputs.gitops-branch }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+          fetch-depth: 1
+
+      # ------------------------------------------------------------------
+      # 2. Find and update the image tag in the team's app manifests
+      # ------------------------------------------------------------------
+      - name: Update image tag in HelmRelease values
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          TEAM: ${{ inputs.team }}
+          REGISTRY: ${{ inputs.harbor-registry }}
+        run: |
+          # Locate the app's HelmRelease or values file
+          APP_DIR="apps/tenants/${TEAM}/apps"
+          VALUES_FILE="${APP_DIR}/${IMAGE_NAME}.yaml"
+
+          if [ ! -f "${VALUES_FILE}" ]; then
+            echo "::error::App manifest not found at ${VALUES_FILE}"
+            echo ""
+            echo "Expected file structure:"
+            echo "  apps/tenants/${TEAM}/apps/${IMAGE_NAME}.yaml"
+            echo ""
+            echo "Create the app manifest first. See ci/README.md for instructions."
+            exit 1
+          fi
+
+          echo "Updating ${VALUES_FILE}"
+          echo "  image: ${REGISTRY}/${TEAM}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+          # Update the image tag using yq (installed on ubuntu runners)
+          # Handles both inline values and standalone values files
+          if command -v yq &> /dev/null; then
+            # Try HelmRelease format first (spec.values.app.image.tag)
+            if yq -e '.spec.values.app.image.tag' "${VALUES_FILE}" &> /dev/null; then
+              yq -i ".spec.values.app.image.tag = \"${IMAGE_TAG}\"" "${VALUES_FILE}"
+              yq -i ".spec.values.app.image.repository = \"${REGISTRY}/${TEAM}/${IMAGE_NAME}\"" "${VALUES_FILE}"
+              echo "Updated HelmRelease values in ${VALUES_FILE}"
+            # Try standalone values format (app.image.tag)
+            elif yq -e '.app.image.tag' "${VALUES_FILE}" &> /dev/null; then
+              yq -i ".app.image.tag = \"${IMAGE_TAG}\"" "${VALUES_FILE}"
+              yq -i ".app.image.repository = \"${REGISTRY}/${TEAM}/${IMAGE_NAME}\"" "${VALUES_FILE}"
+              echo "Updated values file ${VALUES_FILE}"
+            else
+              echo "::error::Could not find image.tag field in ${VALUES_FILE}"
+              echo "Expected either spec.values.app.image.tag or app.image.tag"
+              exit 1
+            fi
+          else
+            # Fallback: use sed for simple tag replacement
+            sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" "${VALUES_FILE}"
+            echo "Updated tag via sed in ${VALUES_FILE}"
+          fi
+
+          echo ""
+          echo "Updated manifest:"
+          cat "${VALUES_FILE}"
+
+      # ------------------------------------------------------------------
+      # 3a. Direct commit (for dev/staging)
+      # ------------------------------------------------------------------
+      - name: Commit and push changes
+        if: ${{ !inputs.create-pr }}
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          TEAM: ${{ inputs.team }}
+        run: |
+          git config user.name "sre-ci-bot"
+          git config user.email "sre-ci-bot@sre.internal"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit — image tag already up to date."
+            exit 0
+          fi
+
+          git commit -m "$(cat <<EOF
+          deploy(${TEAM}): update ${IMAGE_NAME} to ${IMAGE_TAG}
+
+          Automated image tag update from CI pipeline.
+          Flux will reconcile this change automatically.
+          EOF
+          )"
+
+          git push origin ${{ inputs.gitops-branch }}
+          echo "Committed and pushed. Flux will deploy within the next reconciliation interval."
+
+      # ------------------------------------------------------------------
+      # 3b. Create a PR (for production)
+      # ------------------------------------------------------------------
+      - name: Create deployment PR
+        if: ${{ inputs.create-pr }}
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          TEAM: ${{ inputs.team }}
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: |
+          BRANCH="deploy/${TEAM}/${IMAGE_NAME}-${IMAGE_TAG}"
+
+          git config user.name "sre-ci-bot"
+          git config user.email "sre-ci-bot@sre.internal"
+
+          git checkout -b "${BRANCH}"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit — image tag already up to date."
+            exit 0
+          fi
+
+          git commit -m "deploy(${TEAM}): update ${IMAGE_NAME} to ${IMAGE_TAG}"
+          git push origin "${BRANCH}"
+
+          gh pr create \
+            --title "deploy(${TEAM}): update ${IMAGE_NAME} to ${IMAGE_TAG}" \
+            --body "$(cat <<EOF
+          ## Automated Deployment
+
+          | Field | Value |
+          |-------|-------|
+          | App | \`${IMAGE_NAME}\` |
+          | Tag | \`${IMAGE_TAG}\` |
+          | Team | \`${TEAM}\` |
+
+          This PR was created automatically by the CI pipeline.
+          The image has been scanned, signed, and pushed to Harbor.
+
+          **Merge this PR to trigger Flux deployment.**
+          EOF
+          )" \
+            --base "${{ inputs.gitops-branch }}" \
+            --head "${BRANCH}"

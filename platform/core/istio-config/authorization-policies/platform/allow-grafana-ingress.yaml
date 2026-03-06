@@ -1,0 +1,30 @@
+---
+# NOTE: INACTIVE — see platform/README.md
+#
+# Allow Istio gateway to reach Grafana for external access
+# NIST SC-7 — boundary protection via single ingress point
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-to-grafana
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-type: authorization
+    sre.io/policy-status: reference-only
+  annotations:
+    sre.io/nist-controls: "AC-3, SC-7"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+      to:
+        - operation:
+            ports:
+              - "3000"

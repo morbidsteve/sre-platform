@@ -1,0 +1,61 @@
+---
+# Alertmanager routing configuration for kube-prometheus-stack
+# Referenced via valuesFrom ConfigMap in the HelmRelease
+#
+# To use this file, create a ConfigMap from it:
+#   kubectl create configmap alertmanager-routing-values \
+#     --from-file=values.yaml=alertmanager-values.yaml \
+#     -n monitoring
+#
+# Or apply the accompanying alertmanager-routing-configmap.yaml which
+# wraps this content in a ConfigMap for Flux to manage.
+#
+# Replace placeholder webhook URLs with your actual receivers:
+#   - PagerDuty, Slack, Opsgenie, or a custom webhook endpoint
+#
+# NIST Controls: IR-4, IR-5, IR-6, SI-5
+alertmanager:
+  config:
+    global:
+      resolve_timeout: "5m"
+    route:
+      receiver: "default-webhook"
+      group_by:
+        - "namespace"
+        - "alertname"
+        - "severity"
+      group_wait: "30s"
+      group_interval: "5m"
+      repeat_interval: "4h"
+      routes:
+        - receiver: "critical-webhook"
+          matchers:
+            - severity = critical
+          repeat_interval: "1h"
+          continue: false
+        - receiver: "warning-webhook"
+          matchers:
+            - severity = warning
+          repeat_interval: "4h"
+          continue: false
+    receivers:
+      - name: "default-webhook"
+        webhook_configs:
+          - url: "http://placeholder.example.com/webhook"
+            send_resolved: true
+      - name: "critical-webhook"
+        webhook_configs:
+          - url: "http://placeholder.example.com/critical"
+            send_resolved: true
+      - name: "warning-webhook"
+        webhook_configs:
+          - url: "http://placeholder.example.com/warning"
+            send_resolved: true
+    inhibit_rules:
+      - source_matchers:
+          - severity = critical
+        target_matchers:
+          - severity = warning
+        equal:
+          - "namespace"
+          - "alertname"
