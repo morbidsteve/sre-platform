@@ -36,6 +36,42 @@ The platform automatically adds:
 - **Service account** — dedicated identity for your app
 - **Health probes** — liveness and readiness checks
 
+### Non-Interactive / Bulk Deploy
+
+For CI pipelines or deploying many services at once:
+
+```bash
+# Deploy a single app with flags
+./scripts/sre-deploy-app.sh \
+  --name my-api \
+  --team team-alpha \
+  --image docker.io/myorg/my-api \
+  --tag v1.0.0 \
+  --port 8080 \
+  --ingress my-api.apps.sre.example.com
+
+# Bulk deploy: 10 microservices in one shot
+SERVICES="api-gateway user-svc order-svc payment-svc inventory-svc \
+  notification-svc auth-svc search-svc analytics-svc admin-svc"
+
+for svc in $SERVICES; do
+  ./scripts/sre-deploy-app.sh \
+    --name "$svc" \
+    --team my-team \
+    --image "docker.io/myorg/$svc" \
+    --tag v1.0.0 \
+    --port 8080 \
+    --no-commit
+done
+
+# Single commit + push for all services
+git add apps/tenants/my-team/
+git commit -m "feat(apps): deploy all microservices to my-team"
+git push
+```
+
+All flags: `--name`, `--team`, `--image`, `--tag`, `--port`, `--chart`, `--replicas`, `--ingress HOST`, `--hpa`, `--metrics`, `--no-commit`. Run `./scripts/sre-deploy-app.sh --help` for details.
+
 ---
 
 ## Step-by-Step: Manual Deployment

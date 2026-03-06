@@ -35,13 +35,16 @@ spec:
               - "15017"
 
 ---
-# Allow Prometheus to scrape Istio metrics
+# Allow Prometheus to scrape istiod metrics
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-prometheus-scrape
   namespace: istio-system
 spec:
+  selector:
+    matchLabels:
+      app: istiod
   action: ALLOW
   rules:
     - from:
