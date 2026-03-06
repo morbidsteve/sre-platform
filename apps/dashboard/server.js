@@ -353,6 +353,7 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
       chart: {
         spec: {
           chart: "./apps/templates/web-app",
+          reconcileStrategy: "Revision",
           sourceRef: {
             kind: "GitRepository",
             name: "flux-system",
