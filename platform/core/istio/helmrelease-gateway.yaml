@@ -32,23 +32,25 @@ spec:
     remediation:
       retries: 3
     disableSchemaValidation: true
-  # Patch the rendered Deployment to add hostNetwork (not a native chart value)
+  # Patch the rendered Deployment to add hostNetwork (not a native chart value).
+  # Also remove the net.ipv4.ip_unprivileged_port_start sysctl which conflicts
+  # with hostNetwork. For cloud deployments, remove this postRenderers block
+  # and set service.type: LoadBalancer instead.
   postRenderers:
     - kustomize:
         patches:
           - target:
               kind: Deployment
               name: istio-gateway
-            patch: |
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: istio-gateway
-              spec:
-                template:
-                  spec:
-                    hostNetwork: true
-                    dnsPolicy: ClusterFirstWithHostNet
+            patch: |-
+              - op: add
+                path: /spec/template/spec/hostNetwork
+                value: true
+              - op: add
+                path: /spec/template/spec/dnsPolicy
+                value: ClusterFirstWithHostNet
+              - op: remove
+                path: /spec/template/spec/securityContext/sysctls
   values:
     replicaCount: 1
     autoscaling:
