@@ -49,6 +49,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
       verifyImages:
         - imageReferences:
             - "harbor.sre.internal/*"

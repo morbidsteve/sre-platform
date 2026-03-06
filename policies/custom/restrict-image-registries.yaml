@@ -49,6 +49,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
       validate:
         message: >-
           All container images in Pod {{request.object.metadata.name}} must be
@@ -87,6 +88,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] | length(@) }}"

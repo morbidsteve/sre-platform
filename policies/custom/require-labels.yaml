@@ -48,6 +48,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
       validate:
         message: >-
           Pod {{request.object.metadata.name}} in namespace

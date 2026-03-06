@@ -48,6 +48,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
                 - default
           - resources:
               selector:

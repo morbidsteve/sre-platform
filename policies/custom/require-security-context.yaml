@@ -48,6 +48,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
       validate:
         message: >-
           Pod {{request.object.metadata.name}} must set
@@ -86,6 +87,7 @@ spec:
                 - keycloak
                 - sre-dashboard
                 - local-path-storage
+                - metallb-system
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must set
