@@ -1,19 +1,55 @@
 ---
-# Allow Keycloak ingress from Istio gateway and egress to PostgreSQL, Prometheus, K8s API, DNS
+# Allow all Keycloak pods egress (DNS + internal + K8s API + external HTTPS)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-keycloak
+  name: allow-keycloak-egress
   namespace: keycloak
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: keycloak
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Intra-namespace (Keycloak <-> PostgreSQL, JGroups clustering)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Kubernetes API (service discovery)
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+
+---
+# Allow ingress from Istio gateway, monitoring, and within namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak-ingress
+  namespace: keycloak
+spec:
+  podSelector: {}
   policyTypes:
     - Ingress
-    - Egress
   ingress:
-    # Traffic from Istio ingress gateway
+    # Within keycloak namespace (Keycloak <-> PostgreSQL, JGroups)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+    # Istio gateway for SSO web UI
     - from:
         - namespaceSelector:
             matchLabels:
@@ -29,78 +65,7 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
-    # Keycloak cluster discovery (Infinispan/JGroups)
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: keycloak
-      ports:
-        - port: 7800
-          protocol: TCP
-  egress:
-    # Bundled PostgreSQL (within namespace)
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: postgresql
-      ports:
-        - port: 5432
-          protocol: TCP
-    # Keycloak cluster peering (Infinispan/JGroups)
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: keycloak
-      ports:
-        - port: 7800
-          protocol: TCP
-    # Kubernetes API server (for service discovery)
+    # Webhook traffic from API server
     - ports:
         - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    # DNS resolution
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-
----
-# Allow bundled PostgreSQL to receive connections from Keycloak
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-keycloak-postgresql
-  namespace: keycloak
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: postgresql
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: keycloak
-      ports:
-        - port: 5432
-          protocol: TCP
-  egress:
-    # DNS resolution
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
           protocol: TCP

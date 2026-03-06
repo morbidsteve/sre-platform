@@ -60,11 +60,11 @@ spec:
       gitHubToken: ""
       resources:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 100m
+          memory: 256Mi
         limits:
-          cpu: "1"
-          memory: 1Gi
+          cpu: 500m
+          memory: 512Mi
 
     # -----------------------------------------------------------------
     # Notary — disabled; use Cosign for image signing instead (NIST SI-7)
@@ -80,11 +80,11 @@ spec:
       internal:
         resources:
           requests:
-            cpu: 100m
-            memory: 256Mi
+            cpu: 50m
+            memory: 128Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: 250m
+            memory: 256Mi
 
     # -----------------------------------------------------------------
     # Internal Redis
@@ -106,11 +106,11 @@ spec:
     core:
       resources:
         requests:
-          cpu: 100m
-          memory: 256Mi
+          cpu: 50m
+          memory: 128Mi
         limits:
-          cpu: 500m
-          memory: 512Mi
+          cpu: 250m
+          memory: 256Mi
 
     # -----------------------------------------------------------------
     # Job service resources
@@ -118,11 +118,11 @@ spec:
     jobservice:
       resources:
         requests:
-          cpu: 100m
-          memory: 256Mi
+          cpu: 50m
+          memory: 128Mi
         limits:
-          cpu: 500m
-          memory: 512Mi
+          cpu: 250m
+          memory: 256Mi
 
     # -----------------------------------------------------------------
     # Registry component resources
@@ -130,11 +130,11 @@ spec:
     registry:
       resources:
         requests:
-          cpu: 100m
-          memory: 256Mi
+          cpu: 50m
+          memory: 128Mi
         limits:
-          cpu: 500m
-          memory: 512Mi
+          cpu: 250m
+          memory: 256Mi
 
     # -----------------------------------------------------------------
     # Portal (web UI) resources
