@@ -1,0 +1,22 @@
+---
+# Allow Prometheus to scrape CoreDNS metrics (port 9153) in kube-system.
+# RKE2's default NetworkPolicies only allow intra-namespace and DNS port 53.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape-coredns
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9153
+          protocol: TCP

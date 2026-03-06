@@ -12,3 +12,4 @@ resources:
   - sre-alerting-rules.yaml
   - compliance-scan-cronjob.yaml
   - network-policies/allow-grafana-keycloak.yaml
+  - network-policies/allow-kube-system-scraping.yaml

@@ -63,7 +63,7 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: logging
-    # Grafana queries from monitoring namespace
+    # Grafana queries + Prometheus scraping from monitoring namespace
     - from:
         - namespaceSelector:
             matchLabels:
@@ -72,6 +72,8 @@ spec:
         - port: 80
           protocol: TCP
         - port: 3100
+          protocol: TCP
+        - port: 3500    # Loki canary metrics
           protocol: TCP
         - port: 12345
           protocol: TCP
