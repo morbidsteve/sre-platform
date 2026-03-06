@@ -111,6 +111,15 @@ if [[ -z "$SRE_ENVIRONMENT" ]]; then
     fi
 fi
 
+# ── SSH Configuration (for node access) ───────────────────────────────────
+
+SSH_USER="${SSH_USER:-sre-admin}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"
+SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5"
+if [[ -f "$SSH_KEY" ]]; then
+    SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+fi
+
 # ============================================================================
 # Step 3: StorageClass Setup
 # ============================================================================
@@ -140,7 +149,7 @@ if [[ "${SKIP_STORAGE:-}" != "1" ]]; then
 
         # Configure for SELinux if applicable
         for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "sre-admin@${node_ip}" \
+            ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
                 "sudo mkdir -p /opt/local-path-provisioner && sudo chcon -R -t container_file_t /opt/local-path-provisioner" \
                 2>/dev/null || true
         done
@@ -158,9 +167,10 @@ fi
 header "Kernel Module Setup"
 
 log "Loading Istio-required kernel modules on nodes..."
+log "(SSH user: $SSH_USER, key: $SSH_KEY — override with SSH_USER and SSH_KEY env vars)"
 MODULES_LOADED=0
 for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "sre-admin@${node_ip}" \
+    ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
         "sudo modprobe xt_REDIRECT 2>/dev/null; sudo modprobe xt_owner 2>/dev/null; \
          echo 'xt_REDIRECT' | sudo tee /etc/modules-load.d/istio.conf >/dev/null; \
          echo 'xt_owner' | sudo tee -a /etc/modules-load.d/istio.conf >/dev/null; \
@@ -183,7 +193,7 @@ fi
 log "Configuring firewalld trusted zone for pod/service CIDRs..."
 FW_FIXED=0
 for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "sre-admin@${node_ip}" \
+    ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
         "if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then \
            sudo firewall-cmd --zone=trusted --add-source=10.42.0.0/16 --permanent 2>/dev/null; \
            sudo firewall-cmd --zone=trusted --add-source=10.43.0.0/16 --permanent 2>/dev/null; \
@@ -388,15 +398,12 @@ if command -v docker &>/dev/null; then
     log "Building and deploying SRE Dashboard..."
     DASHBOARD_DIR="$(cd "$(dirname "$0")/../apps/dashboard" && pwd)"
     if [[ -f "$DASHBOARD_DIR/Dockerfile" ]]; then
-        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v1.0.0 . 2>/dev/null) && \
-        docker save sre-dashboard:v1.0.0 -o /tmp/sre-dashboard.tar 2>/dev/null && \
+        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v1.2.0 . 2>/dev/null) && \
+        docker save sre-dashboard:v1.2.0 -o /tmp/sre-dashboard.tar 2>/dev/null && \
         for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-            SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"
-            if [[ -f "$SSH_KEY" ]]; then
-                scp -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 /tmp/sre-dashboard.tar "sre-admin@${node_ip}:/tmp/sre-dashboard.tar" 2>/dev/null && \
-                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "sre-admin@${node_ip}" \
-                    "sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/sre-dashboard.tar && rm -f /tmp/sre-dashboard.tar" 2>/dev/null || true
-            fi
+            scp $SSH_OPTS /tmp/sre-dashboard.tar "${SSH_USER}@${node_ip}:/tmp/sre-dashboard.tar" 2>/dev/null && \
+            ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
+                "sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/sre-dashboard.tar && rm -f /tmp/sre-dashboard.tar" 2>/dev/null || true
         done
         rm -f /tmp/sre-dashboard.tar
         kubectl apply -f "$DASHBOARD_DIR/k8s/" 2>/dev/null && \
@@ -407,13 +414,52 @@ else
     warn "Docker not found — skipping SRE Dashboard build. Deploy manually later with apps/dashboard/build-and-deploy.sh"
 fi
 
-echo -e "  ${BOLD}Dashboard:${NC}"
-echo -e "    ${CYAN}kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001${NC}"
-echo -e "    Then open: ${CYAN}http://localhost:3001${NC}"
+# ============================================================================
+# Step 11: Print Full Access Guide
+# ============================================================================
+
+header "How to Access Your Platform"
+
+# Get a node IP and the HTTPS NodePort
+NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "YOUR_NODE_IP")
+HTTPS_PORT=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}' 2>/dev/null || echo "31443")
+
+echo -e "${BOLD}Step 1: Add DNS entries to your machine${NC}"
+echo
+echo -e "  Run this on the machine where you'll open a browser:"
+echo
+echo -e "  ${CYAN}echo \"${NODE_IP}  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
 echo
 
-echo -e "  ${BOLD}Documentation:${NC}"
-echo -e "    https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+echo -e "${BOLD}Step 2: Open the Dashboard${NC}"
+echo
+echo -e "  ${CYAN}https://dashboard.apps.sre.example.com:${HTTPS_PORT}${NC}"
+echo
+echo -e "  (Accept the self-signed certificate warning in your browser)"
 echo
 
-success "SRE Platform deployment complete."
+echo -e "${BOLD}All Platform UIs:${NC}"
+echo
+printf "  %-15s %s\n" "Dashboard" "https://dashboard.apps.sre.example.com:${HTTPS_PORT}"
+printf "  %-15s %s  (%s)\n" "Grafana" "https://grafana.apps.sre.example.com:${HTTPS_PORT}" "admin / prom-operator"
+printf "  %-15s %s\n" "Prometheus" "https://prometheus.apps.sre.example.com:${HTTPS_PORT}"
+printf "  %-15s %s\n" "Alertmanager" "https://alertmanager.apps.sre.example.com:${HTTPS_PORT}"
+printf "  %-15s %s  (%s)\n" "Harbor" "https://harbor.apps.sre.example.com:${HTTPS_PORT}" "admin / Harbor12345"
+printf "  %-15s %s  (%s)\n" "Keycloak" "https://keycloak.apps.sre.example.com:${HTTPS_PORT}" "admin / auto-generated"
+printf "  %-15s %s  (%s)\n" "NeuVector" "https://neuvector.apps.sre.example.com:${HTTPS_PORT}" "admin / admin"
+echo
+
+echo -e "${BOLD}Useful commands:${NC}"
+echo
+echo -e "  ${CYAN}./scripts/sre-access.sh${NC}           # Show all URLs and credentials"
+echo -e "  ${CYAN}./scripts/sre-access.sh status${NC}    # Health check"
+echo -e "  ${CYAN}./scripts/sre-access.sh creds${NC}     # Show all passwords"
+echo -e "  ${CYAN}./scripts/sre-new-tenant.sh my-team${NC}  # Create a new team namespace"
+echo
+
+echo -e "${BOLD}Cluster nodes (use any IP for DNS):${NC}"
+echo
+kubectl get nodes -o jsonpath='{range .items[*]}  {.metadata.name}{"  "}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null
+echo
+
+success "SRE Platform deployment complete. Open the dashboard to get started!"
