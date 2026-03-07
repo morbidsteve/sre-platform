@@ -58,11 +58,11 @@ spec:
             - --cookie-secure=true
             - --cookie-samesite=Lax
             - --cookie-httponly=true
-            - --cookie-domains=.apps.sre.example.com
+            - --cookie-domain=.apps.sre.example.com
             - --upstream=static://200
             - --http-address=0.0.0.0:4180
             # TODO: Restrict to organization domain in production
-            - --email-domains=*
+            - --email-domain=*
             - --set-xauthrequest=true
             - --set-authorization-header=true
             - --pass-access-token=true
