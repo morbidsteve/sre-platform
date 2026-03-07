@@ -1397,9 +1397,22 @@ function renderUserArea() {
           '<span class="user-email">' + esc(currentUser.email) + '</span>' +
           '<span class="role-badge ' + esc(roleCls) + '">' + esc(currentUser.role) + '</span>' +
         '</div>' +
-        '<button class="btn-auth" onclick="window.location.href=\'/oauth2/sign_out\'" title="Sign Out">&#x2716;</button>' +
+        '<button class="btn-auth" onclick="ssoLogout()" title="Sign Out">&#x2716;</button>' +
       '</div>';
   }
+}
+
+// ── SSO Logout ──────────────────────────────────────────────────────────────
+
+function ssoLogout() {
+  // 1. Clear the OAuth2 Proxy session cookie via sign_out endpoint
+  // 2. Then redirect to Keycloak logout to end the SSO session entirely
+  // Without the Keycloak logout, the user would be silently re-authenticated
+  var keycloakLogout = 'https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/logout' +
+    '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/') +
+    '&client_id=oauth2-proxy';
+  // sign_out clears the cookie, rd= tells it where to go after
+  window.location.href = '/oauth2/sign_out?rd=' + encodeURIComponent(keycloakLogout);
 }
 
 // ── Session Timeout ─────────────────────────────────────────────────────────
