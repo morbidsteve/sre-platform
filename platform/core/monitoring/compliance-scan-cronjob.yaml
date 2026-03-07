@@ -39,7 +39,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: scanner
-              image: harbor.apps.sre.example.com/platform/kubectl:1.34
+              image: docker.io/bitnami/kubectl:latest
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
