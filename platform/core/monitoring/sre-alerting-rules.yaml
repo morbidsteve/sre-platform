@@ -144,8 +144,8 @@ spec:
     - name: sre-openbao
       rules:
         - alert: OpenBaoSealed
-          expr: vault_core_unsealed == 0
-          for: 1m
+          expr: max(vault_core_unsealed) == 0
+          for: 5m
           labels:
             severity: critical
           annotations:

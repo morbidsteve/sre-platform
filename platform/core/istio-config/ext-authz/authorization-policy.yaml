@@ -1,7 +1,16 @@
 ---
 # AuthorizationPolicy — require ext-authz (OAuth2 Proxy) for all ingress traffic
-# Exceptions: Keycloak, OAuth2 Proxy callback, health endpoints
+# Exceptions: Keycloak (auth provider), /oauth2/* paths (pre-auth flow), health endpoints
 # NIST AC-3 (Access Enforcement), IA-2 (Identification and Authentication)
+#
+# Istio evaluation order: CUSTOM → DENY → ALLOW
+# 1. CUSTOM ext-authz checks auth via OAuth2 Proxy
+#    - If ext-authz denies (no session) → request is blocked immediately
+#    - If ext-authz passes (valid session) → continues to ALLOW evaluation
+#    - Excluded paths/hosts skip ext-authz entirely
+# 2. allow-gateway-traffic matches all requests → allows through
+#
+# Net effect: all traffic must pass OAuth2 Proxy auth, except Keycloak and /oauth2/* paths
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -19,27 +28,25 @@ spec:
   provider:
     name: oauth2-proxy
   rules:
-    # Apply ext-authz to all traffic EXCEPT the excluded paths below.
-    # The excludes are handled by a separate ALLOW policy.
     - to:
         - operation:
             notPaths:
-              # Health check endpoints
               - /healthz
               - /health
               - /ready
-              # OAuth2 Proxy callback (must be accessible pre-auth)
               - /oauth2/*
             notHosts:
-              # Keycloak must remain accessible (it IS the auth provider)
               - "keycloak.apps.sre.example.com"
 
 ---
-# Allow health check endpoints without authentication
+# Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
+# CUSTOM is evaluated FIRST — unauthenticated requests are blocked before reaching this.
+# This catch-all ALLOW ensures authenticated requests (and excluded paths) are not
+# implicitly denied by Istio's "deny if no ALLOW matches" behavior.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: allow-health-endpoints
+  name: allow-gateway-traffic
   namespace: istio-system
   labels:
     app.kubernetes.io/part-of: sre-platform
@@ -51,53 +58,4 @@ spec:
       istio: gateway
   action: ALLOW
   rules:
-    - to:
-        - operation:
-            paths:
-              - /healthz
-              - /health
-              - /ready
-
----
-# Allow Keycloak traffic without ext-authz (auth provider itself)
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-keycloak-passthrough
-  namespace: istio-system
-  labels:
-    app.kubernetes.io/part-of: sre-platform
-  annotations:
-    sre.io/nist-controls: "AC-3, IA-2"
-spec:
-  selector:
-    matchLabels:
-      istio: gateway
-  action: ALLOW
-  rules:
-    - to:
-        - operation:
-            hosts:
-              - "keycloak.apps.sre.example.com"
-
----
-# Allow OAuth2 Proxy endpoints (callback, sign_in, etc.) without ext-authz
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-oauth2-proxy-passthrough
-  namespace: istio-system
-  labels:
-    app.kubernetes.io/part-of: sre-platform
-  annotations:
-    sre.io/nist-controls: "AC-3, IA-2"
-spec:
-  selector:
-    matchLabels:
-      istio: gateway
-  action: ALLOW
-  rules:
-    - to:
-        - operation:
-            hosts:
-              - "oauth2.apps.sre.example.com"
+    - {}

@@ -20,7 +20,7 @@ spec:
     - name: sre-monitoring
   healthChecks:
     - apiVersion: apps/v1
-      kind: Deployment
+      kind: StatefulSet
       name: tempo
       namespace: tempo
   timeout: 5m

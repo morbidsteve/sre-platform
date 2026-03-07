@@ -92,7 +92,7 @@ spec:
                 - metallb-system
       preconditions:
         all:
-          - key: "{{ request.object.spec.initContainers[] | length(@) }}"
+          - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"
             operator: GreaterThanOrEquals
             value: 1
       validate:

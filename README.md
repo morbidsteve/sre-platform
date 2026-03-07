@@ -57,13 +57,16 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com`
 
 | Service | URL | Default Credentials |
 |---------|-----|-------------------|
-| **Dashboard** | `https://dashboard.apps.sre.example.com` | No login required |
-| **Grafana** | `https://grafana.apps.sre.example.com` | `admin` / `prom-operator` |
-| **Prometheus** | `https://prometheus.apps.sre.example.com` | No login required |
-| **Alertmanager** | `https://alertmanager.apps.sre.example.com` | No login required |
-| **Harbor** | `https://harbor.apps.sre.example.com` | `admin` / `Harbor12345` |
+| **Dashboard** | `https://dashboard.apps.sre.example.com` | SSO via Keycloak |
+| **Grafana** | `https://grafana.apps.sre.example.com` | SSO via Keycloak (or `admin` / `prom-operator`) |
+| **Prometheus** | `https://prometheus.apps.sre.example.com` | SSO via Keycloak |
+| **Alertmanager** | `https://alertmanager.apps.sre.example.com` | SSO via Keycloak |
+| **Harbor** | `https://harbor.apps.sre.example.com` | SSO via Keycloak (or `admin` / `Harbor12345`) |
 | **Keycloak** | `https://keycloak.apps.sre.example.com` | `admin` / (auto-generated, see below) |
-| **NeuVector** | `https://neuvector.apps.sre.example.com` | `admin` / `admin` |
+| **NeuVector** | `https://neuvector.apps.sre.example.com` | SSO via Keycloak (or `admin` / `admin`) |
+| **OpenBao** | `https://openbao.apps.sre.example.com` | SSO via Keycloak |
+
+> **SSO:** All services (except Keycloak itself) are behind Single Sign-On. Clicking any link redirects you to Keycloak to log in once, then you're authenticated across all services.
 
 > Your browser will warn about the self-signed certificate — click through it or use `curl -k`.
 
@@ -331,6 +334,20 @@ Developer → git push → GitHub → Flux CD detects change → Kyverno validat
 
 No `kubectl apply` needed. No manual cluster access. Git is the single source of truth.
 
+### Zero-Trust Security Model
+
+Every layer enforces security independently — compromising one layer doesn't bypass the others:
+
+| Layer | Control | What It Prevents |
+|-------|---------|-----------------|
+| **Gateway** | Istio ext-authz + OAuth2 Proxy | Unauthenticated access to any service |
+| **Mesh** | Istio mTLS STRICT | Unencrypted pod-to-pod communication |
+| **Network** | NetworkPolicy default-deny | Lateral movement between namespaces |
+| **Admission** | Kyverno 7 policies | Privileged containers, unsigned images, `:latest` tags |
+| **Runtime** | NeuVector | Anomalous process execution, network exfiltration |
+| **Secrets** | OpenBao + ESO | Hardcoded credentials, secret sprawl |
+| **Audit** | Prometheus + Loki + Tempo | Unmonitored activity, missing forensic data |
+
 ---
 
 ## Platform Components
@@ -361,9 +378,9 @@ No `kubectl apply` needed. No manual cluster access. Git is the single source of
 | `disallow-latest-tag` | **Enforce** | Blocks `:latest` image tags |
 | `require-labels` | **Enforce** | Requires `app.kubernetes.io/name` and `sre.io/team` labels |
 | `require-network-policies` | **Enforce** | Ensures every namespace has a default-deny NetworkPolicy |
-| `require-security-context` | Audit | Requires non-root, drop ALL capabilities |
+| `require-security-context` | **Enforce** | Requires non-root, drop ALL capabilities |
+| `restrict-image-registries` | **Enforce** | Restricts images to approved registries |
 | `require-istio-sidecar` | Audit | Requires Istio sidecar injection labels |
-| `restrict-image-registries` | Audit | Restricts images to approved registries |
 | `verify-image-signatures` | Audit | Verifies Cosign signatures on images |
 
 ### Secrets Management
@@ -375,14 +392,25 @@ No `kubectl apply` needed. No manual cluster access. Git is the single source of
 | **Auth Method** | Kubernetes ServiceAccount-based authentication |
 | **Engines** | KV v2 (app secrets), PKI (certificates) |
 
-### SSO / Identity (Keycloak)
+### SSO / Identity (Keycloak + OAuth2 Proxy)
+
+All platform services are protected by SSO via Keycloak + OAuth2 Proxy + Istio ext-authz. A single login grants access to every service.
 
 | Feature | Detail |
 |---------|--------|
 | **Realm** | `sre` with OIDC discovery |
-| **Groups** | `platform-admins`, `developers`, `viewers` |
-| **OIDC Clients** | Grafana, Harbor, NeuVector, Dashboard |
-| **Test Users** | `sre-admin` / `admin123`, `developer` / `dev123` |
+| **Groups** | `sre-admins`, `developers`, `sre-viewers` |
+| **OIDC Clients** | Grafana, Harbor, NeuVector, Dashboard, OAuth2 Proxy |
+| **SSO Gate** | OAuth2 Proxy + Istio ext-authz on the gateway |
+| **Test User** | `sre-admin` / `Admin1234` (in `sre-admins` group) |
+
+**How SSO works:**
+1. User visits any service URL (e.g., `https://grafana.apps.sre.example.com`)
+2. Istio gateway sends the request to OAuth2 Proxy for authentication check
+3. If no valid session, OAuth2 Proxy redirects to Keycloak login page
+4. User logs in once with Keycloak credentials
+5. OAuth2 Proxy sets a session cookie valid across all `*.apps.sre.example.com` services
+6. All subsequent requests pass through automatically — no more logins needed
 
 ### Observability
 
