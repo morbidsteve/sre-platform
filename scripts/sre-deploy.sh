@@ -27,6 +27,7 @@
 #   SRE_ENVIRONMENT       — Environment size: small, single-node (default: auto)
 #   SKIP_STORAGE          — Set to 1 to skip StorageClass setup
 #   SKIP_SECRETS          — Set to 1 to skip secret generation
+#   SRE_DOMAIN            — Base domain (default: apps.sre.example.com)
 #   SKIP_WAIT             — Set to 1 to skip waiting for components
 # ============================================================================
 
@@ -34,6 +35,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SRE_DOMAIN="${SRE_DOMAIN:-apps.sre.example.com}"
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 
@@ -115,9 +117,26 @@ fi
 
 SSH_USER="${SSH_USER:-sre-admin}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"
-SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5"
+SSH_OPTS=(-o StrictHostKeyChecking=no -o ConnectTimeout=5)
 if [[ -f "$SSH_KEY" ]]; then
-    SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+    SSH_OPTS+=(-i "$SSH_KEY")
+fi
+
+# Pre-flight SSH check
+log "Testing SSH connectivity to cluster nodes..."
+SSH_OK=0
+for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
+    if ssh "${SSH_OPTS[@]}" "${SSH_USER}@${node_ip}" "echo ok" &>/dev/null; then
+        SSH_OK=$((SSH_OK + 1))
+    else
+        warn "Cannot SSH to ${node_ip} as ${SSH_USER}"
+    fi
+done
+if (( SSH_OK > 0 )); then
+    success "SSH access verified to $SSH_OK node(s)"
+else
+    warn "No SSH access to any node. Image import and kernel module setup will be skipped."
+    warn "Override with SSH_USER and SSH_KEY environment variables."
 fi
 
 # ============================================================================
@@ -149,7 +168,7 @@ if [[ "${SKIP_STORAGE:-}" != "1" ]]; then
 
         # Configure for SELinux if applicable
         for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-            ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
+            ssh "${SSH_OPTS[@]}" "${SSH_USER}@${node_ip}" \
                 "sudo mkdir -p /opt/local-path-provisioner && sudo chcon -R -t container_file_t /opt/local-path-provisioner" \
                 2>/dev/null || true
         done
@@ -170,7 +189,7 @@ log "Loading Istio-required kernel modules on nodes..."
 log "(SSH user: $SSH_USER, key: $SSH_KEY — override with SSH_USER and SSH_KEY env vars)"
 MODULES_LOADED=0
 for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-    ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
+    ssh "${SSH_OPTS[@]}" "${SSH_USER}@${node_ip}" \
         "sudo modprobe xt_REDIRECT 2>/dev/null; sudo modprobe xt_owner 2>/dev/null; \
          echo 'xt_REDIRECT' | sudo tee /etc/modules-load.d/istio.conf >/dev/null; \
          echo 'xt_owner' | sudo tee -a /etc/modules-load.d/istio.conf >/dev/null; \
@@ -193,7 +212,7 @@ fi
 log "Configuring firewalld trusted zone for pod/service CIDRs..."
 FW_FIXED=0
 for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-    ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
+    ssh "${SSH_OPTS[@]}" "${SSH_USER}@${node_ip}" \
         "if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then \
            sudo firewall-cmd --zone=trusted --add-source=10.42.0.0/16 --permanent 2>/dev/null; \
            sudo firewall-cmd --zone=trusted --add-source=10.43.0.0/16 --permanent 2>/dev/null; \
@@ -241,7 +260,7 @@ if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     echo -e "  Create one at: https://github.com/settings/tokens/new"
     echo -e "  Select scope: ${BOLD}repo${NC} (Full control of private repositories)"
     echo
-    read -rsp "  Token: " GITHUB_TOKEN
+    read -t 120 -rsp "  Token: " GITHUB_TOKEN
     echo
     if [[ -z "$GITHUB_TOKEN" ]]; then
         fatal "GitHub token is required for Flux bootstrap."
@@ -325,6 +344,9 @@ if [[ "${SKIP_WAIT:-}" != "1" ]]; then
         "neuvector/neuvector"
         "tempo/tempo"
         "velero/velero"
+        "metallb-system/metallb"
+        "harbor/harbor"
+        "keycloak/keycloak"
     )
 
     MAX_WAIT=900  # 15 minutes
@@ -408,6 +430,12 @@ if kubectl get pod -n openbao openbao-0 --no-headers 2>/dev/null | grep -q Runni
 
         kubectl exec -n openbao openbao-0 -- bao operator unseal "$UNSEAL_KEY" >/dev/null 2>&1
 
+        # Verify unseal succeeded
+        SEAL_CHECK=$(kubectl exec -n openbao openbao-0 -- bao status -format=json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed', True))" 2>/dev/null || echo "True")
+        if [[ "$SEAL_CHECK" == "True" ]]; then
+            warn "OpenBao unseal may have failed — check manually with: kubectl exec -n openbao openbao-0 -- bao status"
+        fi
+
         # Store unseal key and token as a K8s secret for recovery
         kubectl create secret generic openbao-init-keys -n openbao \
             --from-literal=unseal-key="$UNSEAL_KEY" \
@@ -461,20 +489,37 @@ if command -v docker &>/dev/null; then
     log "Building and deploying SRE Dashboard..."
     DASHBOARD_DIR="$(cd "$(dirname "$0")/../apps/dashboard" && pwd)"
     if [[ -f "$DASHBOARD_DIR/Dockerfile" ]]; then
-        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v1.3.1 . 2>/dev/null) && \
-        docker save sre-dashboard:v1.3.1 -o /tmp/sre-dashboard.tar 2>/dev/null && \
+        (cd "$DASHBOARD_DIR" && docker build -t sre-dashboard:v2.0.2 . 2>/dev/null) && \
+        docker save sre-dashboard:v2.0.2 -o /tmp/sre-dashboard.tar 2>/dev/null && \
         for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-            scp $SSH_OPTS /tmp/sre-dashboard.tar "${SSH_USER}@${node_ip}:/tmp/sre-dashboard.tar" 2>/dev/null && \
-            ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
-                "sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/sre-dashboard.tar && rm -f /tmp/sre-dashboard.tar" 2>/dev/null || true
+            scp "${SSH_OPTS[@]}" /tmp/sre-dashboard.tar "${SSH_USER}@${node_ip}:/tmp/sre-dashboard.tar" 2>/dev/null && \
+            ssh "${SSH_OPTS[@]}" "${SSH_USER}@${node_ip}" \
+                'CTR=$(ls /var/lib/rancher/rke2/bin/ctr 2>/dev/null || ls /var/lib/rancher/rke2/data/*/bin/ctr 2>/dev/null | head -1); sudo "$CTR" --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/sre-dashboard.tar && rm -f /tmp/sre-dashboard.tar' 2>/dev/null || true
         done
         rm -f /tmp/sre-dashboard.tar
         kubectl apply -f "$DASHBOARD_DIR/k8s/" 2>/dev/null && \
         kubectl rollout status deployment/sre-dashboard -n sre-dashboard --timeout=60s 2>/dev/null && \
         success "SRE Dashboard deployed" || warn "Dashboard deploy failed (non-critical, deploy manually later with apps/dashboard/build-and-deploy.sh)"
     fi
+
+    # Deploy SRE Portal
+    PORTAL_DIR="$(cd "$(dirname "$0")/../apps/portal" && pwd)"
+    if [[ -f "$PORTAL_DIR/Dockerfile" ]]; then
+        log "Building and deploying SRE Portal..."
+        (cd "$PORTAL_DIR" && docker build -t sre-portal:v1.0.0 . 2>/dev/null) && \
+        docker save sre-portal:v1.0.0 -o /tmp/sre-portal.tar 2>/dev/null && \
+        for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
+            scp "${SSH_OPTS[@]}" /tmp/sre-portal.tar "${SSH_USER}@${node_ip}:/tmp/sre-portal.tar" 2>/dev/null && \
+            ssh "${SSH_OPTS[@]}" "${SSH_USER}@${node_ip}" \
+                'CTR=$(ls /var/lib/rancher/rke2/bin/ctr 2>/dev/null || ls /var/lib/rancher/rke2/data/*/bin/ctr 2>/dev/null | head -1); sudo "$CTR" --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/sre-portal.tar && rm -f /tmp/sre-portal.tar' 2>/dev/null || true
+        done
+        rm -f /tmp/sre-portal.tar
+        kubectl apply -f "$PORTAL_DIR/k8s/" 2>/dev/null && \
+        kubectl rollout status deployment/sre-portal -n sre-portal --timeout=60s 2>/dev/null && \
+        success "SRE Portal deployed" || warn "Portal deploy failed (non-critical)"
+    fi
 else
-    warn "Docker not found — skipping SRE Dashboard build. Deploy manually later with apps/dashboard/build-and-deploy.sh"
+    warn "Docker not found — skipping SRE Dashboard/Portal build. Deploy manually later with apps/dashboard/build-and-deploy.sh"
 fi
 
 # ============================================================================
@@ -496,25 +541,27 @@ echo -e "${BOLD}Step 1: Add DNS entries to your machine${NC}"
 echo
 echo -e "  Run this on the machine where you'll open a browser:"
 echo
-echo -e "  ${CYAN}echo \"${GATEWAY_IP}  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
+echo -e "  ${CYAN}echo \"${GATEWAY_IP}  portal.${SRE_DOMAIN} dashboard.${SRE_DOMAIN} grafana.${SRE_DOMAIN} prometheus.${SRE_DOMAIN} alertmanager.${SRE_DOMAIN} harbor.${SRE_DOMAIN} keycloak.${SRE_DOMAIN} neuvector.${SRE_DOMAIN} openbao.${SRE_DOMAIN} oauth2.${SRE_DOMAIN}\" | sudo tee -a /etc/hosts${NC}"
 echo
 
-echo -e "${BOLD}Step 2: Open the Dashboard${NC}"
+echo -e "${BOLD}Step 2: Open the Portal${NC}"
 echo
-echo -e "  ${CYAN}https://dashboard.apps.sre.example.com${PORT_SUFFIX}${NC}"
+echo -e "  ${CYAN}https://portal.${SRE_DOMAIN}${PORT_SUFFIX}${NC}"
 echo
 echo -e "  (Accept the self-signed certificate warning in your browser)"
 echo
 
 echo -e "${BOLD}All Platform UIs:${NC}"
 echo
-printf "  %-15s %s\n" "Dashboard" "https://dashboard.apps.sre.example.com${PORT_SUFFIX}"
-printf "  %-15s %s  (%s)\n" "Grafana" "https://grafana.apps.sre.example.com${PORT_SUFFIX}" "admin / prom-operator"
-printf "  %-15s %s\n" "Prometheus" "https://prometheus.apps.sre.example.com${PORT_SUFFIX}"
-printf "  %-15s %s\n" "Alertmanager" "https://alertmanager.apps.sre.example.com${PORT_SUFFIX}"
-printf "  %-15s %s  (%s)\n" "Harbor" "https://harbor.apps.sre.example.com${PORT_SUFFIX}" "admin / Harbor12345"
-printf "  %-15s %s  (%s)\n" "Keycloak" "https://keycloak.apps.sre.example.com${PORT_SUFFIX}" "admin / auto-generated"
-printf "  %-15s %s  (%s)\n" "NeuVector" "https://neuvector.apps.sre.example.com${PORT_SUFFIX}" "admin / admin"
+printf "  %-15s %s\n" "Portal" "https://portal.${SRE_DOMAIN}${PORT_SUFFIX}"
+printf "  %-15s %s\n" "Dashboard" "https://dashboard.${SRE_DOMAIN}${PORT_SUFFIX}"
+printf "  %-15s %s  (%s)\n" "Grafana" "https://grafana.${SRE_DOMAIN}${PORT_SUFFIX}" "SSO via Keycloak"
+printf "  %-15s %s\n" "Prometheus" "https://prometheus.${SRE_DOMAIN}${PORT_SUFFIX}"
+printf "  %-15s %s\n" "Alertmanager" "https://alertmanager.${SRE_DOMAIN}${PORT_SUFFIX}"
+printf "  %-15s %s  (%s)\n" "Harbor" "https://harbor.${SRE_DOMAIN}${PORT_SUFFIX}" "SSO via Keycloak"
+printf "  %-15s %s  (%s)\n" "Keycloak" "https://keycloak.${SRE_DOMAIN}${PORT_SUFFIX}" "admin / auto-generated"
+printf "  %-15s %s  (%s)\n" "NeuVector" "https://neuvector.${SRE_DOMAIN}${PORT_SUFFIX}" "SSO via Keycloak"
+printf "  %-15s %s\n" "OpenBao" "https://openbao.${SRE_DOMAIN}${PORT_SUFFIX}"
 echo
 
 echo -e "${BOLD}Useful commands:${NC}"
@@ -530,4 +577,11 @@ echo
 kubectl get nodes -o jsonpath='{range .items[*]}  {.metadata.name}{"  "}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null
 echo
 
-success "SRE Platform deployment complete. Open the dashboard to get started!"
+echo -e "${BOLD}SSO Login:${NC}"
+echo
+echo -e "  All services are behind Single Sign-On via Keycloak."
+echo -e "  Default test user: ${CYAN}sre-admin${NC} / ${CYAN}SreAdmin123!${NC}"
+echo -e "  (Create additional users in Keycloak admin: https://keycloak.${SRE_DOMAIN}${PORT_SUFFIX})"
+echo
+
+success "SRE Platform deployment complete. Open the portal to get started!"

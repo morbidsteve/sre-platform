@@ -11,7 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IMAGE_NAME="sre-dashboard"
-IMAGE_TAG="v2.0.1"
+IMAGE_TAG="v2.0.2"
 TARBALL="/tmp/${IMAGE_NAME}.tar"
 SSH_USER="${SSH_USER:-sre-admin}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"
@@ -33,7 +33,7 @@ for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.
     echo "    Importing to node ${node_ip}..."
     scp $SSH_OPTS "$TARBALL" "${SSH_USER}@${node_ip}:/tmp/${IMAGE_NAME}.tar" 2>/dev/null && \
     ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
-        "sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/${IMAGE_NAME}.tar && rm -f /tmp/${IMAGE_NAME}.tar" 2>/dev/null || \
+        'CTR=$(ls /var/lib/rancher/rke2/bin/ctr 2>/dev/null || ls /var/lib/rancher/rke2/data/*/bin/ctr 2>/dev/null | head -1); sudo "$CTR" --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/'"${IMAGE_NAME}"'.tar && rm -f /tmp/'"${IMAGE_NAME}"'.tar' 2>/dev/null || \
     echo "    WARNING: Could not import to ${node_ip} (SSH may not be configured)"
 done
 
@@ -56,7 +56,7 @@ GATEWAY_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status
 echo "    Ingress: https://dashboard.apps.sre.example.com"
 echo ""
 echo "    Add to /etc/hosts:"
-echo "    echo \"${GATEWAY_IP} dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com\" | sudo tee -a /etc/hosts"
+echo "    echo \"${GATEWAY_IP} portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com\" | sudo tee -a /etc/hosts"
 echo ""
 echo "    Or port-forward: kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001"
 echo "    Then open: http://localhost:3001"

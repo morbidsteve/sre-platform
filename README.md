@@ -46,7 +46,7 @@ Get the gateway IP and add DNS entries:
 GATEWAY_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 # Add to /etc/hosts (or configure real DNS in production)
-echo "$GATEWAY_IP  dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com" | sudo tee -a /etc/hosts
+echo "$GATEWAY_IP  portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com" | sudo tee -a /etc/hosts
 ```
 
 > **How it works:** The Istio ingress gateway gets a dedicated IP via LoadBalancer (MetalLB on bare metal, cloud LB on AWS/Azure). When a request arrives on port 443, Istio reads the `Host` header and routes it to the correct backend service via VirtualService rules. All traffic is TLS-encrypted with a wildcard certificate for `*.apps.sre.example.com`.
@@ -57,6 +57,7 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com`
 
 | Service | URL | Default Credentials |
 |---------|-----|-------------------|
+| **Portal** | `https://portal.apps.sre.example.com` | SSO via Keycloak |
 | **Dashboard** | `https://dashboard.apps.sre.example.com` | SSO via Keycloak |
 | **Grafana** | `https://grafana.apps.sre.example.com` | SSO via Keycloak (or `admin` / `prom-operator`) |
 | **Prometheus** | `https://prometheus.apps.sre.example.com` | SSO via Keycloak |
@@ -116,58 +117,79 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com`
 
 ---
 
-## Screenshots
+## User Walkthrough
 
-### SSO Login
-All services are gated behind Keycloak single sign-on. One login, access everywhere.
+Here's exactly what it looks like when you use the platform, from first login to deploying an app.
 
-![SSO Sign-in](docs/images/sso-signin.png)
+### 1. SSO Gate — Every Service is Protected
+Visit any URL and you're redirected to sign in. One login, access everywhere.
+
+![SSO Sign-in Gate](docs/images/sso-signin.png)
+
+### 2. Keycloak Login
+Enter your credentials (default: `sre-admin` / `SreAdmin123!`). Once signed in, you're authenticated across all services.
+
 ![Keycloak Login](docs/images/keycloak-login.png)
 
-### Dashboard — Platform Overview
-16/16 components healthy, 3/3 nodes, 0 problem pods. All HelmRelease statuses at a glance.
+### 3. Portal — Your Starting Point
+The portal is your home page. It shows all platform services with health status, quick actions, and direct links.
+
+![SRE Portal](docs/images/portal.png)
+
+### 4. Dashboard — Platform Overview
+Click "Dashboard" from the portal. See all 16 components, 3 nodes, and problem pods at a glance.
 
 ![Dashboard Overview](docs/images/dashboard-overview.png)
 
-### Platform Services
-Service discovery with health indicators, direct links, and DNS setup instructions.
+### 5. Services Tab — Direct Links to Everything
+Browse all services with health indicators, descriptions, and one-click access.
 
 ![Services](docs/images/services.png)
 
-### One-Click App Deployment
-Quick-start templates for instant demos + custom deployment form with validation.
+### 6. Deploy Tab — One-Click App Deployment
+Quick-start templates for instant demos, or use the custom form to deploy your own image.
 
 ![Deploy App](docs/images/deploy-app.png)
 
-### Service Health Status
-Shareable status page showing operational state of all platform services.
+### 7. Status Page — Shareable Health View
+Operational status of every platform service. Share this URL with your team.
 
 ![Status Page](docs/images/status-page.png)
 
-### Cluster Audit Log
-Tabular audit view with type filters, namespace filter, pagination, and color-coded event badges.
+### 8. Audit Log — Cluster Events
+Tabular view with type filters, namespace filter, pagination, and color-coded badges.
 
 ![Audit Log](docs/images/audit-log.png)
 
-### Command Palette (Ctrl+K)
-Quick-search navigation to any page or external service.
+### 9. Credentials — Quick Access to Passwords
+View service credentials without needing `kubectl`.
+
+![Credentials](docs/images/credentials.png)
+
+### 10. Command Palette (Ctrl+K)
+Quick-search to jump to any page or external service.
 
 ![Command Palette](docs/images/command-palette.png)
 
-### Mobile Responsive
-Dashboard adapts to mobile screens for on-the-go health checks.
-
-![Mobile View](docs/images/mobile-view.png)
-
-### Grafana — 30+ Dashboards
+### 11. Grafana — 30+ Dashboards
 Cluster health, namespace resources, Istio traffic, Kyverno violations, and more.
 
 ![Grafana](docs/images/grafana.png)
 
-### Harbor, NeuVector, Keycloak
-Container registry with Trivy scanning, runtime security monitoring, and SSO identity management.
+### 12. Harbor — Container Registry
+Image storage with Trivy vulnerability scanning on push.
 
-![Harbor](docs/images/harbor.png) ![NeuVector](docs/images/neuvector.png) ![Keycloak](docs/images/keycloak.png)
+![Harbor](docs/images/harbor.png)
+
+### 13. Keycloak Admin — Identity Management
+Manage users, groups, OIDC clients, and SSO configuration.
+
+![Keycloak Admin](docs/images/keycloak.png)
+
+### 14. Mobile Responsive
+Portal and dashboard adapt to mobile screens for on-the-go health checks.
+
+![Mobile Portal](docs/images/mobile-view.png)
 
 > **Full user stories with walkthroughs:** See [docs/user-stories.md](docs/user-stories.md) for detailed personas and step-by-step workflows for Platform Admins, Developers, Security Officers, Team Leads, New Hires, and Incident Responders.
 
@@ -479,6 +501,7 @@ sre-platform/
 │       ├── harbor/               # Container registry
 │       └── keycloak/             # Identity / SSO
 ├── apps/
+│   ├── portal/                   # SRE Portal — tiled landing page for all services
 │   ├── dashboard/                # SRE Dashboard web app (v2.0.2)
 │   ├── demo-app/                 # Go demo app with Prometheus metrics
 │   ├── templates/                # Helm chart templates (web-app, worker, cronjob, api)
