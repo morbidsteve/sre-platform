@@ -65,7 +65,7 @@ spec:
                   cpu: 500m
                   memory: 256Mi
             - name: upload-results
-              image: docker.io/bitnami/kubectl:1.33.4
+              image: harbor.apps.sre.example.com/platform/kubectl:1.34
               command:
                 - /bin/sh
                 - -c
