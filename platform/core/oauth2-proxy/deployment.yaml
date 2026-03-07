@@ -82,7 +82,7 @@ spec:
             - --insecure-oidc-skip-issuer-verification=true
             - --oidc-groups-claim=groups
             - --code-challenge-method=S256
-            - --redirect-url=https://oauth2.apps.sre.example.com/oauth2/callback
+            - --redirect-url=https://dashboard.apps.sre.example.com/oauth2/callback
             - --scope=openid profile email groups
             - --custom-templates-dir=/templates
           env:
