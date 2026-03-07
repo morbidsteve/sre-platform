@@ -1,12 +1,48 @@
 const express = require("express");
 const k8s = require("@kubernetes/client-node");
-const { execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
+
+// ── Security Headers ─────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// ── Rate Limiting ────────────────────────────────────────────────────────────
+const globalLimiter = rateLimit({ windowMs: 60000, max: 200, standardHeaders: true, legacyHeaders: false });
+const mutateLimiter = rateLimit({ windowMs: 60000, max: 10, message: { error: 'Too many requests' } });
+const credentialLimiter = rateLimit({ windowMs: 60000, max: 5, message: { error: 'Too many requests' } });
+app.use(globalLimiter);
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+
+// ── RBAC Middleware ──────────────────────────────────────────────────────────
+
+function requireGroups(...requiredGroups) {
+  return (req, res, next) => {
+    const groupsHeader = req.headers["x-auth-request-groups"] || "";
+    const userGroups = groupsHeader
+      .split(/[,\s]+/)
+      .map((g) => g.trim())
+      .filter(Boolean)
+      .map((g) => g.replace(/^\//, ""));
+    const authorized = requiredGroups.some((rg) => userGroups.includes(rg));
+    if (!authorized) {
+      return res.status(403).json({ error: "Forbidden: admin access required" });
+    }
+    next();
+  };
+}
 
 // Kubernetes client setup
 const kc = new k8s.KubeConfig();
@@ -32,7 +68,7 @@ const SAMPLE_APPS = [
   },
   {
     name: "httpbin",
-    description: "HTTP testing service — echoes requests back",
+    description: "HTTP testing service -- echoes requests back",
     image: "mccutchen/go-httpbin",
     tag: "v2.15.0",
     port: 8080,
@@ -52,6 +88,31 @@ const SAMPLE_APPS = [
     port: 80,
   },
 ];
+
+// ── Platform Services Definition ────────────────────────────────────────────
+
+const PLATFORM_SERVICES = [
+  { name: "grafana", namespace: "monitoring", serviceName: "kube-prometheus-stack-grafana", icon: "chart", description: "Dashboards & observability", url: "https://grafana.apps.sre.example.com" },
+  { name: "prometheus", namespace: "monitoring", serviceName: "kube-prometheus-stack-prometheus", icon: "search", description: "Metrics collection & alerting rules", url: "https://prometheus.apps.sre.example.com" },
+  { name: "alertmanager", namespace: "monitoring", serviceName: "kube-prometheus-stack-alertmanager", icon: "bell", description: "Alert routing & notifications", url: "https://alertmanager.apps.sre.example.com" },
+  { name: "harbor", namespace: "harbor", serviceName: "harbor-core", icon: "container", description: "Container image registry", url: "https://harbor.apps.sre.example.com" },
+  { name: "keycloak", namespace: "keycloak", serviceName: "keycloak", icon: "key", description: "Identity & access management", url: "https://keycloak.apps.sre.example.com" },
+  { name: "neuvector", namespace: "neuvector", serviceName: "neuvector-service-webui", icon: "shield", description: "Container security platform", url: "https://neuvector.apps.sre.example.com" },
+  { name: "openbao", namespace: "openbao", serviceName: "openbao", icon: "lock", description: "Secrets management", url: "https://openbao.apps.sre.example.com" },
+  { name: "dashboard", namespace: "sre-dashboard", serviceName: "sre-dashboard", icon: "layout", description: "This SRE Platform Dashboard", url: "https://dashboard.apps.sre.example.com" },
+];
+
+// ── Utility: HTML-escape to prevent XSS ─────────────────────────────────────
+
+function escapeHtml(str) {
+  if (typeof str !== "string") return str;
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 
@@ -83,7 +144,8 @@ app.get("/api/health", async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching health:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -95,7 +157,8 @@ app.get("/api/ingress", async (req, res) => {
     const httpsPort = await getGatewayPort();
     res.json({ routes, nodeIp, httpsPort });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching ingress:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -105,7 +168,8 @@ app.get("/api/tenants", async (req, res) => {
     const tenants = await getTenants();
     res.json({ tenants });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching tenants:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -115,12 +179,13 @@ app.get("/api/tenants/:namespace/apps", async (req, res) => {
     const apps = await getTenantApps(req.params.namespace);
     res.json({ apps });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching tenant apps:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Deploy a new app
-app.post("/api/deploy", async (req, res) => {
+app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
     const { name, team, image, tag, port, replicas, ingress } = req.body;
 
@@ -128,6 +193,12 @@ app.post("/api/deploy", async (req, res) => {
       return res.status(400).json({
         error: "Missing required fields: name, team, image, tag",
       });
+    }
+
+    // Sanitize deploy name
+    const safeName = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 63);
+    if (!safeName || !/^[a-z]/.test(safeName)) {
+      return res.status(400).json({ error: 'Invalid app name' });
     }
 
     // Sanitize team name
@@ -138,7 +209,7 @@ app.post("/api/deploy", async (req, res) => {
     await ensureNamespace(nsName, teamName);
 
     const manifest = generateHelmRelease({
-      name,
+      name: safeName,
       team: nsName,
       image,
       tag,
@@ -152,17 +223,18 @@ app.post("/api/deploy", async (req, res) => {
 
     res.json({
       success: true,
-      message: `App "${name}" deployed to namespace "${nsName}"`,
+      message: `App "${safeName}" deployed to namespace "${nsName}"`,
       namespace: nsName,
       manifest,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error deploying app:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Delete an app
-app.delete("/api/deploy/:namespace/:name", async (req, res) => {
+app.delete("/api/deploy/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     await customApi.deleteNamespacedCustomObject(
       "helm.toolkit.fluxcd.io",
@@ -176,18 +248,217 @@ app.delete("/api/deploy/:namespace/:name", async (req, res) => {
       message: `App "${req.params.name}" deleted from "${req.params.namespace}"`,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error deleting app:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Credentials
-app.get("/api/credentials", async (req, res) => {
+app.get("/api/credentials", credentialLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     const creds = await getCredentials();
     res.json(creds);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching credentials:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
+});
+
+// ── NEW API Endpoints ────────────────────────────────────────────────────────
+
+// GET /api/user — Return user info from OAuth2 Proxy headers
+app.get("/api/user", (req, res) => {
+  const user = req.headers["x-auth-request-user"] || "anonymous";
+  const email = req.headers["x-auth-request-email"] || "";
+  const groupsHeader = req.headers["x-auth-request-groups"] || "";
+  const groups = groupsHeader ? groupsHeader.split(",").map((g) => g.trim()).filter(Boolean) : [];
+  const isAdmin = groups.includes("sre-admins");
+
+  // Determine role for RBAC
+  let role = "viewer";
+  if (isAdmin) {
+    role = "admin";
+  } else if (groups.includes("developers")) {
+    role = "developer";
+  } else if (groups.includes("sre-viewers")) {
+    role = "viewer";
+  } else if (user === "anonymous") {
+    role = "anonymous";
+  }
+
+  res.json({ user, email, groups, isAdmin, role });
+});
+
+// GET /api/alerts — Proxy Alertmanager alerts
+app.get("/api/alerts", async (req, res) => {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(
+      "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093/api/v2/alerts",
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    const alerts = await resp.json();
+    const active = alerts
+      .filter((a) => a.status && a.status.state !== "suppressed")
+      .map((a) => ({
+        name: a.labels?.alertname || "Unknown",
+        severity: a.labels?.severity || "none",
+        state: a.status?.state || "unknown",
+        summary: a.annotations?.summary || a.annotations?.description || "",
+        startsAt: a.startsAt || "",
+      }));
+    res.json(active);
+  } catch (err) {
+    // Alertmanager may not be reachable — return empty
+    res.json([]);
+  }
+});
+
+// GET /api/status — Service health status page
+app.get("/api/status", async (req, res) => {
+  try {
+    const results = await Promise.all(
+      PLATFORM_SERVICES.map(async (svc) => {
+        let healthy = false;
+        try {
+          const ep = await k8sApi.readNamespacedEndpoints(svc.serviceName, svc.namespace);
+          const subsets = ep.body.subsets || [];
+          healthy = subsets.some((s) => (s.addresses || []).length > 0);
+        } catch {
+          healthy = false;
+        }
+        return {
+          name: svc.name,
+          namespace: svc.namespace,
+          healthy,
+          url: svc.url,
+          icon: svc.icon,
+          description: svc.description,
+        };
+      })
+    );
+    res.json(results);
+  } catch (err) {
+    console.error("Error fetching status:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/audit — Recent audit events
+app.get("/api/audit", async (req, res) => {
+  try {
+    const resp = await k8sApi.listEventForAllNamespaces();
+    const significantReasons = ["Created", "Deleted", "Scaled", "Updated", "Killing", "Started", "Pulled", "SuccessfulCreate", "SuccessfulDelete", "ScalingReplicaSet"];
+    const events = resp.body.items
+      .filter((e) => {
+        if (e.type === "Warning") return true;
+        if (e.type === "Normal" && significantReasons.includes(e.reason)) return true;
+        return false;
+      })
+      .sort((a, b) => {
+        const ta = new Date(a.lastTimestamp || a.eventTime || 0);
+        const tb = new Date(b.lastTimestamp || b.eventTime || 0);
+        return tb - ta;
+      })
+      .slice(0, 100)
+      .map((e) => ({
+        timestamp: e.lastTimestamp || e.eventTime || "",
+        namespace: e.metadata.namespace || "",
+        kind: e.involvedObject?.kind || "",
+        name: e.involvedObject?.name || "",
+        reason: e.reason || "",
+        message: e.message || "",
+        type: e.type || "Normal",
+      }));
+    res.json(events);
+  } catch (err) {
+    console.error("Error fetching audit events:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/favorites — Get user favorites
+app.get("/api/favorites", async (req, res) => {
+  const email = req.headers["x-auth-request-email"] || "anonymous";
+  const userKey = email.replace(/[^a-zA-Z0-9.-]/g, '_');
+  try {
+    const cm = await k8sApi.readNamespacedConfigMap("sre-dashboard-favorites", "sre-dashboard");
+    const data = cm.body.data || {};
+    const userFavs = data[userKey] ? JSON.parse(data[userKey]) : [];
+    res.json({ favorites: userFavs });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      res.json({ favorites: [] });
+    } else {
+      res.json({ favorites: [] });
+    }
+  }
+});
+
+// POST /api/favorites — Store user favorites
+app.post("/api/favorites", async (req, res) => {
+  const email = req.headers["x-auth-request-email"] || "anonymous";
+  const { favorites } = req.body;
+  if (!Array.isArray(favorites)) {
+    return res.status(400).json({ error: "favorites must be an array" });
+  }
+
+  const key = email.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const value = JSON.stringify(favorites);
+
+  try {
+    // Try to read existing ConfigMap
+    try {
+      await k8sApi.readNamespacedConfigMap("sre-dashboard-favorites", "sre-dashboard");
+      // Patch it
+      await k8sApi.patchNamespacedConfigMap(
+        "sre-dashboard-favorites",
+        "sre-dashboard",
+        { data: { [key]: value } },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { headers: { "Content-Type": "application/merge-patch+json" } }
+      );
+    } catch (err) {
+      if (err.statusCode === 404) {
+        // Create it
+        await k8sApi.createNamespacedConfigMap("sre-dashboard", {
+          metadata: {
+            name: "sre-dashboard-favorites",
+            namespace: "sre-dashboard",
+            labels: { "app.kubernetes.io/name": "sre-dashboard" },
+          },
+          data: { [key]: value },
+        });
+      } else {
+        throw err;
+      }
+    }
+    res.json({ ok: true, favorites });
+  } catch (err) {
+    console.error("Error saving favorites:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/config — Dashboard configuration
+app.get("/api/config", (req, res) => {
+  res.json({
+    baseUrl: "https://{service}.apps.sre.example.com",
+    loginUrl: "/oauth2/start",
+    logoutUrl: "/oauth2/sign_out",
+    services: PLATFORM_SERVICES.map((s) => ({
+      name: s.name,
+      icon: s.icon,
+      description: s.description,
+      url: s.url,
+    })),
+  });
 });
 
 // ── Helper Functions ─────────────────────────────────────────────────────────
@@ -486,7 +757,7 @@ async function applyManifest(manifest, namespace) {
 
 // ── Delete App ──────────────────────────────────────────────────────────────
 
-app.delete("/api/apps/:namespace/:name", async (req, res) => {
+app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     const { namespace, name } = req.params;
 
@@ -555,7 +826,8 @@ app.delete("/api/apps/:namespace/:name", async (req, res) => {
 
     res.json({ ok: true, message: `Deleted ${name} from ${namespace}` });
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+    console.error("Error deleting app:", err);
+    res.status(err.statusCode || 500).json({ error: "Internal server error" });
   }
 });
 

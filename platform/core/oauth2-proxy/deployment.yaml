@@ -13,7 +13,7 @@ type: Opaque
 stringData:
   client-id: "oauth2-proxy"
   client-secret: "TtZuIm3Igj088TtY4cw3xfXf5U1I8f9z"
-  cookie-secret: "xymP+v1Mf5kmoGmiI+ZWRi6xXVAXLeF4SkTmd8l4ZMw="
+  cookie-secret: "lHFRQGWndLTApgdtW6/Z2ENX5VskZcw7"
 
 ---
 apiVersion: apps/v1
@@ -50,13 +50,12 @@ spec:
           image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
           args:
             - --provider=keycloak-oidc
-            - --oidc-issuer-url=https://keycloak.apps.sre.example.com/realms/sre
             - --client-id=$(CLIENT_ID)
             - --client-secret=$(CLIENT_SECRET)
             - --cookie-secret=$(COOKIE_SECRET)
             - --cookie-name=_sre_oauth2
             - --cookie-secure=true
-            - --cookie-samesite=Lax
+            - --cookie-samesite=lax
             - --cookie-httponly=true
             - --cookie-domain=.apps.sre.example.com
             - --upstream=static://200
@@ -71,10 +70,16 @@ spec:
             - --skip-auth-route=^/api/health$
             - --whitelist-domain=.apps.sre.example.com
             - --reverse-proxy=true
-            # TODO: Mount cluster CA bundle and use --provider-ca-file instead
-            - --ssl-insecure-skip-verify=true
-            - --ssl-upstream-insecure-skip-verify=true
-            - --insecure-oidc-skip-issuer-verification=false
+            # Skip OIDC discovery — Keycloak hostname doesn't resolve in-cluster
+            # Browser-facing URLs use external hostname, backend URLs use internal service
+            - --skip-oidc-discovery=true
+            - --oidc-issuer-url=https://keycloak.apps.sre.example.com/realms/sre
+            - --login-url=https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/auth
+            - --redeem-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/token
+            - --oidc-jwks-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/certs
+            - --validate-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/userinfo
+            - --profile-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/userinfo
+            - --insecure-oidc-skip-issuer-verification=true
             - --oidc-groups-claim=groups
             - --code-challenge-method=S256
             - --redirect-url=https://oauth2.apps.sre.example.com/oauth2/callback

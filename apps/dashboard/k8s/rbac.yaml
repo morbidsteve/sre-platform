@@ -28,14 +28,26 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["list", "get", "create"]
-  # Read services (for gateway NodePort detection)
+  # Read services (for gateway NodePort detection + status page)
   - apiGroups: [""]
     resources: ["services"]
-    verbs: ["get"]
-  # Read secrets (for credentials display)
+    verbs: ["get", "list"]
+  # Read endpoints (for status page health checks)
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list"]
+  # List secrets in tenant namespaces (for helm cleanup)
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get"]
+    verbs: ["list", "delete"]
+  # Read events (for audit log)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list"]
+  # ConfigMaps — get, create, patch (for favorites storage)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "patch"]
   # HelmReleases — list, create, patch, delete
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
@@ -48,6 +60,10 @@ rules:
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices"]
     verbs: ["list"]
+  # Deployments — list, delete (for app cleanup)
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["list", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -60,6 +76,134 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: sre-dashboard
+subjects:
+  - kind: ServiceAccount
+    name: sre-dashboard
+    namespace: sre-dashboard
+---
+# Namespaced Role for Grafana secrets in monitoring namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-dashboard-secrets
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["grafana-admin-credentials", "kube-prometheus-stack-grafana"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-dashboard-secrets
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-dashboard-secrets
+subjects:
+  - kind: ServiceAccount
+    name: sre-dashboard
+    namespace: sre-dashboard
+---
+# Namespaced Role for Harbor secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-dashboard-secrets
+  namespace: harbor
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["harbor-core-envvars"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-dashboard-secrets
+  namespace: harbor
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-dashboard-secrets
+subjects:
+  - kind: ServiceAccount
+    name: sre-dashboard
+    namespace: sre-dashboard
+---
+# Namespaced Role for Keycloak secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-dashboard-secrets
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["keycloak"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-dashboard-secrets
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-dashboard-secrets
+subjects:
+  - kind: ServiceAccount
+    name: sre-dashboard
+    namespace: sre-dashboard
+---
+# Namespaced Role for OpenBao secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-dashboard-secrets
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["openbao-init"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-dashboard-secrets
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-dashboard-secrets
 subjects:
   - kind: ServiceAccount
     name: sre-dashboard

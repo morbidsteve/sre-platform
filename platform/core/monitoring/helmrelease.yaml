@@ -61,6 +61,9 @@ spec:
     grafana:
       enabled: true
       replicas: 1
+      # Disable init chown — PV ownership is already correct
+      initChownData:
+        enabled: false
       # Admin password injected via grafana-admin-credentials Secret (valuesFrom)
       # Do NOT set adminPassword inline — use bootstrap-secrets.sh
       grafana.ini:

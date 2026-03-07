@@ -4,8 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SRE Platform</title>
+  <script>
+    // Apply theme before render to prevent flash
+    (function() {
+      var t = localStorage.getItem('sre-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <style>
-    :root {
+    :root, [data-theme="dark"] {
       --bg: #0f172a;
       --surface: #1e293b;
       --surface-hover: #334155;
@@ -18,6 +25,19 @@
       --red: #ef4444;
       --yellow: #eab308;
       --radius: 8px;
+      --overlay-bg: rgba(0,0,0,0.6);
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-hover: #f1f5f9;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-dim: #64748b;
+      --overlay-bg: rgba(0,0,0,0.3);
+      --shadow: 0 4px 24px rgba(0,0,0,0.1);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,6 +48,7 @@
       color: var(--text);
       line-height: 1.5;
       min-height: 100vh;
+      transition: background 0.2s, color 0.2s;
     }
 
     /* ── Layout ──────────────────────────────────────────────── */
@@ -35,29 +56,135 @@
     .header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
-      padding: 16px 24px;
+      padding: 12px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 24px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
     }
 
     .header h1 {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 600;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .header h1 .shield { font-size: 24px; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
 
     .header-status {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
       font-size: 13px;
       color: var(--text-dim);
     }
+
+    .kbd-hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+
+    .kbd-hint:hover { border-color: var(--accent); }
+
+    .theme-toggle {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      line-height: 1;
+      transition: border-color 0.15s;
+    }
+
+    .theme-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+    .user-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      font-size: 12px;
+    }
+
+    .user-info .user-email { color: var(--text); font-weight: 500; }
+
+    .role-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+
+    .role-badge.admin { background: rgba(239,68,68,0.15); color: var(--red); }
+    .role-badge.developer { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .role-badge.viewer { background: rgba(148,163,184,0.15); color: var(--text-dim); }
+    .role-badge.anonymous { background: rgba(148,163,184,0.1); color: var(--text-dim); }
+
+    .btn-auth {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      transition: all 0.15s;
+    }
+
+    .btn-auth:hover { border-color: var(--accent); color: var(--accent); }
 
     .status-dot {
       width: 8px;
@@ -71,23 +198,90 @@
     .status-dot.red { background: var(--red); }
     .status-dot.yellow { background: var(--yellow); }
 
+    /* ── Alert Banner ────────────────────────────────────────── */
+
+    .alert-banner {
+      display: none;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      position: relative;
+      border-bottom: 1px solid;
+    }
+
+    .alert-banner.critical {
+      background: rgba(239,68,68,0.1);
+      border-color: rgba(239,68,68,0.3);
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .alert-banner.warning {
+      background: rgba(234,179,8,0.1);
+      border-color: rgba(234,179,8,0.3);
+      color: var(--yellow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .alert-banner .dismiss-btn {
+      background: none;
+      border: none;
+      color: inherit;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 4px;
+      opacity: 0.7;
+    }
+
+    .alert-banner .dismiss-btn:hover { opacity: 1; }
+
+    .alert-details {
+      display: none;
+      padding: 8px 24px 12px;
+      font-size: 12px;
+    }
+
+    .alert-details.show { display: block; }
+
+    .alert-details table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .alert-details td {
+      padding: 4px 12px 4px 0;
+      font-size: 12px;
+      border: none;
+      vertical-align: top;
+    }
+
+    /* ── Nav ──────────────────────────────────────────────────── */
+
     nav {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       padding: 0 24px;
       display: flex;
       gap: 0;
+      overflow-x: auto;
     }
 
     nav button {
       background: none;
       border: none;
       color: var(--text-dim);
-      padding: 12px 20px;
+      padding: 12px 16px;
       font-size: 14px;
       cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: all 0.15s;
+      white-space: nowrap;
+      min-height: 44px;
     }
 
     nav button:hover { color: var(--text); }
@@ -119,7 +313,10 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 20px;
+      transition: border-color 0.15s;
     }
+
+    .card:hover { border-color: var(--surface-hover); }
 
     .card h3 {
       font-size: 13px;
@@ -160,6 +357,10 @@
       font-weight: 600;
     }
 
+    .table-wrap {
+      overflow-x: auto;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -173,8 +374,10 @@
       letter-spacing: 0.05em;
       color: var(--text-dim);
       border-bottom: 1px solid var(--border);
-      background: rgba(0,0,0,0.2);
+      background: rgba(0,0,0,0.05);
     }
+
+    [data-theme="dark"] th { background: rgba(0,0,0,0.2); }
 
     td {
       padding: 12px 20px;
@@ -237,6 +440,7 @@
       font-size: 14px;
       outline: none;
       transition: border-color 0.15s;
+      min-height: 44px;
     }
 
     .form-group input:focus, .form-group select:focus {
@@ -263,6 +467,7 @@
       cursor: pointer;
       border: none;
       transition: all 0.15s;
+      min-height: 44px;
     }
 
     .btn-primary {
@@ -281,7 +486,7 @@
 
     .btn-danger:hover { background: rgba(239,68,68,0.25); }
 
-    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; min-height: 32px; }
 
     /* ── Alerts ───────────────────────────────────────────────── */
 
@@ -307,41 +512,94 @@
       display: block;
     }
 
-    /* ── Services grid ────────────────────────────────────────── */
+    /* ── Service Tiles ───────────────────────────────────────── */
 
-    .service-card {
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .section-divider {
+      grid-column: 1 / -1;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      padding: 8px 0 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+
+    .service-tile {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px 20px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
       display: flex;
-      justify-content: space-between;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .service-tile:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .service-tile-header {
+      display: flex;
       align-items: center;
-      transition: border-color 0.15s;
+      justify-content: space-between;
     }
 
-    .service-card:hover { border-color: var(--accent); }
+    .service-tile-icon {
+      font-size: 28px;
+      line-height: 1;
+    }
 
-    .service-card .service-name {
-      font-weight: 600;
+    .service-tile-star {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: var(--text-dim);
+      padding: 2px;
+      transition: color 0.15s;
+      line-height: 1;
+    }
+
+    .service-tile-star:hover { color: var(--yellow); }
+    .service-tile-star.active { color: var(--yellow); }
+
+    .service-tile-name {
       font-size: 15px;
-      margin-bottom: 2px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .service-card .service-url {
+    .service-tile-desc {
       font-size: 12px;
       color: var(--text-dim);
-      word-break: break-all;
     }
 
-    .service-card a {
-      color: var(--accent);
-      text-decoration: none;
-      font-size: 13px;
-      white-space: nowrap;
+    .health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
     }
 
-    .service-card a:hover { text-decoration: underline; }
+    .health-dot.green { background: var(--green); }
+    .health-dot.red { background: var(--red); }
+    .health-dot.unknown { background: var(--text-dim); }
 
     /* ── Credentials ──────────────────────────────────────────── */
 
@@ -440,23 +698,336 @@
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
     }
+
+    /* ── Command Palette ─────────────────────────────────────── */
+
+    .cmd-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--overlay-bg);
+      z-index: 1000;
+      justify-content: center;
+      padding-top: 15vh;
+    }
+
+    .cmd-overlay.show { display: flex; }
+
+    .cmd-palette {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 500px;
+      max-width: 90vw;
+      max-height: 400px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      align-self: flex-start;
+    }
+
+    .cmd-input {
+      padding: 14px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+      width: 100%;
+    }
+
+    .cmd-input::placeholder { color: var(--text-dim); }
+
+    .cmd-results {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .cmd-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      transition: background 0.1s;
+    }
+
+    .cmd-item:hover, .cmd-item.selected { background: var(--surface-hover); }
+
+    .cmd-item-icon { font-size: 16px; width: 24px; text-align: center; }
+    .cmd-item-label { flex: 1; }
+    .cmd-item-hint { font-size: 11px; color: var(--text-dim); }
+
+    /* ── Toast ────────────────────────────────────────────────── */
+
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      max-width: 360px;
+      animation: toast-in 0.3s ease;
+    }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .toast.warning {
+      border-color: rgba(234,179,8,0.3);
+      background: rgba(234,179,8,0.1);
+      color: var(--yellow);
+    }
+
+    .toast.error {
+      border-color: rgba(239,68,68,0.3);
+      background: rgba(239,68,68,0.1);
+      color: var(--red);
+    }
+
+    /* ── Onboarding Modal ────────────────────────────────────── */
+
+    .onboard-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--overlay-bg);
+      z-index: 3000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .onboard-overlay.show { display: flex; }
+
+    .onboard-modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 480px;
+      max-width: 90vw;
+      padding: 32px;
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
+    .onboard-modal h2 { font-size: 22px; margin-bottom: 8px; }
+    .onboard-modal p { font-size: 14px; color: var(--text-dim); margin-bottom: 20px; line-height: 1.6; }
+
+    .onboard-steps {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .onboard-step-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--border);
+      transition: background 0.2s;
+    }
+
+    .onboard-step-dot.active { background: var(--accent); }
+
+    .onboard-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .onboard-actions button {
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      transition: all 0.15s;
+      min-height: 44px;
+    }
+
+    .onboard-actions button.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .onboard-actions button:hover { opacity: 0.85; }
+
+    /* ── Status Page ─────────────────────────────────────────── */
+
+    .status-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: border-color 0.15s;
+    }
+
+    .status-card:hover { border-color: var(--accent); }
+
+    .status-card .status-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .status-card .status-icon.healthy { background: rgba(34,197,94,0.15); }
+    .status-card .status-icon.unhealthy { background: rgba(239,68,68,0.15); }
+
+    .status-card .status-info { flex: 1; }
+    .status-card .status-name { font-weight: 600; font-size: 15px; }
+    .status-card .status-url { font-size: 12px; color: var(--text-dim); word-break: break-all; }
+
+    .status-card .status-badge {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    .status-card .status-badge.up { background: rgba(34,197,94,0.15); color: var(--green); }
+    .status-card .status-badge.down { background: rgba(239,68,68,0.15); color: var(--red); }
+
+    .last-checked {
+      text-align: right;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 8px;
+    }
+
+    /* ── Audit ────────────────────────────────────────────────── */
+
+    .audit-warning td { color: var(--yellow); }
+
+    /* ── Service grid (old, for DNS section) ──────────────────── */
+
+    .service-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.15s;
+    }
+
+    .service-card:hover { border-color: var(--accent); }
+    .service-card .service-name { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+    .service-card .service-url { font-size: 12px; color: var(--text-dim); word-break: break-all; }
+    .service-card a { color: var(--accent); text-decoration: none; font-size: 13px; white-space: nowrap; }
+    .service-card a:hover { text-decoration: underline; }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+
+    @media (max-width: 1024px) {
+      .services-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .header-status .kbd-hint { display: none; }
+      .user-info { display: none; }
+    }
+
+    @media (max-width: 768px) {
+      .services-grid {
+        grid-template-columns: 1fr;
+      }
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+      .hamburger { display: block; }
+      nav {
+        display: none;
+        flex-direction: column;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        z-index: 99;
+        padding: 0;
+      }
+      nav.open { display: flex; }
+      nav button {
+        text-align: left;
+        border-bottom: none;
+        border-left: 3px solid transparent;
+        padding: 14px 20px;
+      }
+      nav button.active {
+        border-left-color: var(--accent);
+        border-bottom: none;
+      }
+      main { padding: 16px; }
+      .header { position: relative; }
+      .header-status span:not(:last-child) { display: none; }
+    }
   </style>
 </head>
 <body>
 
+<!-- Alert Banner -->
+<div id="alert-banner" class="alert-banner" onclick="toggleAlertDetails()">
+  <span id="alert-banner-text"></span>
+  <button class="dismiss-btn" onclick="dismissAlerts(event)" title="Dismiss">&times;</button>
+</div>
+<div id="alert-details" class="alert-details">
+  <table id="alert-details-table"></table>
+</div>
+
 <div class="header">
-  <h1><span class="shield">&#x1f6e1;</span> SRE Platform</h1>
-  <div class="header-status">
-    <span id="header-health"></span>
-    <span id="header-time"></span>
+  <div class="header-left">
+    <button class="hamburger" onclick="toggleMobileNav()" aria-label="Toggle navigation">&#9776;</button>
+    <h1><span class="shield">&#x1f6e1;</span> SRE Platform</h1>
+  </div>
+  <div class="header-right">
+    <div class="header-status">
+      <span id="header-health"></span>
+      <span class="kbd-hint" onclick="openCommandPalette()">Ctrl+K</span>
+      <span id="header-time"></span>
+    </div>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle theme">&#x263E;</button>
+    <div id="user-area"></div>
   </div>
 </div>
 
-<nav>
-  <button class="active" onclick="switchTab('overview')">Overview</button>
-  <button onclick="switchTab('deploy')">Deploy App</button>
-  <button onclick="switchTab('services')">Services</button>
-  <button onclick="switchTab('credentials')">Credentials</button>
+<nav id="main-nav">
+  <button class="active" data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
+  <button data-tab="services" onclick="switchTab('services', this)">Services</button>
+  <button data-tab="deploy" onclick="switchTab('deploy', this)">Deploy App</button>
+  <button data-tab="status" onclick="switchTab('status', this)">Status</button>
+  <button data-tab="audit" onclick="switchTab('audit', this)">Audit</button>
+  <button data-tab="credentials" onclick="switchTab('credentials', this)">Credentials</button>
 </nav>
 
 <main>
@@ -481,40 +1052,60 @@
       <div class="table-header">
         <h2>Platform Components</h2>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>Component</th>
-            <th>Namespace</th>
-            <th>Chart</th>
-            <th>Version</th>
-          </tr>
-        </thead>
-        <tbody id="hr-table">
-          <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Component</th>
+              <th>Namespace</th>
+              <th>Chart</th>
+              <th>Version</th>
+            </tr>
+          </thead>
+          <tbody id="hr-table">
+            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="table-card">
       <div class="table-header">
         <h2>Nodes</h2>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>Name</th>
-            <th>Role</th>
-            <th>IP</th>
-            <th>Version</th>
-          </tr>
-        </thead>
-        <tbody id="nodes-table">
-          <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Name</th>
+              <th>Role</th>
+              <th>IP</th>
+              <th>Version</th>
+            </tr>
+          </thead>
+          <tbody id="nodes-table">
+            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Services Tab (NEW - tile-based landing page) -->
+  <div id="tab-services" class="tab-content">
+    <h2 style="margin-bottom: 16px;">Platform Services</h2>
+    <div class="services-grid" id="services-tiles-grid">
+      <div class="loading"><span class="spinner"></span></div>
+    </div>
+
+    <div style="margin-top: 24px;">
+      <h2 style="margin-bottom: 12px;">DNS Setup</h2>
+      <div class="card">
+        <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px;">Add this to <code>/etc/hosts</code> to access services by hostname:</p>
+        <code id="hosts-entry" style="font-size: 13px; background: var(--bg); padding: 8px 12px; border-radius: 6px; display: block; cursor: pointer; word-break: break-all;" onclick="copyText(this)"></code>
+      </div>
     </div>
   </div>
 
@@ -545,7 +1136,7 @@
             <label>Team Name</label>
             <input type="text" id="d-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
             <datalist id="team-list"></datalist>
-            <div class="hint">Type a name — namespace is created automatically</div>
+            <div class="hint">Type a name -- namespace is created automatically</div>
           </div>
         </div>
 
@@ -576,7 +1167,7 @@
         <div class="form-group">
           <label>Ingress Hostname (optional)</label>
           <input type="text" id="d-ingress" placeholder="my-app.apps.sre.example.com" />
-          <div class="hint">Leave empty for cluster-internal only — add to /etc/hosts to access</div>
+          <div class="hint">Leave empty for cluster-internal only</div>
         </div>
 
         <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Application</button>
@@ -588,35 +1179,57 @@
       <div class="table-header">
         <h2>Deployed Applications</h2>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>App</th>
-            <th>Namespace</th>
-            <th>Image</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="apps-table">
-          <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>App</th>
+              <th>Namespace</th>
+              <th>Image</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="apps-table">
+            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <!-- Services Tab -->
-  <div id="tab-services" class="tab-content">
-    <h2 style="margin-bottom: 16px;">Platform Services</h2>
-    <div class="grid" id="services-grid">
+  <!-- Status Tab (NEW) -->
+  <div id="tab-status" class="tab-content">
+    <h2 style="margin-bottom: 16px;">Service Health Status</h2>
+    <div class="grid" id="status-grid">
       <div class="loading"><span class="spinner"></span></div>
     </div>
+    <div class="last-checked" id="status-last-checked"></div>
+  </div>
 
-    <div style="margin-top: 24px;">
-      <h2 style="margin-bottom: 12px;">DNS Setup</h2>
-      <div class="card">
-        <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px;">Add this to <code>/etc/hosts</code> to access services by hostname:</p>
-        <code id="hosts-entry" style="font-size: 13px; background: var(--bg); padding: 8px 12px; border-radius: 6px; display: block; cursor: pointer; word-break: break-all;" onclick="copyText(this)"></code>
+  <!-- Audit Tab (NEW) -->
+  <div id="tab-audit" class="tab-content">
+    <h2 style="margin-bottom: 16px;">Cluster Audit Log</h2>
+    <div class="table-card">
+      <div class="table-header">
+        <h2>Recent Kubernetes Events</h2>
+        <span class="last-checked" id="audit-last-checked"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Namespace</th>
+              <th>Resource</th>
+              <th>Reason</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table">
+            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -630,30 +1243,272 @@
   </div>
 </main>
 
+<!-- Command Palette -->
+<div class="cmd-overlay" id="cmd-overlay" onclick="if(event.target===this)closeCommandPalette()">
+  <div class="cmd-palette">
+    <input class="cmd-input" id="cmd-input" placeholder="Search services, pages, actions..." oninput="filterCommands()" onkeydown="handleCmdKey(event)" />
+    <div class="cmd-results" id="cmd-results"></div>
+  </div>
+</div>
+
+<!-- Onboarding Modal -->
+<div class="onboard-overlay" id="onboard-overlay">
+  <div class="onboard-modal" id="onboard-modal"></div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
 <script>
+// ── HTML Escape ─────────────────────────────────────────────────────────────
+
+function esc(str) {
+  if (typeof str !== 'string') return String(str);
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(str));
+  return d.innerHTML;
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 
-let healthData = null;
-let ingressData = null;
+var healthData = null;
+var ingressData = null;
+var currentUser = { user: 'anonymous', email: '', groups: [], isAdmin: false, role: 'anonymous' };
+var userFavorites = [];
+var serviceStatus = [];
+var alertsDismissed = false;
+var cmdSelectedIndex = 0;
+var cmdFilteredItems = [];
+var sessionTimer = null;
+var sessionWarnTimer = null;
+var statusRefreshTimer = null;
+var auditRefreshTimer = null;
+var alertRefreshTimer = null;
+
+// ── Service Icons (SVG-free, using simple text icons) ───────────────────────
+
+var SERVICE_ICONS = {
+  chart: '\uD83D\uDCCA',
+  search: '\uD83D\uDD0D',
+  bell: '\uD83D\uDD14',
+  container: '\uD83D\uDC33',
+  key: '\uD83D\uDD11',
+  shield: '\uD83D\uDEE1',
+  lock: '\uD83D\uDD10',
+  layout: '\uD83D\uDCCB'
+};
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+
+function getTheme() {
+  return localStorage.getItem('sre-theme') || 'dark';
+}
+
+function toggleTheme() {
+  var t = getTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('sre-theme', t);
+  document.documentElement.setAttribute('data-theme', t);
+  updateThemeBtn();
+}
+
+function updateThemeBtn() {
+  var btn = document.getElementById('theme-btn');
+  btn.innerHTML = getTheme() === 'dark' ? '&#x2600;' : '&#x263E;';
+}
 
 // ── Tab switching ────────────────────────────────────────────────────────────
 
-function switchTab(tab) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('nav button').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById('tab-' + tab).classList.add('active');
-  event.target.classList.add('active');
+  if (btn) btn.classList.add('active');
 
-  if (tab === 'deploy') loadTenants();
-  if (tab === 'services') loadServices();
-  if (tab === 'credentials') loadCredentials();
+  // Close mobile nav
+  document.getElementById('main-nav').classList.remove('open');
+
+  // Clear refresh timers
+  clearInterval(statusRefreshTimer);
+  clearInterval(auditRefreshTimer);
+
+  if (tab === 'deploy') { loadTenants(); }
+  if (tab === 'services') { loadServiceTiles(); }
+  if (tab === 'credentials') { loadCredentials(); }
+  if (tab === 'status') {
+    loadStatus();
+    statusRefreshTimer = setInterval(loadStatus, 30000);
+  }
+  if (tab === 'audit') {
+    loadAudit();
+    auditRefreshTimer = setInterval(loadAudit, 30000);
+  }
+}
+
+function toggleMobileNav() {
+  document.getElementById('main-nav').classList.toggle('open');
+}
+
+// ── RBAC Visibility ─────────────────────────────────────────────────────────
+
+function applyRBAC() {
+  var role = currentUser.role;
+  var tabs = {
+    overview: true,
+    services: true,
+    deploy: role === 'admin' || role === 'developer',
+    status: true,
+    audit: role === 'admin',
+    credentials: role === 'admin'
+  };
+
+  document.querySelectorAll('nav button[data-tab]').forEach(function(btn) {
+    var tab = btn.getAttribute('data-tab');
+    btn.style.display = tabs[tab] ? '' : 'none';
+  });
+}
+
+// ── User / SSO ──────────────────────────────────────────────────────────────
+
+async function loadUser() {
+  try {
+    var resp = await fetch('/api/user');
+    currentUser = await resp.json();
+  } catch (err) {
+    currentUser = { user: 'anonymous', email: '', groups: [], isAdmin: false, role: 'anonymous' };
+  }
+  renderUserArea();
+  applyRBAC();
+  loadFavorites();
+  checkOnboarding();
+  setupSessionTimeout();
+}
+
+function renderUserArea() {
+  var area = document.getElementById('user-area');
+  if (currentUser.user === 'anonymous' || !currentUser.email) {
+    area.innerHTML = '<button class="btn-auth" onclick="window.location.href=\'/oauth2/start\'">Sign In</button>';
+  } else {
+    var initials = currentUser.email.substring(0, 2).toUpperCase();
+    var roleCls = currentUser.role || 'viewer';
+    area.innerHTML =
+      '<div class="user-area">' +
+        '<div class="user-avatar">' + esc(initials) + '</div>' +
+        '<div class="user-info">' +
+          '<span class="user-email">' + esc(currentUser.email) + '</span>' +
+          '<span class="role-badge ' + esc(roleCls) + '">' + esc(currentUser.role) + '</span>' +
+        '</div>' +
+        '<button class="btn-auth" onclick="window.location.href=\'/oauth2/sign_out\'" title="Sign Out">&#x2716;</button>' +
+      '</div>';
+  }
+}
+
+// ── Session Timeout ─────────────────────────────────────────────────────────
+
+function setupSessionTimeout() {
+  clearTimeout(sessionWarnTimer);
+  clearTimeout(sessionTimer);
+  if (currentUser.user === 'anonymous' || !currentUser.email) return;
+
+  // Warn at 25 min
+  sessionWarnTimer = setTimeout(function() {
+    showToast('Session expiring in 5 minutes. Click to extend.', 'warning', function() {
+      window.location.href = '/oauth2/start';
+    });
+  }, 25 * 60 * 1000);
+
+  // Expire at 30 min
+  sessionTimer = setTimeout(function() {
+    showToast('Session expired. Click to sign in again.', 'error', function() {
+      window.location.href = '/oauth2/start';
+    });
+  }, 30 * 60 * 1000);
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+
+function showToast(message, type, onClick) {
+  var container = document.getElementById('toast-container');
+  var toast = document.createElement('div');
+  toast.className = 'toast ' + (type || '');
+  toast.textContent = message;
+  if (onClick) {
+    toast.onclick = function() {
+      container.removeChild(toast);
+      onClick();
+    };
+  } else {
+    toast.onclick = function() { container.removeChild(toast); };
+    setTimeout(function() {
+      if (toast.parentNode) container.removeChild(toast);
+    }, 5000);
+  }
+  container.appendChild(toast);
+}
+
+// ── Alerts Banner ───────────────────────────────────────────────────────────
+
+async function loadAlerts() {
+  if (alertsDismissed) return;
+  try {
+    var resp = await fetch('/api/alerts');
+    var alerts = await resp.json();
+    var firing = alerts.filter(function(a) { return a.state === 'active'; });
+    renderAlertBanner(firing);
+  } catch (err) {
+    // silently ignore
+  }
+}
+
+function renderAlertBanner(alerts) {
+  var banner = document.getElementById('alert-banner');
+  var details = document.getElementById('alert-details');
+  if (!alerts || alerts.length === 0) {
+    banner.className = 'alert-banner';
+    banner.style.display = 'none';
+    details.className = 'alert-details';
+    return;
+  }
+
+  var critical = alerts.filter(function(a) { return a.severity === 'critical'; }).length;
+  var warning = alerts.filter(function(a) { return a.severity === 'warning'; }).length;
+  var rest = alerts.length - critical - warning;
+
+  var parts = [];
+  if (critical > 0) parts.push(critical + ' critical');
+  if (warning > 0) parts.push(warning + ' warning');
+  if (rest > 0) parts.push(rest + ' other');
+
+  var text = alerts.length + ' alert' + (alerts.length !== 1 ? 's' : '') + ' firing';
+  if (parts.length) text += ' \u2014 ' + parts.join(', ');
+
+  document.getElementById('alert-banner-text').textContent = text;
+  banner.className = 'alert-banner ' + (critical > 0 ? 'critical' : 'warning');
+
+  var tableHtml = '';
+  alerts.forEach(function(a) {
+    tableHtml += '<tr><td><span class="badge ' + (a.severity === 'critical' ? 'red' : 'yellow') + '">' + esc(a.severity) + '</span></td>' +
+      '<td>' + esc(a.name) + '</td><td>' + esc(a.summary) + '</td></tr>';
+  });
+  document.getElementById('alert-details-table').innerHTML = tableHtml;
+}
+
+function toggleAlertDetails() {
+  var d = document.getElementById('alert-details');
+  d.classList.toggle('show');
+}
+
+function dismissAlerts(e) {
+  e.stopPropagation();
+  alertsDismissed = true;
+  document.getElementById('alert-banner').style.display = 'none';
+  document.getElementById('alert-details').className = 'alert-details';
 }
 
 // ── Overview ─────────────────────────────────────────────────────────────────
 
 async function loadHealth() {
   try {
-    const resp = await fetch('/api/health');
+    var resp = await fetch('/api/health');
     healthData = await resp.json();
     renderHealth();
   } catch (err) {
@@ -662,21 +1517,21 @@ async function loadHealth() {
 }
 
 function renderHealth() {
-  const d = healthData;
+  var d = healthData;
   if (!d) return;
 
-  const s = d.summary;
+  var s = d.summary;
 
   // Header
-  const allGood = s.helmReleasesReady === s.helmReleasesTotal && s.problemPodCount === 0;
+  var allGood = s.helmReleasesReady === s.helmReleasesTotal && s.problemPodCount === 0;
   document.getElementById('header-health').innerHTML =
-    `<span class="status-dot ${allGood ? 'green' : 'yellow'}"></span> ${s.helmReleasesReady}/${s.helmReleasesTotal} components`;
+    '<span class="status-dot ' + (allGood ? 'green' : 'yellow') + '"></span> ' + s.helmReleasesReady + '/' + s.helmReleasesTotal + ' components';
 
   // Summary cards
-  document.getElementById('hr-count').textContent = `${s.helmReleasesReady}/${s.helmReleasesTotal}`;
+  document.getElementById('hr-count').textContent = s.helmReleasesReady + '/' + s.helmReleasesTotal;
   document.getElementById('hr-count').className = 'big-number ' + (s.helmReleasesReady === s.helmReleasesTotal ? 'green' : 'red');
 
-  document.getElementById('node-count').textContent = `${s.nodesReady}/${s.nodesTotal}`;
+  document.getElementById('node-count').textContent = s.nodesReady + '/' + s.nodesTotal;
   document.getElementById('node-count').className = 'big-number green';
 
   document.getElementById('pod-count').textContent = s.problemPodCount;
@@ -684,39 +1539,140 @@ function renderHealth() {
 
   // HelmRelease table
   document.getElementById('hr-table').innerHTML = d.helmReleases
-    .sort((a, b) => a.namespace.localeCompare(b.namespace))
-    .map(hr => `
-      <tr>
-        <td><span class="badge ${hr.ready ? 'green' : 'red'}">${hr.ready ? 'Healthy' : 'Unhealthy'}</span></td>
-        <td><strong>${hr.name}</strong></td>
-        <td>${hr.namespace}</td>
-        <td>${hr.chart}</td>
-        <td>${hr.version}</td>
-      </tr>
-    `).join('');
+    .sort(function(a, b) { return a.namespace.localeCompare(b.namespace); })
+    .map(function(hr) {
+      return '<tr>' +
+        '<td><span class="badge ' + (hr.ready ? 'green' : 'red') + '">' + (hr.ready ? 'Healthy' : 'Unhealthy') + '</span></td>' +
+        '<td><strong>' + esc(hr.name) + '</strong></td>' +
+        '<td>' + esc(hr.namespace) + '</td>' +
+        '<td>' + esc(hr.chart) + '</td>' +
+        '<td>' + esc(hr.version) + '</td>' +
+        '</tr>';
+    }).join('');
 
   // Nodes table
-  document.getElementById('nodes-table').innerHTML = d.nodes.map(n => `
-    <tr>
-      <td><span class="badge ${n.ready ? 'green' : 'red'}">${n.ready ? 'Ready' : 'NotReady'}</span></td>
-      <td><strong>${n.name}</strong></td>
-      <td>${n.roles}</td>
-      <td><code>${n.ip}</code></td>
-      <td>${n.version}</td>
-    </tr>
-  `).join('');
+  document.getElementById('nodes-table').innerHTML = d.nodes.map(function(n) {
+    return '<tr>' +
+      '<td><span class="badge ' + (n.ready ? 'green' : 'red') + '">' + (n.ready ? 'Ready' : 'NotReady') + '</span></td>' +
+      '<td><strong>' + esc(n.name) + '</strong></td>' +
+      '<td>' + esc(n.roles) + '</td>' +
+      '<td><code>' + esc(n.ip) + '</code></td>' +
+      '<td>' + esc(n.version) + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Service Tiles (NEW) ─────────────────────────────────────────────────────
+
+async function loadServiceTiles() {
+  try {
+    var [statusResp, ingressResp] = await Promise.all([
+      fetch('/api/status'),
+      fetch('/api/ingress')
+    ]);
+    serviceStatus = await statusResp.json();
+    ingressData = await ingressResp.json();
+    renderServiceTiles();
+    renderHostsEntry();
+  } catch (err) {
+    console.error('Failed to load service tiles:', err);
+  }
+}
+
+function renderServiceTiles() {
+  var grid = document.getElementById('services-tiles-grid');
+  if (!serviceStatus || serviceStatus.length === 0) {
+    grid.innerHTML = '<p style="color:var(--text-dim)">No services found.</p>';
+    return;
+  }
+
+  var favSet = new Set(userFavorites);
+  var favs = serviceStatus.filter(function(s) { return favSet.has(s.name); });
+  var rest = serviceStatus.filter(function(s) { return !favSet.has(s.name); });
+
+  var html = '';
+  if (favs.length > 0) {
+    html += '<div class="section-divider">Favorites</div>';
+    favs.forEach(function(s) { html += renderOneTile(s, true); });
+    html += '<div class="section-divider">All Services</div>';
+  }
+  rest.forEach(function(s) { html += renderOneTile(s, false); });
+
+  grid.innerHTML = html;
+}
+
+function renderOneTile(s, isFav) {
+  var iconChar = SERVICE_ICONS[s.icon] || '\uD83D\uDCE6';
+  var healthCls = s.healthy ? 'green' : 'red';
+  var starCls = isFav ? 'active' : '';
+
+  return '<div class="service-tile" onclick="openService(\'' + esc(s.url) + '\')" role="button" tabindex="0">' +
+    '<div class="service-tile-header">' +
+      '<span class="service-tile-icon">' + iconChar + '</span>' +
+      '<button class="service-tile-star ' + starCls + '" onclick="toggleFavorite(event, \'' + esc(s.name) + '\')" title="Toggle favorite">' +
+        (isFav ? '\u2605' : '\u2606') +
+      '</button>' +
+    '</div>' +
+    '<div class="service-tile-name"><span class="health-dot ' + healthCls + '"></span> ' + esc(s.name.charAt(0).toUpperCase() + s.name.slice(1)) + '</div>' +
+    '<div class="service-tile-desc">' + esc(s.description) + '</div>' +
+  '</div>';
+}
+
+function openService(url) {
+  window.open(url, '_blank', 'noopener');
+}
+
+function renderHostsEntry() {
+  if (!ingressData) return;
+  var allHosts = ingressData.routes.map(function(r) { return r.hosts[0]; }).filter(Boolean).join(' ');
+  var el = document.getElementById('hosts-entry');
+  if (el) el.textContent = ingressData.nodeIp + '  ' + allHosts;
+}
+
+// ── Favorites ───────────────────────────────────────────────────────────────
+
+async function loadFavorites() {
+  try {
+    var resp = await fetch('/api/favorites');
+    var data = await resp.json();
+    userFavorites = data.favorites || [];
+  } catch (err) {
+    userFavorites = [];
+  }
+}
+
+async function toggleFavorite(e, serviceName) {
+  e.stopPropagation();
+  var idx = userFavorites.indexOf(serviceName);
+  if (idx >= 0) {
+    userFavorites.splice(idx, 1);
+  } else {
+    userFavorites.push(serviceName);
+  }
+  renderServiceTiles();
+
+  // Persist
+  try {
+    await fetch('/api/favorites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favorites: userFavorites })
+    });
+  } catch (err) {
+    // non-critical
+  }
 }
 
 // ── Deploy ───────────────────────────────────────────────────────────────────
 
 async function loadTenants() {
   try {
-    const resp = await fetch('/api/tenants');
-    const data = await resp.json();
-    const datalist = document.getElementById('team-list');
-    datalist.innerHTML = data.tenants.map(t =>
-      `<option value="${t.name.replace('team-', '')}">`
-    ).join('');
+    var resp = await fetch('/api/tenants');
+    var data = await resp.json();
+    var datalist = document.getElementById('team-list');
+    datalist.innerHTML = data.tenants.map(function(t) {
+      return '<option value="' + esc(t.name.replace('team-', '')) + '">';
+    }).join('');
   } catch (err) {
     console.error('Failed to load tenants:', err);
   }
@@ -726,56 +1682,56 @@ async function loadTenants() {
 
 async function loadSamples() {
   try {
-    const resp = await fetch('/api/samples');
-    const data = await resp.json();
-    const grid = document.getElementById('samples-grid');
-    grid.innerHTML = data.samples.map(s => `
-      <div class="sample-card">
-        <div class="sample-info">
-          <h4>${s.name}</h4>
-          <p>${s.description}</p>
-          <code>${s.image}:${s.tag}</code>
-        </div>
-        <button class="btn btn-success btn-sm" onclick="quickDeploy('${s.name}','${s.image}','${s.tag}',${s.port})">Deploy</button>
-      </div>
-    `).join('');
+    var resp = await fetch('/api/samples');
+    var data = await resp.json();
+    var grid = document.getElementById('samples-grid');
+    grid.innerHTML = data.samples.map(function(s) {
+      return '<div class="sample-card">' +
+        '<div class="sample-info">' +
+          '<h4>' + esc(s.name) + '</h4>' +
+          '<p>' + esc(s.description) + '</p>' +
+          '<code>' + esc(s.image) + ':' + esc(s.tag) + '</code>' +
+        '</div>' +
+        '<button class="btn btn-success btn-sm" onclick="quickDeploy(\'' + esc(s.name) + '\',\'' + esc(s.image) + '\',\'' + esc(s.tag) + '\',' + s.port + ')">Deploy</button>' +
+      '</div>';
+    }).join('');
   } catch (err) {
     console.error('Failed to load samples:', err);
   }
 }
 
 async function quickDeploy(name, image, tag, port) {
-  const alert = document.getElementById('deploy-alert');
-  alert.className = 'alert'; alert.style.display = 'none';
-  const team = document.getElementById('d-team').value || 'demo';
+  var alertEl = document.getElementById('deploy-alert');
+  alertEl.className = 'alert'; alertEl.style.display = 'none';
+  var team = document.getElementById('d-team').value || 'demo';
   try {
-    const resp = await fetch('/api/deploy', {
+    var resp = await fetch('/api/deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, team, image, tag, port, replicas: 1 }),
+      body: JSON.stringify({ name: name, team: team, image: image, tag: tag, port: port, replicas: 1 }),
     });
-    const data = await resp.json();
+    var data = await resp.json();
     if (data.success) {
-      alert.className = 'alert success';
-      alert.textContent = data.message + '. Give it about 30 seconds to start.';
+      alertEl.className = 'alert success';
+      alertEl.textContent = data.message + '. Give it about 30 seconds to start.';
       setTimeout(loadDeployedApps, 3000);
     } else {
-      alert.className = 'alert error';
-      alert.textContent = data.error;
+      alertEl.className = 'alert error';
+      alertEl.textContent = data.error;
     }
   } catch (err) {
-    alert.className = 'alert error';
-    alert.textContent = 'Deploy failed: ' + err.message;
+    alertEl.className = 'alert error';
+    alertEl.textContent = 'Deploy failed: ' + err.message;
   }
 }
 
 async function loadDeployedApps() {
   try {
-    const resp = await fetch('/api/health');
-    const data = await resp.json();
-    const tenantApps = data.helmReleases.filter(hr =>
-      !['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero','harbor','keycloak'].includes(hr.namespace)
-    );
+    var resp = await fetch('/api/health');
+    var data = await resp.json();
+    var tenantApps = data.helmReleases.filter(function(hr) {
+      return !['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero','harbor','keycloak'].includes(hr.namespace);
+    });
 
     if (tenantApps.length === 0) {
       document.getElementById('apps-table').innerHTML =
@@ -783,15 +1739,15 @@ async function loadDeployedApps() {
       return;
     }
 
-    document.getElementById('apps-table').innerHTML = tenantApps.map(app => `
-      <tr>
-        <td><span class="badge ${app.ready ? 'green' : 'red'}">${app.ready ? 'Running' : 'Deploying'}</span></td>
-        <td><strong>${app.name}</strong></td>
-        <td>${app.namespace}</td>
-        <td><code>${app.chart || 'web-app'}</code></td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteApp('${app.namespace}', '${app.name}')">Delete</button></td>
-      </tr>
-    `).join('');
+    document.getElementById('apps-table').innerHTML = tenantApps.map(function(app) {
+      return '<tr>' +
+        '<td><span class="badge ' + (app.ready ? 'green' : 'red') + '">' + (app.ready ? 'Running' : 'Deploying') + '</span></td>' +
+        '<td><strong>' + esc(app.name) + '</strong></td>' +
+        '<td>' + esc(app.namespace) + '</td>' +
+        '<td><code>' + esc(app.chart || 'web-app') + '</code></td>' +
+        '<td><button class="btn btn-danger btn-sm" onclick="deleteApp(\'' + esc(app.namespace) + '\', \'' + esc(app.name) + '\')">Delete</button></td>' +
+        '</tr>';
+    }).join('');
   } catch (err) {
     console.error('Failed to load apps:', err);
   }
@@ -799,15 +1755,15 @@ async function loadDeployedApps() {
 
 async function handleDeploy(e) {
   e.preventDefault();
-  const btn = document.getElementById('deploy-btn');
-  const alert = document.getElementById('deploy-alert');
+  var btn = document.getElementById('deploy-btn');
+  var alertEl = document.getElementById('deploy-alert');
   btn.disabled = true;
   btn.textContent = 'Deploying...';
-  alert.className = 'alert';
-  alert.style.display = 'none';
+  alertEl.className = 'alert';
+  alertEl.style.display = 'none';
 
   try {
-    const body = {
+    var body = {
       name: document.getElementById('d-name').value,
       team: document.getElementById('d-team').value,
       image: document.getElementById('d-image').value,
@@ -817,27 +1773,27 @@ async function handleDeploy(e) {
       ingress: document.getElementById('d-ingress').value,
     };
 
-    const resp = await fetch('/api/deploy', {
+    var resp = await fetch('/api/deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 
-    const data = await resp.json();
+    var data = await resp.json();
     if (data.success) {
-      alert.className = 'alert success';
-      alert.textContent = data.message + '. Flux will deploy it within a few minutes.';
+      alertEl.className = 'alert success';
+      alertEl.textContent = data.message + '. Flux will deploy it within a few minutes.';
       document.getElementById('deploy-form').reset();
       document.getElementById('d-port').value = '8080';
       document.getElementById('d-replicas').value = '2';
       setTimeout(loadDeployedApps, 3000);
     } else {
-      alert.className = 'alert error';
-      alert.textContent = data.error;
+      alertEl.className = 'alert error';
+      alertEl.textContent = data.error;
     }
   } catch (err) {
-    alert.className = 'alert error';
-    alert.textContent = 'Deploy failed: ' + err.message;
+    alertEl.className = 'alert error';
+    alertEl.textContent = 'Deploy failed: ' + err.message;
   }
 
   btn.disabled = false;
@@ -845,61 +1801,93 @@ async function handleDeploy(e) {
 }
 
 async function deleteApp(namespace, name) {
-  if (!confirm(`Delete app "${name}" from "${namespace}"?`)) return;
+  if (!confirm('Delete app "' + name + '" from "' + namespace + '"?')) return;
   try {
-    await fetch(`/api/apps/${namespace}/${name}`, { method: 'DELETE' });
+    await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
     setTimeout(loadDeployedApps, 1000);
   } catch (err) {
-    alert('Delete failed: ' + err.message);
+    showToast('Delete failed: ' + err.message, 'error');
   }
 }
 
-// ── Services ─────────────────────────────────────────────────────────────────
+// ── Status Page (NEW) ───────────────────────────────────────────────────────
 
-async function loadServices() {
+async function loadStatus() {
   try {
-    const resp = await fetch('/api/ingress');
-    ingressData = await resp.json();
-    renderServices();
+    var resp = await fetch('/api/status');
+    var data = await resp.json();
+    renderStatus(data);
   } catch (err) {
-    console.error('Failed to load services:', err);
+    console.error('Failed to load status:', err);
   }
 }
 
-function renderServices() {
-  const d = ingressData;
-  if (!d) return;
+function renderStatus(services) {
+  var grid = document.getElementById('status-grid');
+  if (!services || services.length === 0) {
+    grid.innerHTML = '<p style="color:var(--text-dim)">No services configured.</p>';
+    return;
+  }
 
-  const grid = document.getElementById('services-grid');
-  const grafanaUrl = `https://grafana.apps.sre.example.com:${d.httpsPort}`;
-  grid.innerHTML = d.routes.map(r => {
-    const host = r.hosts[0] || '';
-    const url = `https://${host}:${d.httpsPort}`;
-    return `
-      <div class="service-card">
-        <div>
-          <div class="service-name">${r.name}</div>
-          <div class="service-url">${host}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <a href="${grafanaUrl}/d/sre-cluster-overview" target="_blank" title="Grafana Dashboard" style="font-size:12px;color:var(--text-dim);">Grafana</a>
-          <a href="${url}" target="_blank">Open &rarr;</a>
-        </div>
-      </div>
-    `;
+  grid.innerHTML = services.map(function(s) {
+    var iconChar = SERVICE_ICONS[s.icon] || '\uD83D\uDCE6';
+    var healthCls = s.healthy ? 'healthy' : 'unhealthy';
+    var badgeCls = s.healthy ? 'up' : 'down';
+    var badgeText = s.healthy ? 'Operational' : 'Down';
+
+    return '<div class="status-card">' +
+      '<div class="status-icon ' + healthCls + '">' + iconChar + '</div>' +
+      '<div class="status-info">' +
+        '<div class="status-name">' + esc(s.name.charAt(0).toUpperCase() + s.name.slice(1)) + '</div>' +
+        '<div class="status-url">' + esc(s.url) + '</div>' +
+      '</div>' +
+      '<span class="status-badge ' + badgeCls + '">' + badgeText + '</span>' +
+    '</div>';
   }).join('');
 
-  // /etc/hosts entry
-  const allHosts = d.routes.map(r => r.hosts[0]).filter(Boolean).join(' ');
-  document.getElementById('hosts-entry').textContent = `${d.nodeIp}  ${allHosts}`;
+  document.getElementById('status-last-checked').textContent = 'Last checked: ' + new Date().toLocaleTimeString();
+}
+
+// ── Audit Log (NEW) ─────────────────────────────────────────────────────────
+
+async function loadAudit() {
+  try {
+    var resp = await fetch('/api/audit');
+    var events = await resp.json();
+    renderAudit(events);
+  } catch (err) {
+    console.error('Failed to load audit:', err);
+  }
+}
+
+function renderAudit(events) {
+  var tbody = document.getElementById('audit-table');
+  if (!events || events.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No events found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = events.map(function(e) {
+    var rowCls = e.type === 'Warning' ? 'audit-warning' : '';
+    var ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : 'N/A';
+    return '<tr class="' + rowCls + '">' +
+      '<td>' + esc(ts) + '</td>' +
+      '<td>' + esc(e.namespace) + '</td>' +
+      '<td>' + esc(e.kind) + '/' + esc(e.name) + '</td>' +
+      '<td><span class="badge ' + (e.type === 'Warning' ? 'yellow' : 'green') + '">' + esc(e.reason) + '</span></td>' +
+      '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(e.message) + '">' + esc(e.message) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  document.getElementById('audit-last-checked').textContent = 'Last checked: ' + new Date().toLocaleTimeString();
 }
 
 // ── Credentials ──────────────────────────────────────────────────────────────
 
 async function loadCredentials() {
   try {
-    const resp = await fetch('/api/credentials');
-    const data = await resp.json();
+    var resp = await fetch('/api/credentials');
+    var data = await resp.json();
     renderCredentials(data);
   } catch (err) {
     console.error('Failed to load credentials:', err);
@@ -907,33 +1895,208 @@ async function loadCredentials() {
 }
 
 function renderCredentials(data) {
-  const grid = document.getElementById('creds-grid');
+  var grid = document.getElementById('creds-grid');
   grid.innerHTML = '';
 
-  for (const [service, creds] of Object.entries(data)) {
-    const rows = Object.entries(creds).map(([k, v]) => `
-      <div class="cred-row">
-        <span class="label">${k}</span>
-        <span class="value" onclick="copyText(this)" title="Click to copy">${v}</span>
-      </div>
-    `).join('');
+  for (var service in data) {
+    if (!data.hasOwnProperty(service)) continue;
+    var creds = data[service];
+    var rows = '';
+    for (var k in creds) {
+      if (!creds.hasOwnProperty(k)) continue;
+      rows += '<div class="cred-row">' +
+        '<span class="label">' + esc(k) + '</span>' +
+        '<span class="value" onclick="copyText(this)" title="Click to copy">' + esc(creds[k]) + '</span>' +
+        '</div>';
+    }
 
-    grid.innerHTML += `
-      <div class="cred-card">
-        <h4>${service.charAt(0).toUpperCase() + service.slice(1)}</h4>
-        ${rows}
-      </div>
-    `;
+    grid.innerHTML += '<div class="cred-card">' +
+      '<h4>' + esc(service.charAt(0).toUpperCase() + service.slice(1)) + '</h4>' +
+      rows +
+      '</div>';
   }
+}
+
+// ── Command Palette ─────────────────────────────────────────────────────────
+
+var ALL_COMMANDS = [
+  { label: 'Go to Overview', icon: '\uD83D\uDCCA', action: function() { switchTabByName('overview'); } },
+  { label: 'Go to Services', icon: '\uD83D\uDD17', action: function() { switchTabByName('services'); } },
+  { label: 'Go to Deploy', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } },
+  { label: 'Go to Status', icon: '\u2705', action: function() { switchTabByName('status'); } },
+  { label: 'Go to Audit', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } },
+  { label: 'Go to Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } },
+  { label: 'Open Grafana', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com'); } },
+  { label: 'Open Prometheus', icon: '\uD83D\uDD0D', action: function() { openService('https://prometheus.apps.sre.example.com'); } },
+  { label: 'Open AlertManager', icon: '\uD83D\uDD14', action: function() { openService('https://alertmanager.apps.sre.example.com'); } },
+  { label: 'Open Harbor', icon: '\uD83D\uDC33', action: function() { openService('https://harbor.apps.sre.example.com'); } },
+  { label: 'Open Keycloak', icon: '\uD83D\uDD11', action: function() { openService('https://keycloak.apps.sre.example.com'); } },
+  { label: 'Open NeuVector', icon: '\uD83D\uDEE1', action: function() { openService('https://neuvector.apps.sre.example.com'); } },
+  { label: 'Open OpenBao', icon: '\uD83D\uDD10', action: function() { openService('https://openbao.apps.sre.example.com'); } },
+  { label: 'Toggle Theme', icon: '\u263E', action: function() { toggleTheme(); } },
+  { label: 'Grafana - Cluster Overview Dashboard', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } },
+  { label: 'Grafana - Node Exporter Dashboard', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } },
+  { label: 'Grafana - Kubernetes Pods Dashboard', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } },
+];
+
+function switchTabByName(name) {
+  var btn = document.querySelector('nav button[data-tab="' + name + '"]');
+  if (btn) switchTab(name, btn);
+}
+
+function openCommandPalette() {
+  var overlay = document.getElementById('cmd-overlay');
+  overlay.classList.add('show');
+  var input = document.getElementById('cmd-input');
+  input.value = '';
+  cmdSelectedIndex = 0;
+  filterCommands();
+  input.focus();
+}
+
+function closeCommandPalette() {
+  document.getElementById('cmd-overlay').classList.remove('show');
+}
+
+function filterCommands() {
+  var query = document.getElementById('cmd-input').value.toLowerCase();
+  cmdFilteredItems = ALL_COMMANDS.filter(function(c) {
+    return c.label.toLowerCase().indexOf(query) >= 0;
+  });
+  cmdSelectedIndex = 0;
+  renderCmdResults();
+}
+
+function renderCmdResults() {
+  var container = document.getElementById('cmd-results');
+  container.innerHTML = cmdFilteredItems.map(function(item, i) {
+    return '<div class="cmd-item' + (i === cmdSelectedIndex ? ' selected' : '') + '" ' +
+      'onclick="executeCmdItem(' + i + ')" ' +
+      'onmouseenter="cmdSelectedIndex=' + i + ';renderCmdResults()">' +
+      '<span class="cmd-item-icon">' + item.icon + '</span>' +
+      '<span class="cmd-item-label">' + esc(item.label) + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function handleCmdKey(e) {
+  if (e.key === 'Escape') {
+    closeCommandPalette();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    cmdSelectedIndex = Math.min(cmdSelectedIndex + 1, cmdFilteredItems.length - 1);
+    renderCmdResults();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    cmdSelectedIndex = Math.max(cmdSelectedIndex - 1, 0);
+    renderCmdResults();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    executeCmdItem(cmdSelectedIndex);
+  }
+}
+
+function executeCmdItem(index) {
+  if (cmdFilteredItems[index]) {
+    closeCommandPalette();
+    cmdFilteredItems[index].action();
+  }
+}
+
+// Global keyboard shortcut
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault();
+    openCommandPalette();
+  }
+  if (e.key === 'Escape' && document.getElementById('cmd-overlay').classList.contains('show')) {
+    closeCommandPalette();
+  }
+});
+
+// ── Onboarding Wizard ───────────────────────────────────────────────────────
+
+var onboardStep = 0;
+var onboardSteps = [
+  {
+    title: 'Welcome to SRE Platform',
+    body: function() {
+      var role = currentUser.role || 'viewer';
+      return 'You are signed in as <strong>' + esc(currentUser.email || currentUser.user) +
+        '</strong> with the <strong>' + esc(role) + '</strong> role. ' +
+        'This dashboard gives you a unified view of the SRE platform services, health, and deployment capabilities.';
+    }
+  },
+  {
+    title: 'Your Services',
+    body: function() {
+      return 'The <strong>Services</strong> tab shows all platform services as tiles. ' +
+        'Each tile shows the service health status and provides one-click access. ' +
+        'Use the star icon to favorite services you use most often.';
+    }
+  },
+  {
+    title: 'Quick Tips',
+    body: function() {
+      return 'Press <strong>Ctrl+K</strong> to open the command palette for quick navigation.<br><br>' +
+        'Click the star icon on service tiles to add favorites.<br><br>' +
+        'Use the sun/moon icon in the header to toggle between dark and light themes.<br><br>' +
+        'The <strong>Status</strong> tab shows real-time health of all services.';
+    }
+  }
+];
+
+function checkOnboarding() {
+  if (currentUser.user === 'anonymous' && !currentUser.email) return;
+  var key = 'sre-onboarded-' + (currentUser.email || currentUser.user);
+  if (localStorage.getItem(key)) return;
+  onboardStep = 0;
+  renderOnboarding();
+  document.getElementById('onboard-overlay').classList.add('show');
+}
+
+function renderOnboarding() {
+  var step = onboardSteps[onboardStep];
+  var dotsHtml = onboardSteps.map(function(_, i) {
+    return '<div class="onboard-step-dot' + (i === onboardStep ? ' active' : '') + '"></div>';
+  }).join('');
+
+  var isLast = onboardStep === onboardSteps.length - 1;
+  var modal = document.getElementById('onboard-modal');
+  modal.innerHTML =
+    '<h2>' + esc(step.title) + '</h2>' +
+    '<p>' + step.body() + '</p>' +
+    '<div class="onboard-steps">' + dotsHtml + '</div>' +
+    '<div class="onboard-actions">' +
+      '<button onclick="finishOnboarding()">Skip</button>' +
+      (isLast
+        ? '<button class="primary" onclick="finishOnboarding()">Done</button>'
+        : '<button class="primary" onclick="nextOnboardStep()">Next</button>') +
+    '</div>';
+}
+
+function nextOnboardStep() {
+  onboardStep++;
+  if (onboardStep >= onboardSteps.length) {
+    finishOnboarding();
+    return;
+  }
+  renderOnboarding();
+}
+
+function finishOnboarding() {
+  var key = 'sre-onboarded-' + (currentUser.email || currentUser.user);
+  localStorage.setItem(key, 'true');
+  document.getElementById('onboard-overlay').classList.remove('show');
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
 function copyText(el) {
-  navigator.clipboard.writeText(el.textContent).catch(() => {});
-  const orig = el.style.background;
+  navigator.clipboard.writeText(el.textContent).catch(function() {});
+  var orig = el.style.background;
   el.style.background = 'rgba(34,197,94,0.2)';
-  setTimeout(() => el.style.background = orig, 300);
+  setTimeout(function() { el.style.background = orig; }, 300);
 }
 
 function updateTime() {
@@ -942,8 +2105,12 @@ function updateTime() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
+updateThemeBtn();
+loadUser();
 loadHealth();
+loadAlerts();
 setInterval(loadHealth, 15000);
+alertRefreshTimer = setInterval(function() { alertsDismissed = false; loadAlerts(); }, 30000);
 setInterval(updateTime, 1000);
 updateTime();
 </script>
