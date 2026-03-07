@@ -47,6 +47,7 @@ spec:
                 - velero
                 - keycloak
                 - sre-dashboard
+                - oauth2-proxy
                 - local-path-storage
                 - metallb-system
       validate:
@@ -86,6 +87,7 @@ spec:
                 - velero
                 - keycloak
                 - sre-dashboard
+                - oauth2-proxy
                 - local-path-storage
                 - metallb-system
       preconditions:
