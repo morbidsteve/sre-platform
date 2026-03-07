@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: sre-portal
+  namespace: sre-portal
+  labels:
+    app.kubernetes.io/name: sre-portal
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  hosts:
+    - portal.apps.sre.example.com
+  gateways:
+    - istio-system/main
+  http:
+    - route:
+        - destination:
+            host: sre-portal.sre-portal.svc.cluster.local
+            port:
+              number: 8080

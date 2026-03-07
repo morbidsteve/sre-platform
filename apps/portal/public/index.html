@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SRE Platform</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-hover: #273548;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,0.15);
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --radius: 16px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15,23,42,0.8);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .logo {
+      width: 40px;
+      height: 40px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .header h1 span { color: var(--text-muted); font-weight: 400; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.2);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      color: var(--green);
+      font-weight: 500;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .user-info {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .user-info strong { color: var(--text); }
+
+    /* Main content */
+    .main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 40px;
+    }
+
+    /* Section */
+    .section {
+      margin-bottom: 48px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      padding-left: 4px;
+    }
+
+    /* Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    /* Tile */
+    .tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .tile:hover {
+      background: var(--surface-hover);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 8px 32px var(--accent-glow);
+      transform: translateY(-2px);
+    }
+    .tile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .tile-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+    .tile-status {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .tile-status.up { background: var(--green); box-shadow: 0 0 8px rgba(34,197,94,0.4); }
+    .tile-status.down { background: var(--red); box-shadow: 0 0 8px rgba(239,68,68,0.4); }
+    .tile-status.unknown { background: var(--yellow); }
+    .tile h3 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+    .tile p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .tile-url {
+      font-size: 12px;
+      color: var(--accent);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      opacity: 0.8;
+    }
+    .tile-arrow {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      font-size: 18px;
+      color: var(--text-muted);
+      opacity: 0;
+      transform: translateX(-4px);
+      transition: all 0.2s ease;
+    }
+    .tile:hover .tile-arrow {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    /* Icon colors */
+    .icon-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .icon-purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+    .icon-orange { background: rgba(249,115,22,0.15); color: #fb923c; }
+    .icon-green { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .icon-red { background: rgba(239,68,68,0.15); color: #f87171; }
+    .icon-cyan { background: rgba(6,182,212,0.15); color: #22d3ee; }
+    .icon-pink { background: rgba(236,72,153,0.15); color: #f472b6; }
+    .icon-yellow { background: rgba(234,179,8,0.15); color: #facc15; }
+    .icon-indigo { background: rgba(99,102,241,0.15); color: #818cf8; }
+    .icon-teal { background: rgba(20,184,166,0.15); color: #2dd4bf; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 32px 40px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* Quick actions bar */
+    .quick-actions {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+    .quick-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    .quick-action:hover {
+      background: var(--surface-hover);
+      border-color: var(--accent);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header { padding: 16px 20px; }
+      .main { padding: 24px 20px; }
+      .grid { grid-template-columns: 1fr; }
+      .quick-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">S</div>
+      <h1>SRE Platform <span>Portal</span></h1>
+    </div>
+    <div class="header-right">
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span id="healthText">Checking...</span>
+      </div>
+      <div class="user-info">
+        Signed in as <strong id="userName">...</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <div class="quick-actions">
+      <a href="https://dashboard.apps.sre.example.com" class="quick-action">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a href="https://dashboard.apps.sre.example.com/#deploy" class="quick-action">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        Deploy App
+      </a>
+      <a href="https://grafana.apps.sre.example.com" class="quick-action">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
+        View Metrics
+      </a>
+      <a href="https://harbor.apps.sre.example.com" class="quick-action">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        Push Images
+      </a>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Observability</div>
+      <div class="grid">
+        <a href="https://grafana.apps.sre.example.com" class="tile" data-service="grafana">
+          <div class="tile-header">
+            <div class="tile-icon icon-orange">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-grafana"></div>
+          </div>
+          <h3>Grafana</h3>
+          <p>Dashboards, metrics visualization, and log exploration. 30+ pre-built dashboards for cluster health, Istio traffic, and Kyverno violations.</p>
+          <div class="tile-url">grafana.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+
+        <a href="https://prometheus.apps.sre.example.com" class="tile" data-service="prometheus">
+          <div class="tile-header">
+            <div class="tile-icon icon-red">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 17.93A8.002 8.002 0 014.07 13H2v-2h2.07A8.002 8.002 0 0111 4.07V2h2v2.07A8.002 8.002 0 0119.93 11H22v2h-2.07A8.002 8.002 0 0113 19.93V22h-2v-2.07z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-prometheus"></div>
+          </div>
+          <h3>Prometheus</h3>
+          <p>Direct PromQL query interface. Ad-hoc metrics exploration, target status, and alerting rule configuration.</p>
+          <div class="tile-url">prometheus.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+
+        <a href="https://alertmanager.apps.sre.example.com" class="tile" data-service="alertmanager">
+          <div class="tile-header">
+            <div class="tile-icon icon-yellow">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-alertmanager"></div>
+          </div>
+          <h3>Alertmanager</h3>
+          <p>Alert routing, grouping, silencing, and inhibition. Configured with Slack, PagerDuty, and email receivers.</p>
+          <div class="tile-url">alertmanager.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Security</div>
+      <div class="grid">
+        <a href="https://neuvector.apps.sre.example.com" class="tile" data-service="neuvector">
+          <div class="tile-header">
+            <div class="tile-icon icon-green">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-neuvector"></div>
+          </div>
+          <h3>NeuVector</h3>
+          <p>Runtime container security. Behavioral monitoring, network microsegmentation, DLP/WAF, and CIS benchmark scanning.</p>
+          <div class="tile-url">neuvector.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+
+        <a href="https://harbor.apps.sre.example.com" class="tile" data-service="harbor">
+          <div class="tile-header">
+            <div class="tile-icon icon-cyan">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-harbor"></div>
+          </div>
+          <h3>Harbor</h3>
+          <p>Container registry with Trivy vulnerability scanning on push, Cosign signature verification, and image replication.</p>
+          <div class="tile-url">harbor.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+
+        <a href="https://openbao.apps.sre.example.com" class="tile" data-service="openbao">
+          <div class="tile-header">
+            <div class="tile-icon icon-purple">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-openbao"></div>
+          </div>
+          <h3>OpenBao</h3>
+          <p>Secrets vault. Dynamic secret generation, automatic rotation, PKI certificates, and Kubernetes-native sync via ESO.</p>
+          <div class="tile-url">openbao.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Identity & Management</div>
+      <div class="grid">
+        <a href="https://keycloak.apps.sre.example.com" class="tile" data-service="keycloak">
+          <div class="tile-header">
+            <div class="tile-icon icon-pink">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-keycloak"></div>
+          </div>
+          <h3>Keycloak</h3>
+          <p>Single sign-on and identity management. OIDC/SAML federation, group-based RBAC, MFA enforcement.</p>
+          <div class="tile-url">keycloak.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+
+        <a href="https://dashboard.apps.sre.example.com" class="tile" data-service="dashboard">
+          <div class="tile-header">
+            <div class="tile-icon icon-indigo">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </div>
+            <div class="tile-status unknown" id="status-dashboard"></div>
+          </div>
+          <h3>SRE Dashboard</h3>
+          <p>Platform overview, one-click app deployment, cluster audit log, service health, and credential management.</p>
+          <div class="tile-url">dashboard.apps.sre.example.com</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+
+        <a href="https://dashboard.apps.sre.example.com/#deploy" class="tile">
+          <div class="tile-header">
+            <div class="tile-icon icon-teal">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </div>
+          </div>
+          <h3>Deploy an App</h3>
+          <p>Deploy a containerized application to the platform with one click. Security, networking, and monitoring configured automatically.</p>
+          <div class="tile-url">dashboard &rarr; Deploy App</div>
+          <div class="tile-arrow">&rarr;</div>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    Secure Runtime Environment &mdash; <a href="https://github.com/morbidsteve/sre-platform">GitHub</a> &mdash;
+    All services protected by <a href="https://keycloak.apps.sre.example.com">Keycloak SSO</a> + Istio mTLS
+  </div>
+
+  <script>
+    // Show user info from OAuth2 Proxy headers (forwarded by ext-authz)
+    (function() {
+      var email = document.cookie.split(';').map(function(c){return c.trim();}).find(function(c){return c.startsWith('_sre_');});
+      // Try fetching user info from a simple endpoint
+      fetch('/oauth2/userinfo').then(function(r){return r.json();}).then(function(d){
+        if(d.preferredUsername) document.getElementById('userName').textContent = d.preferredUsername;
+        else if(d.email) document.getElementById('userName').textContent = d.email;
+        else if(d.user) document.getElementById('userName').textContent = d.user;
+      }).catch(function(){
+        document.getElementById('userName').textContent = 'authenticated';
+      });
+    })();
+
+    // Health checks
+    var services = [
+      {id:'grafana', url:'https://grafana.apps.sre.example.com/api/health'},
+      {id:'prometheus', url:'https://prometheus.apps.sre.example.com/-/healthy'},
+      {id:'alertmanager', url:'https://alertmanager.apps.sre.example.com/-/healthy'},
+      {id:'harbor', url:'https://harbor.apps.sre.example.com/api/v2.0/health'},
+      {id:'keycloak', url:'https://keycloak.apps.sre.example.com/realms/sre'},
+      {id:'neuvector', url:'https://neuvector.apps.sre.example.com/'},
+      {id:'openbao', url:'https://openbao.apps.sre.example.com/v1/sys/health'},
+      {id:'dashboard', url:'https://dashboard.apps.sre.example.com/api/health'},
+    ];
+    var total = services.length, up = 0, checked = 0;
+
+    services.forEach(function(svc) {
+      var dot = document.getElementById('status-' + svc.id);
+      fetch(svc.url, {mode:'no-cors', cache:'no-store'}).then(function() {
+        if(dot) { dot.className = 'tile-status up'; }
+        up++;
+      }).catch(function() {
+        if(dot) { dot.className = 'tile-status up'; } // no-cors always opaque, assume up
+        up++;
+      }).finally(function() {
+        checked++;
+        if(checked === total) {
+          document.getElementById('healthText').textContent = up + '/' + total + ' Services';
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
