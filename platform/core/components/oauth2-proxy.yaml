@@ -1,0 +1,30 @@
+---
+# Flux Kustomization for OAuth2 Proxy (external authentication gateway)
+# Depends on: istio, istio-config (needs Gateway + ext-authz provider)
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-oauth2-proxy
+  namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "AC-2, AC-3, IA-2, IA-8"
+spec:
+  interval: 10m
+  path: ./platform/core/oauth2-proxy
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-istio
+    - name: sre-istio-config
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: oauth2-proxy
+      namespace: oauth2-proxy
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config

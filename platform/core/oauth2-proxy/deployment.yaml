@@ -1,0 +1,121 @@
+---
+# OAuth2 Proxy deployment — external authentication gateway for Istio ext-authz
+# NIST AC-2, AC-3, IA-2, IA-8 (Identification & Authentication)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oauth2-proxy-credentials
+  namespace: oauth2-proxy
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: oauth2-proxy
+type: Opaque
+stringData:
+  client-id: "oauth2-proxy"
+  client-secret: "TtZuIm3Igj088TtY4cw3xfXf5U1I8f9z"
+  cookie-secret: "xymP+v1Mf5kmoGmiI+ZWRi6xXVAXLeF4SkTmd8l4ZMw="
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: oauth2-proxy
+  labels:
+    app: oauth2-proxy
+    app.kubernetes.io/name: oauth2-proxy
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: oauth2-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+        app.kubernetes.io/name: oauth2-proxy
+        app.kubernetes.io/part-of: sre-platform
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+          args:
+            - --provider=keycloak-oidc
+            - --oidc-issuer-url=https://keycloak.apps.sre.example.com/realms/sre
+            - --client-id=$(CLIENT_ID)
+            - --client-secret=$(CLIENT_SECRET)
+            - --cookie-secret=$(COOKIE_SECRET)
+            - --cookie-name=_sre_oauth2
+            - --cookie-secure=true
+            - --cookie-domains=.apps.sre.example.com
+            - --upstream=static://200
+            - --http-address=0.0.0.0:4180
+            - --email-domains=*
+            - --set-xauthrequest=true
+            - --set-authorization-header=true
+            - --pass-access-token=true
+            - --pass-authorization-header=true
+            - --skip-auth-route=^/healthz$
+            - --skip-auth-route=^/api/health$
+            - --whitelist-domain=.apps.sre.example.com
+            - --reverse-proxy=true
+            - --ssl-insecure-skip-verify=true
+            - --ssl-upstream-insecure-skip-verify=true
+            - --insecure-oidc-skip-issuer-verification=false
+            - --oidc-groups-claim=groups
+            - --code-challenge-method=S256
+            - --redirect-url=https://oauth2.apps.sre.example.com/oauth2/callback
+            - --scope=openid profile email groups
+          env:
+            - name: CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-credentials
+                  key: client-id
+            - name: CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-credentials
+                  key: client-secret
+            - name: COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-credentials
+                  key: cookie-secret
+          ports:
+            - name: http
+              containerPort: 4180
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

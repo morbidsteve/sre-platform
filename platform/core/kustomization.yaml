@@ -21,6 +21,7 @@ resources:
   - components/cert-manager-config.yaml
   - components/kyverno.yaml
   - components/kyverno-policies.yaml
+  - components/oauth2-proxy.yaml
   - components/monitoring.yaml
   - components/monitoring-config.yaml
   - components/logging.yaml

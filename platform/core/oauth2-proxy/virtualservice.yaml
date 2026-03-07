@@ -1,0 +1,29 @@
+---
+# Istio VirtualService for OAuth2 Proxy
+# Routes external traffic from the main Istio gateway to OAuth2 Proxy
+# NIST IA-2, IA-8 (Identification and Authentication)
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: oauth2-proxy
+  namespace: oauth2-proxy
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "AC-2, AC-3, IA-2, IA-8"
+spec:
+  hosts:
+    - "oauth2.${SRE_DOMAIN}"
+  gateways:
+    - istio-system/main
+  http:
+    - route:
+        - destination:
+            host: oauth2-proxy.oauth2-proxy.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: "5xx,reset,connect-failure"
