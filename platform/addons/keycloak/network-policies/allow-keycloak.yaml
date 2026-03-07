@@ -57,6 +57,14 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+    # SRE Dashboard (admin API for session logout)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-dashboard
+      ports:
+        - port: 8080
+          protocol: TCP
     # Prometheus scraping (metrics on port 9000)
     - from:
         - namespaceSelector:

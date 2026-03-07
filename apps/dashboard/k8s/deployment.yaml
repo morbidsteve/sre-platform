@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: docker.io/library/sre-dashboard:v2.0.1
+          image: docker.io/library/sre-dashboard:v2.0.2
           imagePullPolicy: Never
           securityContext:
             allowPrivilegeEscalation: false
@@ -36,6 +36,12 @@ spec:
             capabilities:
               drop:
                 - ALL
+          env:
+            - name: KC_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin-creds
+                  key: password
           ports:
             - containerPort: 3001
               name: http

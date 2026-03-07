@@ -379,6 +379,59 @@ app.get("/api/audit", async (req, res) => {
   }
 });
 
+// POST /api/logout — End Keycloak SSO session via admin API, then redirect to clear OAuth2 cookie
+app.post("/api/logout", async (req, res) => {
+  const email = req.headers["x-auth-request-email"] || "";
+  const preferredUsername = req.headers["x-auth-request-preferred-username"] || "";
+  const KC_URL = "http://keycloak.keycloak.svc.cluster.local";
+  const REALM = "sre";
+
+  try {
+    // Get admin token
+    const tokenResp = await fetch(`${KC_URL}/realms/master/protocol/openid-connect/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: "admin-cli",
+        username: "admin",
+        password: process.env.KC_ADMIN_PASSWORD || "",
+        grant_type: "password",
+      }),
+    });
+    if (!tokenResp.ok) {
+      console.error("Keycloak admin token failed:", tokenResp.status);
+      return res.json({ cleared: false });
+    }
+    const { access_token } = await tokenResp.json();
+
+    // Find user by email, then fall back to username search
+    let users = [];
+    if (email) {
+      const r = await fetch(`${KC_URL}/admin/realms/${REALM}/users?email=${encodeURIComponent(email)}&exact=true`, {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      users = await r.json();
+    }
+    if (users.length === 0 && preferredUsername) {
+      const r = await fetch(`${KC_URL}/admin/realms/${REALM}/users?username=${encodeURIComponent(preferredUsername)}&exact=true`, {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      users = await r.json();
+    }
+    if (users.length > 0) {
+      await fetch(`${KC_URL}/admin/realms/${REALM}/users/${users[0].id}/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      console.log(`Logged out Keycloak sessions for user: ${users[0].username}`);
+    }
+    res.json({ cleared: true });
+  } catch (err) {
+    console.error("Logout error:", err);
+    res.json({ cleared: false });
+  }
+});
+
 // GET /api/favorites — Get user favorites
 app.get("/api/favorites", async (req, res) => {
   const email = req.headers["x-auth-request-email"] || "anonymous";

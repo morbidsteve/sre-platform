@@ -15,6 +15,16 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+    # Keycloak internal service (for admin API logout)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
     # DNS
     - to:
         - namespaceSelector:

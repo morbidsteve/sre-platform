@@ -927,13 +927,13 @@
 
     #tab-audit table { table-layout: fixed; }
     #tab-audit th:nth-child(1),
-    #tab-audit td:nth-child(1) { width: 160px; }
+    #tab-audit td:nth-child(1) { width: 150px; }
     #tab-audit th:nth-child(2),
-    #tab-audit td:nth-child(2) { width: 120px; }
+    #tab-audit td:nth-child(2) { width: 110px; }
     #tab-audit th:nth-child(3),
-    #tab-audit td:nth-child(3) { width: 180px; }
+    #tab-audit td:nth-child(3) { width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #tab-audit th:nth-child(4),
-    #tab-audit td:nth-child(4) { width: 130px; }
+    #tab-audit td:nth-child(4) { width: 120px; }
     #tab-audit th:nth-child(5),
     #tab-audit td:nth-child(5) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #tab-audit td:nth-child(6) { width: 80px; text-align: center; }
@@ -948,6 +948,33 @@
     }
     #tab-audit .type-badge.warning { background: rgba(234,179,8,0.15); color: var(--yellow); }
     #tab-audit .type-badge.normal { background: rgba(34,197,94,0.15); color: var(--green); }
+
+    .audit-filters { display: flex; gap: 4px; }
+    .audit-filter-btn {
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-dim);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .audit-filter-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .audit-page-btn {
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .audit-page-btn:hover { background: var(--surface-hover); }
 
     /* ── Service grid (old, for DNS section) ──────────────────── */
 
@@ -1231,17 +1258,27 @@
     <div class="last-checked" id="status-last-checked"></div>
   </div>
 
-  <!-- Audit Tab (NEW) -->
+  <!-- Audit Tab -->
   <div id="tab-audit" class="tab-content">
     <h2 style="margin-bottom: 16px;">Cluster Audit Log</h2>
     <div class="table-card">
-      <div class="table-header">
+      <div class="table-header" style="flex-wrap:wrap;gap:8px;">
         <h2>Recent Kubernetes Events</h2>
-        <span class="last-checked" id="audit-last-checked"></span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="audit-filters">
+            <button class="audit-filter-btn active" data-filter="all" onclick="filterAudit('all',this)">All</button>
+            <button class="audit-filter-btn" data-filter="Warning" onclick="filterAudit('Warning',this)">Warnings</button>
+            <button class="audit-filter-btn" data-filter="Normal" onclick="filterAudit('Normal',this)">Normal</button>
+          </div>
+          <select id="audit-ns-filter" onchange="filterAuditNs(this.value)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;">
+            <option value="">All Namespaces</option>
+          </select>
+          <span class="last-checked" id="audit-last-checked"></span>
+        </div>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap" style="max-height:500px;overflow-y:auto;">
         <table>
-          <thead>
+          <thead style="position:sticky;top:0;z-index:1;">
             <tr>
               <th>Time</th>
               <th>Namespace</th>
@@ -1255,6 +1292,14 @@
             <tr><td colspan="6" class="loading"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="audit-pagination" style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-top:1px solid var(--border);font-size:13px;">
+        <span id="audit-count" style="color:var(--text-dim);">0 events</span>
+        <div style="display:flex;gap:6px;">
+          <button class="audit-page-btn" onclick="auditPrevPage()">&laquo; Prev</button>
+          <span id="audit-page-info" style="padding:4px 8px;color:var(--text-dim);">1 / 1</span>
+          <button class="audit-page-btn" onclick="auditNextPage()">Next &raquo;</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1430,14 +1475,12 @@ function renderUserArea() {
 // ── SSO Logout ──────────────────────────────────────────────────────────────
 
 function ssoLogout() {
-  // 1. Clear the OAuth2 Proxy session cookie via sign_out endpoint
-  // 2. Then redirect to Keycloak logout to end the SSO session entirely
-  // Without the Keycloak logout, the user would be silently re-authenticated
-  var keycloakLogout = 'https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/logout' +
-    '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/') +
-    '&client_id=oauth2-proxy';
-  // sign_out clears the cookie, rd= tells it where to go after
-  window.location.href = '/oauth2/sign_out?rd=' + encodeURIComponent(keycloakLogout);
+  // 1. Call server-side API to kill Keycloak session via admin API
+  // 2. Then clear the OAuth2 Proxy cookie via /oauth2/sign_out
+  fetch('/api/logout', { method: 'POST' })
+    .finally(function() {
+      window.location.href = '/oauth2/sign_out?rd=' + encodeURIComponent(window.location.origin + '/');
+    });
 }
 
 // ── Session Timeout ─────────────────────────────────────────────────────────
@@ -1888,31 +1931,83 @@ function renderStatus(services) {
 
 // ── Audit Log (NEW) ─────────────────────────────────────────────────────────
 
+var allAuditEvents = [];
+var filteredAuditEvents = [];
+var auditTypeFilter = 'all';
+var auditNsFilter = '';
+var auditPage = 0;
+var auditPageSize = 25;
+
 async function loadAudit() {
   try {
     var resp = await fetch('/api/audit');
-    var events = await resp.json();
-    renderAudit(events);
+    allAuditEvents = await resp.json();
+    // Populate namespace dropdown
+    var nsList = {};
+    allAuditEvents.forEach(function(e) { if (e.namespace) nsList[e.namespace] = true; });
+    var sel = document.getElementById('audit-ns-filter');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">All Namespaces</option>' +
+      Object.keys(nsList).sort().map(function(ns) {
+        return '<option value="' + esc(ns) + '"' + (ns === current ? ' selected' : '') + '>' + esc(ns) + '</option>';
+      }).join('');
+    applyAuditFilters();
   } catch (err) {
     console.error('Failed to load audit:', err);
   }
 }
 
-function renderAudit(events) {
+function applyAuditFilters() {
+  filteredAuditEvents = allAuditEvents.filter(function(e) {
+    if (auditTypeFilter !== 'all' && e.type !== auditTypeFilter) return false;
+    if (auditNsFilter && e.namespace !== auditNsFilter) return false;
+    return true;
+  });
+  auditPage = 0;
+  renderAudit();
+}
+
+function filterAudit(type, btn) {
+  auditTypeFilter = type;
+  document.querySelectorAll('.audit-filter-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  applyAuditFilters();
+}
+
+function filterAuditNs(ns) {
+  auditNsFilter = ns;
+  applyAuditFilters();
+}
+
+function auditPrevPage() { if (auditPage > 0) { auditPage--; renderAudit(); } }
+function auditNextPage() {
+  if ((auditPage + 1) * auditPageSize < filteredAuditEvents.length) { auditPage++; renderAudit(); }
+}
+
+function renderAudit() {
   var tbody = document.getElementById('audit-table');
-  if (!events || events.length === 0) {
+  var events = filteredAuditEvents;
+  var total = events.length;
+  var start = auditPage * auditPageSize;
+  var page = events.slice(start, start + auditPageSize);
+  var totalPages = Math.max(1, Math.ceil(total / auditPageSize));
+
+  document.getElementById('audit-count').textContent = total + ' event' + (total !== 1 ? 's' : '');
+  document.getElementById('audit-page-info').textContent = (auditPage + 1) + ' / ' + totalPages;
+
+  if (page.length === 0) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No events found</td></tr>';
     return;
   }
 
-  tbody.innerHTML = events.map(function(e) {
+  tbody.innerHTML = page.map(function(e) {
     var rowCls = e.type === 'Warning' ? 'audit-warning' : '';
     var ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : 'N/A';
     var typeCls = e.type === 'Warning' ? 'warning' : 'normal';
     return '<tr class="' + rowCls + '">' +
       '<td>' + esc(ts) + '</td>' +
       '<td>' + esc(e.namespace) + '</td>' +
-      '<td>' + esc(e.kind) + '/' + esc(e.name) + '</td>' +
+      '<td title="' + esc(e.kind + '/' + e.name) + '">' + esc(e.kind) + '/' + esc(e.name) + '</td>' +
       '<td><span class="badge ' + (e.type === 'Warning' ? 'yellow' : 'green') + '">' + esc(e.reason) + '</span></td>' +
       '<td title="' + esc(e.message) + '">' + esc(e.message) + '</td>' +
       '<td><span class="type-badge ' + typeCls + '">' + esc(e.type) + '</span></td>' +
