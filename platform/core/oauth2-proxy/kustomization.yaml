@@ -3,6 +3,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
+  - custom-templates.yaml
   - deployment.yaml
   - service.yaml
   - virtualservice.yaml

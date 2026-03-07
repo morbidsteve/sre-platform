@@ -84,6 +84,7 @@ spec:
             - --code-challenge-method=S256
             - --redirect-url=https://oauth2.apps.sre.example.com/oauth2/callback
             - --scope=openid profile email groups
+            - --custom-templates-dir=/templates
           env:
             - name: CLIENT_ID
               valueFrom:
@@ -123,9 +124,17 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+          volumeMounts:
+            - name: templates
+              mountPath: /templates
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
+      volumes:
+        - name: templates
+          configMap:
+            name: oauth2-proxy-templates
