@@ -925,6 +925,30 @@
 
     .audit-warning td { color: var(--yellow); }
 
+    #tab-audit table { table-layout: fixed; }
+    #tab-audit th:nth-child(1),
+    #tab-audit td:nth-child(1) { width: 160px; }
+    #tab-audit th:nth-child(2),
+    #tab-audit td:nth-child(2) { width: 120px; }
+    #tab-audit th:nth-child(3),
+    #tab-audit td:nth-child(3) { width: 180px; }
+    #tab-audit th:nth-child(4),
+    #tab-audit td:nth-child(4) { width: 130px; }
+    #tab-audit th:nth-child(5),
+    #tab-audit td:nth-child(5) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #tab-audit td:nth-child(6) { width: 80px; text-align: center; }
+
+    #tab-audit .type-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    #tab-audit .type-badge.warning { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    #tab-audit .type-badge.normal { background: rgba(34,197,94,0.15); color: var(--green); }
+
     /* ── Service grid (old, for DNS section) ──────────────────── */
 
     .service-card {
@@ -1224,10 +1248,11 @@
               <th>Resource</th>
               <th>Reason</th>
               <th>Message</th>
+              <th>Type</th>
             </tr>
           </thead>
           <tbody id="audit-table">
-            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+            <tr><td colspan="6" class="loading"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
       </div>
@@ -1876,19 +1901,21 @@ async function loadAudit() {
 function renderAudit(events) {
   var tbody = document.getElementById('audit-table');
   if (!events || events.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No events found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No events found</td></tr>';
     return;
   }
 
   tbody.innerHTML = events.map(function(e) {
     var rowCls = e.type === 'Warning' ? 'audit-warning' : '';
     var ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : 'N/A';
+    var typeCls = e.type === 'Warning' ? 'warning' : 'normal';
     return '<tr class="' + rowCls + '">' +
       '<td>' + esc(ts) + '</td>' +
       '<td>' + esc(e.namespace) + '</td>' +
       '<td>' + esc(e.kind) + '/' + esc(e.name) + '</td>' +
       '<td><span class="badge ' + (e.type === 'Warning' ? 'yellow' : 'green') + '">' + esc(e.reason) + '</span></td>' +
-      '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(e.message) + '">' + esc(e.message) + '</td>' +
+      '<td title="' + esc(e.message) + '">' + esc(e.message) + '</td>' +
+      '<td><span class="type-badge ' + typeCls + '">' + esc(e.type) + '</span></td>' +
       '</tr>';
   }).join('');
 
