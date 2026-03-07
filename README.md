@@ -118,42 +118,58 @@ All URLs follow the pattern: `https://<service>.apps.sre.example.com`
 
 ## Screenshots
 
-### SRE Dashboard
-One-click app deployment, platform health monitoring, service discovery, and credential management.
+### SSO Login
+All services are gated behind Keycloak single sign-on. One login, access everywhere.
 
-![Dashboard](docs/images/dashboard.png)
+![SSO Sign-in](docs/images/sso-signin.png)
+![Keycloak Login](docs/images/keycloak-login.png)
 
-### Grafana — Dashboards & Cluster Overview
-30+ dashboards for cluster health, namespace resources, Istio traffic, Kyverno violations, and more.
+### Dashboard — Platform Overview
+16/16 components healthy, 3/3 nodes, 0 problem pods. All HelmRelease statuses at a glance.
 
-![Grafana Dashboards](docs/images/grafana.png)
+![Dashboard Overview](docs/images/dashboard-overview.png)
 
-![Grafana Cluster Overview](docs/images/grafana-cluster.png)
+### Platform Services
+Service discovery with health indicators, direct links, and DNS setup instructions.
 
-### Prometheus — Metrics Query
-Direct PromQL access for ad-hoc queries and debugging.
+![Services](docs/images/services.png)
 
-![Prometheus](docs/images/prometheus.png)
+### One-Click App Deployment
+Quick-start templates for instant demos + custom deployment form with validation.
 
-### Alertmanager — Active Alerts
-Alert grouping, silencing, and routing configuration.
+![Deploy App](docs/images/deploy-app.png)
 
-![Alertmanager](docs/images/alertmanager.png)
+### Service Health Status
+Shareable status page showing operational state of all platform services.
 
-### Harbor — Container Registry
-Image storage with automatic Trivy vulnerability scanning, Cosign signature verification, and replication.
+![Status Page](docs/images/status-page.png)
 
-![Harbor](docs/images/harbor.png)
+### Cluster Audit Log
+Tabular audit view with type filters, namespace filter, pagination, and color-coded event badges.
 
-### NeuVector — Runtime Security
-Container behavioral monitoring, network microsegmentation, and CIS benchmark scanning.
+![Audit Log](docs/images/audit-log.png)
 
-![NeuVector](docs/images/neuvector.png)
+### Command Palette (Ctrl+K)
+Quick-search navigation to any page or external service.
 
-### Keycloak — SSO & Identity
-OIDC/SAML single sign-on for all platform UIs with group-based RBAC.
+![Command Palette](docs/images/command-palette.png)
 
-![Keycloak](docs/images/keycloak.png)
+### Mobile Responsive
+Dashboard adapts to mobile screens for on-the-go health checks.
+
+![Mobile View](docs/images/mobile-view.png)
+
+### Grafana — 30+ Dashboards
+Cluster health, namespace resources, Istio traffic, Kyverno violations, and more.
+
+![Grafana](docs/images/grafana.png)
+
+### Harbor, NeuVector, Keycloak
+Container registry with Trivy scanning, runtime security monitoring, and SSO identity management.
+
+![Harbor](docs/images/harbor.png) ![NeuVector](docs/images/neuvector.png) ![Keycloak](docs/images/keycloak.png)
+
+> **Full user stories with walkthroughs:** See [docs/user-stories.md](docs/user-stories.md) for detailed personas and step-by-step workflows for Platform Admins, Developers, Security Officers, Team Leads, New Hires, and Incident Responders.
 
 
 ---
@@ -402,7 +418,7 @@ All platform services are protected by SSO via Keycloak + OAuth2 Proxy + Istio e
 | **Groups** | `sre-admins`, `developers`, `sre-viewers` |
 | **OIDC Clients** | Grafana, Harbor, NeuVector, Dashboard, OAuth2 Proxy |
 | **SSO Gate** | OAuth2 Proxy + Istio ext-authz on the gateway |
-| **Test User** | `sre-admin` / `Admin1234` (in `sre-admins` group) |
+| **Test User** | `sre-admin` / `SreAdmin123!` (in `sre-admins` group) |
 
 **How SSO works:**
 1. User visits any service URL (e.g., `https://grafana.apps.sre.example.com`)
@@ -463,7 +479,7 @@ sre-platform/
 │       ├── harbor/               # Container registry
 │       └── keycloak/             # Identity / SSO
 ├── apps/
-│   ├── dashboard/                # SRE Dashboard web app (v1.3.0)
+│   ├── dashboard/                # SRE Dashboard web app (v2.0.2)
 │   ├── demo-app/                 # Go demo app with Prometheus metrics
 │   ├── templates/                # Helm chart templates (web-app, worker, cronjob, api)
 │   └── tenants/                  # Per-team app configs (team-alpha, team-beta)
@@ -516,6 +532,7 @@ Every Kyverno policy, Helm chart, and Flux manifest includes `sre.io/nist-contro
 | Guide | Description |
 |-------|-------------|
 | [Architecture](docs/architecture.md) | Full platform spec and design rationale |
+| [User Stories](docs/user-stories.md) | Personas, walkthroughs, and screenshots for every user type |
 | [Decision Records](docs/decisions.md) | ADRs for all major technology choices |
 | [Developer Guide](docs/developer-guide.md) | Deploy your app, secrets management, SSO, CI/CD |
 | [Proxmox Guide](docs/getting-started-proxmox.md) | Build a cluster from scratch on Proxmox VE |
