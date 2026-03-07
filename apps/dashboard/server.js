@@ -499,6 +499,97 @@ app.post("/api/favorites", async (req, res) => {
   }
 });
 
+// GET /api/apps — All deployed tenant apps (for portal)
+app.get("/api/apps", async (req, res) => {
+  // Allow portal cross-origin requests
+  const origin = req.headers.origin || "";
+  if (origin.endsWith(".apps.sre.example.com") || origin.endsWith("." + (process.env.SRE_DOMAIN || "apps.sre.example.com"))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  try {
+    // Get all tenant namespaces
+    const nsResp = await k8sApi.listNamespace();
+    const tenantNs = nsResp.body.items.filter((ns) => {
+      const labels = ns.metadata?.labels || {};
+      return labels["sre.io/tenant"] === "true" || ns.metadata.name.startsWith("team-");
+    });
+
+    // Get HelmReleases from all tenant namespaces
+    const apps = [];
+    for (const ns of tenantNs) {
+      try {
+        const hrResp = await customApi.listNamespacedCustomObject(
+          "helm.toolkit.fluxcd.io", "v2", ns.metadata.name, "helmreleases"
+        );
+        for (const hr of hrResp.body.items) {
+          const readyCondition = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+          const appValues = hr.spec?.values?.app || {};
+          const ingressValues = hr.spec?.values?.ingress || {};
+          apps.push({
+            name: hr.metadata.name,
+            namespace: ns.metadata.name,
+            team: ns.metadata.labels?.["sre.io/team"] || ns.metadata.name.replace(/^team-/, ""),
+            ready: readyCondition?.status === "True",
+            image: appValues.image?.repository || "",
+            tag: appValues.image?.tag || "",
+            port: appValues.port || 8080,
+            host: ingressValues.host || "",
+            url: ingressValues.host ? `https://${ingressValues.host}` : "",
+            created: hr.metadata.creationTimestamp || "",
+          });
+        }
+      } catch {
+        // Skip namespaces where we can't read HelmReleases
+      }
+    }
+
+    // Also check for VirtualServices in tenant namespaces to catch non-Helm apps
+    try {
+      const vsResp = await customApi.listClusterCustomObject(
+        "networking.istio.io", "v1", "virtualservices"
+      );
+      const vsMap = {};
+      for (const vs of vsResp.body.items) {
+        if (tenantNs.some((ns) => ns.metadata.name === vs.metadata.namespace)) {
+          for (const host of (vs.spec?.hosts || [])) {
+            vsMap[`${vs.metadata.namespace}/${vs.metadata.name}`] = host;
+          }
+        }
+      }
+      // Enrich apps with VirtualService hosts if not already set
+      for (const app of apps) {
+        if (!app.host) {
+          const vsHost = vsMap[`${app.namespace}/${app.name}`];
+          if (vsHost) {
+            app.host = vsHost;
+            app.url = `https://${vsHost}`;
+          }
+        }
+      }
+    } catch {
+      // VirtualService lookup is best-effort
+    }
+
+    res.json({ apps, count: apps.length });
+  } catch (err) {
+    console.error("Error fetching apps:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// CORS preflight for /api/apps
+app.options("/api/apps", (req, res) => {
+  const origin = req.headers.origin || "";
+  if (origin.endsWith(".apps.sre.example.com") || origin.endsWith("." + (process.env.SRE_DOMAIN || "apps.sre.example.com"))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
+  res.sendStatus(204);
+});
+
 // GET /api/config — Dashboard configuration
 app.get("/api/config", (req, res) => {
   res.json({
@@ -742,6 +833,10 @@ async function ensureNamespace(nsName, teamLabel) {
             "app.kubernetes.io/part-of": "sre-platform",
             "sre.io/tenant": "true",
             "sre.io/team": teamLabel,
+            "sre.io/network-policy-configured": "true",
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "istio-injection": "enabled",
+            "kubernetes.io/metadata.name": nsName,
           },
         },
       });

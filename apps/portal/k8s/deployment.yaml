@@ -43,7 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: portal
-          image: docker.io/library/sre-portal:v1.0.0
+          image: docker.io/library/sre-portal:v1.1.0
           imagePullPolicy: Never
           securityContext:
             allowPrivilegeEscalation: false

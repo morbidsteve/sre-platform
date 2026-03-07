@@ -42,3 +42,13 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    # Istio control plane (sidecar → istiod for certs and xDS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 15012
+          protocol: TCP
+        - port: 15010
+          protocol: TCP

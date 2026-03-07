@@ -427,6 +427,12 @@
       </div>
     </div>
 
+    <div class="section" id="apps-section" style="display:none">
+      <div class="section-title">Deployed Applications</div>
+      <div class="grid" id="apps-grid"></div>
+      <p id="no-apps-msg" style="display:none; color: var(--text-muted); font-size: 14px; padding: 20px 0;">No apps deployed yet. Use the Dashboard to deploy your first app.</p>
+    </div>
+
   </div>
 
   <div class="footer">
@@ -448,6 +454,57 @@
       });
     })();
 
+    // Fetch deployed tenant apps from dashboard API
+    (function() {
+      var DASH = 'https://dashboard.apps.sre.example.com';
+      fetch(DASH + '/api/apps', {credentials:'include'}).then(function(r){return r.json();}).then(function(data) {
+        var apps = data.apps || [];
+        var section = document.getElementById('apps-section');
+        var grid = document.getElementById('apps-grid');
+        var noApps = document.getElementById('no-apps-msg');
+        section.style.display = '';
+
+        if (apps.length === 0) {
+          noApps.style.display = '';
+          return;
+        }
+
+        // Color palette for app tiles
+        var colors = ['icon-blue','icon-purple','icon-orange','icon-green','icon-red','icon-cyan','icon-pink','icon-yellow','icon-indigo','icon-teal'];
+
+        apps.forEach(function(app, i) {
+          var tile = document.createElement('a');
+          tile.className = 'tile';
+          tile.href = app.url || DASH + '/#services';
+          tile.setAttribute('data-app', app.name);
+
+          var statusClass = app.ready ? 'up' : 'down';
+          var colorClass = colors[i % colors.length];
+          var initial = (app.name.charAt(0) || '?').toUpperCase();
+          var desc = app.image ? app.image.split('/').pop() + ':' + app.tag : 'Deployed application';
+          var hostLine = app.host || app.namespace;
+
+          tile.innerHTML =
+            '<div class="tile-header">' +
+              '<div class="tile-icon ' + colorClass + '" style="font-weight:700;font-size:20px;">' + initial + '</div>' +
+              '<div class="tile-status ' + statusClass + '"></div>' +
+            '</div>' +
+            '<h3>' + app.name + '</h3>' +
+            '<p>' + desc + ' &middot; ' + app.namespace + '</p>' +
+            '<div class="tile-url">' + hostLine + '</div>' +
+            '<div class="tile-arrow">&rarr;</div>';
+
+          grid.appendChild(tile);
+        });
+      }).catch(function(err) {
+        // Show section with message if dashboard unreachable
+        var section = document.getElementById('apps-section');
+        section.style.display = '';
+        document.getElementById('no-apps-msg').style.display = '';
+        document.getElementById('no-apps-msg').textContent = 'Could not load apps — Dashboard may be starting up.';
+      });
+    })();
+
     // Health checks
     var services = [
       {id:'grafana', url:'https://grafana.apps.sre.example.com/api/health'},
@@ -463,7 +520,7 @@
 
     services.forEach(function(svc) {
       var dot = document.getElementById('status-' + svc.id);
-      fetch(svc.url, {mode:'no-cors', cache:'no-store'}).then(function() {
+      fetch(svc.url, {mode:'no-cors', cache:'no-store', credentials:'include'}).then(function() {
         if(dot) { dot.className = 'tile-status up'; }
         up++;
       }).catch(function() {
