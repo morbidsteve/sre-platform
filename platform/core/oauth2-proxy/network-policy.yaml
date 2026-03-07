@@ -74,6 +74,7 @@ spec:
         - port: 8080
           protocol: TCP
     # Keycloak external (self-signed TLS for OIDC issuer URL)
+    # TODO: Restrict egress to specific Keycloak/gateway IPs in production — currently allows port 443 to any destination for lab flexibility
     - ports:
         - port: 443
           protocol: TCP

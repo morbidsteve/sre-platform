@@ -7,3 +7,4 @@ metadata:
     istio-injection: enabled
     app.kubernetes.io/part-of: sre-platform
     pod-security.kubernetes.io/enforce: restricted
+    sre.io/network-policy-configured: "true"

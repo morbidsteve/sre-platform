@@ -55,9 +55,12 @@ spec:
             - --cookie-secret=$(COOKIE_SECRET)
             - --cookie-name=_sre_oauth2
             - --cookie-secure=true
+            - --cookie-samesite=Lax
+            - --cookie-httponly=true
             - --cookie-domains=.apps.sre.example.com
             - --upstream=static://200
             - --http-address=0.0.0.0:4180
+            # TODO: Restrict to organization domain in production
             - --email-domains=*
             - --set-xauthrequest=true
             - --set-authorization-header=true
@@ -67,6 +70,7 @@ spec:
             - --skip-auth-route=^/api/health$
             - --whitelist-domain=.apps.sre.example.com
             - --reverse-proxy=true
+            # TODO: Mount cluster CA bundle and use --provider-ca-file instead
             - --ssl-insecure-skip-verify=true
             - --ssl-upstream-insecure-skip-verify=true
             - --insecure-oidc-skip-issuer-verification=false

@@ -92,7 +92,6 @@ spec:
               - x-auth-request-user
               - x-auth-request-email
               - x-auth-request-groups
-              - x-auth-request-access-token
             includeRequestHeadersInCheck:
               - authorization
               - cookie
