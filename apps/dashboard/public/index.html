@@ -589,6 +589,168 @@
       color: var(--text-dim);
     }
 
+    /* App Gallery Tiles */
+    .app-gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .app-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .app-tile:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .app-tile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .app-tile-name {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .app-tile-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .app-tile-badge.running {
+      background: rgba(34,197,94,0.15);
+      color: var(--green);
+    }
+
+    .app-tile-badge.deploying {
+      background: rgba(234,179,8,0.15);
+      color: var(--yellow);
+    }
+
+    .app-tile-badge.failed {
+      background: rgba(239,68,68,0.15);
+      color: var(--red);
+    }
+
+    .app-tile-image {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--bg);
+      padding: 4px 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .app-tile-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .app-tile-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .app-tile-url {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .app-tile-url:hover {
+      text-decoration: underline;
+    }
+
+    .app-tile-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .app-tile-actions .btn {
+      font-size: 11px;
+      padding: 4px 10px;
+    }
+
+    .app-gallery-empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-dim);
+    }
+
+    .app-gallery-empty h3 {
+      font-size: 18px;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .app-gallery-empty p {
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .app-gallery-filters {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .app-gallery-filters input {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .app-gallery-filters input:focus {
+      border-color: var(--accent);
+    }
+
+    .app-gallery-count {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
     .health-dot {
       width: 8px;
       height: 8px;
@@ -995,11 +1157,445 @@
     .service-card a { color: var(--accent); text-decoration: none; font-size: 13px; white-space: nowrap; }
     .service-card a:hover { text-decoration: underline; }
 
+    /* ── Deploy Wizard ────────────────────────────────────────── */
+
+    .deploy-modes {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .deploy-mode-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .deploy-mode-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .deploy-mode-card.active {
+      border-color: var(--accent);
+      background: rgba(59,130,246,0.08);
+    }
+
+    .deploy-mode-card .mode-icon {
+      font-size: 28px;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .deploy-mode-card .mode-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .deploy-mode-card .mode-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .deploy-panel {
+      display: none;
+    }
+
+    .deploy-panel.active {
+      display: block;
+    }
+
+    .env-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .env-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 36px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .env-row input {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+      min-height: 38px;
+    }
+
+    .env-row input:focus {
+      border-color: var(--accent);
+    }
+
+    .env-row .btn-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: 6px;
+      color: var(--red);
+      font-size: 18px;
+      cursor: pointer;
+      transition: all 0.15s;
+      padding: 0;
+    }
+
+    .env-row .btn-icon:hover {
+      background: rgba(239,68,68,0.2);
+    }
+
+    .btn-outline {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      transition: all 0.15s;
+      min-height: 36px;
+    }
+
+    .btn-outline:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .multi-service-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .multi-service-card .svc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .multi-service-card .svc-header h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .multi-service-card .svc-remove {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: 6px;
+      color: var(--red);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 4px 10px;
+      transition: all 0.15s;
+    }
+
+    .multi-service-card .svc-remove:hover {
+      background: rgba(239,68,68,0.2);
+    }
+
+    .compose-area {
+      width: 100%;
+      min-height: 200px;
+      padding: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      outline: none;
+      resize: vertical;
+      tab-size: 2;
+      transition: border-color 0.15s;
+    }
+
+    .compose-area:focus {
+      border-color: var(--accent);
+    }
+
+    .compose-preview {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .compose-preview h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .compose-svc-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--bg);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .compose-svc-item .svc-name {
+      font-weight: 600;
+      min-width: 100px;
+    }
+
+    .compose-svc-item code {
+      font-size: 12px;
+      color: var(--text-dim);
+      background: rgba(0,0,0,0.1);
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+
+    .upload-area {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .upload-area input[type="file"] {
+      display: none;
+    }
+
+    .resource-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .resource-grid .form-group {
+      margin-bottom: 0;
+    }
+
+    .resource-grid input {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      min-height: 38px;
+    }
+
+    .resource-grid input:focus {
+      border-color: var(--accent);
+    }
+
+    .resource-grid label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-dim);
+      margin-bottom: 3px;
+    }
+
+    /* Deploy Progress */
+
+    .deploy-progress {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+      display: none;
+    }
+
+    .deploy-progress.show {
+      display: block;
+    }
+
+    .deploy-progress h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text);
+    }
+
+    .progress-step {
+      margin-bottom: 12px;
+    }
+
+    .progress-step .step-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .progress-step .step-name {
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .progress-step .step-status {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .progress-step .step-status.done {
+      color: var(--green);
+    }
+
+    .progress-step .step-status.error {
+      color: var(--red);
+    }
+
+    .progress-bar-track {
+      height: 6px;
+      background: var(--bg);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .progress-bar-fill.done {
+      background: var(--green);
+    }
+
+    .progress-bar-fill.error {
+      background: var(--red);
+    }
+
+    @keyframes pulse-progress {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .progress-bar-fill.active {
+      animation: pulse-progress 1.5s ease-in-out infinite;
+    }
+
+    .pod-dots {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .pod-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background 0.3s;
+    }
+
+    .pod-dot.pending { background: var(--yellow); }
+    .pod-dot.running { background: var(--green); }
+    .pod-dot.error { background: var(--red); }
+
+    .progress-summary {
+      display: none;
+      padding: 10px 0 0;
+      border-top: 1px solid var(--border);
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--green);
+      cursor: pointer;
+    }
+
+    .progress-summary:hover {
+      text-decoration: underline;
+    }
+
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+      margin-top: 16px;
+    }
+
+    .form-card-wide {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 800px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .scale-input {
+      width: 60px;
+      padding: 4px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 13px;
+      text-align: center;
+      outline: none;
+    }
+
+    .scale-input:focus { border-color: var(--accent); }
+
     /* ── Responsive ───────────────────────────────────────────── */
 
     @media (max-width: 1024px) {
       .services-grid {
         grid-template-columns: repeat(2, 1fr);
+      }
+      .deploy-modes {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .resource-grid {
+        grid-template-columns: 1fr 1fr;
       }
       .header-status .kbd-hint { display: none; }
       .user-info { display: none; }
@@ -1014,6 +1610,12 @@
       }
       .form-row {
         grid-template-columns: 1fr;
+      }
+      .deploy-modes {
+        grid-template-columns: 1fr 1fr;
+      }
+      .resource-grid {
+        grid-template-columns: 1fr 1fr;
       }
       .hamburger { display: block; }
       nav {
@@ -1075,6 +1677,7 @@
 <nav id="main-nav">
   <button class="active" data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
   <button data-tab="services" onclick="switchTab('services', this)">Services</button>
+  <button data-tab="apps" onclick="switchTab('apps', this)">My Apps</button>
   <button data-tab="deploy" onclick="switchTab('deploy', this)">Deploy App</button>
   <button data-tab="status" onclick="switchTab('status', this)">Status</button>
   <button data-tab="audit" onclick="switchTab('audit', this)">Audit</button>
@@ -1162,73 +1765,257 @@
 
   <!-- Deploy Tab -->
   <div id="tab-deploy" class="tab-content">
-    <div id="deploy-alert" class="alert"></div>
 
-    <!-- Quick Start: one-click sample apps -->
-    <div style="margin-bottom: 24px;">
-      <h2 style="margin-bottom: 4px;">Quick Start</h2>
-      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 12px;">Deploy a sample app with one click to try the platform.</p>
-      <div class="grid" id="samples-grid">
-        <div class="loading"><span class="spinner"></span></div>
+    <!-- Deploy Mode Selector -->
+    <div class="deploy-modes">
+      <div class="deploy-mode-card active" onclick="switchDeployMode('quickstart')">
+        <span class="mode-icon">&#x26A1;</span>
+        <div class="mode-title">Quick Start</div>
+        <div class="mode-desc">One-click sample apps</div>
+      </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('custom')">
+        <span class="mode-icon">&#x1F4E6;</span>
+        <div class="mode-title">Custom Deploy</div>
+        <div class="mode-desc">Single container, full options</div>
+      </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('multi')">
+        <span class="mode-icon">&#x1F517;</span>
+        <div class="mode-title">Multi-Container</div>
+        <div class="mode-desc">Deploy services together</div>
+      </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('compose')">
+        <span class="mode-icon">&#x1F4C4;</span>
+        <div class="mode-title">Docker Compose</div>
+        <div class="mode-desc">Paste or upload compose file</div>
       </div>
     </div>
 
-    <div class="form-card">
-      <h2>Deploy Your Own App</h2>
-      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Your image must run as non-root. Use <code>nginxinc/nginx-unprivileged</code> instead of <code>nginx</code>, or add <code>USER 1000</code> in your Dockerfile.</p>
-      <form id="deploy-form" onsubmit="handleDeploy(event)">
-        <div class="form-row">
-          <div class="form-group">
-            <label>App Name</label>
-            <input type="text" id="d-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
-            <div class="hint">Lowercase letters, numbers, hyphens only</div>
-          </div>
-          <div class="form-group">
-            <label>Team Name</label>
-            <input type="text" id="d-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
-            <datalist id="team-list"></datalist>
-            <div class="hint">Type a name -- namespace is created automatically</div>
-          </div>
-        </div>
+    <!-- Deploy Alert -->
+    <div id="deploy-alert" class="alert"></div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label>Container Image</label>
-            <input type="text" id="d-image" placeholder="nginxinc/nginx-unprivileged" required />
-            <div class="hint">Full image path without tag</div>
-          </div>
-          <div class="form-group">
-            <label>Image Tag</label>
-            <input type="text" id="d-tag" placeholder="1.27-alpine" required />
-            <div class="hint">Pinned version, never "latest"</div>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Container Port</label>
-            <input type="number" id="d-port" value="8080" min="1" max="65535" />
-          </div>
-          <div class="form-group">
-            <label>Replicas</label>
-            <input type="number" id="d-replicas" value="1" min="1" max="10" />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Ingress Hostname (optional)</label>
-          <input type="text" id="d-ingress" placeholder="my-app.apps.sre.example.com" />
-          <div class="hint">Leave empty for cluster-internal only</div>
-        </div>
-
-        <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Application</button>
-      </form>
+    <!-- Live Deploy Progress -->
+    <div id="deploy-progress" class="deploy-progress">
+      <h3><span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Deploying Services</h3>
+      <div id="deploy-progress-steps"></div>
+      <div id="deploy-progress-summary" class="progress-summary" onclick="collapseProgress()"></div>
     </div>
 
-    <!-- Deployed Apps -->
+    <!-- Mode: Quick Start -->
+    <div id="panel-quickstart" class="deploy-panel active">
+      <div class="form-card-wide">
+        <h2 style="margin-bottom: 4px;">Quick Start</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Deploy a sample app with one click to try the platform.</p>
+        <div class="form-group" style="max-width: 300px; margin-bottom: 16px;">
+          <label>Team Name</label>
+          <input type="text" id="qs-team" placeholder="demo" value="demo" pattern="[a-z0-9-]+" />
+          <div class="hint">Namespace for sample deployments</div>
+        </div>
+        <div class="grid" id="samples-grid">
+          <div class="loading"><span class="spinner"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode: Custom Deploy -->
+    <div id="panel-custom" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2>Deploy Your Own App</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Your image must run as non-root. Use <code>nginxinc/nginx-unprivileged</code> instead of <code>nginx</code>, or add <code>USER 1000</code> in your Dockerfile.</p>
+        <form id="deploy-form" onsubmit="handleDeploy(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>App Name</label>
+              <input type="text" id="d-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+              <div class="hint">Lowercase letters, numbers, hyphens only</div>
+            </div>
+            <div class="form-group">
+              <label>Team Name</label>
+              <input type="text" id="d-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+              <datalist id="team-list"></datalist>
+              <div class="hint">Type a name -- namespace is created automatically</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Container Image</label>
+              <input type="text" id="d-image" placeholder="nginxinc/nginx-unprivileged" required />
+              <div class="hint">Full image path without tag</div>
+            </div>
+            <div class="form-group">
+              <label>Image Tag</label>
+              <input type="text" id="d-tag" placeholder="1.27-alpine" required />
+              <div class="hint">Pinned version, never "latest"</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Container Port</label>
+              <input type="number" id="d-port" value="8080" min="1" max="65535" />
+            </div>
+            <div class="form-group">
+              <label>Replicas</label>
+              <input type="number" id="d-replicas" value="2" min="1" max="10" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Ingress Hostname (optional)</label>
+            <input type="text" id="d-ingress" placeholder="my-app.apps.sre.example.com" />
+            <div class="hint">Leave empty for cluster-internal only</div>
+          </div>
+
+          <!-- Environment Variables -->
+          <div class="section-label">Environment Variables</div>
+          <div class="env-rows" id="custom-env-rows"></div>
+          <button type="button" class="btn-outline" onclick="addEnvRow('custom-env-rows')">+ Add Variable</button>
+
+          <!-- Resource Limits -->
+          <div class="section-label">Resource Limits</div>
+          <div class="resource-grid">
+            <div class="form-group">
+              <label>CPU Request</label>
+              <input type="text" id="d-cpu-req" value="100m" placeholder="100m" />
+            </div>
+            <div class="form-group">
+              <label>CPU Limit</label>
+              <input type="text" id="d-cpu-lim" value="500m" placeholder="500m" />
+            </div>
+            <div class="form-group">
+              <label>Memory Request</label>
+              <input type="text" id="d-mem-req" value="128Mi" placeholder="128Mi" />
+            </div>
+            <div class="form-group">
+              <label>Memory Limit</label>
+              <input type="text" id="d-mem-lim" value="512Mi" placeholder="512Mi" />
+            </div>
+          </div>
+
+          <!-- Health Checks -->
+          <div class="section-label">Health Checks</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Liveness Path</label>
+              <input type="text" id="d-liveness" value="/" placeholder="/" />
+            </div>
+            <div class="form-group">
+              <label>Readiness Path</label>
+              <input type="text" id="d-readiness" value="/" placeholder="/" />
+            </div>
+          </div>
+
+          <div class="btn-group">
+            <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Application</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Mode: Multi-Container -->
+    <div id="panel-multi" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2>Multi-Container Deploy</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Deploy multiple services together as a group. Each service gets its own container.</p>
+        <form id="multi-deploy-form" onsubmit="handleMultiDeploy(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Team Name</label>
+              <input type="text" id="m-team" placeholder="my-team" required pattern="[a-z0-9-]+" />
+            </div>
+            <div class="form-group">
+              <label>App Group Name</label>
+              <input type="text" id="m-group" placeholder="my-app-stack" required pattern="[a-z0-9-]+" />
+              <div class="hint">Logical name for this group of services</div>
+            </div>
+          </div>
+
+          <div id="multi-services">
+            <div class="multi-service-card" data-svc-index="0">
+              <div class="svc-header">
+                <h3>Service 1</h3>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Service Name</label>
+                  <input type="text" class="ms-name" placeholder="frontend" required pattern="[a-z0-9-]+" />
+                </div>
+                <div class="form-group">
+                  <label>Image</label>
+                  <input type="text" class="ms-image" placeholder="nginxinc/nginx-unprivileged" required />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Tag</label>
+                  <input type="text" class="ms-tag" placeholder="1.27-alpine" required />
+                </div>
+                <div class="form-group">
+                  <label>Port</label>
+                  <input type="number" class="ms-port" value="8080" min="1" max="65535" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Ingress Hostname (optional, first service only)</label>
+                <input type="text" class="ms-ingress" placeholder="my-app.apps.sre.example.com" />
+              </div>
+              <div class="section-label" style="margin-top:8px;">Environment Variables</div>
+              <div class="env-rows" id="multi-env-0"></div>
+              <button type="button" class="btn-outline" onclick="addEnvRow('multi-env-0')">+ Add Variable</button>
+            </div>
+          </div>
+
+          <div class="btn-group" style="margin-top: 8px; margin-bottom: 16px;">
+            <button type="button" class="btn-outline" onclick="addServiceCard()">+ Add Service</button>
+          </div>
+
+          <button type="submit" class="btn btn-primary" id="multi-deploy-btn">Deploy All Services</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Mode: Docker Compose -->
+    <div id="panel-compose" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2>Deploy from Docker Compose</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Paste a docker-compose.yml or upload a file. Services will be converted to Kubernetes deployments.</p>
+        <div class="form-group">
+          <label>Team Name</label>
+          <input type="text" id="c-team" placeholder="my-team" required pattern="[a-z0-9-]+" style="max-width:300px;" />
+        </div>
+        <div class="upload-area">
+          <button type="button" class="btn-outline" onclick="document.getElementById('compose-file-input').click()">Upload File</button>
+          <input type="file" id="compose-file-input" accept=".yml,.yaml" onchange="handleComposeFile(event)" />
+          <span id="compose-file-name" style="font-size:12px;color:var(--text-dim);"></span>
+        </div>
+        <div class="form-group">
+          <label>Docker Compose YAML</label>
+          <textarea id="compose-input" class="compose-area" placeholder="version: '3'
+services:
+  web:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    ports:
+      - '8080:8080'
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'"></textarea>
+        </div>
+
+        <div id="compose-preview"></div>
+
+        <div class="btn-group">
+          <button type="button" class="btn btn-primary" onclick="handleComposePreview()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">Preview Services</button>
+          <button type="button" class="btn btn-primary" id="compose-deploy-btn" onclick="handleComposeDeploy()">Deploy from Compose</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deployed Apps Table -->
     <div class="table-card" style="margin-top: 24px;">
       <div class="table-header">
         <h2>Deployed Applications</h2>
+        <button class="btn-outline" onclick="loadDeployedApps()" title="Refresh">&#x21BB; Refresh</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -1238,14 +2025,32 @@
               <th>App</th>
               <th>Namespace</th>
               <th>Image</th>
+              <th>Replicas</th>
+              <th>Logs</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="apps-table">
-            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+            <tr><td colspan="7" class="loading"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- My Apps Tab -->
+  <div id="tab-apps" class="tab-content">
+    <h2 style="margin-bottom: 4px;">Deployed Applications</h2>
+    <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Click any app tile to open it. Deploy new apps from the Deploy App tab.</p>
+
+    <div class="app-gallery-filters">
+      <input type="text" id="app-search" placeholder="Search apps by name, team, or image..." oninput="filterAppGallery()" />
+      <span class="app-gallery-count" id="app-gallery-count"></span>
+      <button class="btn btn-sm" onclick="loadAppGallery()" style="padding:6px 12px;font-size:12px;">Refresh</button>
+    </div>
+
+    <div id="app-gallery" class="app-gallery-grid">
+      <div class="loading"><span class="spinner"></span></div>
     </div>
   </div>
 
@@ -1402,6 +2207,7 @@ function switchTab(tab, btn) {
   clearInterval(auditRefreshTimer);
 
   if (tab === 'deploy') { loadTenants(); }
+  if (tab === 'apps') { loadAppGallery(); }
   if (tab === 'services') { loadServiceTiles(); }
   if (tab === 'credentials') { loadCredentials(); }
   if (tab === 'status') {
@@ -1425,6 +2231,7 @@ function applyRBAC() {
   var tabs = {
     overview: true,
     services: true,
+    apps: true,
     deploy: role === 'admin' || role === 'developer',
     status: true,
     audit: role === 'admin',
@@ -1744,7 +2551,577 @@ async function toggleFavorite(e, serviceName) {
   }
 }
 
+// ── App Gallery ──────────────────────────────────────────────────────────────
+
+var allGalleryApps = [];
+
+async function loadAppGallery() {
+  try {
+    var resp = await fetch('/api/apps');
+    var data = await resp.json();
+    allGalleryApps = data.apps || [];
+    renderAppGallery(allGalleryApps);
+  } catch (err) {
+    console.error('Failed to load app gallery:', err);
+    document.getElementById('app-gallery').innerHTML =
+      '<p style="color:var(--text-dim)">Failed to load apps.</p>';
+  }
+}
+
+function filterAppGallery() {
+  var q = (document.getElementById('app-search').value || '').toLowerCase();
+  if (!q) {
+    renderAppGallery(allGalleryApps);
+    return;
+  }
+  var filtered = allGalleryApps.filter(function(a) {
+    return a.name.toLowerCase().includes(q) ||
+           (a.team || '').toLowerCase().includes(q) ||
+           (a.image || '').toLowerCase().includes(q) ||
+           (a.namespace || '').toLowerCase().includes(q);
+  });
+  renderAppGallery(filtered);
+}
+
+function renderAppGallery(apps) {
+  var gallery = document.getElementById('app-gallery');
+  var countEl = document.getElementById('app-gallery-count');
+
+  if (!apps || apps.length === 0) {
+    countEl.textContent = '';
+    gallery.innerHTML =
+      '<div class="app-gallery-empty">' +
+        '<h3>No apps deployed yet</h3>' +
+        '<p>Deploy your first app from the Deploy App tab.</p>' +
+        '<button class="btn btn-primary" onclick="switchTab(\'deploy\', document.querySelector(\'[data-tab=deploy]\'))">Go to Deploy</button>' +
+      '</div>';
+    return;
+  }
+
+  countEl.textContent = apps.length + ' app' + (apps.length !== 1 ? 's' : '');
+
+  gallery.innerHTML = apps.map(function(a) {
+    var statusCls = a.ready ? 'running' : 'deploying';
+    var statusText = a.ready ? 'Running' : 'Deploying';
+    var imageStr = a.image ? (esc(a.image) + ':' + esc(a.tag)) : 'unknown';
+    var hasUrl = a.url && a.host;
+    var tileClick = hasUrl
+      ? 'onclick="window.open(\'' + esc(a.url) + '\', \'_blank\', \'noopener\')"'
+      : '';
+    var cursorStyle = hasUrl ? '' : 'cursor:default;';
+
+    var urlLine = hasUrl
+      ? '<a class="app-tile-url" href="' + esc(a.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' + esc(a.host) + '</a>'
+      : '<span style="font-size:12px;color:var(--text-dim);">Cluster-internal only</span>';
+
+    var grafanaUrl = 'https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22' + encodeURIComponent(a.namespace) + '%5C%22%7D%22%7D%5D%7D';
+
+    return '<div class="app-tile" ' + tileClick + ' style="' + cursorStyle + '">' +
+      '<div class="app-tile-header">' +
+        '<div class="app-tile-name">' +
+          '<span class="health-dot ' + (a.ready ? 'green' : 'yellow') + '"></span>' +
+          esc(a.name) +
+        '</div>' +
+        '<span class="app-tile-badge ' + statusCls + '">' + statusText + '</span>' +
+      '</div>' +
+      '<div class="app-tile-image">' + imageStr + '</div>' +
+      urlLine +
+      '<div class="app-tile-meta">' +
+        '<span>&#x1F465; ' + esc(a.team || a.namespace) + '</span>' +
+        '<span>&#x1F4E6; ' + esc(a.namespace) + '</span>' +
+        (a.port ? '<span>:' + esc(String(a.port)) + '</span>' : '') +
+      '</div>' +
+      '<div class="app-tile-actions">' +
+        '<a class="btn btn-sm" href="' + esc(grafanaUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;padding:4px 10px;text-decoration:none;">Logs</a>' +
+        (hasUrl ? '<a class="btn btn-sm btn-primary" href="' + esc(a.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;padding:4px 10px;text-decoration:none;">Open App</a>' : '') +
+        (currentUser.isAdmin ? '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteAppFromGallery(\'' + esc(a.namespace) + '\',\'' + esc(a.name) + '\')" style="font-size:11px;padding:4px 10px;">Delete</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function deleteAppFromGallery(namespace, name) {
+  if (!confirm('Delete app "' + name + '" from "' + namespace + '"?')) return;
+  try {
+    await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+    showToast('Deleted ' + name, 'success');
+    setTimeout(loadAppGallery, 1000);
+  } catch (err) {
+    showToast('Delete failed: ' + err.message, 'error');
+  }
+}
+
 // ── Deploy ───────────────────────────────────────────────────────────────────
+
+var currentDeployMode = 'quickstart';
+var multiServiceCount = 1;
+var activeDeployPolls = [];
+
+function switchDeployMode(mode) {
+  currentDeployMode = mode;
+  document.querySelectorAll('.deploy-mode-card').forEach(function(card, i) {
+    var modes = ['quickstart', 'custom', 'multi', 'compose'];
+    card.classList.toggle('active', modes[i] === mode);
+  });
+  document.querySelectorAll('.deploy-panel').forEach(function(p) { p.classList.remove('active'); });
+  var panel = document.getElementById('panel-' + mode);
+  if (panel) panel.classList.add('active');
+}
+
+function addEnvRow(containerId) {
+  var container = document.getElementById(containerId);
+  var row = document.createElement('div');
+  row.className = 'env-row';
+  row.innerHTML =
+    '<input type="text" placeholder="VARIABLE_NAME" class="env-key" />' +
+    '<input type="text" placeholder="value" class="env-val" />' +
+    '<button type="button" class="btn-icon" onclick="removeEnvRow(this)" title="Remove">&times;</button>';
+  container.appendChild(row);
+}
+
+function removeEnvRow(btn) {
+  var row = btn.closest('.env-row');
+  if (row) row.remove();
+}
+
+function collectEnvVars(containerId) {
+  var container = document.getElementById(containerId);
+  if (!container) return [];
+  var rows = container.querySelectorAll('.env-row');
+  var envs = [];
+  rows.forEach(function(row) {
+    var key = row.querySelector('.env-key').value.trim();
+    var val = row.querySelector('.env-val').value.trim();
+    if (key) envs.push({ name: key, value: val });
+  });
+  return envs;
+}
+
+function addServiceCard() {
+  var container = document.getElementById('multi-services');
+  var idx = multiServiceCount;
+  multiServiceCount++;
+  var card = document.createElement('div');
+  card.className = 'multi-service-card';
+  card.setAttribute('data-svc-index', idx);
+  card.innerHTML =
+    '<div class="svc-header">' +
+      '<h3>Service ' + (idx + 1) + '</h3>' +
+      '<button type="button" class="svc-remove" onclick="removeServiceCard(this)">Remove</button>' +
+    '</div>' +
+    '<div class="form-row">' +
+      '<div class="form-group">' +
+        '<label>Service Name</label>' +
+        '<input type="text" class="ms-name" placeholder="backend" required pattern="[a-z0-9-]+" />' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label>Image</label>' +
+        '<input type="text" class="ms-image" placeholder="my-api" required />' +
+      '</div>' +
+    '</div>' +
+    '<div class="form-row">' +
+      '<div class="form-group">' +
+        '<label>Tag</label>' +
+        '<input type="text" class="ms-tag" placeholder="v1.0.0" required />' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label>Port</label>' +
+        '<input type="number" class="ms-port" value="8080" min="1" max="65535" />' +
+      '</div>' +
+    '</div>' +
+    '<div class="section-label" style="margin-top:8px;">Environment Variables</div>' +
+    '<div class="env-rows" id="multi-env-' + idx + '"></div>' +
+    '<button type="button" class="btn-outline" onclick="addEnvRow(\'multi-env-' + idx + '\')">+ Add Variable</button>';
+  container.appendChild(card);
+}
+
+function removeServiceCard(btn) {
+  var card = btn.closest('.multi-service-card');
+  if (card) card.remove();
+  // Renumber remaining
+  var cards = document.querySelectorAll('#multi-services .multi-service-card');
+  cards.forEach(function(c, i) {
+    c.querySelector('.svc-header h3').textContent = 'Service ' + (i + 1);
+  });
+}
+
+function handleComposeFile(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  document.getElementById('compose-file-name').textContent = file.name;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('compose-input').value = e.target.result;
+  };
+  reader.readAsText(file);
+}
+
+function parseComposeYaml(text) {
+  // Lightweight YAML parser for docker-compose services
+  var services = [];
+  var lines = text.split('\n');
+  var inServices = false;
+  var currentService = null;
+  var inPorts = false;
+  var inEnvironment = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var trimmed = line.trim();
+    if (trimmed === '' || trimmed.charAt(0) === '#') continue;
+
+    // Detect indentation level
+    var indent = line.length - line.replace(/^ +/, '').length;
+
+    if (trimmed === 'services:' || trimmed === 'services :') {
+      inServices = true;
+      continue;
+    }
+
+    if (inServices) {
+      // Top-level service name (2 spaces indent typically)
+      if (indent <= 2 && trimmed.indexOf(':') > 0 && !trimmed.match(/^(version|networks|volumes)/)) {
+        var svcName = trimmed.replace(/:.*$/, '').trim();
+        if (svcName && svcName.match(/^[a-zA-Z0-9_-]+$/)) {
+          if (currentService) services.push(currentService);
+          currentService = { name: svcName.toLowerCase().replace(/_/g, '-'), image: '', tag: 'latest', port: 8080, env: [] };
+          inPorts = false;
+          inEnvironment = false;
+          continue;
+        }
+      }
+
+      if (currentService) {
+        if (trimmed.match(/^image:\s*/)) {
+          var imgVal = trimmed.replace(/^image:\s*/, '').replace(/['"]/g, '');
+          var parts = imgVal.split(':');
+          currentService.image = parts[0];
+          currentService.tag = parts[1] || 'latest';
+          inPorts = false;
+          inEnvironment = false;
+        } else if (trimmed === 'ports:') {
+          inPorts = true;
+          inEnvironment = false;
+        } else if (trimmed === 'environment:') {
+          inEnvironment = true;
+          inPorts = false;
+        } else if (inPorts && trimmed.charAt(0) === '-') {
+          var portStr = trimmed.replace(/^-\s*/, '').replace(/['"]/g, '');
+          var portParts = portStr.split(':');
+          var lastPort = portParts[portParts.length - 1].split('/')[0];
+          var parsed = parseInt(lastPort);
+          if (!isNaN(parsed)) currentService.port = parsed;
+        } else if (inEnvironment && trimmed.charAt(0) === '-') {
+          var envStr = trimmed.replace(/^-\s*/, '').replace(/['"]/g, '');
+          var eqIdx = envStr.indexOf('=');
+          if (eqIdx > 0) {
+            currentService.env.push({ name: envStr.substring(0, eqIdx), value: envStr.substring(eqIdx + 1) });
+          }
+        } else if (inEnvironment && trimmed.indexOf(':') > 0 && indent > 4) {
+          var colonIdx = trimmed.indexOf(':');
+          var envKey = trimmed.substring(0, colonIdx).trim();
+          var envVal = trimmed.substring(colonIdx + 1).trim().replace(/['"]/g, '');
+          if (envKey) currentService.env.push({ name: envKey, value: envVal });
+        } else if (!trimmed.charAt(0) === '-') {
+          inPorts = false;
+          inEnvironment = false;
+        }
+      }
+    }
+  }
+  if (currentService) services.push(currentService);
+  return services;
+}
+
+function handleComposePreview() {
+  var text = document.getElementById('compose-input').value.trim();
+  var preview = document.getElementById('compose-preview');
+  if (!text) {
+    preview.innerHTML = '<p style="color:var(--red);font-size:13px;">Please paste your docker-compose.yml content first.</p>';
+    return;
+  }
+
+  var services = parseComposeYaml(text);
+  if (services.length === 0) {
+    preview.innerHTML = '<p style="color:var(--red);font-size:13px;">No services found. Make sure your YAML has a <code>services:</code> section.</p>';
+    return;
+  }
+
+  var html = '<div class="compose-preview">' +
+    '<h4>Parsed Services (' + services.length + ')</h4>';
+  services.forEach(function(s) {
+    var envCount = s.env.length;
+    html += '<div class="compose-svc-item">' +
+      '<span class="svc-name">' + esc(s.name) + '</span>' +
+      '<code>' + esc(s.image) + ':' + esc(s.tag) + '</code>' +
+      '<span style="color:var(--text-dim);font-size:12px;">port ' + esc(String(s.port)) + '</span>' +
+      (envCount > 0 ? '<span style="color:var(--text-dim);font-size:11px;">' + envCount + ' env var' + (envCount > 1 ? 's' : '') + '</span>' : '') +
+    '</div>';
+  });
+  html += '</div>';
+  preview.innerHTML = html;
+}
+
+async function handleComposeDeploy() {
+  var team = document.getElementById('c-team').value.trim();
+  if (!team) {
+    showDeployAlert('error', 'Please enter a team name.');
+    return;
+  }
+  var text = document.getElementById('compose-input').value.trim();
+  if (!text) {
+    showDeployAlert('error', 'Please paste your docker-compose.yml content.');
+    return;
+  }
+  var services = parseComposeYaml(text);
+  if (services.length === 0) {
+    showDeployAlert('error', 'No services found in compose file. Check your YAML.');
+    return;
+  }
+
+  var btn = document.getElementById('compose-deploy-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deploying...';
+  clearDeployAlert();
+
+  var deployItems = services.map(function(s) {
+    return { name: s.name, team: team, image: s.image, tag: s.tag, port: s.port, replicas: 1, env: s.env };
+  });
+
+  startDeployProgress(deployItems);
+  await deployServiceList(deployItems);
+
+  btn.disabled = false;
+  btn.textContent = 'Deploy from Compose';
+}
+
+async function handleMultiDeploy(e) {
+  e.preventDefault();
+  var team = document.getElementById('m-team').value.trim();
+  var group = document.getElementById('m-group').value.trim();
+  if (!team || !group) return;
+
+  var btn = document.getElementById('multi-deploy-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deploying...';
+  clearDeployAlert();
+
+  var cards = document.querySelectorAll('#multi-services .multi-service-card');
+  var deployItems = [];
+
+  cards.forEach(function(card) {
+    var idx = card.getAttribute('data-svc-index');
+    var name = card.querySelector('.ms-name').value.trim();
+    var image = card.querySelector('.ms-image').value.trim();
+    var tag = card.querySelector('.ms-tag').value.trim();
+    var port = parseInt(card.querySelector('.ms-port').value) || 8080;
+    var ingressEl = card.querySelector('.ms-ingress');
+    var ingress = ingressEl ? ingressEl.value.trim() : '';
+    var env = collectEnvVars('multi-env-' + idx);
+
+    if (name && image && tag) {
+      deployItems.push({ name: name, team: team, image: image, tag: tag, port: port, replicas: 1, ingress: ingress, env: env });
+    }
+  });
+
+  if (deployItems.length === 0) {
+    showDeployAlert('error', 'Please fill in at least one service.');
+    btn.disabled = false;
+    btn.textContent = 'Deploy All Services';
+    return;
+  }
+
+  startDeployProgress(deployItems);
+  await deployServiceList(deployItems);
+
+  btn.disabled = false;
+  btn.textContent = 'Deploy All Services';
+}
+
+async function deployServiceList(items) {
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var stepEl = document.getElementById('progress-step-' + i);
+    updateProgressBar(stepEl, 20, 'Creating namespace...');
+
+    try {
+      var body = {
+        name: item.name,
+        team: item.team,
+        image: item.image,
+        tag: item.tag,
+        port: item.port,
+        replicas: item.replicas || 1,
+        ingress: item.ingress || '',
+        env: item.env || []
+      };
+
+      updateProgressBar(stepEl, 40, 'Applying HelmRelease...');
+
+      var resp = await fetch('/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      var data = await resp.json();
+      if (data.success) {
+        updateProgressBar(stepEl, 60, 'Waiting for pods...');
+        pollDeployStatus(item.team, item.name, stepEl, i);
+      } else {
+        updateProgressBar(stepEl, 100, 'Failed: ' + data.error, true);
+      }
+    } catch (err) {
+      updateProgressBar(stepEl, 100, 'Error: ' + err.message, true);
+    }
+  }
+
+  setTimeout(loadDeployedApps, 3000);
+}
+
+function startDeployProgress(services) {
+  // Cancel any existing polls
+  activeDeployPolls.forEach(function(t) { clearInterval(t); });
+  activeDeployPolls = [];
+
+  var progressEl = document.getElementById('deploy-progress');
+  var stepsEl = document.getElementById('deploy-progress-steps');
+  var summaryEl = document.getElementById('deploy-progress-summary');
+  summaryEl.style.display = 'none';
+  progressEl.querySelector('h3').innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Deploying ' + services.length + ' service' + (services.length > 1 ? 's' : '') + '...';
+
+  var html = '';
+  services.forEach(function(svc, i) {
+    var replicaCount = svc.replicas || 1;
+    var dots = '';
+    for (var d = 0; d < replicaCount; d++) {
+      dots += '<span class="pod-dot" id="pod-dot-' + i + '-' + d + '"></span>';
+    }
+    html += '<div class="progress-step" id="progress-step-' + i + '">' +
+      '<div class="step-header">' +
+        '<span class="step-name">' + esc(svc.name) + ' <code style="font-size:11px;color:var(--text-dim);background:var(--bg);padding:1px 5px;border-radius:3px;">' + esc(svc.image) + ':' + esc(svc.tag) + '</code></span>' +
+        '<span class="step-status" id="step-status-' + i + '">Pending</span>' +
+      '</div>' +
+      '<div class="progress-bar-track">' +
+        '<div class="progress-bar-fill active" id="progress-fill-' + i + '" style="width:0%"></div>' +
+      '</div>' +
+      '<div class="pod-dots">' + dots + '</div>' +
+    '</div>';
+  });
+
+  stepsEl.innerHTML = html;
+  progressEl.classList.add('show');
+}
+
+function pollDeployStatus(team, name, stepEl, index) {
+  var ns = 'team-' + team;
+  var attempts = 0;
+  var maxAttempts = 60;
+  var timer = setInterval(async function() {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(timer);
+      updateProgressBar(stepEl, 90, 'Timeout - check status manually');
+      return;
+    }
+
+    try {
+      var resp = await fetch('/api/health');
+      var data = await resp.json();
+      var match = data.helmReleases.find(function(hr) {
+        return hr.namespace === ns && hr.name === name;
+      });
+
+      if (match) {
+        if (match.ready) {
+          clearInterval(timer);
+          updateProgressBar(stepEl, 100, 'Running!');
+          var fill = stepEl.querySelector('.progress-bar-fill');
+          fill.classList.remove('active');
+          fill.classList.add('done');
+          // Mark pod dots green
+          stepEl.querySelectorAll('.pod-dot').forEach(function(dot) {
+            dot.className = 'pod-dot running';
+          });
+          checkAllDeploysDone();
+        } else {
+          var pct = Math.min(60 + attempts, 95);
+          updateProgressBar(stepEl, pct, 'Waiting for pods...');
+          // Animate pod dots
+          stepEl.querySelectorAll('.pod-dot').forEach(function(dot, di) {
+            if (di <= Math.floor(attempts / 5)) dot.className = 'pod-dot pending';
+          });
+        }
+      } else {
+        updateProgressBar(stepEl, Math.min(50 + attempts, 80), 'Reconciling...');
+      }
+    } catch (err) {
+      // network error, keep polling
+    }
+  }, 2000);
+
+  activeDeployPolls.push(timer);
+}
+
+function updateProgressBar(stepEl, percent, statusText, isError) {
+  if (!stepEl) return;
+  var fill = stepEl.querySelector('.progress-bar-fill');
+  var status = stepEl.querySelector('.step-status');
+  fill.style.width = percent + '%';
+  status.textContent = statusText;
+  if (isError) {
+    fill.classList.remove('active');
+    fill.classList.add('error');
+    status.classList.add('error');
+  } else if (percent >= 100) {
+    status.classList.add('done');
+  }
+}
+
+function checkAllDeploysDone() {
+  var steps = document.querySelectorAll('#deploy-progress-steps .progress-step');
+  var allDone = true;
+  var successCount = 0;
+  var errorCount = 0;
+  steps.forEach(function(step) {
+    var fill = step.querySelector('.progress-bar-fill');
+    if (fill.classList.contains('done')) {
+      successCount++;
+    } else if (fill.classList.contains('error')) {
+      errorCount++;
+    } else {
+      allDone = false;
+    }
+  });
+
+  if (allDone || (successCount + errorCount === steps.length)) {
+    var progressEl = document.getElementById('deploy-progress');
+    progressEl.querySelector('h3').innerHTML = (errorCount > 0 ? '&#x26A0;' : '&#x2705;') + ' Deploy Complete';
+    var summaryEl = document.getElementById('deploy-progress-summary');
+    summaryEl.textContent = successCount + ' succeeded' + (errorCount > 0 ? ', ' + errorCount + ' failed' : '') + ' - Click to dismiss';
+    summaryEl.style.display = 'block';
+    loadDeployedApps();
+  }
+}
+
+function collapseProgress() {
+  var progressEl = document.getElementById('deploy-progress');
+  progressEl.classList.remove('show');
+  activeDeployPolls.forEach(function(t) { clearInterval(t); });
+  activeDeployPolls = [];
+}
+
+function showDeployAlert(type, message) {
+  var alertEl = document.getElementById('deploy-alert');
+  alertEl.className = 'alert ' + type;
+  alertEl.textContent = message;
+}
+
+function clearDeployAlert() {
+  var alertEl = document.getElementById('deploy-alert');
+  alertEl.className = 'alert';
+  alertEl.style.display = 'none';
+}
 
 async function loadTenants() {
   try {
@@ -1782,50 +3159,37 @@ async function loadSamples() {
 }
 
 async function quickDeploy(name, image, tag, port) {
-  var alertEl = document.getElementById('deploy-alert');
-  alertEl.className = 'alert'; alertEl.style.display = 'none';
-  var team = document.getElementById('d-team').value || 'demo';
-  try {
-    var resp = await fetch('/api/deploy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, team: team, image: image, tag: tag, port: port, replicas: 1 }),
-    });
-    var data = await resp.json();
-    if (data.success) {
-      alertEl.className = 'alert success';
-      alertEl.textContent = data.message + '. Give it about 30 seconds to start.';
-      setTimeout(loadDeployedApps, 3000);
-    } else {
-      alertEl.className = 'alert error';
-      alertEl.textContent = data.error;
-    }
-  } catch (err) {
-    alertEl.className = 'alert error';
-    alertEl.textContent = 'Deploy failed: ' + err.message;
-  }
+  clearDeployAlert();
+  var team = document.getElementById('qs-team').value.trim() || 'demo';
+  var items = [{ name: name, team: team, image: image, tag: tag, port: port, replicas: 1 }];
+  startDeployProgress(items);
+  await deployServiceList(items);
 }
 
 async function loadDeployedApps() {
   try {
     var resp = await fetch('/api/health');
     var data = await resp.json();
+    var platformNs = ['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero','harbor','keycloak','flux-system','metallb-system','oauth2-proxy'];
     var tenantApps = data.helmReleases.filter(function(hr) {
-      return !['istio-system','kyverno','monitoring','logging','cert-manager','external-secrets','openbao','neuvector','tempo','velero','harbor','keycloak'].includes(hr.namespace);
+      return !platformNs.includes(hr.namespace);
     });
 
     if (tenantApps.length === 0) {
       document.getElementById('apps-table').innerHTML =
-        '<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No apps deployed yet</td></tr>';
+        '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);">No apps deployed yet. Use one of the deploy modes above to get started.</td></tr>';
       return;
     }
 
     document.getElementById('apps-table').innerHTML = tenantApps.map(function(app) {
+      var grafanaUrl = 'https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22' + encodeURIComponent(app.namespace) + '%5C%22%7D%22%7D%5D%7D';
       return '<tr>' +
-        '<td><span class="badge ' + (app.ready ? 'green' : 'red') + '">' + (app.ready ? 'Running' : 'Deploying') + '</span></td>' +
+        '<td><span class="badge ' + (app.ready ? 'green' : 'yellow') + '">' + (app.ready ? 'Running' : 'Deploying') + '</span></td>' +
         '<td><strong>' + esc(app.name) + '</strong></td>' +
         '<td>' + esc(app.namespace) + '</td>' +
-        '<td><code>' + esc(app.chart || 'web-app') + '</code></td>' +
+        '<td><code style="font-size:12px;">' + esc(app.chart || 'web-app') + '</code></td>' +
+        '<td><input type="number" class="scale-input" value="' + (app.replicas || 1) + '" min="1" max="10" onchange="scaleApp(\'' + esc(app.namespace) + '\',\'' + esc(app.name) + '\',this.value)" title="Scale replicas" /></td>' +
+        '<td><a href="' + esc(grafanaUrl) + '" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none;">Logs</a></td>' +
         '<td><button class="btn btn-danger btn-sm" onclick="deleteApp(\'' + esc(app.namespace) + '\', \'' + esc(app.name) + '\')">Delete</button></td>' +
         '</tr>';
     }).join('');
@@ -1837,22 +3201,38 @@ async function loadDeployedApps() {
 async function handleDeploy(e) {
   e.preventDefault();
   var btn = document.getElementById('deploy-btn');
-  var alertEl = document.getElementById('deploy-alert');
   btn.disabled = true;
   btn.textContent = 'Deploying...';
-  alertEl.className = 'alert';
-  alertEl.style.display = 'none';
+  clearDeployAlert();
+
+  var env = collectEnvVars('custom-env-rows');
+  var name = document.getElementById('d-name').value.trim();
+  var team = document.getElementById('d-team').value.trim();
+  var image = document.getElementById('d-image').value.trim();
+  var tag = document.getElementById('d-tag').value.trim();
+  var port = parseInt(document.getElementById('d-port').value) || 8080;
+  var replicas = parseInt(document.getElementById('d-replicas').value) || 2;
+  var ingress = document.getElementById('d-ingress').value.trim();
+
+  var items = [{
+    name: name, team: team, image: image, tag: tag,
+    port: port, replicas: replicas, ingress: ingress, env: env,
+    resources: {
+      requests: { cpu: document.getElementById('d-cpu-req').value, memory: document.getElementById('d-mem-req').value },
+      limits: { cpu: document.getElementById('d-cpu-lim').value, memory: document.getElementById('d-mem-lim').value }
+    },
+    probes: {
+      liveness: document.getElementById('d-liveness').value,
+      readiness: document.getElementById('d-readiness').value
+    }
+  }];
+
+  startDeployProgress(items);
 
   try {
-    var body = {
-      name: document.getElementById('d-name').value,
-      team: document.getElementById('d-team').value,
-      image: document.getElementById('d-image').value,
-      tag: document.getElementById('d-tag').value,
-      port: parseInt(document.getElementById('d-port').value),
-      replicas: parseInt(document.getElementById('d-replicas').value),
-      ingress: document.getElementById('d-ingress').value,
-    };
+    var body = items[0];
+    var stepEl = document.getElementById('progress-step-0');
+    updateProgressBar(stepEl, 20, 'Creating namespace...');
 
     var resp = await fetch('/api/deploy', {
       method: 'POST',
@@ -1862,29 +3242,50 @@ async function handleDeploy(e) {
 
     var data = await resp.json();
     if (data.success) {
-      alertEl.className = 'alert success';
-      alertEl.textContent = data.message + '. Flux will deploy it within a few minutes.';
+      updateProgressBar(stepEl, 60, 'Waiting for pods...');
+      pollDeployStatus(team, name, stepEl, 0);
       document.getElementById('deploy-form').reset();
       document.getElementById('d-port').value = '8080';
       document.getElementById('d-replicas').value = '2';
-      setTimeout(loadDeployedApps, 3000);
+      document.getElementById('d-cpu-req').value = '100m';
+      document.getElementById('d-cpu-lim').value = '500m';
+      document.getElementById('d-mem-req').value = '128Mi';
+      document.getElementById('d-mem-lim').value = '512Mi';
+      document.getElementById('d-liveness').value = '/';
+      document.getElementById('d-readiness').value = '/';
+      document.getElementById('custom-env-rows').innerHTML = '';
     } else {
-      alertEl.className = 'alert error';
-      alertEl.textContent = data.error;
+      updateProgressBar(stepEl, 100, 'Failed: ' + data.error, true);
+      showDeployAlert('error', data.error);
     }
   } catch (err) {
-    alertEl.className = 'alert error';
-    alertEl.textContent = 'Deploy failed: ' + err.message;
+    var stepEl0 = document.getElementById('progress-step-0');
+    updateProgressBar(stepEl0, 100, 'Error: ' + err.message, true);
+    showDeployAlert('error', 'Deploy failed: ' + err.message);
   }
 
   btn.disabled = false;
   btn.textContent = 'Deploy Application';
 }
 
+async function scaleApp(namespace, name, replicas) {
+  try {
+    await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name) + '/scale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ replicas: parseInt(replicas) })
+    });
+    showToast('Scaling ' + name + ' to ' + replicas + ' replicas', '');
+  } catch (err) {
+    showToast('Scale failed: ' + err.message, 'error');
+  }
+}
+
 async function deleteApp(namespace, name) {
   if (!confirm('Delete app "' + name + '" from "' + namespace + '"?')) return;
   try {
     await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+    showToast('Deleted ' + name, '');
     setTimeout(loadDeployedApps, 1000);
   } catch (err) {
     showToast('Delete failed: ' + err.message, 'error');
@@ -2057,6 +3458,7 @@ function renderCredentials(data) {
 var ALL_COMMANDS = [
   { label: 'Go to Overview', icon: '\uD83D\uDCCA', action: function() { switchTabByName('overview'); } },
   { label: 'Go to Services', icon: '\uD83D\uDD17', action: function() { switchTabByName('services'); } },
+  { label: 'Go to My Apps', icon: '\uD83D\uDCE6', action: function() { switchTabByName('apps'); } },
   { label: 'Go to Deploy', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } },
   { label: 'Go to Status', icon: '\u2705', action: function() { switchTabByName('status'); } },
   { label: 'Go to Audit', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } },

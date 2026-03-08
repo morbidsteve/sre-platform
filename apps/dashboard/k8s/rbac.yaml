@@ -48,10 +48,17 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "create", "patch"]
-  # HelmReleases — list, create, patch, delete
+  # HelmReleases — full CRUD for deploy features
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
-    verbs: ["list", "create", "patch", "delete"]
+    verbs: ["get", "list", "create", "patch", "delete"]
+  # Flux GitRepository + Kustomization — for git deploy
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories"]
+    verbs: ["get", "create", "patch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "create", "patch"]
   # NetworkPolicies — create (for new tenant namespaces)
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]

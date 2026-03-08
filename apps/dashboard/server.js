@@ -590,6 +590,735 @@ app.options("/api/apps", (req, res) => {
   res.sendStatus(204);
 });
 
+// ── Docker Compose Parser (simple line-based, no deps) ────────────────────
+
+function parseDockerCompose(yamlText) {
+  if (typeof yamlText !== "string" || !yamlText.trim()) {
+    return {};
+  }
+  const lines = yamlText.split("\n");
+  const services = {};
+  let inServices = false;
+  let currentService = null;
+  let currentKey = null; // "ports", "environment", "volumes", etc.
+  let servicesIndent = -1;
+  let serviceIndent = -1;
+  let keyIndent = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    // Skip comments and empty lines
+    if (raw.trimStart().startsWith("#") || raw.trim() === "") continue;
+
+    const stripped = raw.trimEnd();
+    const indent = stripped.length - stripped.trimStart().length;
+    const content = stripped.trim();
+
+    // Top-level "services:" block
+    if (/^services\s*:/.test(content) && indent === 0) {
+      inServices = true;
+      servicesIndent = 0;
+      currentService = null;
+      currentKey = null;
+      continue;
+    }
+
+    if (!inServices) continue;
+
+    // Detect end of services block (another top-level key)
+    if (indent === 0 && /^\w/.test(content) && !content.startsWith("-")) {
+      inServices = false;
+      continue;
+    }
+
+    // Service name line: "  myservice:" — indent > servicesIndent, ends with ":"
+    if (
+      currentService === null ||
+      (indent > servicesIndent && indent <= serviceIndent && /^[a-zA-Z0-9_-]+\s*:/.test(content) && !content.includes(": "))
+    ) {
+      if (indent > servicesIndent && /^[a-zA-Z0-9_-]+\s*:\s*$/.test(content)) {
+        const svcName = content.replace(/\s*:\s*$/, "").trim();
+        services[svcName] = { image: "", ports: [], environment: [] };
+        currentService = svcName;
+        serviceIndent = indent;
+        currentKey = null;
+        continue;
+      }
+    }
+
+    if (!currentService) continue;
+
+    // Properties of the current service
+    if (indent > serviceIndent) {
+      // "image: something"
+      const imageMatch = content.match(/^image\s*:\s*(.+)$/);
+      if (imageMatch) {
+        services[currentService].image = imageMatch[1].trim().replace(/^["']|["']$/g, "");
+        currentKey = null;
+        continue;
+      }
+
+      // "container_name: something"
+      const containerMatch = content.match(/^container_name\s*:\s*(.+)$/);
+      if (containerMatch) {
+        services[currentService].container_name = containerMatch[1].trim().replace(/^["']|["']$/g, "");
+        currentKey = null;
+        continue;
+      }
+
+      // "ports:" block start
+      if (/^ports\s*:\s*$/.test(content)) {
+        currentKey = "ports";
+        keyIndent = indent;
+        continue;
+      }
+
+      // "environment:" block start (could be array or mapping)
+      if (/^environment\s*:\s*$/.test(content)) {
+        currentKey = "environment";
+        keyIndent = indent;
+        continue;
+      }
+
+      // "volumes:" block start
+      if (/^volumes\s*:\s*$/.test(content)) {
+        currentKey = "volumes";
+        keyIndent = indent;
+        continue;
+      }
+
+      // Any other key: ends current array context
+      if (/^[a-zA-Z_-]+\s*:/.test(content) && indent <= keyIndent + 2) {
+        currentKey = null;
+      }
+
+      // Array items under current key
+      if (currentKey && content.startsWith("-")) {
+        const val = content.replace(/^-\s*/, "").replace(/^["']|["']$/g, "").trim();
+        if (currentKey === "ports") {
+          services[currentService].ports.push(val);
+        } else if (currentKey === "environment") {
+          services[currentService].environment.push(val);
+        }
+        continue;
+      }
+
+      // environment as mapping: KEY: value (indent > keyIndent)
+      if (currentKey === "environment" && indent > keyIndent && /^[A-Za-z_][A-Za-z0-9_]*\s*:/.test(content)) {
+        const eqIdx = content.indexOf(":");
+        const envKey = content.substring(0, eqIdx).trim();
+        const envVal = content.substring(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+        services[currentService].environment.push(`${envKey}=${envVal}`);
+        continue;
+      }
+    }
+  }
+
+  return services;
+}
+
+// ── Input Validation Helpers ──────────────────────────────────────────────
+
+function sanitizeName(raw) {
+  if (typeof raw !== "string") return "";
+  return raw.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "").substring(0, 63);
+}
+
+function isValidName(name) {
+  return typeof name === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(name);
+}
+
+function isValidPort(port) {
+  const p = Number(port);
+  return Number.isInteger(p) && p >= 1 && p <= 65535;
+}
+
+function isValidReplicas(r) {
+  const n = Number(r);
+  return Number.isInteger(n) && n >= 1 && n <= 20;
+}
+
+function sanitizeEnvArray(env) {
+  if (!Array.isArray(env)) return [];
+  return env
+    .filter((e) => e && typeof e.name === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(e.name))
+    .map((e) => ({ name: e.name, value: String(e.value || "") }))
+    .slice(0, 50);
+}
+
+function isValidGitUrl(url) {
+  if (typeof url !== "string") return false;
+  return /^https?:\/\/.+/.test(url) || /^git@.+:.+/.test(url);
+}
+
+// ── Deploy Endpoints ─────────────────────────────────────────────────────
+
+// POST /api/deploy/compose — Parse Docker Compose YAML and deploy multi-service apps
+app.post("/api/deploy/compose", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { yaml: yamlText, team, prefix } = req.body;
+
+    if (!yamlText || typeof yamlText !== "string") {
+      return res.status(400).json({ error: "Missing required field: yaml (docker-compose content)" });
+    }
+    if (!team || typeof team !== "string") {
+      return res.status(400).json({ error: "Missing required field: team" });
+    }
+
+    const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const safePrefix = prefix ? sanitizeName(prefix) : "";
+
+    // Parse docker-compose YAML
+    const parsed = parseDockerCompose(yamlText);
+    const serviceNames = Object.keys(parsed);
+
+    if (serviceNames.length === 0) {
+      return res.status(400).json({ error: "No services found in docker-compose YAML. Ensure there is a 'services:' block." });
+    }
+
+    if (serviceNames.length > 10) {
+      return res.status(400).json({ error: "Too many services (max 10). Simplify the compose file." });
+    }
+
+    // Ensure namespace
+    await ensureNamespace(nsName, teamName);
+
+    const deployed = [];
+    for (const svcName of serviceNames) {
+      const svc = parsed[svcName];
+      if (!svc.image) {
+        continue; // Skip services without an image
+      }
+
+      // Parse image:tag
+      let imageRepo = svc.image;
+      let imageTag = "latest";
+      const colonIdx = svc.image.lastIndexOf(":");
+      if (colonIdx > 0 && !svc.image.substring(colonIdx).includes("/")) {
+        imageRepo = svc.image.substring(0, colonIdx);
+        imageTag = svc.image.substring(colonIdx + 1);
+      }
+
+      // Parse container port from ports mapping (right side of "host:container")
+      let containerPort = 8080;
+      if (svc.ports && svc.ports.length > 0) {
+        const portStr = String(svc.ports[0]);
+        const parts = portStr.split(":");
+        const rightSide = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+        // Strip protocol suffix like /tcp /udp
+        const portNum = parseInt(rightSide.replace(/\/\w+$/, ""), 10);
+        if (isValidPort(portNum)) {
+          containerPort = portNum;
+        }
+      }
+
+      // Parse environment variables
+      const env = [];
+      for (const envEntry of (svc.environment || [])) {
+        const eqIdx = envEntry.indexOf("=");
+        if (eqIdx > 0) {
+          const eName = envEntry.substring(0, eqIdx).trim();
+          const eVal = envEntry.substring(eqIdx + 1).trim();
+          if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(eName)) {
+            env.push({ name: eName, value: eVal });
+          }
+        }
+      }
+
+      const appName = sanitizeName(safePrefix ? `${safePrefix}-${svcName}` : svcName);
+      if (!isValidName(appName)) continue;
+
+      const manifest = generateHelmRelease({
+        name: appName,
+        team: nsName,
+        image: imageRepo,
+        tag: imageTag,
+        port: containerPort,
+        replicas: 2,
+        ingressHost: "",
+        env: env.slice(0, 50),
+      });
+
+      await applyManifest(manifest, nsName);
+
+      deployed.push({
+        name: appName,
+        image: `${imageRepo}:${imageTag}`,
+        port: containerPort,
+        namespace: nsName,
+      });
+    }
+
+    if (deployed.length === 0) {
+      return res.status(400).json({ error: "No valid services could be deployed. Ensure each service has an 'image:' field." });
+    }
+
+    res.json({
+      success: true,
+      services: deployed,
+      message: `Deployed ${deployed.length} service(s) to ${escapeHtml(nsName)}`,
+    });
+  } catch (err) {
+    console.error("Error deploying compose:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deploy/multi — Deploy multiple containers as a single app group
+app.post("/api/deploy/multi", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { team, services, ingress } = req.body;
+
+    if (!team || typeof team !== "string") {
+      return res.status(400).json({ error: "Missing required field: team" });
+    }
+    if (!Array.isArray(services) || services.length === 0) {
+      return res.status(400).json({ error: "Missing required field: services (array of service definitions)" });
+    }
+    if (services.length > 10) {
+      return res.status(400).json({ error: "Too many services (max 10)" });
+    }
+
+    const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+
+    // Validate all services upfront
+    for (let i = 0; i < services.length; i++) {
+      const svc = services[i];
+      if (!svc.name || !svc.image || !svc.tag) {
+        return res.status(400).json({
+          error: `Service at index ${i} is missing required fields: name, image, tag`,
+        });
+      }
+      const safeName = sanitizeName(svc.name);
+      if (!isValidName(safeName)) {
+        return res.status(400).json({
+          error: `Invalid service name at index ${i}: ${escapeHtml(String(svc.name))}`,
+        });
+      }
+      if (svc.port && !isValidPort(svc.port)) {
+        return res.status(400).json({
+          error: `Invalid port at index ${i}: must be 1-65535`,
+        });
+      }
+      if (svc.replicas && !isValidReplicas(svc.replicas)) {
+        return res.status(400).json({
+          error: `Invalid replicas at index ${i}: must be 1-20`,
+        });
+      }
+    }
+
+    await ensureNamespace(nsName, teamName);
+
+    const deployed = [];
+    for (let i = 0; i < services.length; i++) {
+      const svc = services[i];
+      const safeName = sanitizeName(svc.name);
+      const svcEnv = sanitizeEnvArray(svc.env);
+
+      // Only the first service gets ingress
+      const ingressHost = (i === 0 && ingress && typeof ingress === "string") ? ingress : "";
+
+      const manifest = generateHelmRelease({
+        name: safeName,
+        team: nsName,
+        image: svc.image,
+        tag: String(svc.tag),
+        port: svc.port || 8080,
+        replicas: svc.replicas || 2,
+        ingressHost: ingressHost,
+        env: svcEnv,
+      });
+
+      await applyManifest(manifest, nsName);
+
+      deployed.push({
+        name: safeName,
+        image: `${svc.image}:${svc.tag}`,
+        port: svc.port || 8080,
+        namespace: nsName,
+        ingress: ingressHost || null,
+      });
+    }
+
+    res.json({
+      success: true,
+      services: deployed,
+      message: `Deployed ${deployed.length} service(s) to ${escapeHtml(nsName)}`,
+    });
+  } catch (err) {
+    console.error("Error deploying multi:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/deploy/:namespace/:name/status — Live deploy status
+app.get("/api/deploy/:namespace/:name/status", async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+
+    // Validate params
+    if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+      return res.status(400).json({ error: "Invalid namespace or name" });
+    }
+
+    let phase = "pending";
+    let progress = 0;
+    let helmRelease = { ready: false, message: "", lastTransition: "" };
+    let pods = [];
+    let events = [];
+
+    // Step 1: Check HelmRelease status
+    try {
+      const hrResp = await customApi.getNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io",
+        "v2",
+        namespace,
+        "helmreleases",
+        name
+      );
+      const hr = hrResp.body;
+      const readyCondition = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+      helmRelease = {
+        ready: readyCondition?.status === "True",
+        message: readyCondition?.message || "",
+        lastTransition: readyCondition?.lastTransitionTime || "",
+      };
+      progress = 25;
+      phase = "creating";
+
+      if (readyCondition?.status === "False" && readyCondition?.reason === "InstallFailed") {
+        phase = "failed";
+      }
+    } catch (err) {
+      if (err.statusCode === 404) {
+        return res.json({
+          name,
+          namespace,
+          phase: "pending",
+          helmRelease,
+          pods: [],
+          events: [],
+          progress: 0,
+        });
+      }
+      throw err;
+    }
+
+    // Step 2: List pods with matching app label
+    try {
+      const podResp = await k8sApi.listNamespacedPod(
+        namespace,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        `app.kubernetes.io/name=${name}`
+      );
+      pods = podResp.body.items.map((pod) => {
+        const containers = (pod.status?.containerStatuses || []).map((cs) => {
+          let state = "waiting";
+          let reason = "";
+          if (cs.state?.running) {
+            state = "running";
+          } else if (cs.state?.waiting) {
+            state = "waiting";
+            reason = cs.state.waiting.reason || "";
+          } else if (cs.state?.terminated) {
+            state = "terminated";
+            reason = cs.state.terminated.reason || "";
+          }
+          return {
+            name: cs.name,
+            ready: cs.ready || false,
+            state,
+            reason,
+          };
+        });
+
+        return {
+          name: pod.metadata.name,
+          phase: pod.status?.phase || "Unknown",
+          ready: (pod.status?.conditions || []).some(
+            (c) => c.type === "Ready" && c.status === "True"
+          ),
+          restarts: (pod.status?.containerStatuses || []).reduce(
+            (sum, cs) => sum + (cs.restartCount || 0),
+            0
+          ),
+          containers,
+        };
+      });
+
+      if (pods.length > 0) {
+        progress = 50;
+        phase = "creating";
+
+        const anyRunning = pods.some((p) => p.containers.some((c) => c.state === "running"));
+        if (anyRunning) {
+          progress = 75;
+          phase = "creating";
+        }
+
+        const allReady = pods.length > 0 && pods.every((p) => p.ready);
+        if (allReady && helmRelease.ready) {
+          progress = 100;
+          phase = "running";
+        }
+
+        const anyFailed = pods.some(
+          (p) => p.phase === "Failed" || p.containers.some((c) => c.reason === "CrashLoopBackOff" || c.reason === "Error")
+        );
+        if (anyFailed) {
+          phase = "failed";
+        }
+      }
+    } catch {
+      // Pod lookup is best-effort
+    }
+
+    // Step 3: List events for this app in the namespace
+    try {
+      const evResp = await k8sApi.listNamespacedEvent(namespace);
+      events = evResp.body.items
+        .filter((e) => {
+          const objName = e.involvedObject?.name || "";
+          return objName === name || objName.startsWith(`${name}-`);
+        })
+        .sort((a, b) => {
+          const ta = new Date(a.lastTimestamp || a.eventTime || 0);
+          const tb = new Date(b.lastTimestamp || b.eventTime || 0);
+          return tb - ta;
+        })
+        .slice(0, 30)
+        .map((e) => ({
+          time: e.lastTimestamp || e.eventTime || "",
+          reason: e.reason || "",
+          message: e.message || "",
+          type: e.type || "Normal",
+        }));
+    } catch {
+      // Event lookup is best-effort
+    }
+
+    res.json({
+      name,
+      namespace,
+      phase,
+      helmRelease,
+      pods,
+      events,
+      progress,
+    });
+  } catch (err) {
+    console.error("Error fetching deploy status:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deploy/git — Deploy from a Git repository URL
+app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { url, branch, team, name } = req.body;
+
+    if (!url || !isValidGitUrl(url)) {
+      return res.status(400).json({ error: "Missing or invalid required field: url (must be a valid Git URL)" });
+    }
+    if (!team || typeof team !== "string") {
+      return res.status(400).json({ error: "Missing required field: team" });
+    }
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ error: "Missing required field: name" });
+    }
+
+    const safeName = sanitizeName(name);
+    if (!isValidName(safeName)) {
+      return res.status(400).json({ error: `Invalid app name: ${escapeHtml(String(name))}` });
+    }
+
+    const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
+
+    await ensureNamespace(nsName, teamName);
+
+    // Create a Flux GitRepository pointing to the repo
+    const gitRepo = {
+      apiVersion: "source.toolkit.fluxcd.io/v1",
+      kind: "GitRepository",
+      metadata: {
+        name: `git-${safeName}`,
+        namespace: nsName,
+        labels: {
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": nsName,
+        },
+      },
+      spec: {
+        interval: "5m",
+        url: url,
+        ref: {
+          branch: safeBranch,
+        },
+      },
+    };
+
+    // Apply GitRepository
+    try {
+      await customApi.createNamespacedCustomObject(
+        "source.toolkit.fluxcd.io",
+        "v1",
+        nsName,
+        "gitrepositories",
+        gitRepo
+      );
+    } catch (err) {
+      if (err.statusCode === 409) {
+        await customApi.patchNamespacedCustomObject(
+          "source.toolkit.fluxcd.io",
+          "v1",
+          nsName,
+          "gitrepositories",
+          `git-${safeName}`,
+          gitRepo,
+          undefined,
+          undefined,
+          undefined,
+          { headers: { "Content-Type": "application/merge-patch+json" } }
+        );
+      } else {
+        throw err;
+      }
+    }
+
+    // Create a Flux Kustomization to deploy from the repo
+    const kustomization = {
+      apiVersion: "kustomize.toolkit.fluxcd.io/v1",
+      kind: "Kustomization",
+      metadata: {
+        name: `deploy-${safeName}`,
+        namespace: nsName,
+        labels: {
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": nsName,
+        },
+      },
+      spec: {
+        interval: "5m",
+        path: "./",
+        prune: true,
+        targetNamespace: nsName,
+        sourceRef: {
+          kind: "GitRepository",
+          name: `git-${safeName}`,
+        },
+        healthChecks: [],
+      },
+    };
+
+    // Apply Kustomization
+    try {
+      await customApi.createNamespacedCustomObject(
+        "kustomize.toolkit.fluxcd.io",
+        "v1",
+        nsName,
+        "kustomizations",
+        kustomization
+      );
+    } catch (err) {
+      if (err.statusCode === 409) {
+        await customApi.patchNamespacedCustomObject(
+          "kustomize.toolkit.fluxcd.io",
+          "v1",
+          nsName,
+          "kustomizations",
+          `deploy-${safeName}`,
+          kustomization,
+          undefined,
+          undefined,
+          undefined,
+          { headers: { "Content-Type": "application/merge-patch+json" } }
+        );
+      } else {
+        throw err;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Git deploy "${escapeHtml(safeName)}" created in namespace "${escapeHtml(nsName)}" from ${escapeHtml(url)} (branch: ${escapeHtml(safeBranch)})`,
+      gitRepository: `git-${safeName}`,
+      kustomization: `deploy-${safeName}`,
+      namespace: nsName,
+    });
+  } catch (err) {
+    console.error("Error deploying from git:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deploy/env — Update environment variables for an app
+app.post("/api/deploy/env", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { namespace, name, env } = req.body;
+
+    if (!namespace || typeof namespace !== "string") {
+      return res.status(400).json({ error: "Missing required field: namespace" });
+    }
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ error: "Missing required field: name" });
+    }
+    if (!Array.isArray(env)) {
+      return res.status(400).json({ error: "Missing required field: env (array of {name, value})" });
+    }
+
+    const safeNs = sanitizeName(namespace);
+    const safeName = sanitizeName(name);
+    if (!isValidName(safeNs) || !isValidName(safeName)) {
+      return res.status(400).json({ error: "Invalid namespace or name" });
+    }
+
+    const safeEnv = sanitizeEnvArray(env);
+
+    // Patch the HelmRelease with updated env
+    const patch = {
+      spec: {
+        values: {
+          app: {
+            env: safeEnv,
+          },
+        },
+      },
+    };
+
+    await customApi.patchNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io",
+      "v2",
+      safeNs,
+      "helmreleases",
+      safeName,
+      patch,
+      undefined,
+      undefined,
+      undefined,
+      { headers: { "Content-Type": "application/merge-patch+json" } }
+    );
+
+    res.json({
+      success: true,
+      message: `Updated environment variables for "${escapeHtml(safeName)}" in "${escapeHtml(safeNs)}"`,
+      env: safeEnv,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `App "${escapeHtml(String(req.body.name))}" not found in namespace "${escapeHtml(String(req.body.namespace))}"` });
+    }
+    console.error("Error updating env:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/config — Dashboard configuration
 app.get("/api/config", (req, res) => {
   res.json({
@@ -757,7 +1486,8 @@ async function getTenantApps(namespace) {
   }
 }
 
-function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost }) {
+function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env }) {
+  const safeEnv = Array.isArray(env) ? env.filter((e) => e && e.name) : [];
   const hr = {
     apiVersion: "helm.toolkit.fluxcd.io/v2",
     kind: "HelmRelease",
@@ -805,7 +1535,7 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
             liveness: { path: "/", initialDelaySeconds: 10, periodSeconds: 10 },
             readiness: { path: "/", initialDelaySeconds: 5, periodSeconds: 5 },
           },
-          env: [],
+          env: safeEnv,
         },
         ingress: {
           enabled: !!ingressHost,
@@ -862,8 +1592,9 @@ async function ensureNamespace(nsName, teamLabel) {
           ],
           egress: [
             { to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }], ports: [{ port: 53, protocol: "UDP" }, { port: 53, protocol: "TCP" }] },
+            { to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "istio-system" } } }], ports: [{ port: 15012, protocol: "TCP" }, { port: 15010, protocol: "TCP" }] },
             { to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": nsName } } }] },
-            { ports: [{ port: 443, protocol: "TCP" }, { port: 6443, protocol: "TCP" }] },
+            { ports: [{ port: 443, protocol: "TCP" }, { port: 6443, protocol: "TCP" }, { port: 80, protocol: "TCP" }] },
           ],
         },
       }).catch(() => {});

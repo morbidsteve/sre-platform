@@ -11,7 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IMAGE_NAME="sre-dashboard"
-IMAGE_TAG="v2.1.0"
+IMAGE_TAG="v2.2.0"
 TARBALL="/tmp/${IMAGE_NAME}.tar"
 SSH_USER="${SSH_USER:-sre-admin}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"

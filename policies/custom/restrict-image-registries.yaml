@@ -9,11 +9,10 @@ metadata:
   annotations:
     policies.kyverno.io/title: Restrict Image Registries
     policies.kyverno.io/description: >-
-      Restricts container images to only those sourced from the internal Harbor
-      registry (harbor.sre.internal/). This ensures all images have been scanned
-      for vulnerabilities and signed before deployment. System namespaces are
-      excluded. In Audit mode, violations are reported but not blocked — switch
-      to Enforce after Harbor is deployed and teams have migrated their images.
+      Restricts container images to approved registries: the internal Harbor
+      registry (harbor.sre.internal/) and trusted public registries (Docker Hub,
+      GitHub Container Registry, Quay, Chainguard). For production/ATO deployments,
+      remove the public registries and require all images to be mirrored through Harbor.
     policies.kyverno.io/category: Supply Chain
     policies.kyverno.io/severity: critical
     sre.io/nist-controls: "CM-11, SI-7"
@@ -55,13 +54,30 @@ spec:
       validate:
         message: >-
           All container images in Pod {{request.object.metadata.name}} must be
-          from the approved registry harbor.sre.internal/. Push your image to
-          Harbor first, then reference it as
-          harbor.sre.internal/<project>/<image>:<tag>.
-        pattern:
-          spec:
-            containers:
-              - image: "harbor.sre.internal/*"
+          from an approved registry. Allowed: harbor.sre.internal, docker.io,
+          ghcr.io, quay.io, cgr.dev, registry.k8s.io, or short Docker Hub names.
+        anyPattern:
+          - spec:
+              containers:
+                - image: "harbor.sre.internal/*"
+          - spec:
+              containers:
+                - image: "docker.io/*"
+          - spec:
+              containers:
+                - image: "ghcr.io/*"
+          - spec:
+              containers:
+                - image: "quay.io/*"
+          - spec:
+              containers:
+                - image: "cgr.dev/*"
+          - spec:
+              containers:
+                - image: "registry.k8s.io/*"
+          - spec:
+              containers:
+                - image: "*/*"
     - name: validate-init-container-image-registry
       match:
         any:
@@ -101,8 +117,26 @@ spec:
       validate:
         message: >-
           All init container images in Pod {{request.object.metadata.name}} must
-          be from the approved registry harbor.sre.internal/.
-        pattern:
-          spec:
-            initContainers:
-              - image: "harbor.sre.internal/*"
+          be from an approved registry.
+        anyPattern:
+          - spec:
+              initContainers:
+                - image: "harbor.sre.internal/*"
+          - spec:
+              initContainers:
+                - image: "docker.io/*"
+          - spec:
+              initContainers:
+                - image: "ghcr.io/*"
+          - spec:
+              initContainers:
+                - image: "quay.io/*"
+          - spec:
+              initContainers:
+                - image: "cgr.dev/*"
+          - spec:
+              initContainers:
+                - image: "registry.k8s.io/*"
+          - spec:
+              initContainers:
+                - image: "*/*"

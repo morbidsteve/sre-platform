@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: docker.io/library/sre-dashboard:v2.1.0
+          image: docker.io/library/sre-dashboard:v2.2.0
           imagePullPolicy: Never
           securityContext:
             allowPrivilegeEscalation: false
