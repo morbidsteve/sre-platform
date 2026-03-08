@@ -1861,9 +1861,9 @@
           </div>
 
           <div class="form-group">
-            <label>Ingress Hostname (optional)</label>
+            <label>Ingress Hostname</label>
             <input type="text" id="d-ingress" placeholder="my-app.apps.sre.example.com" />
-            <div class="hint">Leave empty for cluster-internal only</div>
+            <div class="hint">Auto-filled from app name. Clear to make cluster-internal only.</div>
           </div>
 
           <!-- Environment Variables -->
@@ -2657,6 +2657,20 @@ var currentDeployMode = 'quickstart';
 var multiServiceCount = 1;
 var activeDeployPolls = [];
 
+// Auto-fill ingress hostname from app name
+(function() {
+  var nameInput = document.getElementById('d-name');
+  if (nameInput) {
+    nameInput.addEventListener('input', function() {
+      var ingressInput = document.getElementById('d-ingress');
+      var val = this.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (val && ingressInput) {
+        ingressInput.value = val + '.apps.sre.example.com';
+      }
+    });
+  }
+})();
+
 function switchDeployMode(mode) {
   currentDeployMode = mode;
   document.querySelectorAll('.deploy-mode-card').forEach(function(card, i) {
@@ -3161,7 +3175,8 @@ async function loadSamples() {
 async function quickDeploy(name, image, tag, port) {
   clearDeployAlert();
   var team = document.getElementById('qs-team').value.trim() || 'demo';
-  var items = [{ name: name, team: team, image: image, tag: tag, port: port, replicas: 1 }];
+  var ingress = name + '.apps.sre.example.com';
+  var items = [{ name: name, team: team, image: image, tag: tag, port: port, replicas: 1, ingress: ingress }];
   startDeployProgress(items);
   await deployServiceList(items);
 }
