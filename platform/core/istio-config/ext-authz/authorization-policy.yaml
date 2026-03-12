@@ -35,6 +35,7 @@ spec:
               - /health
               - /ready
               - /oauth2/*
+              - /ui/vault/auth/oidc/oidc/callback*
             notHosts:
               - "keycloak.apps.sre.example.com"
 

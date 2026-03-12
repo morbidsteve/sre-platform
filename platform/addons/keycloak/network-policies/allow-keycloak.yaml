@@ -75,6 +75,14 @@ spec:
           protocol: TCP
         - port: 9000
           protocol: TCP
+    # OpenBao OIDC auth (discovery + token validation)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - port: 8080
+          protocol: TCP
     # Webhook traffic from API server
     - ports:
         - port: 443

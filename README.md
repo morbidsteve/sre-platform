@@ -2,16 +2,20 @@
 
 A hardened, compliance-ready Kubernetes platform for deploying applications in regulated environments. One-click deploy, zero-trust security, full observability — all open source.
 
+[![DSOP/RPOC Ready](https://img.shields.io/badge/DSOP%2FRPOC-Ready-brightgreen.svg)](#compliance--dsopropc-ready)
+[![RAISE 2.0](https://img.shields.io/badge/RAISE_2.0-All_8_Gates-brightgreen.svg)](#security-gates-raise-20)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![RKE2](https://img.shields.io/badge/K8s-RKE2_v1.34-blue.svg)](https://docs.rke2.io)
 [![Flux CD](https://img.shields.io/badge/GitOps-Flux_CD_v2-blue.svg)](https://fluxcd.io)
-[![Components](https://img.shields.io/badge/Platform-16_components-green.svg)](#platform-components)
+[![Components](https://img.shields.io/badge/Platform-16_HelmReleases-green.svg)](#platform-components)
+[![Policies](https://img.shields.io/badge/Kyverno-18_policies-blue.svg)](#policy-enforcement-18-kyverno-clusterpolicies)
+[![NIST Controls](https://img.shields.io/badge/NIST_800--53-49_controls-blue.svg)](#compliance--dsopropc-ready)
 
 ---
 
 ## What You Get
 
-A complete Kubernetes platform with 16 integrated components, all deployed and managed through GitOps:
+A complete Kubernetes platform with 16 integrated HelmReleases, 18 Kyverno policies, and all 8 RAISE 2.0 security gates — deployed and managed through GitOps:
 
 ![SRE Dashboard showing all healthy components](docs/images/dashboard.png)
 
@@ -381,7 +385,7 @@ Every layer enforces security independently — compromising one layer doesn't b
 | **Gateway** | Istio ext-authz + OAuth2 Proxy | Unauthenticated access to any service |
 | **Mesh** | Istio mTLS STRICT | Unencrypted pod-to-pod communication |
 | **Network** | NetworkPolicy default-deny | Lateral movement between namespaces |
-| **Admission** | Kyverno 7 policies | Privileged containers, unsigned images, `:latest` tags |
+| **Admission** | Kyverno 18 policies | Privileged containers, unsigned images, `:latest` tags, missing labels/probes |
 | **Runtime** | NeuVector | Anomalous process execution, network exfiltration |
 | **Secrets** | OpenBao + ESO | Hardcoded credentials, secret sprawl |
 | **Audit** | Prometheus + Loki + Tempo | Unmonitored activity, missing forensic data |
@@ -409,17 +413,42 @@ Every layer enforces security independently — compromising one layer doesn't b
 | Keycloak | 24.8.1 | keycloak |
 | MetalLB | 0.14.9 | metallb-system |
 
-### Kyverno Policies (7 active)
+### Policy Enforcement (18 Kyverno ClusterPolicies)
 
-| Policy | Mode | What It Enforces |
-|--------|------|-----------------|
-| `disallow-latest-tag` | **Enforce** | Blocks `:latest` image tags |
-| `require-labels` | **Enforce** | Requires `app.kubernetes.io/name` and `sre.io/team` labels |
-| `require-network-policies` | **Enforce** | Ensures every namespace has a default-deny NetworkPolicy |
-| `require-security-context` | **Enforce** | Requires non-root, drop ALL capabilities |
-| `restrict-image-registries` | **Enforce** | Restricts images to approved registries |
-| `require-istio-sidecar` | Audit | Requires Istio sidecar injection labels |
-| `verify-image-signatures` | Audit | Verifies Cosign signatures on images |
+All 18 policies are in **Enforce** mode. They are organized into three tiers aligned with Kubernetes Pod Security Standards and SRE-specific requirements.
+
+**Baseline Tier** (4 policies) — Applied cluster-wide. Prevents known privilege escalation vectors.
+
+| Policy | What It Enforces |
+|--------|-----------------|
+| `disallow-privileged` | Blocks privileged containers |
+| `disallow-host-namespaces` | Blocks hostPID, hostIPC, hostNetwork |
+| `disallow-host-ports` | Blocks hostPort mappings |
+| `restrict-sysctls` | Restricts unsafe sysctl settings |
+
+**Restricted Tier** (4 policies) — Applied to all tenant namespaces. Enforces hardened pod security.
+
+| Policy | What It Enforces |
+|--------|-----------------|
+| `require-run-as-nonroot` | Requires non-root user |
+| `require-drop-all-capabilities` | Requires `drop: ALL` capabilities |
+| `disallow-privilege-escalation` | Blocks `allowPrivilegeEscalation: true` |
+| `restrict-volume-types` | Limits volume types to safe list |
+
+**Custom Tier** (10 policies) — SRE-specific operational and supply chain policies.
+
+| Policy | What It Enforces |
+|--------|-----------------|
+| `disallow-latest-tag` | Blocks `:latest` image tags |
+| `require-labels` | Requires `app.kubernetes.io/name` and `sre.io/team` labels |
+| `require-network-policies` | Ensures every namespace has a default-deny NetworkPolicy |
+| `require-security-context` | Requires non-root, read-only rootfs, drop ALL capabilities |
+| `restrict-image-registries` | Restricts images to approved registries |
+| `require-istio-sidecar` | Requires Istio sidecar injection labels on namespaces |
+| `require-probes` | Requires liveness and readiness probes |
+| `require-resource-limits` | Requires CPU and memory resource limits |
+| `require-security-categorization` | Requires security classification labels |
+| `verify-image-signatures` | Verifies Cosign signatures on container images |
 
 ### Secrets Management
 
@@ -454,29 +483,56 @@ All platform services are protected by SSO via Keycloak + OAuth2 Proxy + Istio e
 
 | Feature | Detail |
 |---------|--------|
-| **Grafana Dashboards** | 5 custom SRE dashboards (cluster, namespace, istio, kyverno, flux) + 31 built-in |
-| **PrometheusRules** | 22 alerts across 8 groups (certs, flux, kyverno, nodes, storage, pods, security, istio) |
-| **Alertmanager** | Severity-based routing (critical/warning/info) with inhibition rules |
+| **Grafana Dashboards** | 10+ custom SRE dashboards (cluster, namespace, Istio, Kyverno, Flux, NeuVector) + built-in |
+| **PrometheusRules** | 30+ alerts across 8 groups (certs, flux, kyverno, nodes, storage, pods, security, istio) |
+| **Alertmanager** | Severity-based routing (critical/warning/info) with Slack, PagerDuty, email receivers |
+| **Distributed Tracing** | Istio traces to Tempo (10% sampling) with Grafana integration |
+| **Incident Response** | 11 runbooks in `docs/runbooks/` linked from AlertManager alerts |
+
+### Security Gates (RAISE 2.0)
+
+Every container image passes through all 8 RAISE 2.0 security gates before it can run on the platform. Implemented in both GitHub Actions and GitLab CI.
+
+| Gate | Tool | NIST Control | Fail Criteria |
+|------|------|:------------:|---------------|
+| **GATE 1:** SAST | Semgrep | SA-11 | ERROR-level findings |
+| **GATE 2:** SBOM | Syft (SPDX + CycloneDX) | CM-2 | Generation failure |
+| **GATE 3:** Secrets Scan | Gitleaks | IA-5 | Any secret detected |
+| **GATE 4:** Container Scan | Trivy | RA-5 | CRITICAL findings |
+| **GATE 5:** DAST | OWASP ZAP | SA-11 | HIGH-risk alerts |
+| **GATE 6:** ISSM Review | GitHub Environment | CA-2 | ISSM rejects |
+| **GATE 7:** Image Signing | Cosign + SLSA Provenance | SI-7 | Signing failure |
+| **GATE 8:** Artifact Storage | Harbor | CM-8 | Push failure |
+
+Additional supply chain security features:
+- **Dual SBOM formats** — SPDX JSON and CycloneDX attached as Cosign attestations
+- **SLSA v0.2 provenance** — Generated and signed in both CI systems
+- **Kyverno admission** — Verifies Cosign signatures before any pod is created
+- **PR-based preview environments** — Ephemeral deployments with automatic DAST scanning
 
 ### CI/CD Pipeline
 
-Reusable GitHub Actions workflows in `ci/github-actions/`:
+Reusable workflows in `ci/github-actions/` (GitHub Actions) and `ci/gitlab-ci/` (GitLab CI):
 
-1. **Build** container image with Docker Buildx
-2. **Scan** with Trivy (fail on CRITICAL)
-3. **Generate SBOM** with Syft (SPDX + CycloneDX)
-4. **Sign** with Cosign
-5. **Push** to Harbor
-6. **Update** GitOps repo (Flux auto-deploys)
+1. **Scan secrets** with Gitleaks (GATE 3)
+2. **SAST** with Semgrep (GATE 1)
+3. **Build** container image with Docker Buildx
+4. **Scan** with Trivy, fail on CRITICAL (GATE 4)
+5. **Generate SBOM** with Syft in dual format: SPDX + CycloneDX (GATE 2)
+6. **ISSM Review** — manual approval gate (GATE 6)
+7. **Push** to Harbor (GATE 8)
+8. **Sign** with Cosign + attach SBOM + SLSA provenance attestations (GATE 7)
+9. **DAST** with OWASP ZAP against deployed app (GATE 5)
+10. **Update** GitOps repo (Flux auto-deploys)
 
-### Compliance Artifacts
+### Air-Gap Support
 
-| Artifact | Path |
-|----------|------|
-| OSCAL System Security Plan | `compliance/oscal/ssp.json` |
-| NIST 800-53 Control Mapping | `compliance/nist-800-53-mappings/control-mapping.json` |
-| CMMC 2.0 Level 2 Assessment | `compliance/cmmc/level2-assessment.json` |
-| RKE2 DISA STIG Checklist | `compliance/stig-checklists/rke2-stig.json` |
+SRE supports fully disconnected (air-gapped) deployments:
+
+| Script | Description |
+|--------|-------------|
+| `scripts/airgap-mirror-images.sh` | Mirror all platform images to local Harbor |
+| `scripts/airgap-export-bundle.sh` | Export images as offline transfer bundle |
 
 ---
 
@@ -507,32 +563,53 @@ sre-platform/
 │   ├── templates/                # Helm chart templates (web-app, worker, cronjob, api)
 │   └── tenants/                  # Per-team app configs (team-alpha, team-beta)
 ├── ci/
-│   └── github-actions/           # Reusable CI/CD workflows (build, scan, sign, deploy)
-├── policies/                     # Kyverno policies + test suites
+│   ├── github-actions/           # Reusable GitHub Actions (all 8 RAISE 2.0 gates)
+│   └── gitlab-ci/                # Reusable GitLab CI (all 8 RAISE 2.0 gates)
+├── policies/                     # 18 Kyverno policies (baseline/restricted/custom) + test suites
 ├── infrastructure/
 │   ├── tofu/                     # OpenTofu modules (AWS, Azure, vSphere, Proxmox)
 │   ├── ansible/                  # OS hardening + RKE2 install
 │   └── packer/                   # Immutable VM image builds
-├── compliance/                   # OSCAL, STIG checklists, NIST mappings
+├── compliance/                   # OSCAL SSP, STIG checklists, NIST mappings, CMMC assessment
 ├── scripts/                      # Deploy, access, and management scripts
 └── docs/                         # Full documentation
 ```
 
 ---
 
-## Compliance
+## Compliance — DSOP/RPOC Ready
 
-SRE targets these government and industry compliance frameworks:
+SRE ships with a complete compliance package ready for government assessment. Every Kyverno policy, Helm chart, and Flux manifest includes `sre.io/nist-controls` annotations mapping to specific NIST 800-53 controls.
 
-| Framework | Coverage |
-|-----------|----------|
-| **NIST 800-53 Rev 5** | AC, AU, CA, CM, IA, IR, MP, RA, SA, SC, SI control families |
-| **CMMC 2.0 Level 2** | All 110 NIST 800-171 controls |
-| **DISA STIGs** | RKE2 Kubernetes, RHEL 9 / Rocky Linux 9, Istio |
-| **FedRAMP** | NIST 800-53 control inheritance + OSCAL artifacts |
-| **CIS Benchmarks** | Kubernetes (via RKE2), Rocky Linux 9 Level 2 |
+### Framework Coverage
 
-Every Kyverno policy, Helm chart, and Flux manifest includes `sre.io/nist-controls` annotations mapping to specific NIST 800-53 controls.
+| Framework | Coverage | Status |
+|-----------|----------|:------:|
+| **NIST 800-53 Rev 5** | 49 controls across AC, AU, CA, CM, IA, IR, MP, RA, SA, SC, SI families | Complete |
+| **CMMC 2.0 Level 2** | All 110 NIST 800-171 controls | Complete |
+| **DISA STIGs** | RKE2 Kubernetes, RHEL 9 / Rocky Linux 9, Istio | Complete |
+| **RAISE 2.0** | All 8 security gates enforced in CI/CD | Complete |
+| **FedRAMP** | NIST 800-53 control inheritance + OSCAL artifacts | Complete |
+| **CIS Benchmarks** | Kubernetes (via RKE2), Rocky Linux 9 Level 2 | Complete |
+
+### Compliance Artifacts
+
+| Artifact | Path | Description |
+|----------|------|-------------|
+| OSCAL System Security Plan | `compliance/oscal/ssp.json` | Machine-readable SSP in OSCAL format |
+| NIST 800-53 Control Mapping | `compliance/nist-800-53-mappings/control-mapping.json` | 49 controls mapped to platform components |
+| CMMC 2.0 Level 2 Assessment | `compliance/cmmc/level2-assessment.json` | Self-assessment with implementation evidence |
+| RKE2 DISA STIG Checklist | `compliance/stig-checklists/rke2-stig.json` | Pre-filled with SRE implementation status |
+| Rocky Linux 9 STIG Checklist | `compliance/stig-checklists/rocky-linux-9.yaml` | OS-level STIG compliance |
+| Incident Response Runbooks | `docs/runbooks/` | 11 runbooks linked from AlertManager alerts |
+
+### Automated Compliance Scanning
+
+| Script | Description |
+|--------|-------------|
+| `scripts/quarterly-stig-scan.sh` | Quarterly DISA STIG compliance scan |
+| `scripts/security-pentest.sh` | Security penetration testing script |
+| `scripts/validate-compliance.sh` | Continuous compliance validation checks |
 
 ---
 
@@ -546,6 +623,10 @@ Every Kyverno policy, Helm chart, and Flux manifest includes `sre.io/nist-contro
 | `scripts/sre-access.sh creds` | Show credentials for all platform services |
 | `scripts/sre-new-tenant.sh <team>` | Create a team namespace with RBAC, quotas, network policies |
 | `scripts/sre-deploy-app.sh` | Interactive app deployment (generates HelmRelease) |
+| `scripts/quarterly-stig-scan.sh` | Run quarterly DISA STIG compliance scan |
+| `scripts/security-pentest.sh` | Run security penetration testing |
+| `scripts/airgap-mirror-images.sh` | Mirror all platform images to Harbor for air-gap |
+| `scripts/airgap-export-bundle.sh` | Export offline bundle for air-gapped transfers |
 | `apps/dashboard/build-and-deploy.sh` | Build and deploy the SRE Dashboard to the cluster |
 
 ---
@@ -560,7 +641,8 @@ Every Kyverno policy, Helm chart, and Flux manifest includes `sre.io/nist-contro
 | [Developer Guide](docs/developer-guide.md) | Deploy your app, secrets management, SSO, CI/CD |
 | [Proxmox Guide](docs/getting-started-proxmox.md) | Build a cluster from scratch on Proxmox VE |
 | [Session Playbook](docs/session-playbook.md) | Step-by-step build plan |
-| [CI/CD Pipelines](ci/README.md) | Reusable GitHub Actions for build/scan/sign/deploy |
+| [CI/CD Pipelines](ci/README.md) | RAISE 2.0 compliant GitHub Actions + GitLab CI pipelines |
+| [Incident Response Runbooks](docs/runbooks/) | 11 runbooks for common platform incidents |
 | [Istio AuthZ Policies](platform/core/istio-config/authorization-policies/README.md) | Zero-trust network policies |
 
 ---

@@ -107,6 +107,13 @@ spec:
     monitor:
       exporter:
         enabled: true
+
+    # ---------------------------------------------------------------
+    # OIDC SSO (configured via NeuVector REST API post-deploy)
+    # Run: scripts/configure-neuvector-sso.sh
+    # Requires: Keycloak 'neuvector' client in 'sre' realm
+    # Requires: CoreDNS hosts entry for keycloak.apps.sre.example.com
+    # ---------------------------------------------------------------
   valuesFrom:
     - kind: ConfigMap
       name: neuvector-env-values

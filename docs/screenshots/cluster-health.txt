@@ -1,0 +1,200 @@
+================================================================================
+SRE Platform — Cluster Health Check
+Date: 2026-03-12
+Purpose: DSOP/RPOC Readiness Verification
+================================================================================
+
+1. NODES
+================================================================================
+All 3 nodes READY — RKE2 v1.34.4 on Rocky Linux 9.7
+
+NAME                    STATUS   ROLES                AGE    VERSION          INTERNAL-IP     OS
+sre-lab-rke2-server-0   Ready    control-plane,etcd   7d1h   v1.34.4+rke2r1   192.168.2.104   Rocky Linux 9.7
+sre-lab-rke2-agent-0    Ready    <none>               7d1h   v1.34.4+rke2r1   192.168.2.103   Rocky Linux 9.7
+sre-lab-rke2-agent-1    Ready    <none>               7d1h   v1.34.4+rke2r1   192.168.2.102   Rocky Linux 9.7
+
+Resource Usage:
+  server-0:  CPU 18% (751m)   Memory 75% (5798Mi)
+  agent-0:   CPU 18% (742m)   Memory 62% (4801Mi)
+  agent-1:   CPU 17% (681m)   Memory 61% (4738Mi)
+
+2. HELMRELEASES (16/16 Ready)
+================================================================================
+STATUS: ALL HEALTHY
+
+NAMESPACE          NAME                    READY   CHART VERSION
+cert-manager       cert-manager            True    cert-manager@v1.14.4
+external-secrets   external-secrets        True    external-secrets@0.9.13
+harbor             harbor                  True    harbor@1.16.3
+istio-system       istio-base              True    base@1.25.2
+istio-system       istio-gateway           True    gateway@1.25.2
+istio-system       istiod                  True    istiod@1.25.2
+keycloak           keycloak                True    keycloak@24.8.1
+kyverno            kyverno                 True    kyverno@3.3.7
+logging            alloy                   True    alloy@0.12.2
+logging            loki                    True    loki@6.29.0
+metallb-system     metallb                 True    metallb@0.14.9
+monitoring         kube-prometheus-stack   True    kube-prometheus-stack@72.6.2
+neuvector          neuvector               True    core@2.8.6
+openbao            openbao                 True    openbao@0.9.0
+tempo              tempo                   True    tempo@1.18.2
+velero             velero                   True    velero@11.3.2
+
+3. FLUX KUSTOMIZATIONS (24/24 Ready)
+================================================================================
+STATUS: ALL HEALTHY
+
+All 24 Kustomizations reconciled to: main@sha1:59bbeed58ba850189896574e01c4bc15d7595ab4
+
+flux-system, sre-platform, sre-istio, sre-istio-config, sre-cert-manager,
+sre-cert-manager-config, sre-kyverno, sre-kyverno-policies, sre-monitoring,
+sre-monitoring-config, sre-logging, sre-openbao, sre-external-secrets,
+sre-external-secrets-config, sre-harbor, sre-keycloak, sre-runtime-security,
+sre-tempo, sre-backup, sre-metallb, sre-metallb-config, sre-tenants,
+sre-oauth2-proxy, sre-environment-lab
+
+4. KYVERNO CLUSTER POLICIES (7 Active)
+================================================================================
+NAME                        ADMISSION   BACKGROUND   READY
+disallow-latest-tag         true        true         True
+require-istio-sidecar       true        true         True
+require-labels              true        true         True
+require-network-policies    true        true         True
+require-security-context    true        true         True
+restrict-image-registries   true        true         True
+verify-image-signatures     true        true         True
+
+Baseline Policies (on disk, not yet applied):
+  - disallow-privileged.yaml          (dry-run: PASSED)
+  - disallow-host-namespaces.yaml
+  - disallow-host-ports.yaml
+  - restrict-sysctls.yaml
+
+5. POLICY REPORTS
+================================================================================
+Namespace Policy Reports: 18
+Cluster Policy Reports:   9
+
+Cluster Report Summary:
+  NAMESPACE          PASS  FAIL
+  default            0     1    (missing network policy)
+  metallb-system     1     1    (expected — privileged exception)
+  local-path-storage 0     2    (expected — system component)
+  sre-dashboard      0     2    (needs remediation)
+  team-alpha         2     0    CLEAN
+  team-beta          2     0    CLEAN
+  team-demo          2     0    CLEAN
+  sre-portal         2     0    CLEAN
+  oauth2-proxy       2     0    CLEAN
+
+6. CERTIFICATES
+================================================================================
+NAME               NAMESPACE      READY   NOTES
+sre-root-ca        cert-manager   True    Internal CA root
+sre-wildcard-tls   istio-system   True    *.apps.sre.example.com (expires 2026-06-03)
+sre-wildcard       istio-system   False   Duplicate — IncorrectIssuer (non-critical)
+
+7. EXTERNAL SECRETS
+================================================================================
+NAME               NAMESPACE    STATUS              READY
+demo-app-secrets   team-alpha   SecretSyncedError   False
+
+Root Cause: ClusterSecretStore "openbao-backend" shows InvalidProviderConfig.
+OpenBao itself is initialized and unsealed, but ESO provider config needs refresh.
+
+8. UNHEALTHY PODS
+================================================================================
+STATUS: NONE — All pods in Running or Succeeded state
+
+9. TOTAL POD COUNT
+================================================================================
+100 pods across 19 namespaces
+
+Pod Distribution:
+  22 kube-system
+  13 neuvector
+   9 monitoring
+   9 harbor
+   8 kyverno
+   7 logging
+   5 external-secrets
+   4 velero
+   4 metallb-system
+   4 flux-system
+   3 openbao
+   3 cert-manager
+   2 keycloak
+   2 istio-system
+   1 tempo, sre-portal, sre-dashboard, oauth2-proxy, local-path-storage
+
+10. NETWORK POLICIES
+================================================================================
+Total: 81 NetworkPolicies across all namespaces
+
+11. mTLS (PeerAuthentication)
+================================================================================
+NAMESPACE      NAME                   MODE
+istio-system   default                STRICT      (cluster-wide)
+neuvector      neuvector-permissive   PERMISSIVE  (documented exception)
+
+12. INGRESS ROUTES (VirtualServices)
+================================================================================
+HOST                                    NAMESPACE       GATEWAY
+dashboard.apps.sre.example.com          sre-dashboard   istio-system/main
+portal.apps.sre.example.com             sre-portal      istio-system/main
+grafana.apps.sre.example.com            monitoring      istio-system/main
+prometheus.apps.sre.example.com         monitoring      istio-system/main
+alertmanager.apps.sre.example.com       monitoring      istio-system/main
+harbor.apps.sre.example.com             harbor          istio-system/main
+keycloak.apps.sre.example.com           keycloak        istio-system/main
+neuvector.apps.sre.example.com          neuvector       istio-system/main
+openbao.apps.sre.example.com            openbao         istio-system/main
+oauth2.apps.sre.example.com             oauth2-proxy    istio-system/main
+nginx-demo.apps.sre.example.com         team-demo       istio-system/main
+
+All services behind SSO gate (OAuth2 Proxy + Keycloak)
+
+13. BASELINE POLICY DRY-RUN
+================================================================================
+disallow-privileged.yaml: PASSED (server dry-run successful)
+
+================================================================================
+SUMMARY
+================================================================================
+
+CATEGORY                    STATUS       COUNT/DETAIL
+-------------------------------------------------------
+Nodes                       HEALTHY      3/3 Ready
+HelmReleases                HEALTHY      16/16 Ready
+Flux Kustomizations         HEALTHY      24/24 Ready
+Kyverno Policies (active)   HEALTHY      7/7 Ready
+Kyverno Policies (on disk)  AVAILABLE    4 baseline (not applied)
+Policy Reports              PRESENT      18 namespace + 9 cluster
+Certificates                WARNING      2/3 Ready (1 duplicate issuer mismatch)
+External Secrets            DEGRADED     1/1 Failed (ClusterSecretStore config)
+Unhealthy Pods              HEALTHY      0 unhealthy
+Total Pods                  NOMINAL      100 running
+Network Policies            HEALTHY      81 policies
+mTLS                        HEALTHY      STRICT cluster-wide
+Ingress Routes              HEALTHY      12 VirtualServices (11 hosts)
+
+KNOWN ISSUES:
+1. ClusterSecretStore "openbao-backend" InvalidProviderConfig — ESO cannot
+   reach OpenBao. OpenBao is unsealed and functional; ESO config may need
+   token/auth refresh.
+2. Certificate "sre-wildcard" (istio-system) shows IncorrectIssuer —
+   duplicate of sre-wildcard-tls which IS ready. Non-critical.
+3. sre-dashboard namespace has 2 policy report failures — needs label or
+   network policy remediation.
+4. cert-manager-cainjector has 64 restarts (memory pressure suspected) —
+   currently running, but should be investigated.
+5. Baseline Kyverno policies (disallow-privileged, host-namespaces,
+   host-ports, restrict-sysctls) exist on disk but are not applied to cluster.
+
+OVERALL READINESS: OPERATIONAL with minor issues
+  - Core platform: READY
+  - Security posture: STRONG (mTLS STRICT, 7 active policies, 81 NetworkPolicies)
+  - Observability: READY (Prometheus, Grafana, Loki, Tempo, Alloy)
+  - SSO: READY (Keycloak + OAuth2 Proxy)
+  - Supply chain: READY (Harbor + Trivy + image signing)
+  - Backup: READY (Velero with daily/weekly/monthly schedules)

@@ -25,6 +25,14 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    # Keycloak OIDC (auth discovery and token validation)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
     # Intra-namespace (Raft peering between OpenBao pods)
     - to:
         - namespaceSelector:
