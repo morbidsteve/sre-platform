@@ -17,7 +17,7 @@ A hardened, compliance-ready Kubernetes platform for deploying applications in r
 
 A complete Kubernetes platform with 16 integrated HelmReleases, 18 Kyverno policies, and all 8 RAISE 2.0 security gates — deployed and managed through GitOps:
 
-![SRE Dashboard showing all healthy components](docs/images/dashboard.png)
+![SRE Dashboard showing all 16 healthy components](docs/screenshots/dashboard-home.png)
 
 | Category | Components | What It Does |
 |----------|-----------|-------------|
@@ -175,22 +175,69 @@ Quick-search to jump to any page or external service.
 
 ![Command Palette](docs/images/command-palette.png)
 
-### 11. Grafana — 30+ Dashboards
-Cluster health, namespace resources, Istio traffic, Kyverno violations, and more.
+### 11. Grafana — 35+ Dashboards
 
-![Grafana](docs/images/grafana.png)
+Unified observability: metrics, logs, and traces in one place. Custom SRE dashboards for cluster health, Kyverno compliance, Flux GitOps, and Istio mesh traffic — plus all the standard Kubernetes dashboards.
 
-### 12. Harbor — Container Registry
-Image storage with Trivy vulnerability scanning on push.
+![Grafana Dashboard List](docs/screenshots/grafana-home.png)
 
-![Harbor](docs/images/harbor.png)
+**Cluster Overview** — CPU, memory, and pod health at a glance:
 
-### 13. Keycloak Admin — Identity Management
-Manage users, groups, OIDC clients, and SSO configuration.
+![Grafana Cluster Overview](docs/screenshots/grafana-cluster-overview.png)
 
-![Keycloak Admin](docs/images/keycloak.png)
+**Kubernetes Compute Resources** — Real-time CPU/memory utilization, requests vs limits:
 
-### 14. Mobile Responsive
+![K8s Compute Resources](docs/screenshots/grafana-k8s-compute-cluster.png)
+
+**Istio Mesh** — Service-to-service traffic, request rates, and error rates:
+
+![Istio Mesh Dashboard](docs/screenshots/grafana-istio-mesh.png)
+
+**Kyverno Compliance** — Policy pass/fail/warn status across the cluster:
+
+![Kyverno Compliance Dashboard](docs/screenshots/grafana-kyverno.png)
+
+**Flux GitOps** — HelmRelease reconciliation status and drift detection:
+
+![Flux GitOps Dashboard](docs/screenshots/grafana-flux.png)
+
+**Node Exporter** — Per-node CPU, disk, and network metrics:
+
+![Node Exporter](docs/screenshots/grafana-node-exporter.png)
+
+### 12. Harbor — Container Registry + Vulnerability Scanning
+
+Harbor stores your container images and automatically scans them with Trivy on every push. Projects provide multi-tenant isolation with quotas and RBAC.
+
+![Harbor Projects](docs/screenshots/harbor-projects.png)
+
+**Trivy Scan Results** — Every image is scanned for CVEs with severity ratings and fix versions:
+
+![Harbor Trivy Scan Results](docs/screenshots/harbor-scan-results.png)
+
+### 13. NeuVector — Runtime Security
+
+Real-time container security monitoring with network visualization, vulnerability scanning, and behavioral analysis.
+
+![NeuVector Dashboard](docs/screenshots/neuvector-dashboard.png)
+
+**Network Activity** — Visualize all service-to-service connections across the cluster:
+
+![NeuVector Network Activity](docs/screenshots/neuvector-network.png)
+
+### 14. Keycloak — Identity & SSO Management
+
+Manage users, groups, OIDC clients, and role mappings. All platform services authenticate through Keycloak.
+
+**OIDC Clients** — One client per service, all federated through the SRE realm:
+
+![Keycloak Realm Clients](docs/screenshots/keycloak-realm.png)
+
+**Groups** — Role-based access mapped to platform permissions (sre-admins, developers, viewers):
+
+![Keycloak Groups](docs/screenshots/keycloak-groups.png)
+
+### 15. Mobile Responsive
 Portal and dashboard adapt to mobile screens for on-the-go health checks.
 
 ![Mobile Portal](docs/images/mobile-view.png)
