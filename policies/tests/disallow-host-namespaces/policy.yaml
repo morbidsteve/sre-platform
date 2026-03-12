@@ -1,0 +1,35 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: baseline
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/description: >-
+      Sharing the host PID, IPC, or network namespaces allows containers to
+      access host-level resources and break isolation boundaries.
+    policies.kyverno.io/category: Pod Security Standards Baseline
+    policies.kyverno.io/severity: critical
+    sre.io/nist-controls: "AC-6, SC-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: deny-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: >-
+          Host namespaces are not allowed. Remove hostPID, hostIPC, and
+          hostNetwork from the Pod spec or set them to false.
+        pattern:
+          spec:
+            =(hostPID): "false"
+            =(hostIPC): "false"
+            =(hostNetwork): "false"

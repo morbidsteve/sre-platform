@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-bad
+  labels:
+    istio-injection: enabled
+    sre.io/team: "team-bad"
+    # Missing sre.io/security-categorization label

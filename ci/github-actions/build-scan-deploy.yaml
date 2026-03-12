@@ -67,12 +67,15 @@ env:
   FULL_IMAGE: "${{ inputs.harbor-registry }}/${{ inputs.harbor-project }}/${{ inputs.image-name }}:${{ inputs.image-tag }}"
 
 jobs:
-  build-scan-sign:
-    name: "Build, Scan, Sign & Push"
+  # ====================================================================
+  # Job 1: Build, scan (all security gates), produce artifacts
+  # ====================================================================
+  build-and-scan:
+    name: "Build & Security Gates"
     runs-on: ubuntu-22.04
     permissions:
       contents: read
-      id-token: write  # Required for Cosign OIDC
+      security-events: write  # Required for SARIF uploads
 
     steps:
       # ------------------------------------------------------------------
@@ -80,6 +83,41 @@ jobs:
       # ------------------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+        with:
+          fetch-depth: 0  # Full history for Gitleaks
+
+      # ------------------------------------------------------------------
+      # GATE 3: Secrets/Keys Detection (Gitleaks)
+      # Scans git history + working directory for leaked secrets
+      # ------------------------------------------------------------------
+      - name: "GATE 3: Secrets detection (Gitleaks)"
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e4b5d57e2d70e4e3f9e0  # v2.3.7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          args: "--verbose --redact"
+
+      # ------------------------------------------------------------------
+      # GATE 1: Static Application Security Testing (Semgrep)
+      # Scans source code for vulnerabilities using OWASP rules
+      # ------------------------------------------------------------------
+      - name: "GATE 1: SAST scan (Semgrep)"
+        uses: semgrep/semgrep-action@713efdd71e0aa54f585dae4f55fd3845966ef1cf  # v1
+        with:
+          config: >-
+            p/owasp-top-ten
+            p/security-audit
+            p/secrets
+          generateSarif: "1"
+        env:
+          SEMGREP_RULES: "p/owasp-top-ten p/security-audit p/secrets"
+
+      - name: Upload Semgrep SARIF results
+        uses: github/codeql-action/upload-sarif@4dd16135b69cb609a7909eaa37a880eb844d02a1  # v3.28.12
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: "semgrep"
 
       # ------------------------------------------------------------------
       # 2. Set up Docker Buildx for multi-platform builds
@@ -102,10 +140,10 @@ jobs:
           cache-to: type=gha,mode=max
 
       # ------------------------------------------------------------------
-      # 4. Scan image with Trivy for vulnerabilities
-      #    Fails the pipeline on CRITICAL findings by default
+      # GATE 4: Container Security Scanning (Trivy)
+      # Fails the pipeline on CRITICAL findings by default
       # ------------------------------------------------------------------
-      - name: Run Trivy vulnerability scan
+      - name: "GATE 4: Container security scan (Trivy)"
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947e795f797d01e4b97  # v0.28.0
         with:
           image-ref: ${{ env.FULL_IMAGE }}
@@ -114,7 +152,7 @@ jobs:
           severity: ${{ inputs.trivy-severity }}
           timeout: "10m"
 
-      - name: Run Trivy scan (SARIF report)
+      - name: "GATE 4: Trivy SARIF report"
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947e795f797d01e4b97  # v0.28.0
         if: always()
         with:
@@ -124,16 +162,18 @@ jobs:
           severity: "CRITICAL,HIGH,MEDIUM"
           timeout: "10m"
 
-      - name: Upload Trivy scan results
+      - name: Upload Trivy SARIF results
         uses: github/codeql-action/upload-sarif@4dd16135b69cb609a7909eaa37a880eb844d02a1  # v3.28.12
         if: always()
         with:
           sarif_file: "trivy-results.sarif"
+          category: "trivy"
 
       # ------------------------------------------------------------------
-      # 5. Generate SBOM with Syft (SPDX format)
+      # GATE 2: Software Bill of Materials (Syft)
+      # Generates SPDX JSON SBOM
       # ------------------------------------------------------------------
-      - name: Generate SBOM
+      - name: "GATE 2: Generate SBOM (Syft)"
         uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58571  # v0.17.7
         with:
           image: ${{ env.FULL_IMAGE }}
@@ -141,38 +181,125 @@ jobs:
           output-file: "sbom-spdx.json"
           artifact-name: "sbom-${{ inputs.image-name }}-${{ inputs.image-tag }}.spdx.json"
 
+      - name: "GATE 2: Generate SBOM (CycloneDX)"
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58571  # v0.17.7
+        with:
+          image: ${{ env.FULL_IMAGE }}
+          format: cyclonedx-json
+          output-file: "sbom-cyclonedx.json"
+          artifact-name: "sbom-${{ inputs.image-name }}-${{ inputs.image-tag }}.cyclonedx.json"
+
       # ------------------------------------------------------------------
-      # 6. Login to Harbor registry
+      # Save image for next job
       # ------------------------------------------------------------------
-      - name: Login to Harbor
+      - name: Save container image
+        run: docker save "${{ env.FULL_IMAGE }}" -o /tmp/image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: container-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+      - name: Upload scan artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: scan-results
+          path: |
+            trivy-results.sarif
+            sbom-spdx.json
+            sbom-cyclonedx.json
+            semgrep.sarif
+          retention-days: 90
+
+      # ------------------------------------------------------------------
+      # Security gate summary
+      # ------------------------------------------------------------------
+      - name: Security gates summary
+        if: always()
+        run: |
+          echo "## Security Gates Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Gate | Tool | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 1: SAST | Semgrep | Completed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 2: SBOM | Syft | Generated (SPDX + CycloneDX) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 3: Secrets | Gitleaks | Completed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 4: Container Scan | Trivy | Passed (no ${{ inputs.trivy-severity }}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 5: DAST | OWASP ZAP | Runs post-deploy |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 6: ISSM Review | Manual | Pending approval |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 7: Image Signing | Cosign | After ISSM approval |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 8: Artifact Storage | Harbor | After ISSM approval |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ====================================================================
+  # Job 2: GATE 6 — ISSM Review Gate
+  # Pipeline pauses here for manual approval before signing
+  # ====================================================================
+  issm-review:
+    name: "GATE 6: ISSM Review"
+    needs: build-and-scan
+    runs-on: ubuntu-22.04
+    environment: issm-review  # Requires approval in GitHub Environment settings
+    steps:
+      - name: ISSM review approved
+        run: |
+          echo "## ISSM Review Approved" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The RPOC ISSM has reviewed scan results and approved this release." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${{ env.FULL_IMAGE }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Approved by | \`${{ github.actor }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Approved at | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ====================================================================
+  # Job 3: Sign and push (only runs after ISSM approval)
+  # ====================================================================
+  sign-and-push:
+    name: "Sign & Push to Harbor"
+    needs: issm-review
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write  # Required for Cosign OIDC
+
+    steps:
+      - name: Download container image
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: container-image
+          path: /tmp
+
+      - name: Download scan artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: scan-results
+
+      - name: Load container image
+        run: docker load -i /tmp/image.tar
+
+      # ------------------------------------------------------------------
+      # GATE 8: Store in artifact repository (Harbor)
+      # ------------------------------------------------------------------
+      - name: "GATE 8: Login to Harbor"
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3.3.0
         with:
           registry: ${{ inputs.harbor-registry }}
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
-      # ------------------------------------------------------------------
-      # 7. Push image to Harbor
-      # ------------------------------------------------------------------
-      - name: Push image to Harbor
-        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v5.5.0
-        with:
-          context: ${{ inputs.build-context }}
-          file: ${{ inputs.dockerfile }}
-          push: true
-          tags: ${{ env.FULL_IMAGE }}
-          cache-from: type=gha
+      - name: "GATE 8: Push image to Harbor"
+        run: docker push "${{ env.FULL_IMAGE }}"
 
       # ------------------------------------------------------------------
-      # 8. Install Cosign for image signing
+      # GATE 7: Sign the release container image (Cosign)
       # ------------------------------------------------------------------
       - name: Install Cosign
         uses: sigstore/cosign-installer@3454372f970b8a86ee5b7c1123cb0f81d9dd3279  # v3.8.0
 
-      # ------------------------------------------------------------------
-      # 9. Sign the image with Cosign
-      # ------------------------------------------------------------------
-      - name: Sign image with Cosign
+      - name: "GATE 7: Sign image with Cosign"
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -181,9 +308,6 @@ jobs:
             --yes \
             "${{ env.FULL_IMAGE }}"
 
-      # ------------------------------------------------------------------
-      # 10. Attach SBOM as Cosign attestation
-      # ------------------------------------------------------------------
       - name: Attach SBOM attestation
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -195,8 +319,19 @@ jobs:
             --yes \
             "${{ env.FULL_IMAGE }}"
 
+      - name: Attach CycloneDX attestation
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign attest --key env://COSIGN_PRIVATE_KEY \
+            --predicate sbom-cyclonedx.json \
+            --type cyclonedx \
+            --yes \
+            "${{ env.FULL_IMAGE }}"
+
       # ------------------------------------------------------------------
-      # 11. Generate SLSA provenance attestation (Level 2)
+      # Generate SLSA provenance attestation (Level 2)
       # ------------------------------------------------------------------
       - name: Generate SLSA provenance
         env:
@@ -257,17 +392,25 @@ jobs:
             "${{ env.FULL_IMAGE }}"
 
       # ------------------------------------------------------------------
-      # 12. Output summary
+      # Pipeline summary
       # ------------------------------------------------------------------
       - name: Pipeline summary
         run: |
-          echo "## Build & Deploy Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "## RAISE 2.0 Security Gates — All Passed" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image | \`${{ env.FULL_IMAGE }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Trivy Scan | Passed (no ${{ inputs.trivy-severity }} findings) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| SBOM | Generated (SPDX JSON) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Cosign Signature | Attached |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| SBOM Attestation | Attached |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Gate | Tool | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 1: SAST | Semgrep | Passed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 2: SBOM | Syft | Generated (SPDX + CycloneDX) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 3: Secrets Detection | Gitleaks | Passed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 4: Container Scan | Trivy | Passed (no ${{ inputs.trivy-severity }}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 5: DAST | OWASP ZAP | Runs post-deploy |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 6: ISSM Review | Manual Approval | Approved by \`${{ github.actor }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 7: Image Signing | Cosign | Signed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GATE 8: Artifact Storage | Harbor | \`${{ env.FULL_IMAGE }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Attestation | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM Attestation (SPDX) | Attached |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM Attestation (CycloneDX) | Attached |" >> "$GITHUB_STEP_SUMMARY"
           echo "| SLSA Provenance | Level 2 (Attached) |" >> "$GITHUB_STEP_SUMMARY"

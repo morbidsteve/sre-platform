@@ -1,0 +1,73 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Require Probes
+    policies.kyverno.io/description: >-
+      Requires all containers to define livenessProbe and readinessProbe.
+      Without probes, Kubernetes cannot detect unhealthy pods or know when
+      a pod is ready to receive traffic, leading to degraded service
+      availability and reliability. System namespaces are excluded from
+      this policy.
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    sre.io/nist-controls: "SI-4, SC-5"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validate-probes
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      validate:
+        message: >-
+          All containers in Pod {{request.object.metadata.name}} must define
+          livenessProbe and readinessProbe. Add probes to each container spec
+          using at least one of httpGet, tcpSocket, or exec. Example:
+            livenessProbe:
+              httpGet:
+                path: /healthz
+                port: 8080
+              initialDelaySeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /readyz
+                port: 8080
+              initialDelaySeconds: 5
+        pattern:
+          spec:
+            containers:
+              - livenessProbe: "?*"
+                readinessProbe: "?*"

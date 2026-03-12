@@ -1,12 +1,26 @@
 ---
 # Example CI workflow that calls the SRE reusable build pipeline.
+# Implements all 8 RAISE 2.0 Security Gates.
 #
 # Place this file in your application repo at:
 #   .github/workflows/ci.yaml
 #
-# This workflow triggers on version tags (e.g., v1.0.0) and calls the
-# SRE build-scan-deploy workflow to build, scan, sign, and push the image.
-# It then updates the GitOps repo so Flux can deploy the new version.
+# Pipeline flow:
+#   1. GATE 3: Secrets detection (Gitleaks)
+#   2. GATE 1: SAST (Semgrep)
+#   3. Build container image
+#   4. GATE 4: Container security scan (Trivy)
+#   5. GATE 2: SBOM generation (Syft)
+#   6. GATE 6: ISSM review (manual approval)
+#   7. GATE 7: Image signing (Cosign)
+#   8. GATE 8: Push to Harbor
+#   9. Update GitOps repo → Flux deploys
+#  10. GATE 5: DAST scan (ZAP) — runs against deployed app
+#
+# Prerequisites:
+#   - GitHub Environment "issm-review" with required reviewers (your ISSM)
+#   - Secrets: HARBOR_USERNAME, HARBOR_PASSWORD, COSIGN_PRIVATE_KEY,
+#     COSIGN_PASSWORD, GITOPS_TOKEN
 
 name: "My App CI"
 
@@ -20,7 +34,7 @@ permissions:
 
 jobs:
   # ------------------------------------------------------------------
-  # Step 1: Build, scan, sign, and push the container image
+  # Steps 1-8: Build, scan all gates, ISSM review, sign, push
   # ------------------------------------------------------------------
   build:
     name: "Build & Push"
@@ -37,7 +51,7 @@ jobs:
     secrets: inherit
 
   # ------------------------------------------------------------------
-  # Step 2: Update the GitOps repo to trigger Flux deployment
+  # Step 9: Update the GitOps repo to trigger Flux deployment
   # ------------------------------------------------------------------
   deploy:
     name: "Update GitOps"
@@ -47,6 +61,18 @@ jobs:
       image-name: "my-app"
       image-tag: "${{ github.ref_name }}"
       team: "team-alpha"
-      # Optional: create a PR instead of committing directly
+      # For production: create a PR instead of committing directly
       # create-pr: true
     secrets: inherit
+
+  # ------------------------------------------------------------------
+  # Step 10: GATE 5 — DAST scan against deployed app
+  # Runs after Flux deploys the new version
+  # ------------------------------------------------------------------
+  dast:
+    name: "GATE 5: DAST"
+    needs: deploy
+    uses: ./.github/workflows/dast-scan.yaml
+    with:
+      target-url: "https://my-app.apps.sre.example.com"
+      scan-type: "baseline"

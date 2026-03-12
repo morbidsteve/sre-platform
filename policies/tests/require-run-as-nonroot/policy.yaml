@@ -1,0 +1,109 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-run-as-nonroot
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: restricted
+  annotations:
+    policies.kyverno.io/title: Require Run As Non-Root
+    policies.kyverno.io/description: >-
+      Requires all Pods to set runAsNonRoot to true at both the pod-level and
+      container-level security contexts. Running containers as root allows
+      processes to escape the container boundary and compromise the host node.
+      This policy enforces the Pod Security Standards restricted profile
+      requirement for non-root execution. System namespaces are excluded.
+    policies.kyverno.io/category: Pod Security Standards Restricted
+    policies.kyverno.io/severity: high
+    sre.io/nist-controls: "AC-6, AC-6(10)"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-pod-run-as-nonroot
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      validate:
+        message: >-
+          Pod {{request.object.metadata.name}} must set
+          `spec.securityContext.runAsNonRoot` to true. Running containers as
+          root is prohibited. Add the following to your Pod spec:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+    - name: require-container-run-as-nonroot
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      validate:
+        message: >-
+          All containers in Pod {{request.object.metadata.name}} must set
+          `securityContext.runAsNonRoot` to true. Add the following to each
+          container definition:
+          containers:
+            - name: my-container
+              securityContext:
+                runAsNonRoot: true
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  runAsNonRoot: true

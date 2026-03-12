@@ -1,0 +1,21 @@
+---
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: disallow-host-ports-test
+policies:
+  - policy.yaml
+resources:
+  - resource-pass.yaml
+  - resource-fail.yaml
+results:
+  - policy: disallow-host-ports
+    rule: deny-host-ports
+    resource: no-host-port-pod
+    kind: Pod
+    result: pass
+  - policy: disallow-host-ports
+    rule: deny-host-ports
+    resource: host-port-pod
+    kind: Pod
+    result: fail

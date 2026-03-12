@@ -1,0 +1,66 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-security-categorization
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Require Security Categorization Label
+    policies.kyverno.io/description: >-
+      Ensures all tenant namespaces have a security categorization label
+      (sre.io/security-categorization) per FIPS 199 and RAISE 2.0 RPOC-18.
+      The RPOC is categorized at Moderate — hosted applications must be
+      at Moderate or below.
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    sre.io/nist-controls: "RA-2, SC-2"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-categorization-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - default
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+          - resources:
+              selector:
+                matchLabels:
+                  sre.io/system-namespace: "true"
+      validate:
+        message: >-
+          Tenant namespaces must have a security categorization label.
+          Add the label: sre.io/security-categorization: "moderate"
+          (or "low" if the application is categorized below Moderate).
+          The RPOC is categorized at Moderate — applications cannot exceed this level.
+        pattern:
+          metadata:
+            labels:
+              sre.io/security-categorization: "low | moderate"

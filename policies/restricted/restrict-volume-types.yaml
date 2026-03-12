@@ -1,0 +1,97 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-volume-types
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: restricted
+  annotations:
+    policies.kyverno.io/title: Restrict Volume Types
+    policies.kyverno.io/description: >-
+      Restricts the volume types that may be used in Pods to a safe subset.
+      Host-based volume types such as hostPath allow containers to access the
+      host filesystem, which can lead to container escape and data exfiltration.
+      Only the following volume types are permitted: configMap, csi, downwardAPI,
+      emptyDir, ephemeral, persistentVolumeClaim, projected, and secret. This
+      policy enforces the Pod Security Standards restricted profile requirement
+      for volume restrictions. System namespaces are excluded.
+    policies.kyverno.io/category: Pod Security Standards Restricted
+    policies.kyverno.io/severity: medium
+    sre.io/nist-controls: "AC-6, CM-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: restrict-volume-types
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.volumes[] || `[]` | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+      validate:
+        message: >-
+          Pod {{request.object.metadata.name}} uses a restricted volume type.
+          Only the following volume types are allowed: configMap, csi,
+          downwardAPI, emptyDir, ephemeral, persistentVolumeClaim, projected,
+          and secret. Remove any hostPath, nfs, iscsi, fc, flexVolume,
+          gitRepo, glusterfs, portworxVolume, or other disallowed volume types
+          from your Pod spec.
+        foreach:
+          - list: "request.object.spec.volumes[]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.configMap || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.csi || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.downwardAPI || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.emptyDir || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.ephemeral || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.persistentVolumeClaim || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.projected || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.secret || '' }}"
+                    operator: Equals
+                    value: ""

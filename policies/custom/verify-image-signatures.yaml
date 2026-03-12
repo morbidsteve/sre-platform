@@ -17,7 +17,7 @@ metadata:
     policies.kyverno.io/severity: critical
     sre.io/nist-controls: "SA-10, SI-7"
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   webhookTimeoutSeconds: 30
   rules:

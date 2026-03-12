@@ -1,40 +1,43 @@
 # SRE Platform CI/CD Pipeline Templates
 
-This directory contains reusable CI/CD pipeline templates for building, scanning, signing, and deploying container images to the SRE platform.
+This directory contains reusable CI/CD pipeline templates that implement all **8 RAISE 2.0 Security Gates** for building, scanning, signing, and deploying container images to the SRE platform.
 
 ## How the Pipeline Works
 
-The CI/CD flow follows a secure supply chain pattern:
+The CI/CD flow implements all 8 RAISE 2.0 Security Gates:
 
 ```
 Developer pushes tag (v1.2.3)
     |
     v
-[1] Build container image (Docker Buildx)
+[GATE 3] Gitleaks — Scan for leaked secrets/credentials
     |
     v
-[2] Scan with Trivy (fail on CRITICAL vulnerabilities)
+[GATE 1] Semgrep — Static Application Security Testing (SAST)
     |
     v
-[3] Generate SBOM with Syft (SPDX JSON format)
+[Build]  Docker Buildx — Build container image
     |
     v
-[4] Push image to Harbor registry
+[GATE 4] Trivy — Container Security Scanning (fail on CRITICAL)
     |
     v
-[5] Sign image with Cosign (key-based signing)
+[GATE 2] Syft — Generate SBOM (SPDX JSON + CycloneDX)
     |
     v
-[6] Attach SBOM as Cosign attestation
+[GATE 6] ISSM Review — Manual approval gate (pipeline pauses)
     |
     v
-[7] Update image tag in GitOps repo (sre-platform)
+[GATE 8] Harbor — Push image to artifact repository
     |
     v
-[8] Flux CD detects change and reconciles
+[GATE 7] Cosign — Sign image + attach SBOM/SLSA attestations
     |
     v
-[9] App is deployed to the cluster
+[Deploy] Update GitOps repo → Flux CD reconciles → App deployed
+    |
+    v
+[GATE 5] OWASP ZAP — Dynamic Application Security Testing (DAST)
 ```
 
 Kyverno admission policies verify the Cosign signature before any pod is created,
@@ -160,15 +163,25 @@ git push origin v1.0.0
 The pipeline will build, scan, sign, push, and update the GitOps repo.
 Flux will deploy your app within its reconciliation interval (default: 10 minutes).
 
+### 5. GitHub Environment for ISSM Review (GATE 6)
+
+Create a GitHub Environment named `issm-review` with required reviewers:
+
+1. Go to your repo Settings > Environments > New environment
+2. Name: `issm-review`
+3. Add required reviewers (your ISSM and/or security team)
+4. The pipeline will pause at the ISSM review step until approved
+
 ## Workflow Files
 
 | File | Purpose |
 |------|---------|
-| `github-actions/build-scan-deploy.yaml` | Reusable workflow: build, scan, sign, push |
+| `github-actions/build-scan-deploy.yaml` | Reusable workflow: all 8 security gates + sign + push |
+| `github-actions/dast-scan.yaml` | Reusable workflow: OWASP ZAP DAST scanning (GATE 5) |
 | `github-actions/update-gitops.yaml` | Reusable workflow: update image tag in GitOps repo |
-| `github-actions/example-caller.yaml` | Example: how to call both workflows from your app repo |
-| `github-actions/preview-environment.yaml` | PR-based ephemeral preview environments |
-| `gitlab-ci/build-scan-deploy.gitlab-ci.yml` | GitLab CI equivalent of the GitHub Actions pipeline |
+| `github-actions/example-caller.yaml` | Example: how to call all workflows from your app repo |
+| `github-actions/preview-environment.yaml` | PR-based preview environments + automatic DAST scan |
+| `gitlab-ci/build-scan-deploy.gitlab-ci.yml` | GitLab CI equivalent with all 8 security gates |
 
 ## Customization
 
@@ -208,6 +221,19 @@ with:
   harbor-registry: "registry.example.com"
 ```
 
+## RAISE 2.0 Security Gates
+
+| Gate | Tool | NIST Controls | Fail Criteria |
+|------|------|---------------|---------------|
+| GATE 1: SAST | Semgrep | SA-11 | ERROR-level findings |
+| GATE 2: SBOM | Syft | CM-2 | Generation failure |
+| GATE 3: Secrets | Gitleaks | IA-5 | Any secret detected |
+| GATE 4: CSS | Trivy | RA-5 | CRITICAL findings (configurable) |
+| GATE 5: DAST | OWASP ZAP | SA-11 | HIGH-risk alerts |
+| GATE 6: ISSM Review | GitHub Environment | CA-2 | ISSM rejects |
+| GATE 7: Signing | Cosign | SI-7 | Signing failure |
+| GATE 8: Storage | Harbor | CM-8 | Push failure |
+
 ## Security Controls
 
 This pipeline implements the following NIST 800-53 controls:
@@ -215,26 +241,54 @@ This pipeline implements the following NIST 800-53 controls:
 | Control | Implementation |
 |---------|---------------|
 | SA-10 (Developer Configuration Management) | All changes tracked in Git via GitOps |
-| SA-11 (Developer Testing and Evaluation) | Trivy vulnerability scan gates the build |
+| SA-11 (Developer Testing and Evaluation) | Semgrep SAST + Trivy CSS + ZAP DAST gate the build |
 | SI-7 (Software Integrity) | Cosign image signatures verified by Kyverno |
-| RA-5 (Vulnerability Scanning) | Trivy scans every image before deployment |
+| RA-5 (Vulnerability Scanning) | Trivy + Semgrep + ZAP scan every release |
 | CM-2 (Baseline Configuration) | SBOM generated and attached for every image |
 | AU-2 (Audit Events) | GitHub Actions provides full audit trail |
+| IA-5 (Authenticator Management) | Gitleaks prevents credential leakage |
+| CA-2 (Security Assessment) | ISSM review gate ensures human oversight |
 
 ## Troubleshooting
 
-### Trivy scan fails
+### Semgrep SAST scan fails (GATE 1)
 
-Check the scan output for specific CVEs. Options:
+- Review findings in GitHub Security tab > Code scanning alerts
+- Fix the vulnerability in source code, or add a `# nosemgrep` inline comment for false positives
+- Document any suppressed findings in your mitigation statements
+
+### Gitleaks secrets scan fails (GATE 3)
+
+- A secret was detected in your code or git history
+- Rotate the exposed credential immediately
+- Add the secret to `.gitleaksignore` only if it's a false positive (test data, etc.)
+- Use OpenBao + ExternalSecret for all real credentials
+
+### Trivy container scan fails (GATE 4)
+
+- Check the scan output for specific CVEs
 - Update base image to patch the vulnerability
 - If the CVE is a false positive, add it to a `.trivyignore` file in your app repo
 - Temporarily lower the severity threshold (not recommended for production)
 
-### Cosign signing fails
+### ISSM review is pending (GATE 6)
+
+- The pipeline pauses at the `issm-review` job until an authorized reviewer approves
+- Reviewers are configured in GitHub Settings > Environments > `issm-review`
+- The ISSM should review all scan artifacts before approving
+
+### Cosign signing fails (GATE 7)
 
 - Verify `COSIGN_PRIVATE_KEY` secret contains the full key including header/footer
 - Verify `COSIGN_PASSWORD` matches what was used during `cosign generate-key-pair`
 - Ensure the image was successfully pushed to Harbor before signing
+
+### DAST scan shows findings (GATE 5)
+
+- ZAP baseline scan runs against the deployed app after Flux reconciles
+- Review the HTML report in workflow artifacts
+- HIGH findings should be fixed before the next release
+- False positives can be suppressed via a ZAP rules file
 
 ### GitOps update fails
 

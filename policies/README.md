@@ -32,10 +32,14 @@ Enforces hardened security posture for application workloads.
 Platform-specific policies beyond Pod Security Standards.
 - Require standard labels (app, team, environment)
 - Require resource limits on all containers
+- Require liveness and readiness probes
+- Require security context (non-root, drop ALL, no privilege escalation)
+- Require security categorization label on tenant namespaces
+- Require Istio sidecar injection on tenant namespaces
+- Require NetworkPolicy in every namespace
 - Restrict image registries to `harbor.sre.internal`
 - Verify Cosign image signatures
 - Disallow `:latest` image tags
-- Require NetworkPolicy in every namespace
 
 ## Testing
 

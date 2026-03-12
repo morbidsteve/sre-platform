@@ -59,8 +59,21 @@ jobs:
             | URL | \`https://pr-${{ github.event.number }}-${{ env.APP_NAME }}.apps.sre.example.com\` |
             | Branch | \`${{ github.head_ref }}\` |
 
-            Preview will be destroyed when this PR is closed.`
+            Preview will be destroyed when this PR is closed.
+            DAST scan will run automatically against this preview.`
             })
+
+  # ------------------------------------------------------------------
+  # GATE 5: DAST scan against the preview environment
+  # ------------------------------------------------------------------
+  dast:
+    name: "GATE 5: DAST Scan"
+    needs: preview-create
+    if: github.event.action != 'closed'
+    uses: ./.github/workflows/dast-scan.yaml
+    with:
+      target-url: "https://pr-${{ github.event.number }}-${{ github.event.repository.name }}.apps.sre.example.com"
+      scan-type: "baseline"
 
   preview-destroy:
     name: "Destroy Preview"

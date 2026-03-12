@@ -1,0 +1,111 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: baseline
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/description: >-
+      Privileged containers run with full host-level access, bypassing most
+      kernel-level isolation. This policy denies any Pod that sets
+      securityContext.privileged to true on containers or initContainers.
+      This is a Pod Security Standards Baseline requirement.
+    policies.kyverno.io/category: Pod Security Standards Baseline
+    policies.kyverno.io/severity: critical
+    sre.io/nist-controls: "AC-6, CM-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: deny-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      validate:
+        message: >-
+          Privileged containers are not allowed. Pod
+          {{request.object.metadata.name}} has a container with
+          securityContext.privileged set to true. To fix this, set
+          securityContext.privileged to false or remove the privileged field
+          entirely from each container's securityContext.
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+    - name: deny-privileged-init-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+      validate:
+        message: >-
+          Privileged init containers are not allowed. Pod
+          {{request.object.metadata.name}} has an init container with
+          securityContext.privileged set to true. To fix this, set
+          securityContext.privileged to false or remove the privileged field
+          entirely from each init container's securityContext.
+        pattern:
+          spec:
+            initContainers:
+              - =(securityContext):
+                  =(privileged): "false"

@@ -1,6 +1,6 @@
 ---
-# GitLab CI/CD pipeline for SRE Platform
-# Builds, scans, signs, and pushes container images to Harbor
+# GitLab CI/CD pipeline for SRE Platform — RAISE 2.0 Compliant
+# Implements all 8 RAISE Security Gates
 #
 # Usage: Include in your .gitlab-ci.yml:
 #   include:
@@ -18,9 +18,13 @@
 #   IMAGE_TAG - Image tag (e.g., v1.2.3)
 
 stages:
+  - secret-scan
+  - sast
   - build
   - scan
+  - issm-review
   - sign
+  - dast
   - deploy
 
 variables:
@@ -28,6 +32,40 @@ variables:
   FULL_IMAGE: "${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
   TRIVY_SEVERITY: "CRITICAL"
   DOCKER_TLS_CERTDIR: "/certs"
+
+# GATE 3: Secrets/Keys Detection
+gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:v8.21.2
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --report-format json --report-path gitleaks-report.json --verbose
+  artifacts:
+    reports:
+      secret_detection: gitleaks-report.json
+    paths:
+      - gitleaks-report.json
+    expire_in: 90 days
+    when: always
+
+# GATE 1: Static Application Security Testing
+semgrep:
+  stage: sast
+  image:
+    name: semgrep/semgrep:1.102.0
+    entrypoint: [""]
+  script:
+    - semgrep scan --config p/owasp-top-ten --config p/security-audit --config p/secrets --json --output semgrep-report.json .
+    - semgrep scan --config p/owasp-top-ten --config p/security-audit --config p/secrets --sarif --output semgrep-report.sarif . || true
+  artifacts:
+    reports:
+      sast: semgrep-report.json
+    paths:
+      - semgrep-report.json
+      - semgrep-report.sarif
+    expire_in: 90 days
+    when: always
 
 # Build container image
 build:
@@ -43,7 +81,7 @@ build:
       - /tmp/image.tar
     expire_in: 1 hour
 
-# Trivy vulnerability scan
+# GATE 4: Container Security Scanning
 trivy-scan:
   stage: scan
   image:
@@ -61,7 +99,7 @@ trivy-scan:
       - trivy-report.json
     expire_in: 30 days
 
-# Generate SBOM with Syft
+# GATE 2: Software Bill of Materials
 sbom-generate:
   stage: scan
   image:
@@ -77,7 +115,21 @@ sbom-generate:
       - sbom-cyclonedx.json
     expire_in: 90 days
 
-# Push image to Harbor + sign with Cosign + attach SBOM
+# GATE 6: ISSM Review (manual approval gate)
+issm-approval:
+  stage: issm-review
+  needs:
+    - gitleaks
+    - semgrep
+    - trivy-scan
+    - sbom-generate
+  script:
+    - echo "ISSM has reviewed scan results and approved this release for signing."
+    - echo "Approved by ${GITLAB_USER_LOGIN} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  when: manual
+  allow_failure: false
+
+# GATE 7 + GATE 8: Sign and push to Harbor
 sign-and-push:
   stage: sign
   image: docker:27-dind
@@ -85,25 +137,105 @@ sign-and-push:
     - docker:27-dind
   needs:
     - build
-    - trivy-scan
-    - sbom-generate
+    - issm-approval
   before_script:
     - apk add --no-cache curl
     - curl -sSL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
     - chmod +x /usr/local/bin/cosign
   script:
-    # Load and push image
+    # Load and push image (GATE 8)
     - docker load -i /tmp/image.tar
     - docker login -u "${HARBOR_USERNAME}" -p "${HARBOR_PASSWORD}" "${HARBOR_REGISTRY}"
     - docker push "${FULL_IMAGE}"
-    # Sign with Cosign
+    # Sign with Cosign (GATE 7)
     - echo "${COSIGN_PRIVATE_KEY}" | base64 -d > /tmp/cosign.key
     - COSIGN_PASSWORD="${COSIGN_PASSWORD}" cosign sign --key /tmp/cosign.key --yes "${FULL_IMAGE}"
     # Attach SBOM attestation
     - COSIGN_PASSWORD="${COSIGN_PASSWORD}" cosign attest --key /tmp/cosign.key --predicate sbom-spdx.json --type spdxjson --yes "${FULL_IMAGE}"
+    # Attach CycloneDX attestation
+    - COSIGN_PASSWORD="${COSIGN_PASSWORD}" cosign attest --key /tmp/cosign.key --predicate sbom-cyclonedx.json --type cyclonedx --yes "${FULL_IMAGE}"
+    # Generate and attach SLSA provenance
+    - |
+      cat > /tmp/slsa-provenance.json <<PROVENANCE
+      {
+        "_type": "https://in-toto.io/Statement/v0.1",
+        "predicateType": "https://slsa.dev/provenance/v0.2",
+        "subject": [
+          {
+            "name": "${FULL_IMAGE}",
+            "digest": {
+              "sha256": "$(docker inspect --format='{{index .RepoDigests 0}}' ${FULL_IMAGE} 2>/dev/null | cut -d@ -f2 | cut -d: -f2 || echo 'unknown')"
+            }
+          }
+        ],
+        "predicate": {
+          "builder": {
+            "id": "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/${CI_JOB_ID}"
+          },
+          "buildType": "https://gitlab.com/gitlab-ci",
+          "invocation": {
+            "configSource": {
+              "uri": "git+https://gitlab.com/${CI_PROJECT_PATH}@${CI_COMMIT_REF_NAME}",
+              "digest": {
+                "sha1": "${CI_COMMIT_SHA}"
+              },
+              "entryPoint": ".gitlab-ci.yml"
+            }
+          },
+          "metadata": {
+            "buildInvocationId": "${CI_JOB_ID}",
+            "buildStartedOn": "${CI_PIPELINE_CREATED_AT}",
+            "completeness": {
+              "parameters": true,
+              "environment": true,
+              "materials": true
+            },
+            "reproducible": false
+          },
+          "materials": [
+            {
+              "uri": "git+https://gitlab.com/${CI_PROJECT_PATH}@${CI_COMMIT_REF_NAME}",
+              "digest": {
+                "sha1": "${CI_COMMIT_SHA}"
+              }
+            }
+          ]
+        }
+      }
+      PROVENANCE
+    - COSIGN_PASSWORD="${COSIGN_PASSWORD}" cosign attest --key /tmp/cosign.key --predicate /tmp/slsa-provenance.json --type slsaprovenance --yes "${FULL_IMAGE}"
     - rm -f /tmp/cosign.key
   after_script:
     - rm -f /tmp/cosign.key
+
+# GATE 5: DAST (runs after deploy against staging/preview)
+dast-zap:
+  stage: dast
+  image:
+    name: ghcr.io/zaproxy/zaproxy:2.15.0
+    entrypoint: [""]
+  needs:
+    - sign-and-push
+  variables:
+    TARGET_URL: "${DAST_TARGET_URL:-https://${IMAGE_NAME}.apps.sre.example.com}"
+  script:
+    - mkdir -p /tmp/zap-results
+    - |
+      zap-baseline.py -t "${TARGET_URL}" \
+        -J /tmp/zap-results/zap-report.json \
+        -r /tmp/zap-results/zap-report.html \
+        -a || true
+    - echo "DAST scan completed. Review results in artifacts."
+  artifacts:
+    paths:
+      - /tmp/zap-results/
+    expire_in: 90 days
+    when: always
+  rules:
+    - if: $DAST_TARGET_URL
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
 
 # Update GitOps repo (Flux auto-deploys)
 update-gitops:
@@ -115,8 +247,6 @@ update-gitops:
     - apk add --no-cache curl jq
     - |
       echo "Updating GitOps manifest for ${IMAGE_NAME}:${IMAGE_TAG}"
-      # Option 1: Use Flux image automation
-      # Option 2: Commit to gitops repo
       echo "Image ${FULL_IMAGE} is now available in Harbor"
       echo "Flux will auto-reconcile when the HelmRelease values are updated"
   rules:

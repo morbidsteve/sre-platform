@@ -1,0 +1,64 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: baseline
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/description: >-
+      Sharing the host PID, IPC, or network namespaces allows containers to
+      access host-level resources and break isolation boundaries. This policy
+      denies any Pod that sets hostPID, hostIPC, or hostNetwork to true.
+      This is a Pod Security Standards Baseline requirement.
+    policies.kyverno.io/category: Pod Security Standards Baseline
+    policies.kyverno.io/severity: critical
+    sre.io/nist-controls: "AC-6, SC-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: deny-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
+      validate:
+        message: >-
+          Host namespaces are not allowed. Pod {{request.object.metadata.name}}
+          has hostPID, hostIPC, or hostNetwork set to true. To fix this, remove
+          the hostPID, hostIPC, and hostNetwork fields from the Pod spec or set
+          them to false. Use a Service or Istio VirtualService for networking
+          instead of hostNetwork.
+        pattern:
+          spec:
+            =(hostPID): "false"
+            =(hostIPC): "false"
+            =(hostNetwork): "false"

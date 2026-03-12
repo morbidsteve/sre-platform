@@ -1,0 +1,44 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-unsafe-sysctls
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: baseline
+  annotations:
+    policies.kyverno.io/title: Restrict Unsafe Sysctls
+    policies.kyverno.io/description: >-
+      Sysctls can modify kernel behavior and may compromise node stability or
+      security. Only safe sysctls are allowed.
+    policies.kyverno.io/category: Pod Security Standards Baseline
+    policies.kyverno.io/severity: medium
+    sre.io/nist-controls: "CM-6, CM-7"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: restrict-sysctls
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: >-
+          Unsafe sysctls are not allowed. Only the following sysctls are
+          permitted: kernel.shm_rmid_forced, net.ipv4.ip_local_port_range,
+          net.ipv4.ip_unprivileged_port_start, net.ipv4.tcp_syncookies, and
+          net.ipv4.ping_group_range. Remove any disallowed sysctls from
+          spec.securityContext.sysctls.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.securityContext.sysctls[].name || `[]` }}"
+                operator: AnyNotIn
+                value:
+                  - kernel.shm_rmid_forced
+                  - net.ipv4.ip_local_port_range
+                  - net.ipv4.ip_unprivileged_port_start
+                  - net.ipv4.tcp_syncookies
+                  - net.ipv4.ping_group_range
