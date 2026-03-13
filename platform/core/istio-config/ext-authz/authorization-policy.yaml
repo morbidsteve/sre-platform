@@ -39,6 +39,7 @@ spec:
             notHosts:
               - "keycloak.apps.sre.example.com"
               - "harbor.apps.sre.example.com"
+              - "neuvector.apps.sre.example.com"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
