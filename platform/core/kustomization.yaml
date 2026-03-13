@@ -12,6 +12,9 @@ resources:
   # ── Shared Configuration ──
   - config/domain-config.yaml
 
+  # ── Node Configuration ──
+  - components/node-hosts.yaml
+
   # ── Core Components (Flux Kustomization CRDs) ──
   - components/metallb.yaml
   - components/metallb-config.yaml

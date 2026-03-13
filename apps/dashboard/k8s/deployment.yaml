@@ -17,6 +17,8 @@ spec:
         app.kubernetes.io/name: sre-dashboard
         app.kubernetes.io/part-of: sre-platform
         sre.io/team: platform
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       serviceAccountName: sre-dashboard
       automountServiceAccountToken: true
