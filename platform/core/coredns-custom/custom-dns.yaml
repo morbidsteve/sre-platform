@@ -25,6 +25,15 @@ data:
     192.168.2.200 portal.apps.sre.example.com
     192.168.2.200 prometheus.apps.sre.example.com
     192.168.2.200 alertmanager.apps.sre.example.com
+  registries-yaml: |
+    mirrors:
+      harbor.apps.sre.example.com:
+        endpoint:
+          - "https://harbor.apps.sre.example.com"
+    configs:
+      "harbor.apps.sre.example.com":
+        tls:
+          insecure_skip_verify: true
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -63,15 +72,25 @@ spec:
                   cat /config/hosts-entries >> /host-etc/hosts
                   echo "Added SRE platform hosts entries"
                 fi
+                # Write RKE2 registries.yaml for Harbor TLS trust
+                REGISTRIES="/host-rancher/registries.yaml"
+                if [ ! -f "$REGISTRIES" ] || ! grep -q "harbor.apps.sre.example.com" "$REGISTRIES" 2>/dev/null; then
+                  mkdir -p /host-rancher
+                  cp /config/registries-yaml "$REGISTRIES"
+                  echo "Wrote RKE2 registries.yaml (RKE2 restart needed to pick up)"
+                fi
                 sleep 3600
               done
           volumeMounts:
             - name: host-etc
               mountPath: /host-etc
+            - name: host-rancher
+              mountPath: /host-rancher
             - name: config
               mountPath: /config
           securityContext:
             runAsUser: 0
+            privileged: true
           resources:
             requests:
               cpu: 5m
@@ -83,6 +102,9 @@ spec:
         - name: host-etc
           hostPath:
             path: /etc
+        - name: host-rancher
+          hostPath:
+            path: /etc/rancher/rke2
         - name: config
           configMap:
             name: node-hosts-config
