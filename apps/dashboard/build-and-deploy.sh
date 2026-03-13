@@ -1,62 +1,72 @@
 #!/usr/bin/env bash
-# Build the SRE Dashboard container image and deploy to the cluster.
-# Since there's no registry, we build a tarball locally and import it
-# into containerd on each node via RKE2's ctr.
+# Build the SRE Dashboard container image, push to Harbor, and deploy via GitOps.
 #
-# Environment variables:
-#   SSH_USER  — SSH user for node access (default: sre-admin)
-#   SSH_KEY   — SSH key path (default: ~/.ssh/sre-lab)
+# Flow: docker build → docker push to Harbor → update deployment.yaml tag → git commit+push → Flux deploys
+#
+# Prerequisites:
+#   - Docker installed locally
+#   - docker login harbor.apps.sre.example.com (done once)
+#   - Git configured with push access to the repo
+#
+# Usage:
+#   ./build-and-deploy.sh              # Auto-increments patch version
+#   ./build-and-deploy.sh v2.4.0       # Explicit version tag
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REGISTRY="harbor.apps.sre.example.com"
+PROJECT="platform"
 IMAGE_NAME="sre-dashboard"
-IMAGE_TAG="v2.2.0"
-TARBALL="/tmp/${IMAGE_NAME}.tar"
-SSH_USER="${SSH_USER:-sre-admin}"
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/sre-lab}"
-SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5"
-if [[ -f "$SSH_KEY" ]]; then
-    SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+DEPLOYMENT_FILE="$SCRIPT_DIR/k8s/deployment.yaml"
+
+# Determine image tag
+if [[ "${1:-}" != "" ]]; then
+    IMAGE_TAG="$1"
+else
+    # Auto-detect current tag and increment patch version
+    CURRENT_TAG=$(grep -oP 'image:.*sre-dashboard:\K[v0-9.]+' "$DEPLOYMENT_FILE" 2>/dev/null || echo "v0.0.0")
+    MAJOR=$(echo "$CURRENT_TAG" | sed 's/v//' | cut -d. -f1)
+    MINOR=$(echo "$CURRENT_TAG" | sed 's/v//' | cut -d. -f2)
+    PATCH=$(echo "$CURRENT_TAG" | sed 's/v//' | cut -d. -f3)
+    IMAGE_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+    echo "Auto-incrementing version: ${CURRENT_TAG} → ${IMAGE_TAG}"
 fi
+
+FULL_IMAGE="${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
 
 cd "$SCRIPT_DIR"
 
-echo "==> Building Docker image ${IMAGE_NAME}:${IMAGE_TAG}..."
-docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+# Step 1: Build
+echo "==> Building Docker image ${FULL_IMAGE}..."
+docker build -t "${FULL_IMAGE}" .
 
-echo "==> Saving image to tarball..."
-docker save "${IMAGE_NAME}:${IMAGE_TAG}" -o "$TARBALL"
+# Step 2: Push to Harbor
+echo "==> Pushing to Harbor..."
+docker push "${FULL_IMAGE}"
 
-echo "==> Importing image to cluster nodes..."
-for node_ip in $(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-    echo "    Importing to node ${node_ip}..."
-    scp $SSH_OPTS "$TARBALL" "${SSH_USER}@${node_ip}:/tmp/${IMAGE_NAME}.tar" 2>/dev/null && \
-    ssh $SSH_OPTS "${SSH_USER}@${node_ip}" \
-        'CTR=$(ls /var/lib/rancher/rke2/bin/ctr 2>/dev/null || ls /var/lib/rancher/rke2/data/*/bin/ctr 2>/dev/null | head -1); sudo "$CTR" --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import /tmp/'"${IMAGE_NAME}"'.tar && rm -f /tmp/'"${IMAGE_NAME}"'.tar' 2>/dev/null || \
-    echo "    WARNING: Could not import to ${node_ip} (SSH may not be configured)"
-done
+# Step 3: Update deployment.yaml with new image tag
+echo "==> Updating deployment.yaml to ${FULL_IMAGE}..."
+sed -i "s|image: .*sre-dashboard:.*|image: ${FULL_IMAGE}|" "$DEPLOYMENT_FILE"
 
-rm -f "$TARBALL"
+# Step 4: Update package.json version
+SEMVER="${IMAGE_TAG#v}"
+sed -i "s|\"version\": \".*\"|\"version\": \"${SEMVER}\"|" "$SCRIPT_DIR/package.json"
 
-echo "==> Applying Kubernetes manifests..."
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/rbac.yaml
-kubectl apply -f k8s/network-policy.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/virtualservice.yaml
+# Step 5: Commit and push
+echo "==> Committing and pushing to Git..."
+cd "$REPO_ROOT"
+git add "$DEPLOYMENT_FILE" "$SCRIPT_DIR/package.json"
+git commit -m "feat(dashboard): release ${IMAGE_TAG}
 
-echo "==> Waiting for dashboard pod to be ready..."
-kubectl rollout status deployment/sre-dashboard -n sre-dashboard --timeout=60s
+Update dashboard image to ${FULL_IMAGE}"
+git push
 
 echo ""
-echo "==> SRE Dashboard deployed!"
+echo "==> Done! Flux will deploy ${IMAGE_TAG} automatically."
 echo ""
-GATEWAY_IP=$(kubectl get svc istio-gateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-echo "    Ingress: https://dashboard.apps.sre.example.com"
+echo "    Monitor with: flux get kustomizations -A"
+echo "    Or watch:     kubectl get pods -n sre-dashboard -w"
 echo ""
-echo "    Add to /etc/hosts:"
-echo "    echo \"${GATEWAY_IP} portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com\" | sudo tee -a /etc/hosts"
-echo ""
-echo "    Or port-forward: kubectl port-forward -n sre-dashboard svc/sre-dashboard 3001:3001"
-echo "    Then open: http://localhost:3001"
+echo "    Dashboard URL: https://dashboard.apps.sre.example.com"

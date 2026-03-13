@@ -16,14 +16,22 @@ metadata:
     app.kubernetes.io/name: sre-dashboard
     app.kubernetes.io/part-of: sre-platform
 rules:
-  # Read nodes
+  # Read nodes + patch (cordon/uncordon)
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["list"]
-  # Read pods (for problem pod detection)
+    verbs: ["list", "get", "patch"]
+  # Read pods + get individual pod
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list"]
+    verbs: ["list", "get"]
+  # Pod logs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # Metrics API (node and pod metrics)
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["list", "get"]
   # Namespaces — list + create + read (auto-create tenant namespaces)
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -67,10 +75,22 @@ rules:
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices"]
     verbs: ["list"]
-  # Deployments — list, delete (for app cleanup)
+  # Deployments — list, get, delete, patch (for app cleanup + scale/restart)
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["list", "delete"]
+    verbs: ["list", "get", "delete", "patch"]
+  # Jobs — create/get/list/delete/watch in sre-builds (Kaniko build pipeline)
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+  # HelmRepositories — create/get/patch for Helm chart imports
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["helmrepositories"]
+    verbs: ["get", "list", "create", "patch"]
+  # CloudNativePG Clusters — database provisioning
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -179,6 +199,46 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: sre-dashboard-secrets
+subjects:
+  - kind: ServiceAccount
+    name: sre-dashboard
+    namespace: sre-dashboard
+---
+# Namespaced Role for sre-builds namespace (Kaniko build pipeline)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-dashboard-builds
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-dashboard-builds
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/name: sre-dashboard
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-dashboard-builds
 subjects:
   - kind: ServiceAccount
     name: sre-dashboard

@@ -6,5 +6,6 @@ kind: Kustomization
 resources:
   - components/harbor.yaml
   - components/keycloak.yaml
+  - components/sre-dashboard.yaml
   # - components/argocd.yaml
   # - components/backstage.yaml

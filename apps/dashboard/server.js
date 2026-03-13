@@ -2,7 +2,9 @@ const express = require("express");
 const k8s = require("@kubernetes/client-node");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
+const yaml = require("js-yaml");
 
 const app = express();
 
@@ -55,6 +57,50 @@ try {
 const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
 const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
 const appsApi = kc.makeApiClient(k8s.AppsV1Api);
+const batchApi = kc.makeApiClient(k8s.BatchV1Api);
+const metricsClient = new k8s.Metrics(kc);
+
+// ── Resource parsing helpers ────────────────────────────────────────────────
+
+function parseCpu(s) {
+  if (!s) return 0;
+  s = String(s);
+  if (s.endsWith("n")) return parseInt(s) / 1e9;
+  if (s.endsWith("m")) return parseInt(s) / 1000;
+  return parseFloat(s) || 0;
+}
+
+function parseMem(s) {
+  if (!s) return 0;
+  s = String(s);
+  const units = { Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, K: 1e3, M: 1e6, G: 1e9, T: 1e12 };
+  for (const [u, m] of Object.entries(units)) {
+    if (s.endsWith(u)) return parseInt(s) * m;
+  }
+  return parseInt(s) || 0;
+}
+
+function fmtMem(bytes) {
+  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(1) + " Gi";
+  if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(0) + " Mi";
+  return (bytes / 1024).toFixed(0) + " Ki";
+}
+
+function fmtCpu(cores) {
+  if (cores >= 1) return cores.toFixed(2);
+  return Math.round(cores * 1000) + "m";
+}
+
+function age(ts) {
+  if (!ts) return "?";
+  const ms = Date.now() - new Date(ts).getTime();
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (d > 0) return d + "d" + h + "h";
+  if (h > 0) return h + "h" + m + "m";
+  return m + "m";
+}
 
 // ── Sample Apps (known-good non-root images) ────────────────────────────────
 
@@ -1316,6 +1362,1171 @@ app.post("/api/deploy/env", mutateLimiter, requireGroups("sre-admins", "develope
     }
     console.error("Error updating env:", err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Build Pipeline API ──────────────────────────────────────────────────────
+
+const BUILD_NAMESPACE = "sre-builds";
+const HARBOR_REGISTRY = "harbor.apps.sre.example.com";
+const KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.2";
+const GIT_CLONE_IMAGE = "alpine/git:2.43.0";
+
+// In-memory build tracking (supplements K8s Job status)
+const buildRegistry = new Map();
+
+function generateBuildId() {
+  return "build-" + crypto.randomBytes(4).toString("hex");
+}
+
+// POST /api/build — Start a Kaniko build from Git URL or inline Dockerfile
+app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { gitUrl, branch, dockerfile, dockerfileContent, appName, team } = req.body;
+
+    if (!appName || typeof appName !== "string") {
+      return res.status(400).json({ error: "Missing required field: appName" });
+    }
+    if (!team || typeof team !== "string") {
+      return res.status(400).json({ error: "Missing required field: team" });
+    }
+    if (!gitUrl && !dockerfileContent) {
+      return res.status(400).json({ error: "Provide either gitUrl or dockerfileContent" });
+    }
+
+    const safeName = sanitizeName(appName);
+    if (!isValidName(safeName)) {
+      return res.status(400).json({ error: "Invalid app name" });
+    }
+
+    const teamName = sanitizeName(team);
+    const buildId = generateBuildId();
+    const imageTag = buildId;
+    const destination = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${imageTag}`;
+    const dockerfilePath = dockerfile || "Dockerfile";
+
+    let jobSpec;
+
+    if (gitUrl) {
+      // Git URL mode — init container clones, Kaniko builds
+      if (!isValidGitUrl(gitUrl)) {
+        return res.status(400).json({ error: "Invalid Git URL" });
+      }
+      const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
+
+      jobSpec = {
+        apiVersion: "batch/v1",
+        kind: "Job",
+        metadata: {
+          name: buildId,
+          namespace: BUILD_NAMESPACE,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/build-id": buildId,
+            "sre.io/app-name": safeName,
+            "sre.io/team": teamName,
+          },
+        },
+        spec: {
+          backoffLimit: 0,
+          ttlSecondsAfterFinished: 3600,
+          template: {
+            metadata: {
+              labels: {
+                "sre.io/build-id": buildId,
+              },
+            },
+            spec: {
+              restartPolicy: "Never",
+              initContainers: [
+                {
+                  name: "git-clone",
+                  image: GIT_CLONE_IMAGE,
+                  args: ["clone", "--depth=1", "--branch", safeBranch, gitUrl, "/workspace"],
+                  volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+                  resources: {
+                    requests: { cpu: "100m", memory: "128Mi" },
+                    limits: { cpu: "500m", memory: "512Mi" },
+                  },
+                  securityContext: {
+                    runAsNonRoot: false,
+                    readOnlyRootFilesystem: false,
+                  },
+                },
+              ],
+              containers: [
+                {
+                  name: "kaniko",
+                  image: KANIKO_IMAGE,
+                  args: [
+                    `--dockerfile=${dockerfilePath}`,
+                    "--context=/workspace",
+                    `--destination=${destination}`,
+                    "--cache=true",
+                    `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
+                    "--snapshot-mode=redo",
+                    "--skip-tls-verify",
+                  ],
+                  volumeMounts: [
+                    { name: "workspace", mountPath: "/workspace" },
+                    { name: "docker-config", mountPath: "/kaniko/.docker" },
+                  ],
+                  resources: {
+                    requests: { cpu: "250m", memory: "512Mi" },
+                    limits: { cpu: "2", memory: "2Gi" },
+                  },
+                },
+              ],
+              volumes: [
+                { name: "workspace", emptyDir: {} },
+                {
+                  name: "docker-config",
+                  secret: {
+                    secretName: "harbor-push-creds",
+                    items: [{ key: ".dockerconfigjson", path: "config.json" }],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+    } else {
+      // Inline Dockerfile mode — ConfigMap with Dockerfile content, Kaniko builds
+      const cmName = `${buildId}-dockerfile`;
+      await k8sApi.createNamespacedConfigMap(BUILD_NAMESPACE, {
+        metadata: {
+          name: cmName,
+          namespace: BUILD_NAMESPACE,
+          labels: { "sre.io/build-id": buildId },
+        },
+        data: { Dockerfile: dockerfileContent },
+      });
+
+      jobSpec = {
+        apiVersion: "batch/v1",
+        kind: "Job",
+        metadata: {
+          name: buildId,
+          namespace: BUILD_NAMESPACE,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/build-id": buildId,
+            "sre.io/app-name": safeName,
+            "sre.io/team": teamName,
+          },
+        },
+        spec: {
+          backoffLimit: 0,
+          ttlSecondsAfterFinished: 3600,
+          template: {
+            metadata: {
+              labels: { "sre.io/build-id": buildId },
+            },
+            spec: {
+              restartPolicy: "Never",
+              containers: [
+                {
+                  name: "kaniko",
+                  image: KANIKO_IMAGE,
+                  args: [
+                    "--dockerfile=/workspace/Dockerfile",
+                    "--context=dir:///workspace",
+                    `--destination=${destination}`,
+                    "--skip-tls-verify",
+                  ],
+                  volumeMounts: [
+                    { name: "dockerfile", mountPath: "/workspace" },
+                    { name: "docker-config", mountPath: "/kaniko/.docker" },
+                  ],
+                  resources: {
+                    requests: { cpu: "250m", memory: "512Mi" },
+                    limits: { cpu: "2", memory: "2Gi" },
+                  },
+                },
+              ],
+              volumes: [
+                {
+                  name: "dockerfile",
+                  configMap: { name: cmName },
+                },
+                {
+                  name: "docker-config",
+                  secret: {
+                    secretName: "harbor-push-creds",
+                    items: [{ key: ".dockerconfigjson", path: "config.json" }],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+    }
+
+    // Create the Job
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
+
+    // Track build metadata
+    buildRegistry.set(buildId, {
+      id: buildId,
+      appName: safeName,
+      team: teamName,
+      gitUrl: gitUrl || null,
+      dockerfile: dockerfileContent ? "(inline)" : dockerfilePath,
+      destination,
+      imageRepo: `${HARBOR_REGISTRY}/${teamName}/${safeName}`,
+      imageTag,
+      startedAt: new Date().toISOString(),
+      status: "building",
+    });
+
+    res.json({
+      success: true,
+      buildId,
+      destination,
+      message: `Build ${buildId} started for ${safeName}`,
+    });
+  } catch (err) {
+    console.error("Error starting build:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/build/:id/status — Get build Job status
+app.get("/api/build/:id/status", async (req, res) => {
+  try {
+    const buildId = sanitizeName(req.params.id);
+    if (!buildId) return res.status(400).json({ error: "Invalid build ID" });
+
+    let status = "unknown";
+    let message = "";
+    let startTime = "";
+    let completionTime = "";
+
+    try {
+      const jobResp = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
+      const job = jobResp.body;
+      startTime = job.status?.startTime || "";
+      completionTime = job.status?.completionTime || "";
+
+      if (job.status?.succeeded) {
+        status = "succeeded";
+        message = "Build completed successfully";
+      } else if (job.status?.failed) {
+        status = "failed";
+        message = "Build failed";
+        // Try to get failure reason from pod
+        try {
+          const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `sre.io/build-id=${buildId}`);
+          const pod = pods.body.items[0];
+          if (pod) {
+            const cs = pod.status?.containerStatuses || [];
+            const terminated = cs.find((c) => c.state?.terminated);
+            if (terminated) {
+              message = terminated.state.terminated.reason || "Build failed";
+            }
+            const initCs = pod.status?.initContainerStatuses || [];
+            const initFailed = initCs.find((c) => c.state?.terminated && c.state.terminated.exitCode !== 0);
+            if (initFailed) {
+              message = "Git clone failed: " + (initFailed.state.terminated.reason || "error");
+            }
+          }
+        } catch { /* best effort */ }
+      } else if (job.status?.active) {
+        status = "building";
+        // Check which phase — init container (clone) or main (build)
+        try {
+          const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `sre.io/build-id=${buildId}`);
+          const pod = pods.body.items[0];
+          if (pod) {
+            const initCs = pod.status?.initContainerStatuses || [];
+            const initRunning = initCs.some((c) => c.state?.running);
+            if (initRunning) {
+              message = "Cloning repository...";
+            } else {
+              message = "Building image...";
+            }
+          }
+        } catch { /* best effort */ }
+      } else {
+        status = "pending";
+        message = "Build job pending";
+      }
+    } catch (err) {
+      if (err.statusCode === 404) {
+        return res.status(404).json({ error: "Build not found" });
+      }
+      throw err;
+    }
+
+    const buildMeta = buildRegistry.get(buildId) || {};
+
+    res.json({
+      buildId,
+      status,
+      message,
+      startTime,
+      completionTime,
+      appName: buildMeta.appName || "",
+      team: buildMeta.team || "",
+      destination: buildMeta.destination || "",
+      imageRepo: buildMeta.imageRepo || "",
+      imageTag: buildMeta.imageTag || "",
+    });
+  } catch (err) {
+    console.error("Error fetching build status:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/build/:id/logs — SSE stream of Kaniko build logs
+app.get("/api/build/:id/logs", async (req, res) => {
+  const buildId = sanitizeName(req.params.id);
+  if (!buildId) return res.status(400).json({ error: "Invalid build ID" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  let closed = false;
+  req.on("close", () => { closed = true; });
+
+  const sendEvent = (data) => {
+    if (closed) return;
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    // Wait for pod to be created (up to 30s)
+    let pod = null;
+    for (let i = 0; i < 30 && !closed; i++) {
+      try {
+        const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `sre.io/build-id=${buildId}`);
+        if (pods.body.items.length > 0) {
+          pod = pods.body.items[0];
+          break;
+        }
+      } catch { /* ignore */ }
+      sendEvent({ type: "status", message: "Waiting for build pod..." });
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    if (!pod || closed) {
+      sendEvent({ type: "error", message: "Build pod not found" });
+      sendEvent({ type: "done" });
+      res.end();
+      return;
+    }
+
+    const podName = pod.metadata.name;
+
+    // Stream init container logs (git clone) if present
+    const initContainers = pod.spec.initContainers || [];
+    for (const init of initContainers) {
+      // Wait for init container to start
+      for (let i = 0; i < 60 && !closed; i++) {
+        const podStatus = await k8sApi.readNamespacedPod(podName, BUILD_NAMESPACE);
+        const initStatus = (podStatus.body.status?.initContainerStatuses || []).find((c) => c.name === init.name);
+        if (initStatus && (initStatus.state?.running || initStatus.state?.terminated)) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      sendEvent({ type: "phase", phase: "clone", message: `Cloning repository...` });
+
+      try {
+        const logResp = await k8sApi.readNamespacedPodLog(podName, BUILD_NAMESPACE, init.name, false);
+        const lines = (logResp.body || "").split("\n");
+        for (const line of lines) {
+          if (line.trim()) sendEvent({ type: "log", container: init.name, line });
+        }
+      } catch { /* init logs may not be available */ }
+    }
+
+    // Wait for main container to start
+    sendEvent({ type: "phase", phase: "build", message: "Building image..." });
+    for (let i = 0; i < 120 && !closed; i++) {
+      const podStatus = await k8sApi.readNamespacedPod(podName, BUILD_NAMESPACE);
+      const mainStatus = (podStatus.body.status?.containerStatuses || []).find((c) => c.name === "kaniko");
+      if (mainStatus && (mainStatus.state?.running || mainStatus.state?.terminated)) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    // Stream main container logs
+    try {
+      const logResp = await k8sApi.readNamespacedPodLog(podName, BUILD_NAMESPACE, "kaniko", false);
+      const lines = (logResp.body || "").split("\n");
+      for (const line of lines) {
+        if (line.trim() && !closed) sendEvent({ type: "log", container: "kaniko", line });
+      }
+    } catch (err) {
+      sendEvent({ type: "error", message: "Failed to read build logs: " + (err.message || "") });
+    }
+
+    // Check final status
+    try {
+      const jobResp = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
+      if (jobResp.body.status?.succeeded) {
+        sendEvent({ type: "phase", phase: "push", message: "Image pushed to Harbor" });
+        sendEvent({ type: "complete", status: "succeeded" });
+      } else if (jobResp.body.status?.failed) {
+        sendEvent({ type: "complete", status: "failed" });
+      } else {
+        // Still running — poll until done
+        for (let i = 0; i < 300 && !closed; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const jr = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
+          // Stream any new logs
+          try {
+            const logResp = await k8sApi.readNamespacedPodLog(podName, BUILD_NAMESPACE, "kaniko", false, undefined, undefined, undefined, undefined, undefined, 50);
+            const lines = (logResp.body || "").split("\n");
+            for (const line of lines) {
+              if (line.trim()) sendEvent({ type: "log", container: "kaniko", line });
+            }
+          } catch { /* best effort */ }
+          if (jr.body.status?.succeeded) {
+            sendEvent({ type: "phase", phase: "push", message: "Image pushed to Harbor" });
+            sendEvent({ type: "complete", status: "succeeded" });
+            break;
+          }
+          if (jr.body.status?.failed) {
+            sendEvent({ type: "complete", status: "failed" });
+            break;
+          }
+        }
+      }
+    } catch {
+      sendEvent({ type: "error", message: "Failed to check build status" });
+    }
+  } catch (err) {
+    sendEvent({ type: "error", message: err.message || "Unknown error" });
+  }
+
+  sendEvent({ type: "done" });
+  res.end();
+});
+
+// GET /api/builds — List recent builds with status
+app.get("/api/builds", async (req, res) => {
+  try {
+    const jobsResp = await batchApi.listNamespacedJob(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, "app.kubernetes.io/part-of=sre-platform");
+    const builds = jobsResp.body.items
+      .sort((a, b) => new Date(b.metadata.creationTimestamp) - new Date(a.metadata.creationTimestamp))
+      .slice(0, 50)
+      .map((job) => {
+        const labels = job.metadata.labels || {};
+        const buildId = job.metadata.name;
+        let status = "pending";
+        if (job.status?.succeeded) status = "succeeded";
+        else if (job.status?.failed) status = "failed";
+        else if (job.status?.active) status = "building";
+
+        const meta = buildRegistry.get(buildId) || {};
+
+        return {
+          buildId,
+          appName: labels["sre.io/app-name"] || meta.appName || "",
+          team: labels["sre.io/team"] || meta.team || "",
+          status,
+          startTime: job.status?.startTime || "",
+          completionTime: job.status?.completionTime || "",
+          destination: meta.destination || "",
+        };
+      });
+
+    res.json({ builds });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.json({ builds: [] });
+    }
+    console.error("Error listing builds:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deploy/from-build — Deploy a completed build
+app.post("/api/deploy/from-build", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { buildId, appName, team, port, replicas, ingress } = req.body;
+
+    if (!buildId) return res.status(400).json({ error: "Missing required field: buildId" });
+    if (!appName) return res.status(400).json({ error: "Missing required field: appName" });
+    if (!team) return res.status(400).json({ error: "Missing required field: team" });
+
+    const safeName = sanitizeName(appName);
+    const safeBuildId = sanitizeName(buildId);
+    if (!isValidName(safeName)) return res.status(400).json({ error: "Invalid app name" });
+
+    // Check build succeeded
+    let buildMeta = buildRegistry.get(safeBuildId);
+    if (!buildMeta) {
+      // Try to reconstruct from Job labels
+      try {
+        const jobResp = await batchApi.readNamespacedJob(safeBuildId, BUILD_NAMESPACE);
+        if (!jobResp.body.status?.succeeded) {
+          return res.status(400).json({ error: "Build has not succeeded yet" });
+        }
+        const labels = jobResp.body.metadata.labels || {};
+        buildMeta = {
+          imageRepo: `${HARBOR_REGISTRY}/${labels["sre.io/team"] || sanitizeName(team)}/${labels["sre.io/app-name"] || safeName}`,
+          imageTag: safeBuildId,
+        };
+      } catch (err) {
+        if (err.statusCode === 404) {
+          return res.status(404).json({ error: "Build not found" });
+        }
+        throw err;
+      }
+    }
+
+    const teamName = sanitizeName(team);
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const containerPort = port || 8080;
+    const ingressHost = ingress || `${safeName}.apps.sre.example.com`;
+
+    // Ensure namespace
+    await ensureNamespace(nsName, teamName);
+
+    // Create HelmRelease
+    const manifest = generateHelmRelease({
+      name: safeName,
+      team: nsName,
+      image: buildMeta.imageRepo,
+      tag: buildMeta.imageTag,
+      port: containerPort,
+      replicas: replicas || 2,
+      ingressHost,
+    });
+
+    await applyManifest(manifest, nsName);
+
+    res.json({
+      success: true,
+      message: `App "${safeName}" deployed from build ${safeBuildId} to namespace "${nsName}"`,
+      namespace: nsName,
+      image: `${buildMeta.imageRepo}:${buildMeta.imageTag}`,
+      ingress: ingressHost,
+    });
+  } catch (err) {
+    console.error("Error deploying from build:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deploy/helm-chart — Deploy from an external Helm chart repository
+app.post("/api/deploy/helm-chart", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { repoUrl, chartName, chartVersion, values, appName, team } = req.body;
+
+    if (!repoUrl || typeof repoUrl !== "string") {
+      return res.status(400).json({ error: "Missing required field: repoUrl" });
+    }
+    if (!chartName || typeof chartName !== "string") {
+      return res.status(400).json({ error: "Missing required field: chartName" });
+    }
+    if (!appName || typeof appName !== "string") {
+      return res.status(400).json({ error: "Missing required field: appName" });
+    }
+    if (!team || typeof team !== "string") {
+      return res.status(400).json({ error: "Missing required field: team" });
+    }
+
+    const safeName = sanitizeName(appName);
+    if (!isValidName(safeName)) return res.status(400).json({ error: "Invalid app name" });
+
+    const teamName = sanitizeName(team);
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const safeChartName = sanitizeName(chartName);
+    const safeVersion = (chartVersion || "").replace(/[^a-zA-Z0-9._-]/g, "").substring(0, 64);
+
+    await ensureNamespace(nsName, teamName);
+
+    // Create HelmRepository pointing to external chart repo
+    const helmRepo = {
+      apiVersion: "source.toolkit.fluxcd.io/v1",
+      kind: "HelmRepository",
+      metadata: {
+        name: `chart-${safeName}`,
+        namespace: nsName,
+        labels: {
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": nsName,
+        },
+      },
+      spec: {
+        interval: "1h",
+        url: repoUrl,
+      },
+    };
+
+    try {
+      await customApi.createNamespacedCustomObject("source.toolkit.fluxcd.io", "v1", nsName, "helmrepositories", helmRepo);
+    } catch (err) {
+      if (err.statusCode === 409) {
+        await customApi.patchNamespacedCustomObject("source.toolkit.fluxcd.io", "v1", nsName, "helmrepositories", `chart-${safeName}`, helmRepo, undefined, undefined, undefined, { headers: { "Content-Type": "application/merge-patch+json" } });
+      } else {
+        throw err;
+      }
+    }
+
+    // Parse user-provided values (YAML string or object)
+    let userValues = {};
+    if (values) {
+      if (typeof values === "string") {
+        try {
+          userValues = yaml.load(values) || {};
+        } catch {
+          return res.status(400).json({ error: "Invalid YAML in values field" });
+        }
+      } else if (typeof values === "object") {
+        userValues = values;
+      }
+    }
+
+    // Create HelmRelease pointing to the external chart
+    const helmRelease = {
+      apiVersion: "helm.toolkit.fluxcd.io/v2",
+      kind: "HelmRelease",
+      metadata: {
+        name: safeName,
+        namespace: nsName,
+        labels: {
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": nsName,
+          "sre.io/deploy-type": "helm-chart",
+        },
+      },
+      spec: {
+        interval: "10m",
+        chart: {
+          spec: {
+            chart: chartName,
+            version: safeVersion || undefined,
+            sourceRef: {
+              kind: "HelmRepository",
+              name: `chart-${safeName}`,
+            },
+          },
+        },
+        install: {
+          createNamespace: false,
+          remediation: { retries: 3 },
+        },
+        upgrade: {
+          cleanupOnFail: true,
+          remediation: { retries: 3 },
+        },
+        values: userValues,
+      },
+    };
+
+    await applyManifest(helmRelease, nsName);
+
+    res.json({
+      success: true,
+      message: `Helm chart "${chartName}" deployed as "${safeName}" in namespace "${nsName}"`,
+      namespace: nsName,
+      chart: chartName,
+      version: safeVersion || "latest",
+    });
+  } catch (err) {
+    console.error("Error deploying Helm chart:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/databases — Create a CloudNativePG database cluster
+app.post("/api/databases", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { name, team, storage, instances, description } = req.body;
+
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ error: "Missing required field: name" });
+    }
+    if (!team || typeof team !== "string") {
+      return res.status(400).json({ error: "Missing required field: team" });
+    }
+
+    const safeName = sanitizeName(name);
+    if (!isValidName(safeName)) return res.status(400).json({ error: "Invalid database name" });
+
+    const teamName = sanitizeName(team);
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const dbInstances = Math.min(Math.max(Number(instances) || 1, 1), 3);
+    const dbStorage = (storage || "1Gi").replace(/[^a-zA-Z0-9]/g, "");
+
+    await ensureNamespace(nsName, teamName);
+
+    const cluster = {
+      apiVersion: "postgresql.cnpg.io/v1",
+      kind: "Cluster",
+      metadata: {
+        name: safeName,
+        namespace: nsName,
+        labels: {
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": nsName,
+          "sre.io/resource-type": "database",
+        },
+        annotations: {
+          "sre.io/description": description || "",
+        },
+      },
+      spec: {
+        instances: dbInstances,
+        storage: {
+          size: dbStorage,
+        },
+        monitoring: {
+          enablePodMonitor: true,
+        },
+        postgresql: {
+          parameters: {
+            log_statement: "ddl",
+            log_min_duration_statement: "1000",
+          },
+        },
+        bootstrap: {
+          initdb: {
+            database: safeName.replace(/-/g, "_"),
+            owner: safeName.replace(/-/g, "_"),
+          },
+        },
+      },
+    };
+
+    try {
+      await customApi.createNamespacedCustomObject("postgresql.cnpg.io", "v1", nsName, "clusters", cluster);
+    } catch (err) {
+      if (err.statusCode === 409) {
+        return res.status(409).json({ error: "Database already exists" });
+      }
+      throw err;
+    }
+
+    res.json({
+      success: true,
+      message: `Database "${safeName}" created in namespace "${nsName}"`,
+      namespace: nsName,
+      name: safeName,
+      instances: dbInstances,
+      storage: dbStorage,
+      connectionSecret: `${safeName}-app`,
+      envVars: {
+        DATABASE_URL: `postgresql://${safeName.replace(/-/g, "_")}@${safeName}-rw.${nsName}.svc:5432/${safeName.replace(/-/g, "_")}`,
+        PGHOST: `${safeName}-rw.${nsName}.svc`,
+        PGPORT: "5432",
+        PGUSER: safeName.replace(/-/g, "_"),
+        PGDATABASE: safeName.replace(/-/g, "_"),
+      },
+    });
+  } catch (err) {
+    console.error("Error creating database:", err);
+    if (err.statusCode === 404 && err.body?.message?.includes("postgresql.cnpg.io")) {
+      return res.status(400).json({ error: "CloudNativePG operator not installed. Install CNPG operator first." });
+    }
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/databases — List all databases
+app.get("/api/databases", async (req, res) => {
+  try {
+    const namespaces = await k8sApi.listNamespace();
+    const tenantNs = namespaces.body.items
+      .filter((ns) => ns.metadata?.labels?.["sre.io/tenant"] === "true" || ns.metadata.name.startsWith("team-"))
+      .map((ns) => ns.metadata.name);
+
+    const databases = [];
+    for (const ns of tenantNs) {
+      try {
+        const resp = await customApi.listNamespacedCustomObject("postgresql.cnpg.io", "v1", ns, "clusters");
+        for (const cluster of (resp.body.items || [])) {
+          const status = cluster.status || {};
+          databases.push({
+            name: cluster.metadata.name,
+            namespace: ns,
+            instances: cluster.spec?.instances || 1,
+            storage: cluster.spec?.storage?.size || "1Gi",
+            phase: status.phase || "Unknown",
+            readyInstances: status.readyInstances || 0,
+            connectionSecret: `${cluster.metadata.name}-app`,
+          });
+        }
+      } catch { /* CNPG may not exist in this namespace */ }
+    }
+
+    res.json({ databases });
+  } catch (err) {
+    console.error("Error listing databases:", err);
+    res.json({ databases: [] });
+  }
+});
+
+// DELETE /api/databases/:ns/:name — Delete a database cluster
+app.delete("/api/databases/:ns/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { ns, name } = req.params;
+    const safeNs = sanitizeName(ns);
+    const safeName = sanitizeName(name);
+    if (!isValidName(safeNs) || !isValidName(safeName)) {
+      return res.status(400).json({ error: "Invalid namespace or name" });
+    }
+
+    await customApi.deleteNamespacedCustomObject("postgresql.cnpg.io", "v1", safeNs, "clusters", safeName);
+    res.json({ success: true, message: `Database "${safeName}" deleted from "${safeNs}"` });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: "Database not found" });
+    }
+    console.error("Error deleting database:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Cluster Interaction API ──────────────────────────────────────────────────
+
+// GET /api/cluster/nodes — nodes with metrics
+app.get("/api/cluster/nodes", async (req, res) => {
+  try {
+    const [nodesRes, metricsRaw] = await Promise.all([
+      k8sApi.listNode(),
+      customApi.listClusterCustomObject("metrics.k8s.io", "v1beta1", "nodes").catch(() => null),
+    ]);
+    const metricsMap = {};
+    if (metricsRaw) {
+      const metricsItems = metricsRaw?.body?.items || metricsRaw?.items || [];
+      for (const m of metricsItems) {
+        metricsMap[m.metadata.name] = m.usage;
+      }
+    }
+    const nodes = nodesRes.body.items.map((n) => {
+      const s = n.status;
+      const alloc = s.allocatable || {};
+      const cap = s.capacity || {};
+      const usage = metricsMap[n.metadata.name] || {};
+      const cpuUsed = parseCpu(usage.cpu);
+      const cpuAlloc = parseCpu(alloc.cpu);
+      const memUsed = parseMem(usage.memory);
+      const memAlloc = parseMem(alloc.memory);
+      const roles = Object.keys(n.metadata.labels || {})
+        .filter((l) => l.startsWith("node-role.kubernetes.io/"))
+        .map((l) => l.split("/")[1]);
+      const ready = (s.conditions || []).find((c) => c.type === "Ready");
+      return {
+        name: n.metadata.name,
+        status: ready && ready.status === "True" ? "Ready" : "NotReady",
+        roles: roles.length ? roles : ["worker"],
+        ip: (s.addresses || []).find((a) => a.type === "InternalIP")?.address || "",
+        kubelet: s.nodeInfo?.kubeletVersion || "",
+        kernel: s.nodeInfo?.kernelVersion || "",
+        os: s.nodeInfo?.osImage || "",
+        runtime: s.nodeInfo?.containerRuntimeVersion || "",
+        age: age(n.metadata.creationTimestamp),
+        conditions: (s.conditions || []).map((c) => ({ type: c.type, status: c.status, message: c.message })),
+        unschedulable: !!n.spec.unschedulable,
+        cpu: { used: cpuUsed, allocatable: cpuAlloc, usedFmt: fmtCpu(cpuUsed), allocFmt: fmtCpu(cpuAlloc), pct: cpuAlloc > 0 ? Math.round((cpuUsed / cpuAlloc) * 100) : 0 },
+        memory: { used: memUsed, allocatable: memAlloc, usedFmt: fmtMem(memUsed), allocFmt: fmtMem(memAlloc), pct: memAlloc > 0 ? Math.round((memUsed / memAlloc) * 100) : 0 },
+        pods: { count: parseInt(cap.pods || "0"), allocatable: parseInt(alloc.pods || "0") },
+      };
+    });
+    res.json(nodes);
+  } catch (err) {
+    console.error("Error fetching nodes:", err.message);
+    res.status(500).json({ error: "Failed to fetch nodes" });
+  }
+});
+
+// GET /api/cluster/pods — list pods with filters
+app.get("/api/cluster/pods", async (req, res) => {
+  try {
+    const ns = req.query.namespace;
+    const search = (req.query.search || "").toLowerCase();
+    const statusFilter = (req.query.status || "").toLowerCase();
+    const podsRes = ns
+      ? await k8sApi.listNamespacedPod(ns)
+      : await k8sApi.listPodForAllNamespaces();
+    let pods = podsRes.body.items.map((p) => {
+      const cs = (p.status.containerStatuses || []);
+      const restarts = cs.reduce((sum, c) => sum + (c.restartCount || 0), 0);
+      const ready = cs.filter((c) => c.ready).length;
+      const total = (p.spec.containers || []).length;
+      const reqs = { cpu: 0, mem: 0 };
+      const lims = { cpu: 0, mem: 0 };
+      for (const c of p.spec.containers || []) {
+        const r = c.resources || {};
+        reqs.cpu += parseCpu(r.requests?.cpu);
+        reqs.mem += parseMem(r.requests?.memory);
+        lims.cpu += parseCpu(r.limits?.cpu);
+        lims.mem += parseMem(r.limits?.memory);
+      }
+      return {
+        name: p.metadata.name,
+        namespace: p.metadata.namespace,
+        status: p.status.phase,
+        statusReason: cs.find((c) => c.state?.waiting)?.state?.waiting?.reason || "",
+        ready: ready + "/" + total,
+        restarts,
+        age: age(p.metadata.creationTimestamp),
+        node: p.spec.nodeName || "",
+        ip: p.status.podIP || "",
+        containers: (p.spec.containers || []).map((c) => c.name),
+        requests: { cpu: fmtCpu(reqs.cpu), memory: fmtMem(reqs.mem) },
+        limits: { cpu: fmtCpu(lims.cpu), memory: fmtMem(lims.mem) },
+      };
+    });
+    if (search) pods = pods.filter((p) => p.name.toLowerCase().includes(search) || p.namespace.toLowerCase().includes(search));
+    if (statusFilter && statusFilter !== "all") {
+      pods = pods.filter((p) => p.status.toLowerCase() === statusFilter || p.statusReason.toLowerCase() === statusFilter);
+    }
+    pods.sort((a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name));
+    res.json(pods.slice(0, 500));
+  } catch (err) {
+    console.error("Error fetching pods:", err.message);
+    res.status(500).json({ error: "Failed to fetch pods" });
+  }
+});
+
+// GET /api/cluster/pods/:namespace/:name — single pod detail with events
+app.get("/api/cluster/pods/:namespace/:name", async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    const [podRes, eventsRes] = await Promise.all([
+      k8sApi.readNamespacedPod(name, namespace),
+      k8sApi.listNamespacedEvent(namespace, undefined, undefined, undefined, `involvedObject.name=${name}`),
+    ]);
+    const p = podRes.body;
+    const events = (eventsRes.body.items || [])
+      .sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0))
+      .slice(0, 50)
+      .map((e) => ({
+        type: e.type,
+        reason: e.reason,
+        message: e.message,
+        count: e.count,
+        age: age(e.lastTimestamp || e.eventTime),
+      }));
+    const containers = (p.spec.containers || []).map((c) => {
+      const cs = (p.status.containerStatuses || []).find((s) => s.name === c.name) || {};
+      const state = cs.state || {};
+      const stateKey = Object.keys(state)[0] || "unknown";
+      return {
+        name: c.name,
+        image: c.image,
+        ready: !!cs.ready,
+        restarts: cs.restartCount || 0,
+        state: stateKey,
+        stateDetail: state[stateKey]?.reason || state[stateKey]?.message || "",
+        ports: (c.ports || []).map((p) => p.containerPort + "/" + p.protocol),
+        resources: c.resources || {},
+      };
+    });
+    res.json({
+      name: p.metadata.name,
+      namespace: p.metadata.namespace,
+      status: p.status.phase,
+      node: p.spec.nodeName,
+      ip: p.status.podIP,
+      serviceAccount: p.spec.serviceAccountName,
+      age: age(p.metadata.creationTimestamp),
+      labels: p.metadata.labels || {},
+      conditions: (p.status.conditions || []).map((c) => ({ type: c.type, status: c.status, reason: c.reason, message: c.message })),
+      containers,
+      events,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: "Pod not found" });
+    console.error("Error fetching pod detail:", err.message);
+    res.status(500).json({ error: "Failed to fetch pod detail" });
+  }
+});
+
+// GET /api/cluster/pods/:namespace/:name/logs — container logs
+app.get("/api/cluster/pods/:namespace/:name/logs", async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    const container = req.query.container || undefined;
+    const tailLines = Math.min(parseInt(req.query.tailLines) || 200, 5000);
+    const previous = req.query.previous === "true";
+    const logRes = await k8sApi.readNamespacedPodLog(name, namespace, container, undefined, undefined, undefined, undefined, previous, undefined, tailLines, undefined);
+    res.type("text/plain").send(logRes.body || "(no logs)");
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).send("Pod or container not found");
+    console.error("Error fetching logs:", err.message);
+    res.status(500).send("Failed to fetch logs: " + (err.body?.message || err.message));
+  }
+});
+
+// GET /api/cluster/events — cluster events
+app.get("/api/cluster/events", async (req, res) => {
+  try {
+    const ns = req.query.namespace;
+    const typeFilter = req.query.type || "";
+    const eventsRes = ns
+      ? await k8sApi.listNamespacedEvent(ns)
+      : await k8sApi.listEventForAllNamespaces();
+    let events = (eventsRes.body.items || [])
+      .sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0))
+      .slice(0, 300);
+    if (typeFilter) events = events.filter((e) => e.type === typeFilter);
+    res.json(events.map((e) => ({
+      type: e.type,
+      reason: e.reason,
+      message: e.message,
+      namespace: e.metadata.namespace,
+      object: (e.involvedObject?.kind || "") + "/" + (e.involvedObject?.name || ""),
+      count: e.count || 1,
+      age: age(e.lastTimestamp || e.eventTime),
+      firstSeen: age(e.firstTimestamp || e.eventTime),
+    })));
+  } catch (err) {
+    console.error("Error fetching events:", err.message);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
+
+// GET /api/cluster/namespaces — namespaces with pod summary
+app.get("/api/cluster/namespaces", async (req, res) => {
+  try {
+    const [nsRes, podsRes] = await Promise.all([
+      k8sApi.listNamespace(),
+      k8sApi.listPodForAllNamespaces(),
+    ]);
+    const podsByNs = {};
+    for (const p of podsRes.body.items) {
+      const ns = p.metadata.namespace;
+      if (!podsByNs[ns]) podsByNs[ns] = { total: 0, running: 0, pending: 0, failed: 0, cpuReq: 0, memReq: 0 };
+      podsByNs[ns].total++;
+      const phase = (p.status.phase || "").toLowerCase();
+      if (phase === "running") podsByNs[ns].running++;
+      else if (phase === "pending") podsByNs[ns].pending++;
+      else if (phase === "failed") podsByNs[ns].failed++;
+      for (const c of p.spec.containers || []) {
+        podsByNs[ns].cpuReq += parseCpu(c.resources?.requests?.cpu);
+        podsByNs[ns].memReq += parseMem(c.resources?.requests?.memory);
+      }
+    }
+    const namespaces = nsRes.body.items.map((ns) => {
+      const name = ns.metadata.name;
+      const stats = podsByNs[name] || { total: 0, running: 0, pending: 0, failed: 0, cpuReq: 0, memReq: 0 };
+      return {
+        name,
+        status: ns.status.phase,
+        age: age(ns.metadata.creationTimestamp),
+        labels: ns.metadata.labels || {},
+        pods: stats.total,
+        running: stats.running,
+        pending: stats.pending,
+        failed: stats.failed,
+        cpuRequests: fmtCpu(stats.cpuReq),
+        memRequests: fmtMem(stats.memReq),
+        healthy: stats.failed === 0 && stats.pending === 0,
+      };
+    });
+    namespaces.sort((a, b) => b.pods - a.pods);
+    res.json(namespaces);
+  } catch (err) {
+    console.error("Error fetching namespaces:", err.message);
+    res.status(500).json({ error: "Failed to fetch namespaces" });
+  }
+});
+
+// GET /api/cluster/top/pods — top resource consumers
+app.get("/api/cluster/top/pods", async (req, res) => {
+  try {
+    const sortBy = req.query.sortBy || "cpu";
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const metricsRes = await customApi.listClusterCustomObject(
+      "metrics.k8s.io", "v1beta1", "pods"
+    );
+    const metricsItems = metricsRes?.body?.items || metricsRes?.items || [];
+    const items = metricsItems.map((m) => {
+      let cpuTotal = 0, memTotal = 0;
+      for (const c of m.containers || []) {
+        cpuTotal += parseCpu(c.usage?.cpu);
+        memTotal += parseMem(c.usage?.memory);
+      }
+      return {
+        name: m.metadata.name,
+        namespace: m.metadata.namespace,
+        cpu: fmtCpu(cpuTotal),
+        memory: fmtMem(memTotal),
+        cpuRaw: cpuTotal,
+        memRaw: memTotal,
+      };
+    });
+    items.sort((a, b) => sortBy === "memory" ? b.memRaw - a.memRaw : b.cpuRaw - a.cpuRaw);
+    res.json(items.slice(0, limit));
+  } catch (err) {
+    console.error("Error fetching top pods:", err.message);
+    res.status(500).json({ error: "Failed to fetch top pods" });
+  }
+});
+
+// GET /api/cluster/deployments — list deployments
+app.get("/api/cluster/deployments", async (req, res) => {
+  try {
+    const ns = req.query.namespace;
+    const depRes = ns
+      ? await appsApi.listNamespacedDeployment(ns)
+      : await appsApi.listDeploymentForAllNamespaces();
+    const deps = depRes.body.items.map((d) => ({
+      name: d.metadata.name,
+      namespace: d.metadata.namespace,
+      replicas: d.status.replicas || 0,
+      ready: d.status.readyReplicas || 0,
+      desired: d.spec.replicas || 0,
+      age: age(d.metadata.creationTimestamp),
+    }));
+    deps.sort((a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name));
+    res.json(deps);
+  } catch (err) {
+    console.error("Error fetching deployments:", err.message);
+    res.status(500).json({ error: "Failed to fetch deployments" });
+  }
+});
+
+// POST /api/cluster/deployments/:namespace/:name/restart — restart deployment
+app.post("/api/cluster/deployments/:namespace/:name/restart", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    await appsApi.patchNamespacedDeployment(name, namespace, {
+      spec: { template: { metadata: { annotations: { "kubectl.kubernetes.io/restartedAt": new Date().toISOString() } } } },
+    }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+    res.json({ success: true, message: `Restarted deployment ${escapeHtml(name)}` });
+  } catch (err) {
+    console.error("Error restarting deployment:", err.message);
+    res.status(500).json({ error: "Failed to restart deployment" });
+  }
+});
+
+// PATCH /api/cluster/deployments/:namespace/:name/scale — scale deployment
+app.patch("/api/cluster/deployments/:namespace/:name/scale", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    const replicas = parseInt(req.body.replicas);
+    if (isNaN(replicas) || replicas < 0 || replicas > 20) {
+      return res.status(400).json({ error: "Replicas must be 0-20" });
+    }
+    await appsApi.patchNamespacedDeploymentScale(name, namespace, { spec: { replicas } }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+    res.json({ success: true, message: `Scaled ${escapeHtml(name)} to ${replicas} replicas` });
+  } catch (err) {
+    console.error("Error scaling deployment:", err.message);
+    res.status(500).json({ error: "Failed to scale deployment" });
+  }
+});
+
+// POST /api/cluster/nodes/:name/cordon — cordon/uncordon node
+app.post("/api/cluster/nodes/:name/cordon", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { name } = req.params;
+    const unschedulable = req.body.cordon !== false;
+    await k8sApi.patchNode(name, { spec: { unschedulable } }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+    res.json({ success: true, message: `Node ${escapeHtml(name)} ${unschedulable ? "cordoned" : "uncordoned"}` });
+  } catch (err) {
+    console.error("Error cordoning node:", err.message);
+    res.status(500).json({ error: "Failed to update node" });
   }
 });
 

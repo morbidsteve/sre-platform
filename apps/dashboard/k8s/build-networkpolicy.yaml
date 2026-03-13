@@ -1,0 +1,66 @@
+---
+# Default deny all traffic in sre-builds namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow build pods to reach Harbor (push), Git hosts (clone), and DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-build-egress
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS egress — Harbor push, Git clone, registry pulls
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+    # SSH egress — Git clone via SSH
+    - ports:
+        - port: 22
+          protocol: TCP
+---
+# Allow ingress from sre-dashboard namespace (for log streaming)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dashboard-ingress
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-dashboard

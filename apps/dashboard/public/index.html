@@ -861,6 +861,389 @@
       animation: spin 0.6s linear infinite;
     }
 
+    /* ── Cluster Tab ─────────────────────────────────────────── */
+
+    .cluster-subnav {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .cluster-subnav-btn {
+      padding: 7px 16px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .cluster-subnav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .cluster-subnav-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .cluster-panel { display: none; }
+    .cluster-panel.active { display: block; }
+
+    .node-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      transition: border-color 0.15s;
+    }
+
+    .node-card:hover { border-color: var(--accent); }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .node-header h4 {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .node-role {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .node-role.control-plane { background: rgba(99,102,241,0.15); color: #818cf8; }
+    .node-role.worker { background: rgba(34,197,94,0.15); color: var(--green); }
+
+    .node-meta {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+    }
+
+    .node-meta span { display: flex; align-items: center; gap: 4px; }
+
+    .usage-bars {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .usage-bar-wrap label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .usage-bar {
+      height: 8px;
+      background: var(--bg);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .usage-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+
+    .usage-bar-fill.green { background: var(--green); }
+    .usage-bar-fill.yellow { background: var(--yellow); }
+    .usage-bar-fill.red { background: var(--red); }
+
+    .node-conditions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .condition-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+
+    .condition-badge.ok { background: rgba(34,197,94,0.1); color: var(--green); }
+    .condition-badge.warn { background: rgba(250,204,21,0.15); color: var(--yellow); }
+
+    /* Pod table */
+    .pod-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .pod-controls select, .pod-controls input {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .pod-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .pod-table th {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 2px solid var(--border);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .pod-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .pod-table tr { cursor: pointer; transition: background 0.1s; }
+    .pod-table tbody tr:hover { background: var(--surface-hover); }
+
+    .pod-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .pod-status.running { color: var(--green); }
+    .pod-status.pending { color: var(--yellow); }
+    .pod-status.failed { color: var(--red); }
+    .pod-status.succeeded { color: var(--text-dim); }
+
+    .pod-detail-panel {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin: 8px 0 12px;
+      padding: 16px;
+      animation: slideDown 0.2s ease;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .pod-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .pod-detail-grid .detail-item {
+      font-size: 12px;
+    }
+
+    .pod-detail-grid .detail-item .dlabel {
+      color: var(--text-dim);
+      font-size: 11px;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    /* Log viewer */
+    .log-viewer {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 16px;
+      border-radius: var(--radius);
+      max-height: 500px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .log-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .log-controls select, .log-controls input {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    /* Events feed */
+    .event-item {
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .event-item:last-child { border-bottom: none; }
+
+    .event-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+      height: fit-content;
+    }
+
+    .event-badge.Normal { background: rgba(34,197,94,0.1); color: var(--green); }
+    .event-badge.Warning { background: rgba(250,204,21,0.15); color: var(--yellow); }
+
+    .event-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* Namespace cards */
+    .ns-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      transition: border-color 0.15s;
+    }
+
+    .ns-card:hover { border-color: var(--accent); }
+
+    .ns-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .ns-stats {
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .ns-stats span { display: flex; align-items: center; gap: 4px; }
+
+    /* Resource top */
+    .top-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .top-table th {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 2px solid var(--border);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .top-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Quick actions */
+    .qa-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .qa-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      transition: border-color 0.15s;
+    }
+
+    .qa-card:hover { border-color: var(--accent); }
+
+    .qa-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .qa-card p {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .qa-card .qa-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .qa-card select, .qa-card input[type="number"] {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .btn-warn {
+      background: rgba(250,204,21,0.15);
+      color: var(--yellow);
+      border: 1px solid rgba(250,204,21,0.3);
+    }
+
+    .btn-warn:hover { background: rgba(250,204,21,0.25); }
+
+    .btn-danger {
+      background: rgba(239,68,68,0.15);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,0.3);
+    }
+
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+
     /* ── Command Palette ─────────────────────────────────────── */
 
     .cmd-overlay {
@@ -1161,8 +1544,8 @@
 
     .deploy-modes {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
       margin-bottom: 24px;
     }
 
@@ -1585,6 +1968,97 @@
 
     .scale-input:focus { border-color: var(--accent); }
 
+    /* ── Build Log Viewer ────────────────────────────────────── */
+
+    .build-log-viewer {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #c9d1d9;
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 12px 16px;
+      margin: 12px 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .build-log-viewer .log-line { display: block; }
+    .build-log-viewer .log-line.phase { color: #58a6ff; font-weight: 600; }
+    .build-log-viewer .log-line.error { color: #f85149; }
+    .build-log-viewer .log-line.status { color: #8b949e; font-style: italic; }
+
+    .build-pipeline {
+      display: flex;
+      gap: 0;
+      align-items: center;
+      margin: 16px 0;
+    }
+
+    .build-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .build-step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .build-step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+    .build-step:not(:first-child) { border-left: none; }
+    .build-step.active { color: var(--accent); border-color: var(--accent); background: rgba(59,130,246,0.08); }
+    .build-step.done { color: var(--green); border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.05); }
+    .build-step.failed { color: var(--red); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.05); }
+
+    .build-step-icon { font-size: 16px; }
+
+    .yaml-editor {
+      width: 100%;
+      min-height: 200px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 12px;
+      background: #0d1117;
+      color: #c9d1d9;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      resize: vertical;
+      tab-size: 2;
+      outline: none;
+    }
+
+    .yaml-editor:focus { border-color: var(--accent); }
+
+    .db-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .db-card .db-status { font-size: 12px; font-weight: 600; }
+    .db-card .db-status.ready { color: var(--green); }
+    .db-card .db-status.creating { color: var(--yellow); }
+
+    .db-conn-info {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: monospace;
+      font-size: 12px;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
     /* ── Responsive ───────────────────────────────────────────── */
 
     @media (max-width: 1024px) {
@@ -1680,6 +2154,7 @@
   <button data-tab="apps" onclick="switchTab('apps', this)">My Apps</button>
   <button data-tab="deploy" onclick="switchTab('deploy', this)">Deploy App</button>
   <button data-tab="status" onclick="switchTab('status', this)">Status</button>
+  <button data-tab="cluster" onclick="switchTab('cluster', this)">Cluster</button>
   <button data-tab="audit" onclick="switchTab('audit', this)">Audit</button>
   <button data-tab="credentials" onclick="switchTab('credentials', this)">Credentials</button>
 </nav>
@@ -1773,20 +2248,40 @@
         <div class="mode-title">Quick Start</div>
         <div class="mode-desc">One-click sample apps</div>
       </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('build-git')">
+        <span class="mode-icon">&#x1F528;</span>
+        <div class="mode-title">Build from Git</div>
+        <div class="mode-desc">Clone, build, deploy</div>
+      </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('dockerfile')">
+        <span class="mode-icon">&#x1F4DD;</span>
+        <div class="mode-title">Dockerfile</div>
+        <div class="mode-desc">Paste or write inline</div>
+      </div>
       <div class="deploy-mode-card" onclick="switchDeployMode('custom')">
         <span class="mode-icon">&#x1F4E6;</span>
-        <div class="mode-title">Custom Deploy</div>
-        <div class="mode-desc">Single container, full options</div>
+        <div class="mode-title">Container Image</div>
+        <div class="mode-desc">Existing image + tag</div>
+      </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('helm')">
+        <span class="mode-icon">&#x2388;</span>
+        <div class="mode-title">Helm Chart</div>
+        <div class="mode-desc">Deploy from chart repo</div>
+      </div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('compose')">
+        <span class="mode-icon">&#x1F4C4;</span>
+        <div class="mode-title">Docker Compose</div>
+        <div class="mode-desc">Paste or upload file</div>
       </div>
       <div class="deploy-mode-card" onclick="switchDeployMode('multi')">
         <span class="mode-icon">&#x1F517;</span>
         <div class="mode-title">Multi-Container</div>
         <div class="mode-desc">Deploy services together</div>
       </div>
-      <div class="deploy-mode-card" onclick="switchDeployMode('compose')">
-        <span class="mode-icon">&#x1F4C4;</span>
-        <div class="mode-title">Docker Compose</div>
-        <div class="mode-desc">Paste or upload compose file</div>
+      <div class="deploy-mode-card" onclick="switchDeployMode('database')">
+        <span class="mode-icon">&#x1F5C3;</span>
+        <div class="mode-title">Database</div>
+        <div class="mode-desc">PostgreSQL via CNPG</div>
       </div>
     </div>
 
@@ -1812,6 +2307,236 @@
         </div>
         <div class="grid" id="samples-grid">
           <div class="loading"><span class="spinner"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode: Build from Git -->
+    <div id="panel-build-git" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2 style="margin-bottom: 4px;">Build from Git</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Point to a Git repo with a Dockerfile. We'll clone, build, push to Harbor, and deploy automatically.</p>
+        <form id="build-git-form" onsubmit="handleBuildFromGit(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Git Repository URL</label>
+              <input type="url" id="bg-url" placeholder="https://github.com/user/repo.git" required />
+            </div>
+            <div class="form-group">
+              <label>Branch</label>
+              <input type="text" id="bg-branch" value="main" placeholder="main" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>App Name</label>
+              <input type="text" id="bg-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+              <div class="hint">Lowercase letters, numbers, hyphens only</div>
+            </div>
+            <div class="form-group">
+              <label>Team Name</label>
+              <input type="text" id="bg-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Dockerfile Path</label>
+              <input type="text" id="bg-dockerfile" value="Dockerfile" placeholder="Dockerfile" />
+              <div class="hint">Relative to repo root</div>
+            </div>
+            <div class="form-group">
+              <label>Container Port</label>
+              <input type="number" id="bg-port" value="8080" min="1" max="65535" />
+            </div>
+          </div>
+          <div class="btn-group">
+            <button type="submit" class="btn btn-primary" id="build-git-btn">Build &amp; Deploy</button>
+          </div>
+        </form>
+
+        <!-- Build Pipeline Progress -->
+        <div id="build-pipeline" style="display:none;">
+          <div class="build-pipeline">
+            <div class="build-step" id="bp-clone"><span class="build-step-icon">&#x1F4E5;</span> Clone</div>
+            <div class="build-step" id="bp-build"><span class="build-step-icon">&#x1F528;</span> Build</div>
+            <div class="build-step" id="bp-push"><span class="build-step-icon">&#x1F4E4;</span> Push</div>
+            <div class="build-step" id="bp-deploy"><span class="build-step-icon">&#x1F680;</span> Deploy</div>
+          </div>
+          <div class="build-log-viewer" id="build-log-output"></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+            <button class="btn-outline" onclick="downloadBuildLogs()" style="font-size:12px;padding:4px 10px;">Download Logs</button>
+            <span id="build-status-text" style="font-size:12px;color:var(--text-dim);"></span>
+          </div>
+          <div id="build-deploy-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+            <h3 style="font-size:14px;margin-bottom:12px;">Deploy Built Image</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Replicas</label>
+                <input type="number" id="bg-replicas" value="2" min="1" max="10" />
+              </div>
+              <div class="form-group">
+                <label>Ingress Hostname</label>
+                <input type="text" id="bg-ingress" placeholder="auto-generated" />
+              </div>
+            </div>
+            <button class="btn btn-primary" id="build-deploy-btn" onclick="handleDeployFromBuild()">Deploy to Cluster</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode: Inline Dockerfile -->
+    <div id="panel-dockerfile" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2 style="margin-bottom: 4px;">Build from Dockerfile</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Write or paste a Dockerfile. We'll build, push to Harbor, and deploy.</p>
+        <form id="dockerfile-form" onsubmit="handleDockerfileBuild(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>App Name</label>
+              <input type="text" id="df-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+            </div>
+            <div class="form-group">
+              <label>Team Name</label>
+              <input type="text" id="df-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Dockerfile</label>
+            <textarea id="df-content" class="yaml-editor" style="min-height:250px;" placeholder="FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+USER 1000
+EXPOSE 8080
+CMD [&quot;node&quot;, &quot;server.js&quot;]"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Container Port</label>
+            <input type="number" id="df-port" value="8080" min="1" max="65535" style="max-width:120px;" />
+          </div>
+          <div class="btn-group">
+            <button type="submit" class="btn btn-primary" id="dockerfile-build-btn">Build &amp; Deploy</button>
+          </div>
+        </form>
+        <div id="dockerfile-pipeline" style="display:none;">
+          <div class="build-pipeline">
+            <div class="build-step" id="dfp-build"><span class="build-step-icon">&#x1F528;</span> Build</div>
+            <div class="build-step" id="dfp-push"><span class="build-step-icon">&#x1F4E4;</span> Push</div>
+            <div class="build-step" id="dfp-deploy"><span class="build-step-icon">&#x1F680;</span> Deploy</div>
+          </div>
+          <div class="build-log-viewer" id="dockerfile-log-output"></div>
+          <span id="dockerfile-status-text" style="font-size:12px;color:var(--text-dim);"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode: Helm Chart Import -->
+    <div id="panel-helm" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2 style="margin-bottom: 4px;">Deploy Helm Chart</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Deploy any Helm chart from a public or private chart repository.</p>
+        <form id="helm-form" onsubmit="handleHelmDeploy(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Chart Repository URL</label>
+              <input type="url" id="hc-repo" placeholder="https://charts.bitnami.com/bitnami" required />
+            </div>
+            <div class="form-group">
+              <label>Chart Name</label>
+              <input type="text" id="hc-chart" placeholder="nginx" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Chart Version</label>
+              <input type="text" id="hc-version" placeholder="18.1.0 (optional)" />
+              <div class="hint">Leave blank for latest</div>
+            </div>
+            <div class="form-group">
+              <label>Release Name</label>
+              <input type="text" id="hc-name" placeholder="my-nginx" required pattern="[a-z0-9-]+" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Team Name</label>
+            <input type="text" id="hc-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" style="max-width:300px;" />
+          </div>
+          <div class="form-group">
+            <label>Values Override (YAML)</label>
+            <textarea id="hc-values" class="yaml-editor" placeholder="# Override chart values here
+replicaCount: 2
+service:
+  type: ClusterIP
+  port: 8080"></textarea>
+          </div>
+
+          <div class="section-label" style="margin-top: 12px;">Popular Charts</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+            <button type="button" class="btn-outline" style="font-size:12px;padding:4px 10px;" onclick="fillHelmChart('https://charts.bitnami.com/bitnami','nginx','')">Nginx</button>
+            <button type="button" class="btn-outline" style="font-size:12px;padding:4px 10px;" onclick="fillHelmChart('https://charts.bitnami.com/bitnami','postgresql','')">PostgreSQL</button>
+            <button type="button" class="btn-outline" style="font-size:12px;padding:4px 10px;" onclick="fillHelmChart('https://charts.bitnami.com/bitnami','redis','')">Redis</button>
+            <button type="button" class="btn-outline" style="font-size:12px;padding:4px 10px;" onclick="fillHelmChart('https://charts.bitnami.com/bitnami','mongodb','')">MongoDB</button>
+            <button type="button" class="btn-outline" style="font-size:12px;padding:4px 10px;" onclick="fillHelmChart('https://charts.bitnami.com/bitnami','rabbitmq','')">RabbitMQ</button>
+            <button type="button" class="btn-outline" style="font-size:12px;padding:4px 10px;" onclick="fillHelmChart('https://charts.bitnami.com/bitnami','minio','')">MinIO</button>
+          </div>
+
+          <div class="btn-group">
+            <button type="submit" class="btn btn-primary" id="helm-deploy-btn">Deploy Chart</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Mode: Database -->
+    <div id="panel-database" class="deploy-panel">
+      <div class="form-card-wide">
+        <h2 style="margin-bottom: 4px;">Create PostgreSQL Database</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Provision a managed PostgreSQL database via CloudNativePG. Connection secret is auto-created.</p>
+        <form id="db-form" onsubmit="handleCreateDatabase(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Database Name</label>
+              <input type="text" id="db-name" placeholder="my-database" required pattern="[a-z0-9-]+" />
+            </div>
+            <div class="form-group">
+              <label>Team Name</label>
+              <input type="text" id="db-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Storage Size</label>
+              <select id="db-storage">
+                <option value="1Gi">1 Gi (dev)</option>
+                <option value="5Gi">5 Gi (small)</option>
+                <option value="10Gi" selected>10 Gi (medium)</option>
+                <option value="20Gi">20 Gi (large)</option>
+                <option value="50Gi">50 Gi (xlarge)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Instances</label>
+              <select id="db-instances">
+                <option value="1" selected>1 (standalone)</option>
+                <option value="2">2 (HA, 1 replica)</option>
+                <option value="3">3 (HA, 2 replicas)</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button type="submit" class="btn btn-primary" id="db-create-btn">Create Database</button>
+          </div>
+        </form>
+        <div id="db-result" style="display:none;margin-top:16px;"></div>
+
+        <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h3 style="font-size:14px;">Existing Databases</h3>
+            <button class="btn-outline" onclick="loadDatabases()" style="font-size:12px;padding:4px 10px;">Refresh</button>
+          </div>
+          <div id="db-list" class="grid"></div>
         </div>
       </div>
     </div>
@@ -2109,6 +2834,199 @@ services:
     </div>
   </div>
 
+  <!-- Cluster Tab -->
+  <div id="tab-cluster" class="tab-content">
+    <div class="cluster-subnav">
+      <button class="cluster-subnav-btn active" onclick="switchClusterPanel('nodes', this)">Nodes</button>
+      <button class="cluster-subnav-btn" onclick="switchClusterPanel('pods', this)">Pods</button>
+      <button class="cluster-subnav-btn" onclick="switchClusterPanel('logs', this)">Logs</button>
+      <button class="cluster-subnav-btn" onclick="switchClusterPanel('events', this)">Events</button>
+      <button class="cluster-subnav-btn" onclick="switchClusterPanel('namespaces', this)">Namespaces</button>
+      <button class="cluster-subnav-btn" onclick="switchClusterPanel('resources', this)">Resources</button>
+      <button class="cluster-subnav-btn" onclick="switchClusterPanel('actions', this)">Quick Actions</button>
+    </div>
+
+    <!-- Nodes Panel -->
+    <div id="cluster-nodes" class="cluster-panel active">
+      <div class="grid" id="nodes-grid">
+        <div class="loading"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+    <!-- Pods Panel -->
+    <div id="cluster-pods" class="cluster-panel">
+      <div class="pod-controls">
+        <select id="pod-ns-filter" onchange="loadClusterPods()">
+          <option value="">All Namespaces</option>
+        </select>
+        <select id="pod-status-filter" onchange="loadClusterPods()">
+          <option value="">All Statuses</option>
+          <option value="Running">Running</option>
+          <option value="Pending">Pending</option>
+          <option value="Failed">Failed</option>
+          <option value="Succeeded">Succeeded</option>
+          <option value="CrashLoopBackOff">CrashLoop</option>
+        </select>
+        <input type="text" id="pod-search" placeholder="Search pods..." oninput="loadClusterPods()" style="flex:1;min-width:160px;" />
+        <span id="pod-result-count" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="pod-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Name</th>
+              <th>Namespace</th>
+              <th>Ready</th>
+              <th>Restarts</th>
+              <th>Age</th>
+              <th>Node</th>
+            </tr>
+          </thead>
+          <tbody id="pods-tbody">
+            <tr><td colspan="7" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="pod-detail-container"></div>
+    </div>
+
+    <!-- Logs Panel -->
+    <div id="cluster-logs" class="cluster-panel">
+      <div class="log-controls">
+        <select id="log-ns" onchange="populateLogPods()">
+          <option value="">Select namespace...</option>
+        </select>
+        <select id="log-pod" onchange="populateLogContainers()">
+          <option value="">Select pod...</option>
+        </select>
+        <select id="log-container">
+          <option value="">All containers</option>
+        </select>
+        <select id="log-lines">
+          <option value="100">100 lines</option>
+          <option value="300" selected>300 lines</option>
+          <option value="1000">1000 lines</option>
+          <option value="5000">5000 lines</option>
+        </select>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;">
+          <input type="checkbox" id="log-previous" /> Previous
+        </label>
+        <button class="btn" onclick="loadClusterLogs()">Fetch Logs</button>
+        <input type="text" id="log-search" placeholder="Search in logs..." oninput="searchInLogs()" style="flex:1;min-width:120px;" />
+        <button class="btn" onclick="downloadLogs()" title="Download logs">Download</button>
+      </div>
+      <div class="log-viewer" id="log-output">Select a namespace and pod to view logs.</div>
+      <div id="log-match-count" style="font-size:11px;color:var(--text-dim);margin-top:6px;"></div>
+    </div>
+
+    <!-- Events Panel -->
+    <div id="cluster-events" class="cluster-panel">
+      <div class="pod-controls">
+        <select id="event-ns" onchange="loadClusterEvents()">
+          <option value="">All Namespaces</option>
+        </select>
+        <select id="event-type" onchange="loadClusterEvents()">
+          <option value="">All Types</option>
+          <option value="Warning">Warning</option>
+          <option value="Normal">Normal</option>
+        </select>
+        <span id="event-count" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+      <div id="events-feed">
+        <div class="loading"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+    <!-- Namespaces Panel -->
+    <div id="cluster-namespaces" class="cluster-panel">
+      <div class="grid" id="ns-grid">
+        <div class="loading"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+    <!-- Resources Panel -->
+    <div id="cluster-resources" class="cluster-panel">
+      <div class="pod-controls">
+        <span style="font-size:13px;font-weight:600;">Top Resource Consumers</span>
+        <select id="res-sort" onchange="loadClusterResources()">
+          <option value="cpu">Sort by CPU</option>
+          <option value="memory">Sort by Memory</option>
+        </select>
+        <select id="res-limit" onchange="loadClusterResources()">
+          <option value="20">Top 20</option>
+          <option value="50">Top 50</option>
+          <option value="100">Top 100</option>
+        </select>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="top-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Pod</th>
+              <th>Namespace</th>
+              <th>CPU</th>
+              <th>Memory</th>
+            </tr>
+          </thead>
+          <tbody id="resources-tbody">
+            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Quick Actions Panel -->
+    <div id="cluster-actions" class="cluster-panel">
+      <div class="qa-grid" id="qa-grid">
+        <!-- Restart Deployment -->
+        <div class="qa-card">
+          <h4>Restart Deployment</h4>
+          <p>Trigger a rolling restart of a deployment's pods.</p>
+          <div class="qa-controls">
+            <select id="qa-restart-ns" onchange="loadQADeployments('qa-restart-ns','qa-restart-dep')" style="min-width:120px;">
+              <option value="">Namespace...</option>
+            </select>
+            <select id="qa-restart-dep" style="min-width:160px;">
+              <option value="">Deployment...</option>
+            </select>
+            <button class="btn btn-warn" onclick="restartDeployment()">Restart</button>
+          </div>
+        </div>
+
+        <!-- Scale Deployment -->
+        <div class="qa-card">
+          <h4>Scale Deployment</h4>
+          <p>Adjust the replica count of a deployment.</p>
+          <div class="qa-controls">
+            <select id="qa-scale-ns" onchange="loadQADeployments('qa-scale-ns','qa-scale-dep')" style="min-width:120px;">
+              <option value="">Namespace...</option>
+            </select>
+            <select id="qa-scale-dep" style="min-width:160px;">
+              <option value="">Deployment...</option>
+            </select>
+            <input type="number" id="qa-scale-count" min="0" max="20" value="1" style="width:60px;" />
+            <button class="btn" onclick="scaleDeployment()">Scale</button>
+          </div>
+        </div>
+
+        <!-- Cordon / Uncordon Node -->
+        <div class="qa-card">
+          <h4>Cordon / Uncordon Node</h4>
+          <p>Prevent or allow pod scheduling on a node.</p>
+          <div class="qa-controls">
+            <select id="qa-cordon-node" style="min-width:200px;">
+              <option value="">Select node...</option>
+            </select>
+            <button class="btn btn-warn" onclick="toggleCordon(true)">Cordon</button>
+            <button class="btn btn-success" onclick="toggleCordon(false)">Uncordon</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Credentials Tab -->
   <div id="tab-credentials" class="tab-content">
     <h2 style="margin-bottom: 16px;">Platform Login</h2>
@@ -2165,6 +3083,10 @@ var sessionWarnTimer = null;
 var statusRefreshTimer = null;
 var auditRefreshTimer = null;
 var alertRefreshTimer = null;
+var clusterRefreshTimer = null;
+var clusterPodsCache = [];
+var clusterLogsRaw = '';
+var activeClusterPanel = 'nodes';
 
 // ── Service Icons (SVG-free, using simple text icons) ───────────────────────
 
@@ -2211,6 +3133,7 @@ function switchTab(tab, btn) {
   // Clear refresh timers
   clearInterval(statusRefreshTimer);
   clearInterval(auditRefreshTimer);
+  clearInterval(clusterRefreshTimer);
 
   if (tab === 'deploy') { loadTenants(); }
   if (tab === 'apps') { loadAppGallery(); }
@@ -2223,6 +3146,10 @@ function switchTab(tab, btn) {
   if (tab === 'audit') {
     loadAudit();
     auditRefreshTimer = setInterval(loadAudit, 30000);
+  }
+  if (tab === 'cluster') {
+    initClusterTab();
+    clusterRefreshTimer = setInterval(refreshActiveClusterPanel, 30000);
   }
 }
 
@@ -2239,6 +3166,7 @@ function applyRBAC() {
     services: true,
     apps: true,
     deploy: role === 'admin' || role === 'developer',
+    cluster: role === 'admin' || role === 'developer',
     status: true,
     audit: role === 'admin',
     credentials: role === 'admin'
@@ -2679,13 +3607,14 @@ var activeDeployPolls = [];
 
 function switchDeployMode(mode) {
   currentDeployMode = mode;
+  var modes = ['quickstart', 'build-git', 'dockerfile', 'custom', 'helm', 'compose', 'multi', 'database'];
   document.querySelectorAll('.deploy-mode-card').forEach(function(card, i) {
-    var modes = ['quickstart', 'custom', 'multi', 'compose'];
     card.classList.toggle('active', modes[i] === mode);
   });
   document.querySelectorAll('.deploy-panel').forEach(function(p) { p.classList.remove('active'); });
   var panel = document.getElementById('panel-' + mode);
   if (panel) panel.classList.add('active');
+  if (mode === 'database') loadDatabases();
 }
 
 function addEnvRow(containerId) {
@@ -3313,6 +4242,418 @@ async function deleteApp(namespace, name) {
   }
 }
 
+// ── Build Pipeline Handlers ──────────────────────────────────────────────────
+
+var currentBuildId = null;
+var currentBuildMeta = {};
+
+function setBuildStepState(prefix, step, state) {
+  var el = document.getElementById(prefix + '-' + step);
+  if (!el) return;
+  el.classList.remove('active', 'done', 'failed');
+  if (state) el.classList.add(state);
+}
+
+function appendBuildLog(containerId, line, cls) {
+  var viewer = document.getElementById(containerId);
+  if (!viewer) return;
+  var span = document.createElement('span');
+  span.className = 'log-line' + (cls ? ' ' + cls : '');
+  span.textContent = line + '\n';
+  viewer.appendChild(span);
+  viewer.scrollTop = viewer.scrollHeight;
+}
+
+function downloadBuildLogs() {
+  var viewer = document.getElementById('build-log-output');
+  if (!viewer) return;
+  var text = viewer.textContent;
+  var blob = new Blob([text], { type: 'text/plain' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (currentBuildId || 'build') + '.log';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function handleBuildFromGit(e) {
+  e.preventDefault();
+  var btn = document.getElementById('build-git-btn');
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  var url = document.getElementById('bg-url').value.trim();
+  var branch = document.getElementById('bg-branch').value.trim() || 'main';
+  var appName = document.getElementById('bg-name').value.trim();
+  var team = document.getElementById('bg-team').value.trim();
+  var dockerfile = document.getElementById('bg-dockerfile').value.trim() || 'Dockerfile';
+  var port = parseInt(document.getElementById('bg-port').value) || 8080;
+
+  // Show pipeline
+  var pipelineEl = document.getElementById('build-pipeline');
+  pipelineEl.style.display = 'block';
+  document.getElementById('build-log-output').innerHTML = '';
+  document.getElementById('build-deploy-section').style.display = 'none';
+  setBuildStepState('bp', 'clone', 'active');
+  setBuildStepState('bp', 'build', '');
+  setBuildStepState('bp', 'push', '');
+  setBuildStepState('bp', 'deploy', '');
+
+  try {
+    var resp = await fetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gitUrl: url, branch: branch, appName: appName, team: team, dockerfile: dockerfile }),
+    });
+    var data = await resp.json();
+    if (!data.success) {
+      appendBuildLog('build-log-output', 'Error: ' + data.error, 'error');
+      setBuildStepState('bp', 'clone', 'failed');
+      btn.disabled = false;
+      btn.textContent = 'Build & Deploy';
+      return;
+    }
+
+    currentBuildId = data.buildId;
+    currentBuildMeta = { appName: appName, team: team, port: port, destination: data.destination };
+    document.getElementById('build-status-text').textContent = 'Build ID: ' + data.buildId;
+
+    // Open SSE for logs
+    var evtSource = new EventSource('/api/build/' + encodeURIComponent(data.buildId) + '/logs');
+    evtSource.onmessage = function(event) {
+      var msg = JSON.parse(event.data);
+      if (msg.type === 'log') {
+        appendBuildLog('build-log-output', msg.line, '');
+      } else if (msg.type === 'phase') {
+        appendBuildLog('build-log-output', '--- ' + msg.message + ' ---', 'phase');
+        if (msg.phase === 'clone') {
+          setBuildStepState('bp', 'clone', 'active');
+        } else if (msg.phase === 'build') {
+          setBuildStepState('bp', 'clone', 'done');
+          setBuildStepState('bp', 'build', 'active');
+        } else if (msg.phase === 'push') {
+          setBuildStepState('bp', 'build', 'done');
+          setBuildStepState('bp', 'push', 'done');
+        }
+      } else if (msg.type === 'status') {
+        appendBuildLog('build-log-output', msg.message, 'status');
+      } else if (msg.type === 'error') {
+        appendBuildLog('build-log-output', 'ERROR: ' + msg.message, 'error');
+      } else if (msg.type === 'complete') {
+        if (msg.status === 'succeeded') {
+          setBuildStepState('bp', 'clone', 'done');
+          setBuildStepState('bp', 'build', 'done');
+          setBuildStepState('bp', 'push', 'done');
+          appendBuildLog('build-log-output', 'Build succeeded! Image ready to deploy.', 'phase');
+          document.getElementById('build-deploy-section').style.display = 'block';
+          document.getElementById('bg-ingress').value = appName + '.apps.sre.example.com';
+          document.getElementById('build-status-text').textContent = 'Build succeeded - ' + data.buildId;
+        } else {
+          setBuildStepState('bp', 'build', 'failed');
+          appendBuildLog('build-log-output', 'Build failed.', 'error');
+          document.getElementById('build-status-text').textContent = 'Build failed';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Build & Deploy';
+      } else if (msg.type === 'done') {
+        evtSource.close();
+      }
+    };
+    evtSource.onerror = function() {
+      evtSource.close();
+      btn.disabled = false;
+      btn.textContent = 'Build & Deploy';
+    };
+  } catch (err) {
+    appendBuildLog('build-log-output', 'Request failed: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Build & Deploy';
+  }
+}
+
+async function handleDeployFromBuild() {
+  if (!currentBuildId) return;
+  var btn = document.getElementById('build-deploy-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deploying...';
+
+  setBuildStepState('bp', 'deploy', 'active');
+
+  try {
+    var resp = await fetch('/api/deploy/from-build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        buildId: currentBuildId,
+        appName: currentBuildMeta.appName,
+        team: currentBuildMeta.team,
+        port: currentBuildMeta.port,
+        replicas: parseInt(document.getElementById('bg-replicas').value) || 2,
+        ingress: document.getElementById('bg-ingress').value.trim(),
+      }),
+    });
+    var data = await resp.json();
+    if (data.success) {
+      setBuildStepState('bp', 'deploy', 'done');
+      appendBuildLog('build-log-output', 'Deployed! ' + data.message, 'phase');
+      showDeployAlert('success', data.message + ' - Accessible at https://' + (document.getElementById('bg-ingress').value.trim() || currentBuildMeta.appName + '.apps.sre.example.com'));
+      loadDeployedApps();
+    } else {
+      setBuildStepState('bp', 'deploy', 'failed');
+      appendBuildLog('build-log-output', 'Deploy failed: ' + data.error, 'error');
+    }
+  } catch (err) {
+    setBuildStepState('bp', 'deploy', 'failed');
+    appendBuildLog('build-log-output', 'Deploy request failed: ' + err.message, 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Deploy to Cluster';
+}
+
+async function handleDockerfileBuild(e) {
+  e.preventDefault();
+  var btn = document.getElementById('dockerfile-build-btn');
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  var appName = document.getElementById('df-name').value.trim();
+  var team = document.getElementById('df-team').value.trim();
+  var content = document.getElementById('df-content').value;
+  var port = parseInt(document.getElementById('df-port').value) || 8080;
+
+  if (!content.trim()) {
+    showDeployAlert('error', 'Dockerfile content is required');
+    btn.disabled = false;
+    btn.textContent = 'Build & Deploy';
+    return;
+  }
+
+  var pipelineEl = document.getElementById('dockerfile-pipeline');
+  pipelineEl.style.display = 'block';
+  document.getElementById('dockerfile-log-output').innerHTML = '';
+  setBuildStepState('dfp', 'build', 'active');
+  setBuildStepState('dfp', 'push', '');
+  setBuildStepState('dfp', 'deploy', '');
+
+  try {
+    var resp = await fetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dockerfileContent: content, appName: appName, team: team }),
+    });
+    var data = await resp.json();
+    if (!data.success) {
+      appendBuildLog('dockerfile-log-output', 'Error: ' + data.error, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Build & Deploy';
+      return;
+    }
+
+    var evtSource = new EventSource('/api/build/' + encodeURIComponent(data.buildId) + '/logs');
+    evtSource.onmessage = function(event) {
+      var msg = JSON.parse(event.data);
+      if (msg.type === 'log') {
+        appendBuildLog('dockerfile-log-output', msg.line, '');
+      } else if (msg.type === 'phase') {
+        appendBuildLog('dockerfile-log-output', '--- ' + msg.message + ' ---', 'phase');
+        if (msg.phase === 'build') {
+          setBuildStepState('dfp', 'build', 'active');
+        } else if (msg.phase === 'push') {
+          setBuildStepState('dfp', 'build', 'done');
+          setBuildStepState('dfp', 'push', 'done');
+        }
+      } else if (msg.type === 'complete') {
+        if (msg.status === 'succeeded') {
+          setBuildStepState('dfp', 'build', 'done');
+          setBuildStepState('dfp', 'push', 'done');
+          appendBuildLog('dockerfile-log-output', 'Build succeeded! Auto-deploying...', 'phase');
+          // Auto-deploy after successful build
+          autoDeployFromBuild(data.buildId, appName, team, port);
+        } else {
+          setBuildStepState('dfp', 'build', 'failed');
+          appendBuildLog('dockerfile-log-output', 'Build failed.', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Build & Deploy';
+        }
+      } else if (msg.type === 'done') {
+        evtSource.close();
+      }
+    };
+    evtSource.onerror = function() { evtSource.close(); btn.disabled = false; btn.textContent = 'Build & Deploy'; };
+  } catch (err) {
+    appendBuildLog('dockerfile-log-output', 'Request failed: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Build & Deploy';
+  }
+}
+
+async function autoDeployFromBuild(buildId, appName, team, port) {
+  var btn = document.getElementById('dockerfile-build-btn');
+  var pipelinePrefix = 'dfp';
+  setBuildStepState(pipelinePrefix, 'deploy', 'active');
+
+  try {
+    var resp = await fetch('/api/deploy/from-build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        buildId: buildId,
+        appName: appName,
+        team: team,
+        port: port,
+        replicas: 2,
+        ingress: appName + '.apps.sre.example.com',
+      }),
+    });
+    var data = await resp.json();
+    if (data.success) {
+      setBuildStepState(pipelinePrefix, 'deploy', 'done');
+      appendBuildLog('dockerfile-log-output', 'Deployed! ' + data.message, 'phase');
+      showDeployAlert('success', data.message);
+      loadDeployedApps();
+    } else {
+      setBuildStepState(pipelinePrefix, 'deploy', 'failed');
+      appendBuildLog('dockerfile-log-output', 'Deploy failed: ' + data.error, 'error');
+    }
+  } catch (err) {
+    setBuildStepState(pipelinePrefix, 'deploy', 'failed');
+    appendBuildLog('dockerfile-log-output', 'Deploy error: ' + err.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = 'Build & Deploy';
+}
+
+// ── Helm Chart Handler ──────────────────────────────────────────────────────
+
+function fillHelmChart(repo, chart, version) {
+  document.getElementById('hc-repo').value = repo;
+  document.getElementById('hc-chart').value = chart;
+  document.getElementById('hc-version').value = version;
+  document.getElementById('hc-name').value = chart;
+}
+
+async function handleHelmDeploy(e) {
+  e.preventDefault();
+  var btn = document.getElementById('helm-deploy-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deploying...';
+
+  try {
+    var resp = await fetch('/api/deploy/helm-chart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        repoUrl: document.getElementById('hc-repo').value.trim(),
+        chartName: document.getElementById('hc-chart').value.trim(),
+        chartVersion: document.getElementById('hc-version').value.trim(),
+        appName: document.getElementById('hc-name').value.trim(),
+        team: document.getElementById('hc-team').value.trim(),
+        values: document.getElementById('hc-values').value.trim() || undefined,
+      }),
+    });
+    var data = await resp.json();
+    if (data.success) {
+      showDeployAlert('success', data.message);
+      loadDeployedApps();
+      document.getElementById('helm-form').reset();
+    } else {
+      showDeployAlert('error', data.error);
+    }
+  } catch (err) {
+    showDeployAlert('error', 'Helm deploy failed: ' + err.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Deploy Chart';
+}
+
+// ── Database Handlers ───────────────────────────────────────────────────────
+
+async function handleCreateDatabase(e) {
+  e.preventDefault();
+  var btn = document.getElementById('db-create-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  try {
+    var resp = await fetch('/api/databases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('db-name').value.trim(),
+        team: document.getElementById('db-team').value.trim(),
+        storage: document.getElementById('db-storage').value,
+        instances: parseInt(document.getElementById('db-instances').value),
+      }),
+    });
+    var data = await resp.json();
+    var resultEl = document.getElementById('db-result');
+    if (data.success) {
+      resultEl.style.display = 'block';
+      resultEl.innerHTML = '<div class="alert success">' + esc(data.message) + '</div>' +
+        '<div class="db-conn-info">' +
+          '<strong>Connection Secret:</strong> ' + esc(data.connectionSecret) + '<br>' +
+          '<strong>DATABASE_URL:</strong> ' + esc(data.envVars.DATABASE_URL) + '<br>' +
+          '<strong>Host:</strong> ' + esc(data.envVars.PGHOST) + '<br>' +
+          '<strong>Port:</strong> ' + esc(data.envVars.PGPORT) + '<br>' +
+          '<strong>User:</strong> ' + esc(data.envVars.PGUSER) + '<br>' +
+          '<strong>Database:</strong> ' + esc(data.envVars.PGDATABASE) +
+        '</div>';
+      document.getElementById('db-form').reset();
+      loadDatabases();
+    } else {
+      resultEl.style.display = 'block';
+      resultEl.innerHTML = '<div class="alert error">' + esc(data.error) + '</div>';
+    }
+  } catch (err) {
+    var resultEl2 = document.getElementById('db-result');
+    resultEl2.style.display = 'block';
+    resultEl2.innerHTML = '<div class="alert error">Failed: ' + esc(err.message) + '</div>';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Create Database';
+}
+
+async function loadDatabases() {
+  var listEl = document.getElementById('db-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+
+  try {
+    var resp = await fetch('/api/databases');
+    var data = await resp.json();
+    if (!data.databases || data.databases.length === 0) {
+      listEl.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No databases provisioned yet.</p>';
+      return;
+    }
+    listEl.innerHTML = data.databases.map(function(db) {
+      var statusClass = db.readyInstances >= db.instances ? 'ready' : 'creating';
+      return '<div class="db-card">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<strong>' + esc(db.name) + '</strong>' +
+          '<span class="db-status ' + statusClass + '">' + esc(db.phase) + ' (' + db.readyInstances + '/' + db.instances + ')</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;">Namespace: ' + esc(db.namespace) + ' &middot; Storage: ' + esc(db.storage) + '</div>' +
+        '<div class="db-conn-info">Secret: ' + esc(db.connectionSecret) + '</div>' +
+        '<button class="btn btn-danger btn-sm" style="margin-top:8px;" onclick="deleteDatabase(\'' + esc(db.namespace) + '\',\'' + esc(db.name) + '\')">Delete</button>' +
+      '</div>';
+    }).join('');
+  } catch (err) {
+    listEl.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">Failed to load databases.</p>';
+  }
+}
+
+async function deleteDatabase(ns, name) {
+  if (!confirm('Delete database "' + name + '" from "' + ns + '"? This is permanent.')) return;
+  try {
+    await fetch('/api/databases/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+    showToast('Database ' + name + ' deleted', '');
+    loadDatabases();
+  } catch (err) {
+    showToast('Delete failed: ' + err.message, 'error');
+  }
+}
+
 // ── Status Page (NEW) ───────────────────────────────────────────────────────
 
 async function loadStatus() {
@@ -3488,6 +4829,511 @@ function renderCredentials(data) {
   }
 }
 
+// ── Cluster Tab ─────────────────────────────────────────────────────────────
+
+function switchClusterPanel(panel, btn) {
+  activeClusterPanel = panel;
+  document.querySelectorAll('.cluster-panel').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.cluster-subnav-btn').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById('cluster-' + panel).classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  if (panel === 'nodes') loadClusterNodes();
+  if (panel === 'pods') { populateNsFilter('pod-ns-filter'); loadClusterPods(); }
+  if (panel === 'logs') { populateNsFilter('log-ns'); }
+  if (panel === 'events') { populateNsFilter('event-ns'); loadClusterEvents(); }
+  if (panel === 'namespaces') loadClusterNamespaces();
+  if (panel === 'resources') loadClusterResources();
+  if (panel === 'actions') initQuickActions();
+}
+
+function refreshActiveClusterPanel() {
+  if (activeClusterPanel === 'nodes') loadClusterNodes();
+  if (activeClusterPanel === 'pods') loadClusterPods();
+  if (activeClusterPanel === 'events') loadClusterEvents();
+  if (activeClusterPanel === 'namespaces') loadClusterNamespaces();
+  if (activeClusterPanel === 'resources') loadClusterResources();
+}
+
+function initClusterTab() {
+  loadClusterNodes();
+}
+
+async function populateNsFilter(selectId) {
+  try {
+    var resp = await fetch('/api/cluster/namespaces');
+    var data = await resp.json();
+    var sel = document.getElementById(selectId);
+    var current = sel.value;
+    var opts = '<option value="">All Namespaces</option>';
+    if (selectId === 'log-ns') opts = '<option value="">Select namespace...</option>';
+    data.forEach(function(ns) {
+      opts += '<option value="' + esc(ns.name) + '">' + esc(ns.name) + ' (' + (ns.pods || 0) + ' pods)</option>';
+    });
+    sel.innerHTML = opts;
+    if (current) sel.value = current;
+  } catch (err) {
+    console.error('Failed to populate namespace filter:', err);
+  }
+}
+
+// ── Nodes ──
+
+async function loadClusterNodes() {
+  try {
+    var resp = await fetch('/api/cluster/nodes');
+    var nodes = await resp.json();
+    renderClusterNodes(nodes);
+    // Populate cordon node dropdown
+    var cordonSel = document.getElementById('qa-cordon-node');
+    if (cordonSel) {
+      cordonSel.innerHTML = '<option value="">Select node...</option>' +
+        nodes.map(function(n) {
+          return '<option value="' + esc(n.name) + '">' + esc(n.name) +
+            (n.unschedulable ? ' (cordoned)' : '') + '</option>';
+        }).join('');
+    }
+  } catch (err) {
+    document.getElementById('nodes-grid').innerHTML = '<div style="color:var(--red);">Failed to load nodes: ' + esc(err.message) + '</div>';
+  }
+}
+
+function renderClusterNodes(nodes) {
+  var grid = document.getElementById('nodes-grid');
+  grid.innerHTML = nodes.map(function(n) {
+    var cpuPct = n.cpu ? n.cpu.pct : 0;
+    var memPct = n.memory ? n.memory.pct : 0;
+
+    function barColor(pct) { return pct > 85 ? 'red' : pct > 65 ? 'yellow' : 'green'; }
+
+    var roles = (n.roles || []).map(function(r) {
+      var cls = r === 'control-plane' || r === 'etcd' ? 'control-plane' : 'worker';
+      return '<span class="node-role ' + cls + '">' + esc(r) + '</span>';
+    }).join(' ');
+
+    var statusDot = n.status === 'Ready' ? 'green' : 'red';
+
+    var conditions = (n.conditions || []).map(function(c) {
+      var ok = (c.type === 'Ready' && c.status === 'True') || (c.type !== 'Ready' && c.status === 'False');
+      return '<span class="condition-badge ' + (ok ? 'ok' : 'warn') + '">' + esc(c.type) + '</span>';
+    }).join('');
+
+    return '<div class="node-card">' +
+      '<div class="node-header">' +
+        '<h4><span class="health-dot ' + statusDot + '"></span> ' + esc(n.name) + ' ' + roles + '</h4>' +
+        (n.unschedulable ? '<span class="node-role" style="background:rgba(239,68,68,0.15);color:var(--red);">CORDONED</span>' : '') +
+      '</div>' +
+      '<div class="node-meta">' +
+        '<span>' + esc(n.kubelet || '') + '</span>' +
+        '<span>' + esc(n.os || '') + '</span>' +
+        '<span>' + esc(n.runtime || '') + '</span>' +
+        '<span>' + esc(n.ip || '') + '</span>' +
+        (n.age ? '<span>Age: ' + esc(n.age) + '</span>' : '') +
+      '</div>' +
+      '<div class="usage-bars">' +
+        '<div class="usage-bar-wrap">' +
+          '<label><span>CPU</span><span>' + esc(n.cpu ? n.cpu.usedFmt : '0') + ' / ' + esc(n.cpu ? n.cpu.allocFmt : '?') + ' (' + cpuPct + '%)</span></label>' +
+          '<div class="usage-bar"><div class="usage-bar-fill ' + barColor(cpuPct) + '" style="width:' + Math.min(cpuPct, 100) + '%"></div></div>' +
+        '</div>' +
+        '<div class="usage-bar-wrap">' +
+          '<label><span>Memory</span><span>' + esc(n.memory ? n.memory.usedFmt : '0') + ' / ' + esc(n.memory ? n.memory.allocFmt : '?') + ' (' + memPct + '%)</span></label>' +
+          '<div class="usage-bar"><div class="usage-bar-fill ' + barColor(memPct) + '" style="width:' + Math.min(memPct, 100) + '%"></div></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="node-conditions">' + conditions + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── Pods ──
+
+async function loadClusterPods() {
+  var ns = document.getElementById('pod-ns-filter').value;
+  var status = document.getElementById('pod-status-filter').value;
+  var search = document.getElementById('pod-search').value;
+  try {
+    var url = '/api/cluster/pods?namespace=' + encodeURIComponent(ns) + '&status=' + encodeURIComponent(status) + '&search=' + encodeURIComponent(search);
+    var resp = await fetch(url);
+    var pods = await resp.json();
+    clusterPodsCache = pods;
+    renderClusterPods(pods);
+  } catch (err) {
+    document.getElementById('pods-tbody').innerHTML = '<tr><td colspan="7" style="color:var(--red);">Failed to load pods</td></tr>';
+  }
+}
+
+function renderClusterPods(pods) {
+  var tbody = document.getElementById('pods-tbody');
+  document.getElementById('pod-result-count').textContent = pods.length + ' pods';
+
+  if (pods.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-dim);text-align:center;">No pods found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = pods.map(function(p) {
+    var statusClass = p.status === 'Running' ? 'running' : p.status === 'Pending' ? 'pending' : p.status === 'Succeeded' ? 'succeeded' : 'failed';
+    var dot = p.status === 'Running' ? 'green' : p.status === 'Pending' ? 'unknown' : p.status === 'Succeeded' ? 'unknown' : 'red';
+    return '<tr onclick="expandPod(\'' + esc(p.namespace) + '\',\'' + esc(p.name) + '\', this)">' +
+      '<td><span class="pod-status ' + statusClass + '"><span class="health-dot ' + dot + '"></span> ' + esc(p.status) + '</span></td>' +
+      '<td style="font-weight:500;">' + esc(p.name) + '</td>' +
+      '<td>' + esc(p.namespace) + '</td>' +
+      '<td>' + esc(p.ready) + '</td>' +
+      '<td>' + (p.restarts > 0 ? '<span style="color:var(--yellow);">' + p.restarts + '</span>' : '0') + '</td>' +
+      '<td>' + esc(p.age) + '</td>' +
+      '<td style="font-size:12px;">' + esc(p.node || '-') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function expandPod(ns, name, rowEl) {
+  var container = document.getElementById('pod-detail-container');
+
+  // Toggle off if clicking the same pod
+  if (container.dataset.current === ns + '/' + name) {
+    container.innerHTML = '';
+    container.dataset.current = '';
+    return;
+  }
+
+  container.dataset.current = ns + '/' + name;
+  container.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+
+  try {
+    var resp = await fetch('/api/cluster/pods/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name));
+    var pod = await resp.json();
+
+    var containers = (pod.containers || []).map(function(c) {
+      return '<div style="padding:6px 0;border-bottom:1px solid var(--border);">' +
+        '<span style="font-weight:500;">' + esc(c.name) + '</span> ' +
+        '<span class="condition-badge ' + (c.ready ? 'ok' : 'warn') + '">' + (c.ready ? 'Ready' : 'Not Ready') + '</span> ' +
+        '<span style="font-size:11px;color:var(--text-dim);">Image: ' + esc(c.image) + '</span>' +
+        (c.restartCount > 0 ? ' <span style="font-size:11px;color:var(--yellow);">Restarts: ' + c.restartCount + '</span>' : '') +
+      '</div>';
+    }).join('');
+
+    var events = (pod.events || []).slice(0, 10).map(function(e) {
+      return '<div class="event-item" style="padding:4px 0;">' +
+        '<span class="event-badge ' + esc(e.type) + '">' + esc(e.type) + '</span>' +
+        '<div><div style="font-size:12px;">' + esc(e.message) + '</div>' +
+        '<div class="event-meta">' + esc(e.reason) + ' &middot; ' + esc(e.age) + '</div></div>' +
+      '</div>';
+    }).join('') || '<div style="color:var(--text-dim);font-size:12px;">No recent events</div>';
+
+    container.innerHTML = '<div class="pod-detail-panel">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+        '<h3 style="font-size:15px;font-weight:600;">' + esc(name) + '</h3>' +
+        '<button class="btn" style="font-size:11px;" onclick="viewPodLogs(\'' + esc(ns) + '\',\'' + esc(name) + '\')">View Logs</button>' +
+      '</div>' +
+      '<div class="pod-detail-grid">' +
+        '<div class="detail-item"><span class="dlabel">Namespace</span>' + esc(pod.namespace) + '</div>' +
+        '<div class="detail-item"><span class="dlabel">Node</span>' + esc(pod.node || '-') + '</div>' +
+        '<div class="detail-item"><span class="dlabel">IP</span>' + esc(pod.ip || '-') + '</div>' +
+        '<div class="detail-item"><span class="dlabel">Status</span>' + esc(pod.status) + '</div>' +
+        '<div class="detail-item"><span class="dlabel">QoS Class</span>' + esc(pod.qosClass || '-') + '</div>' +
+        '<div class="detail-item"><span class="dlabel">Service Account</span>' + esc(pod.serviceAccount || '-') + '</div>' +
+      '</div>' +
+      '<h4 style="font-size:13px;font-weight:600;margin:12px 0 6px;">Containers</h4>' +
+      containers +
+      '<h4 style="font-size:13px;font-weight:600;margin:12px 0 6px;">Recent Events</h4>' +
+      events +
+    '</div>';
+  } catch (err) {
+    container.innerHTML = '<div style="color:var(--red);padding:12px;">Failed to load pod details: ' + esc(err.message) + '</div>';
+  }
+}
+
+function viewPodLogs(ns, name) {
+  switchClusterPanel('logs', document.querySelector('.cluster-subnav-btn:nth-child(3)'));
+  setTimeout(function() {
+    document.getElementById('log-ns').value = ns;
+    populateLogPods().then(function() {
+      document.getElementById('log-pod').value = name;
+      populateLogContainers();
+      loadClusterLogs();
+    });
+  }, 100);
+}
+
+// ── Logs ──
+
+async function populateLogPods() {
+  var ns = document.getElementById('log-ns').value;
+  var podSel = document.getElementById('log-pod');
+  podSel.innerHTML = '<option value="">Select pod...</option>';
+  document.getElementById('log-container').innerHTML = '<option value="">All containers</option>';
+  if (!ns) return;
+  try {
+    var resp = await fetch('/api/cluster/pods?namespace=' + encodeURIComponent(ns));
+    var pods = await resp.json();
+    pods.forEach(function(p) {
+      podSel.innerHTML += '<option value="' + esc(p.name) + '">' + esc(p.name) + ' (' + esc(p.status) + ')</option>';
+    });
+  } catch (err) {
+    console.error('Failed to load pods for log viewer:', err);
+  }
+}
+
+async function populateLogContainers() {
+  var ns = document.getElementById('log-ns').value;
+  var pod = document.getElementById('log-pod').value;
+  var containerSel = document.getElementById('log-container');
+  containerSel.innerHTML = '<option value="">All containers</option>';
+  if (!ns || !pod) return;
+  try {
+    var resp = await fetch('/api/cluster/pods/' + encodeURIComponent(ns) + '/' + encodeURIComponent(pod));
+    var data = await resp.json();
+    (data.containers || []).forEach(function(c) {
+      containerSel.innerHTML += '<option value="' + esc(c.name) + '">' + esc(c.name) + '</option>';
+    });
+  } catch (err) {
+    console.error('Failed to load containers:', err);
+  }
+}
+
+async function loadClusterLogs() {
+  var ns = document.getElementById('log-ns').value;
+  var pod = document.getElementById('log-pod').value;
+  if (!ns || !pod) { showToast('Select a namespace and pod first'); return; }
+  var container = document.getElementById('log-container').value;
+  var lines = document.getElementById('log-lines').value;
+  var previous = document.getElementById('log-previous').checked;
+  var output = document.getElementById('log-output');
+  output.textContent = 'Loading logs...';
+
+  try {
+    var url = '/api/cluster/pods/' + encodeURIComponent(ns) + '/' + encodeURIComponent(pod) + '/logs' +
+      '?tailLines=' + lines + '&previous=' + previous + (container ? '&container=' + encodeURIComponent(container) : '');
+    var resp = await fetch(url);
+    var text = await resp.text();
+    clusterLogsRaw = text;
+    output.textContent = text || '(no logs)';
+    document.getElementById('log-match-count').textContent = '';
+    document.getElementById('log-search').value = '';
+  } catch (err) {
+    output.textContent = 'Error loading logs: ' + err.message;
+  }
+}
+
+function searchInLogs() {
+  var query = document.getElementById('log-search').value;
+  var output = document.getElementById('log-output');
+  if (!query || !clusterLogsRaw) {
+    output.textContent = clusterLogsRaw || '(no logs)';
+    document.getElementById('log-match-count').textContent = '';
+    return;
+  }
+  var lines = clusterLogsRaw.split('\n');
+  var matches = lines.filter(function(l) { return l.toLowerCase().indexOf(query.toLowerCase()) >= 0; });
+  output.textContent = matches.join('\n') || '(no matches)';
+  document.getElementById('log-match-count').textContent = matches.length + ' matching lines';
+}
+
+function downloadLogs() {
+  if (!clusterLogsRaw) { showToast('No logs to download'); return; }
+  var ns = document.getElementById('log-ns').value;
+  var pod = document.getElementById('log-pod').value;
+  var blob = new Blob([clusterLogsRaw], { type: 'text/plain' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (ns || 'ns') + '_' + (pod || 'pod') + '_logs.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Logs downloaded');
+}
+
+// ── Events ──
+
+async function loadClusterEvents() {
+  var ns = document.getElementById('event-ns').value;
+  var type = document.getElementById('event-type').value;
+  try {
+    var resp = await fetch('/api/cluster/events?namespace=' + encodeURIComponent(ns) + '&type=' + encodeURIComponent(type));
+    var events = await resp.json();
+    document.getElementById('event-count').textContent = events.length + ' events';
+    renderClusterEvents(events);
+  } catch (err) {
+    document.getElementById('events-feed').innerHTML = '<div style="color:var(--red);">Failed to load events</div>';
+  }
+}
+
+function renderClusterEvents(events) {
+  var feed = document.getElementById('events-feed');
+  if (events.length === 0) {
+    feed.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:40px;">No events found</div>';
+    return;
+  }
+  feed.innerHTML = events.slice(0, 100).map(function(e) {
+    return '<div class="event-item">' +
+      '<span class="event-badge ' + esc(e.type) + '">' + esc(e.type) + '</span>' +
+      '<div style="flex:1;">' +
+        '<div>' + esc(e.message) + '</div>' +
+        '<div class="event-meta">' +
+          esc(e.reason) + ' &middot; ' +
+          esc(e.namespace) + '/' + esc(e.object || '') + ' &middot; ' +
+          esc(e.age) +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── Namespaces ──
+
+async function loadClusterNamespaces() {
+  try {
+    var resp = await fetch('/api/cluster/namespaces');
+    var namespaces = await resp.json();
+    renderClusterNamespaces(namespaces);
+  } catch (err) {
+    document.getElementById('ns-grid').innerHTML = '<div style="color:var(--red);">Failed to load namespaces</div>';
+  }
+}
+
+function renderClusterNamespaces(namespaces) {
+  var grid = document.getElementById('ns-grid');
+  grid.innerHTML = namespaces.map(function(ns) {
+    var statusDot = ns.status === 'Active' ? 'green' : 'red';
+    return '<div class="ns-card" onclick="filterPodsByNamespace(\'' + esc(ns.name) + '\')">' +
+      '<h4><span class="health-dot ' + statusDot + '"></span> ' + esc(ns.name) + '</h4>' +
+      '<div class="ns-stats">' +
+        '<span>Pods: ' + (ns.pods || 0) + '</span>' +
+        '<span>CPU: ' + esc(ns.cpuRequests || '-') + '</span>' +
+        '<span>Mem: ' + esc(ns.memRequests || '-') + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function filterPodsByNamespace(ns) {
+  switchClusterPanel('pods', document.querySelector('.cluster-subnav-btn:nth-child(2)'));
+  setTimeout(function() {
+    document.getElementById('pod-ns-filter').value = ns;
+    loadClusterPods();
+  }, 50);
+}
+
+// ── Resources (top pods) ──
+
+async function loadClusterResources() {
+  var sortBy = document.getElementById('res-sort').value;
+  var limit = document.getElementById('res-limit').value;
+  try {
+    var resp = await fetch('/api/cluster/top/pods?sortBy=' + sortBy + '&limit=' + limit);
+    var pods = await resp.json();
+    renderClusterResources(pods);
+  } catch (err) {
+    document.getElementById('resources-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--red);">Failed to load resource data</td></tr>';
+  }
+}
+
+function renderClusterResources(pods) {
+  var tbody = document.getElementById('resources-tbody');
+  if (pods.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-dim);text-align:center;">No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = pods.map(function(p, i) {
+    return '<tr>' +
+      '<td style="color:var(--text-dim);">' + (i + 1) + '</td>' +
+      '<td style="font-weight:500;">' + esc(p.name) + '</td>' +
+      '<td>' + esc(p.namespace) + '</td>' +
+      '<td>' + esc(p.cpu) + '</td>' +
+      '<td>' + esc(p.memory) + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── Quick Actions ──
+
+async function initQuickActions() {
+  try {
+    var resp = await fetch('/api/cluster/namespaces');
+    var nsList = await resp.json();
+    var nsNames = nsList.map(function(ns) { return ns.name; });
+    ['qa-restart-ns', 'qa-scale-ns'].forEach(function(id) {
+      var sel = document.getElementById(id);
+      sel.innerHTML = '<option value="">Namespace...</option>' +
+        nsNames.map(function(n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
+    });
+  } catch (err) {
+    console.error('Failed to init quick actions:', err);
+  }
+  // Cordon dropdown populated by loadClusterNodes
+  loadClusterNodes();
+}
+
+async function loadQADeployments(nsSelectId, depSelectId) {
+  var ns = document.getElementById(nsSelectId).value;
+  var depSel = document.getElementById(depSelectId);
+  depSel.innerHTML = '<option value="">Deployment...</option>';
+  if (!ns) return;
+  try {
+    var resp = await fetch('/api/cluster/deployments?namespace=' + encodeURIComponent(ns));
+    var deps = await resp.json();
+    deps.forEach(function(d) {
+      depSel.innerHTML += '<option value="' + esc(d.name) + '">' + esc(d.name) + ' (' + d.ready + '/' + d.replicas + ')</option>';
+    });
+  } catch (err) {
+    console.error('Failed to load deployments:', err);
+  }
+}
+
+async function restartDeployment() {
+  var ns = document.getElementById('qa-restart-ns').value;
+  var dep = document.getElementById('qa-restart-dep').value;
+  if (!ns || !dep) { showToast('Select namespace and deployment'); return; }
+  if (!confirm('Restart deployment ' + dep + ' in ' + ns + '?')) return;
+  try {
+    var resp = await fetch('/api/cluster/deployments/' + encodeURIComponent(ns) + '/' + encodeURIComponent(dep) + '/restart', { method: 'POST' });
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    showToast('Restarting ' + dep);
+  } catch (err) {
+    showToast('Failed: ' + err.message);
+  }
+}
+
+async function scaleDeployment() {
+  var ns = document.getElementById('qa-scale-ns').value;
+  var dep = document.getElementById('qa-scale-dep').value;
+  var count = parseInt(document.getElementById('qa-scale-count').value);
+  if (!ns || !dep) { showToast('Select namespace and deployment'); return; }
+  if (!confirm('Scale ' + dep + ' to ' + count + ' replicas?')) return;
+  try {
+    var resp = await fetch('/api/cluster/deployments/' + encodeURIComponent(ns) + '/' + encodeURIComponent(dep) + '/scale', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ replicas: count })
+    });
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    showToast('Scaled ' + dep + ' to ' + count + ' replicas');
+  } catch (err) {
+    showToast('Failed: ' + err.message);
+  }
+}
+
+async function toggleCordon(cordon) {
+  var node = document.getElementById('qa-cordon-node').value;
+  if (!node) { showToast('Select a node'); return; }
+  var action = cordon ? 'Cordon' : 'Uncordon';
+  if (!confirm(action + ' node ' + node + '?')) return;
+  try {
+    var resp = await fetch('/api/cluster/nodes/' + encodeURIComponent(node) + '/cordon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cordon: cordon })
+    });
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    showToast(action + ' ' + node + ' successful');
+    loadClusterNodes();
+  } catch (err) {
+    showToast('Failed: ' + err.message);
+  }
+}
+
 // ── Command Palette ─────────────────────────────────────────────────────────
 
 var ALL_COMMANDS = [
@@ -3499,6 +5345,14 @@ var ALL_COMMANDS = [
   { label: 'Go to Status', icon: '\u2705', action: function() { switchTabByName('status'); } },
   { label: 'Go to Audit Log', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } },
   { label: 'Go to Login / Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } },
+  { label: 'Go to Cluster', icon: '\u2699', action: function() { switchTabByName('cluster'); } },
+  { label: 'Cluster: View Nodes', icon: '\uD83D\uDDA5', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('nodes'); }, 100); } },
+  { label: 'Cluster: View Pods', icon: '\uD83D\uDCE6', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('pods'); }, 100); } },
+  { label: 'Cluster: View Logs', icon: '\uD83D\uDCDC', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('logs'); }, 100); } },
+  { label: 'Cluster: View Events', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('events'); }, 100); } },
+  { label: 'Cluster: Namespaces', icon: '\uD83D\uDCC1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('namespaces'); }, 100); } },
+  { label: 'Cluster: Top Resource Consumers', icon: '\uD83D\uDCCA', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('resources'); }, 100); } },
+  { label: 'Cluster: Quick Actions', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('actions'); }, 100); } },
 
   // Open services
   { label: 'Open Grafana', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com'); } },

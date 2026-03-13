@@ -20,14 +20,16 @@ spec:
     spec:
       serviceAccountName: sre-dashboard
       automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: harbor-pull-secret
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: docker.io/library/sre-dashboard:v2.2.0
-          imagePullPolicy: Never
+          image: harbor.apps.sre.example.com/platform/sre-dashboard:v2.3.0
+          imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

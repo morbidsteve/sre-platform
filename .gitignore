@@ -43,5 +43,15 @@ Thumbs.db
 # Claude Code local overrides
 CLAUDE.local.md
 
+# Node.js
+node_modules/
+package-lock.json
+
+# Screenshots (local only)
+*.png
+
+# Playwright MCP
+.playwright-mcp/
+
 # Temp
 /tmp/

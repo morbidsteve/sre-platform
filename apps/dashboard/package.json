@@ -1,6 +1,6 @@
 {
   "name": "sre-dashboard",
-  "version": "2.0.1",
+  "version": "2.3.0",
   "description": "SRE Platform Dashboard — deploy apps and monitor platform health",
   "main": "server.js",
   "scripts": {
@@ -10,6 +10,7 @@
   "dependencies": {
     "@kubernetes/client-node": "^0.21.0",
     "express": "^4.21.0",
-    "express-rate-limit": "^7.5.0"
+    "express-rate-limit": "^7.5.0",
+    "js-yaml": "^4.1.1"
   }
 }

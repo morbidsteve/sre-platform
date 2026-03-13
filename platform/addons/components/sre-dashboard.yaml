@@ -1,0 +1,25 @@
+---
+# Flux Kustomization for SRE Dashboard
+# Depends on: istio, keycloak, harbor
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-dashboard
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./apps/dashboard/k8s
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-istio
+    - name: sre-harbor
+    - name: sre-keycloak
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: sre-dashboard
+      namespace: sre-dashboard
+  timeout: 5m
