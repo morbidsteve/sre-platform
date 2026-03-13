@@ -147,55 +147,53 @@ show_status() {
 }
 
 show_credentials() {
-    echo -e "\n${BOLD}${CYAN}═══ SRE Platform — Credentials ═══${NC}\n"
+    echo -e "\n${BOLD}${CYAN}═══ SRE Platform — Login ═══${NC}\n"
+
+    echo -e "  ${BOLD}${GREEN}Keycloak SSO (use this for everything)${NC}"
+    echo -e "    Username: ${BOLD}sre-admin${NC}"
+    echo -e "    Password: ${BOLD}SreAdmin123!${NC}"
+    echo -e "    ${DIM}One login for all services. sre-admins group = admin access everywhere.${NC}"
+    echo
+
+    echo -e "  ${DIM}─── Break-glass credentials (emergency use only) ───${NC}"
+    echo
+
+    # Keycloak admin console
+    KC_PASS=$(kubectl get secret keycloak -n keycloak -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    if [[ -n "$KC_PASS" ]]; then
+        echo -e "  ${DIM}Keycloak Admin Console${NC}"
+        echo -e "    ${DIM}Username: admin${NC}"
+        echo -e "    ${DIM}Password: $KC_PASS${NC}"
+        echo
+    fi
 
     # Grafana
     GRAFANA_PASS=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath='{.data.adminPassword}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
     if [[ -z "$GRAFANA_PASS" ]]; then
-        # Try the chart's default secret
         GRAFANA_PASS=$(kubectl get secret kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
     fi
     if [[ -n "$GRAFANA_PASS" ]]; then
-        echo -e "  ${BOLD}Grafana${NC}"
-        echo -e "    Username: admin"
-        echo -e "    Password: $GRAFANA_PASS"
+        echo -e "  ${DIM}Grafana (local admin)${NC}"
+        echo -e "    ${DIM}Username: admin / Password: $GRAFANA_PASS${NC}"
         echo
     fi
 
     # Harbor
     HARBOR_PASS=$(kubectl get secret harbor-core-envvars -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-    if [[ -z "$HARBOR_PASS" ]]; then
-        HARBOR_PASS="Harbor12345"
-    fi
-    echo -e "  ${BOLD}Harbor${NC}"
-    echo -e "    Username: admin"
-    echo -e "    Password: $HARBOR_PASS"
+    [[ -z "$HARBOR_PASS" ]] && HARBOR_PASS="Harbor12345"
+    echo -e "  ${DIM}Harbor (local admin)${NC}"
+    echo -e "    ${DIM}Username: admin / Password: $HARBOR_PASS${NC}"
     echo
 
-    # Keycloak
-    KC_PASS=$(kubectl get secret keycloak -n keycloak -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-    if [[ -n "$KC_PASS" ]]; then
-        echo -e "  ${BOLD}Keycloak${NC}"
-        echo -e "    Username: admin"
-        echo -e "    Password: $KC_PASS"
-        echo
-    fi
-
-    # NeuVector (default)
-    echo -e "  ${BOLD}NeuVector${NC}"
-    echo -e "    Username: admin"
-    echo -e "    Password: admin ${DIM}(change on first login)${NC}"
+    echo -e "  ${DIM}NeuVector (local admin)${NC}"
+    echo -e "    ${DIM}Username: admin / Password: admin${NC}"
     echo
 
     # OpenBao
     OPENBAO_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
     if [[ -n "$OPENBAO_TOKEN" ]]; then
-        echo -e "  ${BOLD}OpenBao${NC}"
-        echo -e "    Root Token: $OPENBAO_TOKEN"
-        echo
-    else
-        echo -e "  ${BOLD}OpenBao${NC}"
-        echo -e "    ${DIM}Not initialized yet. Run: ./scripts/init-openbao.sh${NC}"
+        echo -e "  ${DIM}OpenBao (root token)${NC}"
+        echo -e "    ${DIM}Token: $OPENBAO_TOKEN${NC}"
         echo
     fi
 }

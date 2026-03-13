@@ -2111,10 +2111,16 @@ services:
 
   <!-- Credentials Tab -->
   <div id="tab-credentials" class="tab-content">
-    <h2 style="margin-bottom: 16px;">Platform Credentials</h2>
-    <div class="grid" id="creds-grid">
-      <div class="loading"><span class="spinner"></span></div>
-    </div>
+    <h2 style="margin-bottom: 16px;">Platform Login</h2>
+    <p style="color: var(--text-dim); margin-bottom: 16px;">All services use Keycloak SSO. Log in once and you're authenticated everywhere.</p>
+    <div id="sso-creds" style="margin-bottom: 24px;"></div>
+    <details style="margin-top: 8px;">
+      <summary style="cursor: pointer; color: var(--text-dim); font-size: 13px; user-select: none;">Break-glass credentials (emergency use only)</summary>
+      <p style="color: var(--text-dim); font-size: 12px; margin: 8px 0;">These local admin accounts bypass SSO. Use only when Keycloak is down or for initial setup.</p>
+      <div class="grid" id="creds-grid" style="margin-top: 12px;">
+        <div class="loading"><span class="spinner"></span></div>
+      </div>
+    </details>
   </div>
 </main>
 
@@ -3446,24 +3452,38 @@ async function loadCredentials() {
 }
 
 function renderCredentials(data) {
+  // SSO credentials (primary)
+  var ssoEl = document.getElementById('sso-creds');
+  if (data.sso && data.sso.keycloak) {
+    var kc = data.sso.keycloak;
+    ssoEl.innerHTML = '<div class="cred-card" style="border-color: var(--accent); max-width: 480px;">' +
+      '<h4>Keycloak SSO</h4>' +
+      '<div class="cred-row"><span class="label">username</span><span class="value" onclick="copyText(this)" title="Click to copy">' + esc(kc.username) + '</span></div>' +
+      '<div class="cred-row"><span class="label">password</span><span class="value" onclick="copyText(this)" title="Click to copy">' + esc(kc.password) + '</span></div>' +
+      (kc.note ? '<p style="color: var(--text-dim); font-size: 12px; margin-top: 8px;">' + esc(kc.note) + '</p>' : '') +
+      '</div>';
+  }
+
+  // Break-glass credentials (collapsed)
   var grid = document.getElementById('creds-grid');
   grid.innerHTML = '';
-
-  for (var service in data) {
-    if (!data.hasOwnProperty(service)) continue;
-    var creds = data[service];
+  var bg = data.breakglass || data;
+  for (var service in bg) {
+    if (!bg.hasOwnProperty(service)) continue;
+    var creds = bg[service];
     var rows = '';
     for (var k in creds) {
-      if (!creds.hasOwnProperty(k)) continue;
+      if (!creds.hasOwnProperty(k) || k === 'note') continue;
       rows += '<div class="cred-row">' +
         '<span class="label">' + esc(k) + '</span>' +
         '<span class="value" onclick="copyText(this)" title="Click to copy">' + esc(creds[k]) + '</span>' +
         '</div>';
     }
-
+    var title = service.replace(/-/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
     grid.innerHTML += '<div class="cred-card">' +
-      '<h4>' + esc(service.charAt(0).toUpperCase() + service.slice(1)) + '</h4>' +
+      '<h4>' + esc(title) + '</h4>' +
       rows +
+      (creds.note ? '<p style="color: var(--text-dim); font-size: 11px; margin-top: 6px;">' + esc(creds.note) + '</p>' : '') +
       '</div>';
   }
 }
@@ -3471,13 +3491,16 @@ function renderCredentials(data) {
 // ── Command Palette ─────────────────────────────────────────────────────────
 
 var ALL_COMMANDS = [
-  { label: 'Go to Overview', icon: '\uD83D\uDCCA', action: function() { switchTabByName('overview'); } },
+  // Navigation
+  { label: 'Go to Overview', icon: '\uD83C\uDFE0', action: function() { switchTabByName('overview'); } },
   { label: 'Go to Services', icon: '\uD83D\uDD17', action: function() { switchTabByName('services'); } },
   { label: 'Go to My Apps', icon: '\uD83D\uDCE6', action: function() { switchTabByName('apps'); } },
   { label: 'Go to Deploy', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } },
   { label: 'Go to Status', icon: '\u2705', action: function() { switchTabByName('status'); } },
-  { label: 'Go to Audit', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } },
-  { label: 'Go to Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } },
+  { label: 'Go to Audit Log', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } },
+  { label: 'Go to Login / Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } },
+
+  // Open services
   { label: 'Open Grafana', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com'); } },
   { label: 'Open Prometheus', icon: '\uD83D\uDD0D', action: function() { openService('https://prometheus.apps.sre.example.com'); } },
   { label: 'Open AlertManager', icon: '\uD83D\uDD14', action: function() { openService('https://alertmanager.apps.sre.example.com'); } },
@@ -3485,10 +3508,54 @@ var ALL_COMMANDS = [
   { label: 'Open Keycloak', icon: '\uD83D\uDD11', action: function() { openService('https://keycloak.apps.sre.example.com'); } },
   { label: 'Open NeuVector', icon: '\uD83D\uDEE1', action: function() { openService('https://neuvector.apps.sre.example.com'); } },
   { label: 'Open OpenBao', icon: '\uD83D\uDD10', action: function() { openService('https://openbao.apps.sre.example.com'); } },
-  { label: 'Toggle Theme', icon: '\u263E', action: function() { toggleTheme(); } },
-  { label: 'Grafana - Cluster Overview Dashboard', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } },
-  { label: 'Grafana - Node Exporter Dashboard', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } },
-  { label: 'Grafana - Kubernetes Pods Dashboard', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } },
+  { label: 'Open Keycloak Admin Console', icon: '\uD83D\uDC64', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/'); } },
+
+  // Grafana dashboards (deep links)
+  { label: 'Grafana: Cluster Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } },
+  { label: 'Grafana: Node Exporter (system metrics)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } },
+  { label: 'Grafana: Kubernetes Pods', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } },
+  { label: 'Grafana: Kubernetes Compute Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/efa86fd1d0c121a26444b636'); } },
+  { label: 'Grafana: Namespace Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-namespace-resources'); } },
+  { label: 'Grafana: Istio Mesh Traffic', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-istio-mesh'); } },
+  { label: 'Grafana: Kyverno Compliance', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-kyverno-compliance'); } },
+  { label: 'Grafana: Flux GitOps Status', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-flux-gitops'); } },
+  { label: 'Grafana: Alertmanager Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/alertmanager-overview'); } },
+  { label: 'Grafana: Explore (Loki logs)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/explore'); } },
+
+  // Keycloak admin shortcuts
+  { label: 'Keycloak: Manage Users', icon: '\uD83D\uDC64', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users'); } },
+  { label: 'Keycloak: Manage Groups', icon: '\uD83D\uDC65', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/groups'); } },
+  { label: 'Keycloak: OIDC Clients', icon: '\uD83D\uDD17', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/clients'); } },
+
+  // Harbor shortcuts
+  { label: 'Harbor: Projects', icon: '\uD83D\uDC33', action: function() { openService('https://harbor.apps.sre.example.com/harbor/projects'); } },
+  { label: 'Harbor: Robot Accounts', icon: '\uD83E\uDD16', action: function() { openService('https://harbor.apps.sre.example.com/harbor/robots'); } },
+  { label: 'Harbor: Registries (replication)', icon: '\uD83D\uDD04', action: function() { openService('https://harbor.apps.sre.example.com/harbor/registries'); } },
+
+  // Quick actions
+  { label: 'Copy SSO username (sre-admin)', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('sre-admin'); showToast('Copied: sre-admin'); } },
+  { label: 'Copy SSO password', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('SreAdmin123!'); showToast('Copied password'); } },
+  { label: 'Copy kubectl get pods -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get pods -A'); showToast('Copied to clipboard'); } },
+  { label: 'Copy kubectl get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get helmreleases -A'); showToast('Copied to clipboard'); } },
+  { label: 'Copy kubectl get clusterpolicies', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get clusterpolicies'); showToast('Copied to clipboard'); } },
+  { label: 'Copy flux get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux get helmreleases -A'); showToast('Copied to clipboard'); } },
+  { label: 'Copy flux logs --kind=HelmRelease', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux logs --kind=HelmRelease --all-namespaces'); showToast('Copied to clipboard'); } },
+  { label: 'Copy /etc/hosts entry for all services', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('192.168.2.200 portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com'); showToast('Copied /etc/hosts entry'); } },
+
+  // Deploy shortcuts
+  { label: 'Deploy: Quick NGINX demo', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); setTimeout(function() { var nameEl = document.getElementById('deploy-name'); if(nameEl) { nameEl.value = 'demo-nginx'; } }, 200); } },
+  { label: 'Deploy: New app from custom image', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } },
+
+  // Appearance
+  { label: 'Toggle Dark / Light Theme', icon: '\u263E', action: function() { toggleTheme(); } },
+  { label: 'Refresh Dashboard Data', icon: '\uD83D\uDD04', action: function() { location.reload(); } },
+
+  // Documentation
+  { label: 'Docs: Developer Guide', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/developer-guide.md'); } },
+  { label: 'Docs: Architecture', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/architecture.md'); } },
+  { label: 'Docs: Incident Response Runbooks', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/tree/main/docs/runbooks'); } },
+  { label: 'Docs: User Stories', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/user-stories.md'); } },
+  { label: 'GitHub: SRE Platform Repo', icon: '\uD83D\uDC19', action: function() { openService('https://github.com/morbidsteve/sre-platform'); } },
 ];
 
 function switchTabByName(name) {

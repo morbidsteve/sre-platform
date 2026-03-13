@@ -59,19 +59,21 @@ echo "$GATEWAY_IP  portal.apps.sre.example.com dashboard.apps.sre.example.com gr
 
 All URLs follow the pattern: `https://<service>.apps.sre.example.com`
 
-| Service | URL | Default Credentials |
-|---------|-----|-------------------|
-| **Portal** | `https://portal.apps.sre.example.com` | SSO via Keycloak |
-| **Dashboard** | `https://dashboard.apps.sre.example.com` | SSO via Keycloak |
-| **Grafana** | `https://grafana.apps.sre.example.com` | SSO via Keycloak (or `admin` / `prom-operator`) |
-| **Prometheus** | `https://prometheus.apps.sre.example.com` | SSO via Keycloak |
-| **Alertmanager** | `https://alertmanager.apps.sre.example.com` | SSO via Keycloak |
-| **Harbor** | `https://harbor.apps.sre.example.com` | SSO via Keycloak (or `admin` / `Harbor12345`) |
-| **Keycloak** | `https://keycloak.apps.sre.example.com` | `admin` / (auto-generated, see below) |
-| **NeuVector** | `https://neuvector.apps.sre.example.com` | SSO via Keycloak (or `admin` / `admin`) |
-| **OpenBao** | `https://openbao.apps.sre.example.com` | SSO via Keycloak |
+**Login:** `sre-admin` / `SreAdmin123!` (via Keycloak SSO — one login for everything)
 
-> **SSO:** All services (except Keycloak itself) are behind Single Sign-On. Clicking any link redirects you to Keycloak to log in once, then you're authenticated across all services.
+| Service | URL |
+|---------|-----|
+| **Portal** | `https://portal.apps.sre.example.com` |
+| **Dashboard** | `https://dashboard.apps.sre.example.com` |
+| **Grafana** | `https://grafana.apps.sre.example.com` |
+| **Prometheus** | `https://prometheus.apps.sre.example.com` |
+| **Alertmanager** | `https://alertmanager.apps.sre.example.com` |
+| **Harbor** | `https://harbor.apps.sre.example.com` |
+| **NeuVector** | `https://neuvector.apps.sre.example.com` |
+| **OpenBao** | `https://openbao.apps.sre.example.com` |
+| **Keycloak Admin** | `https://keycloak.apps.sre.example.com` |
+
+> **SSO:** Every service authenticates through Keycloak. Log in once and you're authenticated everywhere. Members of the `sre-admins` group get admin access to all services automatically.
 
 > Your browser will warn about the self-signed certificate — click through it or use `curl -k`.
 

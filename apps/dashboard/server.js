@@ -1711,15 +1711,40 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
 });
 
 async function getCredentials() {
-  const creds = {};
+  const result = { sso: {}, breakglass: {} };
 
+  // SSO — the only credentials users need
+  result.sso.keycloak = {
+    url: "https://keycloak.apps.sre.example.com",
+    realm: "sre",
+    username: "sre-admin",
+    password: "SreAdmin123!",
+    note: "One login for all services. Members of sre-admins group get admin access everywhere.",
+  };
+
+  // Keycloak admin console (separate from SSO realm)
+  try {
+    const secret = await k8sApi.readNamespacedSecret("keycloak", "keycloak");
+    result.breakglass["keycloak-admin"] = {
+      username: "admin",
+      password: Buffer.from(
+        secret.body.data["admin-password"],
+        "base64"
+      ).toString(),
+      note: "Keycloak admin console — manage realms, clients, users",
+    };
+  } catch {
+    result.breakglass["keycloak-admin"] = { username: "admin", password: "(not found)" };
+  }
+
+  // Break-glass / emergency access — only for when SSO is down
   // Grafana
   try {
     let secret = await k8sApi.readNamespacedSecret(
       "grafana-admin-credentials",
       "monitoring"
     );
-    creds.grafana = {
+    result.breakglass.grafana = {
       username: "admin",
       password: Buffer.from(
         secret.body.data.adminPassword,
@@ -1732,7 +1757,7 @@ async function getCredentials() {
         "kube-prometheus-stack-grafana",
         "monitoring"
       );
-      creds.grafana = {
+      result.breakglass.grafana = {
         username: "admin",
         password: Buffer.from(
           secret.body.data["admin-password"],
@@ -1740,27 +1765,27 @@ async function getCredentials() {
         ).toString(),
       };
     } catch {
-      creds.grafana = { username: "admin", password: "(not found)" };
+      result.breakglass.grafana = { username: "admin", password: "(not found)" };
     }
   }
 
   // NeuVector
-  creds.neuvector = {
+  result.breakglass.neuvector = {
     username: "admin",
-    password: "admin (change on first login)",
+    password: "admin",
   };
 
-  // OpenBao
+  // OpenBao root token
   try {
     const secret = await k8sApi.readNamespacedSecret(
       "openbao-init",
       "openbao"
     );
-    creds.openbao = {
+    result.breakglass.openbao = {
       token: Buffer.from(secret.body.data["root-token"], "base64").toString(),
     };
   } catch {
-    creds.openbao = { token: "(not initialized)" };
+    result.breakglass.openbao = { token: "(not initialized)" };
   }
 
   // Harbor
@@ -1769,7 +1794,7 @@ async function getCredentials() {
       "harbor-core-envvars",
       "harbor"
     );
-    creds.harbor = {
+    result.breakglass.harbor = {
       username: "admin",
       password: Buffer.from(
         secret.body.data.HARBOR_ADMIN_PASSWORD,
@@ -1777,24 +1802,10 @@ async function getCredentials() {
       ).toString(),
     };
   } catch {
-    creds.harbor = { username: "admin", password: "Harbor12345" };
+    result.breakglass.harbor = { username: "admin", password: "Harbor12345" };
   }
 
-  // Keycloak
-  try {
-    const secret = await k8sApi.readNamespacedSecret("keycloak", "keycloak");
-    creds.keycloak = {
-      username: "admin",
-      password: Buffer.from(
-        secret.body.data["admin-password"],
-        "base64"
-      ).toString(),
-    };
-  } catch {
-    creds.keycloak = { username: "admin", password: "(not found)" };
-  }
-
-  return creds;
+  return result;
 }
 
 // ── Start Server ─────────────────────────────────────────────────────────────
