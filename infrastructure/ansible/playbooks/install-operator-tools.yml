@@ -1,0 +1,18 @@
+---
+# Operator Tools Installation Playbook
+# Installs k9s, Helm, and kubectl symlink on all cluster nodes.
+# Runs after RKE2 is installed so the kubectl symlink target exists.
+#
+# NIST Controls: CM-2 (baseline configuration)
+#
+# Usage:
+#   ansible-playbook playbooks/install-operator-tools.yml -i inventory/dev/hosts.yml
+#
+# Install only k9s:
+#   ansible-playbook playbooks/install-operator-tools.yml -i inventory/dev/hosts.yml --tags k9s
+
+- name: Install operator tools on all nodes
+  hosts: all
+  become: true
+  roles:
+    - role: operator-tools

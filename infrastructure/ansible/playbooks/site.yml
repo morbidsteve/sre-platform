@@ -10,3 +10,6 @@
 
 - name: Install RKE2 on all nodes
   ansible.builtin.import_playbook: install-rke2.yml
+
+- name: Install operator tools on all nodes
+  ansible.builtin.import_playbook: install-operator-tools.yml

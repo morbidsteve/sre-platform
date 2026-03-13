@@ -1,0 +1,14 @@
+---
+# Operator CLI tools installed on RKE2 nodes for cluster management.
+
+# k9s — Terminal UI for Kubernetes
+operator_tools_k9s_enabled: true
+operator_tools_k9s_version: "v0.32.7"
+operator_tools_k9s_arch: "amd64"
+
+# Helm — Kubernetes package manager
+operator_tools_helm_enabled: true
+operator_tools_helm_version: "v3.16.4"
+
+# kubectl — Kubernetes CLI (RKE2 ships its own, this adds a system-wide symlink)
+operator_tools_kubectl_symlink: true

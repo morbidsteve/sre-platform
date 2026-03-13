@@ -169,6 +169,14 @@ variable "ssh_timeout" {
   default     = "15m"
 }
 
+# ── Operator CLI Tools ──
+
+variable "k9s_version" {
+  type        = string
+  description = "k9s version to install. Terminal UI for Kubernetes cluster management."
+  default     = "v0.32.7"
+}
+
 # ── Air-Gap Image Pre-Pull ──
 
 variable "airgap_images" {

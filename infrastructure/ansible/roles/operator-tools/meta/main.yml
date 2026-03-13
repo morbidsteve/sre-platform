@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: operator-tools
+  author: sre-platform
+  description: Install operator CLI tools (k9s, Helm, kubectl) on RKE2 nodes
+  license: Apache-2.0
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - kubernetes
+    - k9s
+    - helm
+    - operator
+    - rke2
+
+dependencies: []

@@ -183,7 +183,7 @@ fi
 success "All required tools found."
 
 # Check optional tools
-for tool in flux cosign trivy; do
+for tool in flux cosign trivy k9s; do
     if ! command -v "$tool" &>/dev/null; then
         warn "Optional tool '$tool' not found — some features may not be available."
     fi
@@ -1745,6 +1745,13 @@ echo "To use kubectl:"
 echo "  export KUBECONFIG=$KUBECONFIG_FILE"
 echo "  kubectl get nodes"
 echo
+
+if command -v k9s &>/dev/null; then
+    echo "To launch k9s (terminal UI):"
+    echo "  export KUBECONFIG=$KUBECONFIG_FILE"
+    echo "  k9s"
+    echo
+fi
 
 if [[ "${SKIP_FLUX:-0}" != "1" ]] && command -v flux &>/dev/null; then
     echo "To monitor Flux deployments:"

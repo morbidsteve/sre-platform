@@ -1,0 +1,21 @@
+---
+# Install operator CLI tools on RKE2 nodes
+
+- name: Include k9s installation
+  ansible.builtin.include_tasks: k9s.yml
+  tags: [k9s, operator-tools]
+  when: operator_tools_k9s_enabled | bool
+
+- name: Include Helm installation
+  ansible.builtin.include_tasks: helm.yml
+  tags: [helm, operator-tools]
+  when: operator_tools_helm_enabled | bool
+
+- name: Create kubectl symlink from RKE2 binary
+  ansible.builtin.file:
+    src: /var/lib/rancher/rke2/bin/kubectl
+    dest: /usr/local/bin/kubectl
+    state: link
+  tags: [kubectl, operator-tools]
+  when: operator_tools_kubectl_symlink | bool
+  failed_when: false

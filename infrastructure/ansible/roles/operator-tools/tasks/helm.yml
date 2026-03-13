@@ -1,0 +1,45 @@
+---
+# Install Helm — Kubernetes package manager
+
+- name: Check if Helm is already installed at target version
+  ansible.builtin.command: /usr/local/bin/helm version --short
+  register: helm_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Helm {{ operator_tools_helm_version }}
+  when: helm_installed.rc != 0 or operator_tools_helm_version not in (helm_installed.stdout | default(''))
+  block:
+    - name: Download Helm release archive
+      ansible.builtin.get_url:
+        url: "https://get.helm.sh/helm-{{ operator_tools_helm_version }}-linux-{{ operator_tools_k9s_arch }}.tar.gz"
+        dest: /tmp/helm.tar.gz
+        mode: "0644"
+        timeout: 60
+
+    - name: Create temporary extraction directory
+      ansible.builtin.file:
+        path: /tmp/helm-extract
+        state: directory
+        mode: "0755"
+
+    - name: Extract Helm archive
+      ansible.builtin.unarchive:
+        src: /tmp/helm.tar.gz
+        dest: /tmp/helm-extract
+        remote_src: true
+
+    - name: Install Helm binary to /usr/local/bin
+      ansible.builtin.copy:
+        src: "/tmp/helm-extract/linux-{{ operator_tools_k9s_arch }}/helm"
+        dest: /usr/local/bin/helm
+        remote_src: true
+        mode: "0755"
+
+    - name: Clean up Helm download artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/helm.tar.gz
+        - /tmp/helm-extract

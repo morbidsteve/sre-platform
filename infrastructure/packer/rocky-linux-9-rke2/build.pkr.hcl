@@ -176,6 +176,19 @@ build {
     ]
   }
 
+  # Install k9s — terminal UI for Kubernetes cluster management
+  provisioner "shell" {
+    inline = [
+      "echo '=== Installing k9s ${var.k9s_version} ==='",
+      "curl -sfL https://github.com/derailed/k9s/releases/download/${var.k9s_version}/k9s_Linux_amd64.tar.gz -o /tmp/k9s.tar.gz",
+      "sudo tar -xzf /tmp/k9s.tar.gz -C /usr/local/bin k9s",
+      "sudo chmod 755 /usr/local/bin/k9s",
+      "rm -f /tmp/k9s.tar.gz",
+      "echo '=== k9s installed ==='",
+      "k9s version --short"
+    ]
+  }
+
   # Clean up for image creation
   provisioner "shell" {
     inline = [
@@ -203,6 +216,7 @@ build {
       hardening     = "disa-stig-rhel9"
       fips_enabled  = "true"
       rke2_version  = var.rke2_version
+      k9s_version   = var.k9s_version
       airgap_ready  = "true"
     }
   }
