@@ -2315,10 +2315,10 @@
     <div id="panel-build-git" class="deploy-panel">
       <div class="form-card-wide">
         <h2 style="margin-bottom: 4px;">Build from Git</h2>
-        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Point to a Git repo with a Dockerfile. We'll clone, build, push to Harbor, and deploy automatically.</p>
-        <form id="build-git-form" onsubmit="handleBuildFromGit(event)">
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Point to a Git repo. We'll auto-detect Dockerfiles and docker-compose services, build, push to Harbor, and deploy with full Istio mTLS + SSO.</p>
+        <form id="build-git-form" onsubmit="handleAnalyzeRepo(event)">
           <div class="form-row">
-            <div class="form-group">
+            <div class="form-group" style="flex:2">
               <label>Git Repository URL</label>
               <input type="url" id="bg-url" placeholder="https://github.com/user/repo.git" required />
             </div>
@@ -2338,23 +2338,29 @@
               <input type="text" id="bg-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Dockerfile Path</label>
-              <input type="text" id="bg-dockerfile" value="Dockerfile" placeholder="Dockerfile" />
-              <div class="hint">Relative to repo root</div>
-            </div>
-            <div class="form-group">
-              <label>Container Port</label>
-              <input type="number" id="bg-port" value="8080" min="1" max="65535" />
-            </div>
-          </div>
           <div class="btn-group">
-            <button type="submit" class="btn btn-primary" id="build-git-btn">Build &amp; Deploy</button>
+            <button type="submit" class="btn btn-primary" id="build-git-btn">Analyze &amp; Build</button>
           </div>
         </form>
 
-        <!-- Build Pipeline Progress -->
+        <!-- Repo Analysis Results -->
+        <div id="repo-analysis" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <div id="repo-analysis-loading" style="display:none;">
+            <span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;"></span>
+            <span style="color:var(--text-dim);font-size:13px;margin-left:8px;">Analyzing repository...</span>
+          </div>
+          <div id="repo-analysis-results" style="display:none;">
+            <h3 style="font-size:14px;margin-bottom:8px;">Detected Services</h3>
+            <p id="repo-type-label" style="color:var(--text-dim);font-size:12px;margin-bottom:12px;"></p>
+            <div id="detected-services" style="margin-bottom:16px;"></div>
+            <div class="btn-group">
+              <button class="btn btn-primary" id="compose-build-btn" onclick="handleComposeBuild()">Build &amp; Deploy All</button>
+              <button class="btn-outline" onclick="resetAnalysis()">Start Over</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Build Pipeline Progress (single Dockerfile mode) -->
         <div id="build-pipeline" style="display:none;">
           <div class="build-pipeline">
             <div class="build-step" id="bp-clone"><span class="build-step-icon">&#x1F4E5;</span> Clone</div>
@@ -2380,6 +2386,15 @@
               </div>
             </div>
             <button class="btn btn-primary" id="build-deploy-btn" onclick="handleDeployFromBuild()">Deploy to Cluster</button>
+          </div>
+        </div>
+
+        <!-- Compose Build Pipeline Progress (multi-service mode) -->
+        <div id="compose-pipeline" style="display:none;">
+          <h3 style="font-size:14px;margin-bottom:12px;">Build &amp; Deploy Pipeline</h3>
+          <div id="compose-build-steps"></div>
+          <div class="build-log-viewer" id="compose-log-output" style="margin-top:12px;"></div>
+          <div id="compose-deploy-summary" style="display:none;margin-top:16px;padding:12px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border);">
           </div>
         </div>
       </div>
@@ -4276,18 +4291,137 @@ function downloadBuildLogs() {
   URL.revokeObjectURL(a.href);
 }
 
-async function handleBuildFromGit(e) {
+// Stored analysis result for compose builds
+var currentAnalysis = null;
+
+function resetAnalysis() {
+  document.getElementById('repo-analysis').style.display = 'none';
+  document.getElementById('repo-analysis-loading').style.display = 'none';
+  document.getElementById('repo-analysis-results').style.display = 'none';
+  document.getElementById('compose-pipeline').style.display = 'none';
+  document.getElementById('build-pipeline').style.display = 'none';
+  currentAnalysis = null;
+  var btn = document.getElementById('build-git-btn');
+  btn.disabled = false;
+  btn.textContent = 'Analyze & Build';
+}
+
+function renderServiceCard(svc, idx) {
+  var roleColors = { ingress: '#22c55e', internal: '#3b82f6', worker: '#a855f7', platform: '#f59e0b' };
+  var roleLabels = { ingress: 'Public (Istio Ingress)', internal: 'Internal API', worker: 'Background Worker', platform: 'SRE Platform Service' };
+  var roleIcons = { ingress: '&#x1F310;', internal: '&#x1F517;', worker: '&#x2699;', platform: '&#x1F3D7;' };
+  var color = roleColors[svc.role] || '#888';
+  var label = roleLabels[svc.role] || svc.role;
+  var icon = roleIcons[svc.role] || '';
+
+  var actionHtml = '';
+  if (svc.role === 'platform') {
+    if (svc.sre === 'cnpg') {
+      actionHtml = '<div style="font-size:11px;color:#f59e0b;margin-top:4px;">&#x2192; Replaced with CNPG PostgreSQL (managed, HA, backups)</div>';
+    } else if (svc.sre === 'redis') {
+      actionHtml = '<div style="font-size:11px;color:#f59e0b;margin-top:4px;">&#x2192; Deployed as managed Redis instance</div>';
+    } else if (svc.sre === 'skip') {
+      actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">&#x2192; Skipped: ' + (svc.sreLabel || 'already in SRE') + '</div>';
+    }
+  } else if (svc.needsBuild) {
+    actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Build: ' + (svc.buildContext || '.') + '/' + (svc.dockerfile || 'Dockerfile') + '</div>';
+  } else if (svc.image) {
+    actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Image: ' + svc.image + '</div>';
+  }
+
+  var portHtml = svc.port && svc.role !== 'platform' ? '<span style="font-size:11px;color:var(--text-dim);">:' + svc.port + '</span>' : '';
+
+  return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);margin-bottom:6px;">' +
+    '<div style="font-size:18px;line-height:1;">' + icon + '</div>' +
+    '<div style="flex:1;min-width:0;">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<strong style="font-size:13px;">' + svc.name + '</strong> ' + portHtml +
+        '<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44;">' + label + '</span>' +
+      '</div>' +
+      actionHtml +
+    '</div>' +
+    '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;white-space:nowrap;">' +
+      '<input type="checkbox" checked data-svc-idx="' + idx + '" style="margin-right:4px;" />Deploy' +
+    '</label>' +
+  '</div>';
+}
+
+async function handleAnalyzeRepo(e) {
   e.preventDefault();
   var btn = document.getElementById('build-git-btn');
   btn.disabled = true;
-  btn.textContent = 'Building...';
+  btn.textContent = 'Analyzing...';
 
   var url = document.getElementById('bg-url').value.trim();
   var branch = document.getElementById('bg-branch').value.trim() || 'main';
   var appName = document.getElementById('bg-name').value.trim();
   var team = document.getElementById('bg-team').value.trim();
-  var dockerfile = document.getElementById('bg-dockerfile').value.trim() || 'Dockerfile';
-  var port = parseInt(document.getElementById('bg-port').value) || 8080;
+
+  // Show analysis section
+  document.getElementById('repo-analysis').style.display = 'block';
+  document.getElementById('repo-analysis-loading').style.display = 'block';
+  document.getElementById('repo-analysis-results').style.display = 'none';
+  document.getElementById('build-pipeline').style.display = 'none';
+  document.getElementById('compose-pipeline').style.display = 'none';
+
+  try {
+    var resp = await fetch('/api/repo/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gitUrl: url, branch: branch }),
+    });
+    var data = await resp.json();
+
+    document.getElementById('repo-analysis-loading').style.display = 'none';
+
+    if (!data.success) {
+      btn.disabled = false;
+      btn.textContent = 'Analyze & Build';
+      showDeployAlert('error', data.error || 'Failed to analyze repository');
+      document.getElementById('repo-analysis').style.display = 'none';
+      return;
+    }
+
+    currentAnalysis = { ...data, appName: appName, team: team, gitUrl: url, branch: branch };
+
+    // Single Dockerfile mode: skip analysis UI, go straight to build
+    if (data.repoType === 'dockerfile' && data.services.length === 1) {
+      document.getElementById('repo-analysis').style.display = 'none';
+      var svc = data.services[0];
+      startSingleBuild(url, branch, appName, team, svc.dockerfile || 'Dockerfile', svc.port || 8080);
+      return;
+    }
+
+    // Compose / multi-service mode: show detected services
+    document.getElementById('repo-analysis-results').style.display = 'block';
+
+    var typeLabels = { compose: 'Docker Compose project', dockerfile: 'Dockerfile', unknown: 'Unknown project type' };
+    document.getElementById('repo-type-label').textContent =
+      typeLabels[data.repoType] + ' \u2014 ' + data.services.length + ' service(s) detected. ' +
+      'Istio mTLS + SSO applied automatically. Platform services mapped to SRE equivalents.';
+
+    var html = '';
+    for (var i = 0; i < data.services.length; i++) {
+      html += renderServiceCard(data.services[i], i);
+    }
+    document.getElementById('detected-services').innerHTML = html;
+
+    btn.disabled = false;
+    btn.textContent = 'Analyze & Build';
+
+  } catch (err) {
+    document.getElementById('repo-analysis-loading').style.display = 'none';
+    document.getElementById('repo-analysis').style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = 'Analyze & Build';
+    showDeployAlert('error', 'Failed to analyze repository: ' + err.message);
+  }
+}
+
+function startSingleBuild(url, branch, appName, team, dockerfile, port) {
+  var btn = document.getElementById('build-git-btn');
+  btn.disabled = true;
+  btn.textContent = 'Building...';
 
   // Show pipeline
   var pipelineEl = document.getElementById('build-pipeline');
@@ -4299,18 +4433,16 @@ async function handleBuildFromGit(e) {
   setBuildStepState('bp', 'push', '');
   setBuildStepState('bp', 'deploy', '');
 
-  try {
-    var resp = await fetch('/api/build', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gitUrl: url, branch: branch, appName: appName, team: team, dockerfile: dockerfile }),
-    });
-    var data = await resp.json();
+  fetch('/api/build', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ gitUrl: url, branch: branch, appName: appName, team: team, dockerfile: dockerfile }),
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
     if (!data.success) {
       appendBuildLog('build-log-output', 'Error: ' + data.error, 'error');
       setBuildStepState('bp', 'clone', 'failed');
       btn.disabled = false;
-      btn.textContent = 'Build & Deploy';
+      btn.textContent = 'Analyze & Build';
       return;
     }
 
@@ -4354,7 +4486,7 @@ async function handleBuildFromGit(e) {
           document.getElementById('build-status-text').textContent = 'Build failed';
         }
         btn.disabled = false;
-        btn.textContent = 'Build & Deploy';
+        btn.textContent = 'Analyze & Build';
       } else if (msg.type === 'done') {
         evtSource.close();
       }
@@ -4362,13 +4494,227 @@ async function handleBuildFromGit(e) {
     evtSource.onerror = function() {
       evtSource.close();
       btn.disabled = false;
-      btn.textContent = 'Build & Deploy';
+      btn.textContent = 'Analyze & Build';
     };
-  } catch (err) {
+  }).catch(function(err) {
     appendBuildLog('build-log-output', 'Request failed: ' + err.message, 'error');
     btn.disabled = false;
-    btn.textContent = 'Build & Deploy';
+    btn.textContent = 'Analyze & Build';
+  });
+}
+
+async function handleComposeBuild() {
+  if (!currentAnalysis) return;
+  var btn = document.getElementById('compose-build-btn');
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  // Get checked services
+  var checkboxes = document.querySelectorAll('#detected-services input[type="checkbox"]');
+  var selectedServices = [];
+  checkboxes.forEach(function(cb) {
+    if (cb.checked) {
+      var idx = parseInt(cb.dataset.svcIdx);
+      selectedServices.push(currentAnalysis.services[idx]);
+    }
+  });
+
+  if (selectedServices.length === 0) {
+    showDeployAlert('error', 'No services selected');
+    btn.disabled = false;
+    btn.textContent = 'Build & Deploy All';
+    return;
   }
+
+  // Hide analysis, show compose pipeline
+  document.getElementById('repo-analysis-results').style.display = 'none';
+  var pipeline = document.getElementById('compose-pipeline');
+  pipeline.style.display = 'block';
+  var stepsEl = document.getElementById('compose-build-steps');
+  var logEl = document.getElementById('compose-log-output');
+  logEl.innerHTML = '';
+
+  // Separate services by type
+  var buildServices = selectedServices.filter(function(s) { return s.needsBuild; });
+  var platformServices = selectedServices.filter(function(s) { return s.role === 'platform'; });
+  var imageServices = selectedServices.filter(function(s) { return !s.needsBuild && s.role !== 'platform' && s.image; });
+
+  // Show step indicators
+  var stepsHtml = '';
+  for (var i = 0; i < selectedServices.length; i++) {
+    var s = selectedServices[i];
+    var stepLabel = s.role === 'platform' ? (s.sreLabel || 'Platform') : s.needsBuild ? 'Build' : 'Deploy';
+    stepsHtml += '<div class="build-step" id="cs-' + i + '" style="font-size:12px;padding:6px 10px;"><span class="build-step-icon" style="font-size:14px;">&#x23F3;</span> ' + s.name + ' (' + stepLabel + ')</div>';
+  }
+  stepsEl.innerHTML = '<div class="build-pipeline" style="flex-wrap:wrap;">' + stepsHtml + '</div>';
+
+  try {
+    // Step 1: Start builds for services that need building
+    var buildResults = [];
+    if (buildServices.length > 0) {
+      appendBuildLog('compose-log-output', '--- Starting builds for ' + buildServices.length + ' service(s) ---', 'phase');
+
+      var buildResp = await fetch('/api/build/compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gitUrl: currentAnalysis.gitUrl,
+          branch: currentAnalysis.branch,
+          appName: currentAnalysis.appName,
+          team: currentAnalysis.team,
+          services: buildServices,
+        }),
+      });
+      var buildData = await buildResp.json();
+
+      if (!buildData.success) {
+        appendBuildLog('compose-log-output', 'Error: ' + buildData.error, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Build & Deploy All';
+        return;
+      }
+
+      appendBuildLog('compose-log-output', 'Started ' + buildData.builds.length + ' build job(s). Group: ' + buildData.groupId, 'status');
+
+      // Monitor all builds
+      var pending = new Set(buildData.builds.map(function(b) { return b.buildId; }));
+      var completed = {};
+      var maxWait = 300; // 5 minutes
+
+      while (pending.size > 0 && maxWait > 0) {
+        await new Promise(function(r) { setTimeout(r, 3000); });
+        maxWait -= 3;
+
+        for (var bid of Array.from(pending)) {
+          try {
+            var statusResp = await fetch('/api/build/' + encodeURIComponent(bid) + '/status');
+            var statusData = await statusResp.json();
+
+            if (statusData.status === 'succeeded') {
+              pending.delete(bid);
+              completed[bid] = true;
+              var matchBuild = buildData.builds.find(function(b) { return b.buildId === bid; });
+              var svcIdx = selectedServices.findIndex(function(s) { return s.name === (matchBuild && matchBuild.serviceName); });
+              if (svcIdx >= 0) setBuildStepState('cs', String(svcIdx), 'done');
+              appendBuildLog('compose-log-output', 'Build succeeded: ' + (matchBuild ? matchBuild.serviceName : bid), 'phase');
+            } else if (statusData.status === 'failed') {
+              pending.delete(bid);
+              completed[bid] = false;
+              var matchBuild2 = buildData.builds.find(function(b) { return b.buildId === bid; });
+              var svcIdx2 = selectedServices.findIndex(function(s) { return s.name === (matchBuild2 && matchBuild2.serviceName); });
+              if (svcIdx2 >= 0) setBuildStepState('cs', String(svcIdx2), 'failed');
+              appendBuildLog('compose-log-output', 'Build FAILED: ' + (matchBuild2 ? matchBuild2.serviceName : bid), 'error');
+            }
+          } catch { /* retry */ }
+        }
+      }
+
+      if (pending.size > 0) {
+        appendBuildLog('compose-log-output', 'Some builds timed out: ' + Array.from(pending).join(', '), 'error');
+      }
+
+      // Map build results back to services
+      buildResults = buildData.builds.filter(function(b) { return completed[b.buildId]; });
+    }
+
+    // Step 2: Deploy everything
+    appendBuildLog('compose-log-output', '--- Deploying all services ---', 'phase');
+
+    var deployServices = [];
+
+    // Platform services (CNPG, Redis, etc.)
+    for (var ps of platformServices) {
+      deployServices.push({
+        name: ps.name,
+        role: 'platform',
+        sre: ps.sre,
+        sreLabel: ps.sreLabel,
+        port: ps.port,
+      });
+      var psIdx = selectedServices.findIndex(function(s) { return s.name === ps.name; });
+      if (psIdx >= 0) setBuildStepState('cs', String(psIdx), 'active');
+    }
+
+    // Built services
+    for (var br of buildResults) {
+      var origSvc = buildServices.find(function(s) { return s.name === br.serviceName; });
+      deployServices.push({
+        name: br.serviceName,
+        deployName: selectedServices.length === 1 ? currentAnalysis.appName : currentAnalysis.appName + '-' + br.serviceName,
+        buildId: br.buildId,
+        port: br.port,
+        role: br.role || (origSvc ? origSvc.role : 'internal'),
+        env: origSvc ? origSvc.environment : [],
+      });
+    }
+
+    // Pre-built image services
+    for (var is of imageServices) {
+      deployServices.push({
+        name: is.name,
+        deployName: currentAnalysis.appName + '-' + is.name,
+        image: is.image,
+        port: is.port,
+        role: is.role || 'internal',
+        env: is.environment || [],
+      });
+    }
+
+    var deployResp = await fetch('/api/deploy/compose-group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        appName: currentAnalysis.appName,
+        team: currentAnalysis.team,
+        services: deployServices,
+      }),
+    });
+    var deployData = await deployResp.json();
+
+    if (deployData.success) {
+      appendBuildLog('compose-log-output', 'All services deployed to ' + deployData.namespace + '!', 'phase');
+
+      // Mark all remaining steps as done
+      for (var di = 0; di < selectedServices.length; di++) {
+        var el = document.getElementById('cs-' + di);
+        if (el && !el.classList.contains('failed')) setBuildStepState('cs', String(di), 'done');
+      }
+
+      // Show summary
+      var summaryEl = document.getElementById('compose-deploy-summary');
+      summaryEl.style.display = 'block';
+      var sumHtml = '<h3 style="font-size:14px;margin-bottom:8px;color:var(--success);">Deployment Complete</h3>';
+      sumHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Namespace: ' + deployData.namespace + ' | Istio mTLS: active | SSO: enforced</div>';
+      for (var dd of deployData.deployed) {
+        var typeIcon = dd.type === 'ingress' ? '&#x1F310;' : dd.type === 'cnpg-database' ? '&#x1F5C3;' : dd.type === 'redis' ? '&#x26A1;' : dd.type === 'skipped' ? '&#x23ED;' : '&#x1F517;';
+        var urlHtml = dd.ingress ? ' &mdash; <a href="https://' + dd.ingress + '" target="_blank" style="color:var(--accent);">' + dd.ingress + '</a>' : '';
+        var connHtml = dd.connectionInfo ? ' &mdash; <code style="font-size:10px;">' + dd.connectionInfo.host + ':' + dd.connectionInfo.port + '</code>' : '';
+        sumHtml += '<div style="padding:4px 0;font-size:12px;">' + typeIcon + ' <strong>' + dd.name + '</strong> (' + dd.type + ')' + urlHtml + connHtml + '</div>';
+      }
+      summaryEl.innerHTML = sumHtml;
+
+      showDeployAlert('success', 'Deployed ' + deployData.deployed.length + ' service(s) to ' + deployData.namespace);
+      loadDeployedApps();
+    } else {
+      appendBuildLog('compose-log-output', 'Deploy failed: ' + deployData.error, 'error');
+    }
+
+  } catch (err) {
+    appendBuildLog('compose-log-output', 'Error: ' + err.message, 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Build & Deploy All';
+}
+
+// Legacy single-build handler (kept for inline Dockerfile mode)
+async function handleBuildFromGit(e) {
+  e.preventDefault();
+  var url = document.getElementById('bg-url').value.trim();
+  var branch = document.getElementById('bg-branch').value.trim() || 'main';
+  var appName = document.getElementById('bg-name').value.trim();
+  var team = document.getElementById('bg-team').value.trim();
+  startSingleBuild(url, branch, appName, team, 'Dockerfile', 8080);
 }
 
 async function handleDeployFromBuild() {

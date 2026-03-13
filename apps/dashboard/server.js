@@ -1371,6 +1371,7 @@ const BUILD_NAMESPACE = "sre-builds";
 const HARBOR_REGISTRY = "harbor.apps.sre.example.com";
 const KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.2";
 const GIT_CLONE_IMAGE = "alpine/git:2.43.0";
+const REPO_ANALYZE_IMAGE = "alpine/git:2.43.0";
 
 // In-memory build tracking (supplements K8s Job status)
 const buildRegistry = new Map();
@@ -1378,6 +1379,651 @@ const buildRegistry = new Map();
 function generateBuildId() {
   return "build-" + crypto.randomBytes(4).toString("hex");
 }
+
+// ── Well-known SRE platform services that should NOT be built/deployed as containers ──
+// When a docker-compose service matches one of these, we replace it with the SRE equivalent.
+const SRE_PLATFORM_SERVICES = {
+  postgres: { type: "database", sre: "cnpg", label: "CNPG PostgreSQL" },
+  postgresql: { type: "database", sre: "cnpg", label: "CNPG PostgreSQL" },
+  postgis: { type: "database", sre: "cnpg", label: "CNPG PostgreSQL (PostGIS)" },
+  redis: { type: "cache", sre: "redis", label: "Redis (in-cluster)" },
+  prometheus: { type: "monitoring", sre: "skip", label: "SRE Monitoring (already deployed)" },
+  grafana: { type: "monitoring", sre: "skip", label: "SRE Grafana (already deployed)" },
+  elasticsearch: { type: "logging", sre: "skip", label: "SRE Loki (already deployed)" },
+  kibana: { type: "logging", sre: "skip", label: "SRE Grafana (already deployed)" },
+  jaeger: { type: "tracing", sre: "skip", label: "SRE Tempo (already deployed)" },
+  nginx: { type: "ingress", sre: "skip-if-proxy", label: "Istio Gateway (if reverse proxy only)" },
+};
+
+// Detect if a docker-compose image matches a well-known platform service
+function detectPlatformService(image, serviceName) {
+  const lower = (image || "").toLowerCase();
+  const svcLower = (serviceName || "").toLowerCase();
+  for (const [key, info] of Object.entries(SRE_PLATFORM_SERVICES)) {
+    if (lower.includes(key) || svcLower === key || svcLower === "db") {
+      // "db" service name with a postgres-like image
+      if (svcLower === "db" && (lower.includes("postgres") || lower.includes("postgis"))) {
+        return SRE_PLATFORM_SERVICES.postgres;
+      }
+      if (lower.includes(key)) return info;
+    }
+  }
+  return null;
+}
+
+// Parse EXPOSE directives from a Dockerfile string
+function parseDockerfileExpose(content) {
+  if (!content) return [];
+  const ports = [];
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const match = line.trim().match(/^EXPOSE\s+(.+)/i);
+    if (match) {
+      const parts = match[1].split(/\s+/);
+      for (const p of parts) {
+        const num = parseInt(p.replace(/\/\w+$/, ""), 10);
+        if (num > 0 && num <= 65535) ports.push(num);
+      }
+    }
+  }
+  return ports;
+}
+
+// Classify a service's role: "ingress" (user-facing), "internal" (API/worker), "platform" (SRE-managed)
+function classifyService(svcName, svc, composeParsed) {
+  const image = svc.image || "";
+  const platformMatch = detectPlatformService(image, svcName);
+  if (platformMatch) return { role: "platform", ...platformMatch };
+
+  const ports = svc.ports || [];
+  const hasExternalPorts = ports.some((p) => {
+    const parts = String(p).split(":");
+    if (parts.length < 2) return false;
+    const hostPort = parseInt(parts[0], 10);
+    return hostPort === 80 || hostPort === 443 || hostPort === 8080 || hostPort === 8443 || hostPort === 3000;
+  });
+
+  // Services named "frontend", "web", "ui", "app" with external ports → ingress
+  const ingressNames = ["frontend", "web", "ui", "app", "client", "portal", "dashboard"];
+  if (ingressNames.includes(svcName.toLowerCase()) || hasExternalPorts) {
+    // Check if it has a build context (i.e., we need to build it)
+    const hasBuild = svc.build || svc.dockerfile;
+    return { role: "ingress", needsBuild: !!hasBuild };
+  }
+
+  // Workers / background tasks: no ports exposed
+  if (ports.length === 0) {
+    const workerNames = ["worker", "celery", "consumer", "cron", "scheduler", "job"];
+    if (workerNames.some((w) => svcName.toLowerCase().includes(w))) {
+      return { role: "worker" };
+    }
+  }
+
+  return { role: "internal" };
+}
+
+// Detect container port from compose ports or Dockerfile EXPOSE
+function detectPort(svc, dockerfileContent) {
+  // First: check compose ports (container side = right of colon)
+  if (svc.ports && svc.ports.length > 0) {
+    for (const portStr of svc.ports) {
+      const parts = String(portStr).split(":");
+      const rightSide = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+      const num = parseInt(rightSide.replace(/\/\w+$/, ""), 10);
+      if (num > 0 && num <= 65535) return num;
+    }
+  }
+  // Second: check Dockerfile EXPOSE
+  if (dockerfileContent) {
+    const exposed = parseDockerfileExpose(dockerfileContent);
+    if (exposed.length > 0) return exposed[0];
+  }
+  return 8080; // fallback
+}
+
+// Parse docker-compose build context
+function parseComposeBuildContext(yamlText) {
+  // Enhanced parser that also extracts build: context, depends_on, networks, profiles
+  const services = parseDockerCompose(yamlText);
+  const lines = yamlText.split("\n");
+  let inServices = false;
+  let currentService = null;
+  let serviceIndent = -1;
+
+  for (const raw of lines) {
+    if (raw.trimStart().startsWith("#") || raw.trim() === "") continue;
+    const stripped = raw.trimEnd();
+    const indent = stripped.length - stripped.trimStart().length;
+    const content = stripped.trim();
+
+    if (/^services\s*:/.test(content) && indent === 0) { inServices = true; currentService = null; continue; }
+    if (!inServices) continue;
+    if (indent === 0 && /^\w/.test(content) && !content.startsWith("-")) { inServices = false; continue; }
+
+    // Detect service names
+    if (indent > 0 && indent <= 4 && /^[a-zA-Z0-9_-]+\s*:\s*$/.test(content)) {
+      currentService = content.replace(/\s*:\s*$/, "").trim();
+      serviceIndent = indent;
+      continue;
+    }
+
+    if (!currentService || !services[currentService]) continue;
+
+    // build: ./path or build:\n  context: ./path
+    const buildMatch = content.match(/^build\s*:\s*(.+)$/);
+    if (buildMatch && indent > serviceIndent) {
+      const val = buildMatch[1].trim();
+      if (val && !val.endsWith(":")) {
+        // Inline build context: build: ./backend
+        services[currentService].buildContext = val.replace(/^["']|["']$/g, "");
+      }
+      continue;
+    }
+    const contextMatch = content.match(/^context\s*:\s*(.+)$/);
+    if (contextMatch && indent > serviceIndent + 2) {
+      services[currentService].buildContext = contextMatch[1].trim().replace(/^["']|["']$/g, "");
+      continue;
+    }
+    const targetMatch = content.match(/^target\s*:\s*(.+)$/);
+    if (targetMatch && indent > serviceIndent + 2) {
+      services[currentService].buildTarget = targetMatch[1].trim().replace(/^["']|["']$/g, "");
+      continue;
+    }
+    const dockerfileMatch = content.match(/^dockerfile\s*:\s*(.+)$/);
+    if (dockerfileMatch && indent > serviceIndent + 2) {
+      services[currentService].dockerfile = dockerfileMatch[1].trim().replace(/^["']|["']$/g, "");
+      continue;
+    }
+    // profiles:
+    const profileMatch = content.match(/^-\s*["']?(\w+)["']?$/);
+    // detect profiles block
+    if (/^profiles\s*:\s*$/.test(content)) {
+      services[currentService]._inProfiles = true;
+      continue;
+    }
+    if (services[currentService]._inProfiles && content.startsWith("-")) {
+      services[currentService].profiles = services[currentService].profiles || [];
+      services[currentService].profiles.push(content.replace(/^-\s*/, "").replace(/^["']|["']$/g, ""));
+      continue;
+    }
+    if (services[currentService]._inProfiles && !content.startsWith("-")) {
+      delete services[currentService]._inProfiles;
+    }
+  }
+
+  return services;
+}
+
+// POST /api/repo/analyze — Analyze a Git repo to detect project type, services, ports
+app.post("/api/repo/analyze", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { gitUrl, branch } = req.body;
+    if (!gitUrl || !isValidGitUrl(gitUrl)) {
+      return res.status(400).json({ error: "Invalid or missing gitUrl" });
+    }
+
+    const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
+    const analyzeId = "analyze-" + crypto.randomBytes(4).toString("hex");
+
+    // Create a lightweight Job that clones the repo and outputs file listing + key file contents
+    const jobSpec = {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: {
+        name: analyzeId,
+        namespace: BUILD_NAMESPACE,
+        labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/type": "analyze" },
+      },
+      spec: {
+        backoffLimit: 0,
+        ttlSecondsAfterFinished: 300,
+        activeDeadlineSeconds: 60,
+        template: {
+          spec: {
+            restartPolicy: "Never",
+            containers: [{
+              name: "analyze",
+              image: REPO_ANALYZE_IMAGE,
+              command: ["/bin/sh", "-c", [
+                `git clone --depth=1 --branch '${safeBranch}' '${gitUrl}' /workspace 2>&1`,
+                `echo '===SRE_FILE_LIST==='`,
+                `find /workspace -maxdepth 3 -type f \\( -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' -o -name 'Dockerfile' -o -name 'Dockerfile.*' \\) | sed 's|/workspace/||' | sort`,
+                `echo '===SRE_COMPOSE_CONTENT==='`,
+                // Output docker-compose.yml if it exists
+                `for f in docker-compose.yml docker-compose.yaml; do if [ -f /workspace/$f ]; then echo "===FILE:$f==="; cat /workspace/$f; fi; done`,
+                `echo '===SRE_DOCKERFILE_CONTENT==='`,
+                // Output each Dockerfile (up to 3 levels deep)
+                `find /workspace -maxdepth 3 -name 'Dockerfile' -o -name 'Dockerfile.*' | head -10 | while read df; do relpath=$(echo $df | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $df; done`,
+                `echo '===SRE_DONE==='`,
+              ].join(" && ")],
+              resources: {
+                requests: { cpu: "100m", memory: "128Mi" },
+                limits: { cpu: "500m", memory: "512Mi" },
+              },
+              securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+            }],
+          },
+        },
+      },
+    };
+
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
+
+    // Wait for job to complete (up to 45s)
+    let logs = "";
+    for (let i = 0; i < 45; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const jr = await batchApi.readNamespacedJob(analyzeId, BUILD_NAMESPACE);
+        if (jr.body.status?.succeeded) {
+          const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${analyzeId}`);
+          if (pods.body.items.length > 0) {
+            const logResp = await k8sApi.readNamespacedPodLog(pods.body.items[0].metadata.name, BUILD_NAMESPACE, "analyze");
+            logs = logResp.body || "";
+          }
+          break;
+        }
+        if (jr.body.status?.failed) {
+          return res.status(400).json({ error: "Failed to clone repository. Check the URL and branch." });
+        }
+      } catch { /* retry */ }
+    }
+
+    if (!logs) {
+      return res.status(504).json({ error: "Repository analysis timed out" });
+    }
+
+    // Parse the structured output
+    const fileListMatch = logs.split("===SRE_FILE_LIST===")[1]?.split("===SRE_COMPOSE_CONTENT===")[0];
+    const composeMatch = logs.split("===SRE_COMPOSE_CONTENT===")[1]?.split("===SRE_DOCKERFILE_CONTENT===")[0];
+    const dockerfileMatch = logs.split("===SRE_DOCKERFILE_CONTENT===")[1]?.split("===SRE_DONE===")[0];
+
+    const files = (fileListMatch || "").trim().split("\n").filter(Boolean);
+    const hasCompose = files.some((f) => f.startsWith("docker-compose"));
+    const hasDockerfile = files.some((f) => f === "Dockerfile" || f.match(/^Dockerfile\./));
+
+    // Parse Dockerfiles content keyed by path
+    const dockerfiles = {};
+    if (dockerfileMatch) {
+      const parts = dockerfileMatch.split(/===FILE:(.+?)===/);
+      for (let i = 1; i < parts.length; i += 2) {
+        dockerfiles[parts[i]] = parts[i + 1]?.trim() || "";
+      }
+    }
+
+    // Build the analysis result
+    const result = {
+      repoType: hasCompose ? "compose" : hasDockerfile ? "dockerfile" : "unknown",
+      files,
+      services: [],
+    };
+
+    if (hasCompose && composeMatch) {
+      // Parse the compose content
+      let composeContent = "";
+      const composeParts = composeMatch.split(/===FILE:(.+?)===/);
+      if (composeParts.length >= 3) {
+        composeContent = composeParts[2]?.trim() || "";
+      }
+
+      const parsed = parseComposeBuildContext(composeContent);
+
+      for (const [svcName, svc] of Object.entries(parsed)) {
+        const classification = classifyService(svcName, svc, parsed);
+        const dockerfilePath = svc.buildContext
+          ? `${svc.buildContext.replace(/^\.\//, "")}/${svc.dockerfile || "Dockerfile"}`
+          : null;
+        const dockerfileContent = dockerfilePath ? dockerfiles[dockerfilePath] : null;
+        const port = detectPort(svc, dockerfileContent);
+
+        // Skip services that are in non-default profiles (demo, monitoring, backup)
+        const skipProfiles = ["demo", "monitoring", "backup", "debug", "test"];
+        if (svc.profiles && svc.profiles.some((p) => skipProfiles.includes(p))) {
+          continue;
+        }
+
+        result.services.push({
+          name: svcName,
+          image: svc.image || null,
+          buildContext: svc.buildContext || null,
+          buildTarget: svc.buildTarget || null,
+          dockerfile: svc.dockerfile || (svc.buildContext ? "Dockerfile" : null),
+          port,
+          exposedPorts: dockerfileContent ? parseDockerfileExpose(dockerfileContent) : [],
+          environment: (svc.environment || []).map((e) => {
+            const idx = e.indexOf("=");
+            return idx > 0 ? { name: e.substring(0, idx), value: e.substring(idx + 1) } : null;
+          }).filter(Boolean),
+          role: classification.role,
+          sre: classification.sre || null,
+          sreLabel: classification.label || null,
+          needsBuild: !!svc.buildContext,
+        });
+      }
+    } else if (hasDockerfile) {
+      // Single Dockerfile repo
+      const rootDockerfile = dockerfiles["Dockerfile"] || "";
+      const ports = parseDockerfileExpose(rootDockerfile);
+      result.services.push({
+        name: "app",
+        image: null,
+        buildContext: ".",
+        dockerfile: "Dockerfile",
+        port: ports[0] || 8080,
+        exposedPorts: ports,
+        environment: [],
+        role: "ingress",
+        sre: null,
+        needsBuild: true,
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error("Error analyzing repo:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/build/compose — Build all services from a docker-compose repo
+app.post("/api/build/compose", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { gitUrl, branch, appName, team, services: serviceDefs } = req.body;
+
+    if (!gitUrl || !isValidGitUrl(gitUrl)) {
+      return res.status(400).json({ error: "Invalid or missing gitUrl" });
+    }
+    if (!appName || !team) {
+      return res.status(400).json({ error: "Missing appName or team" });
+    }
+    if (!Array.isArray(serviceDefs) || serviceDefs.length === 0) {
+      return res.status(400).json({ error: "No services to build" });
+    }
+
+    const safeName = sanitizeName(appName);
+    const teamName = sanitizeName(team);
+    const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
+    const groupId = "group-" + crypto.randomBytes(4).toString("hex");
+
+    const builds = [];
+
+    // Create a build Job for each service that needs building
+    for (const svc of serviceDefs) {
+      if (!svc.needsBuild || !svc.buildContext) continue;
+
+      const svcName = sanitizeName(svc.name);
+      const buildId = generateBuildId();
+      const imageName = serviceDefs.length === 1 ? safeName : `${safeName}-${svcName}`;
+      const destination = `${HARBOR_REGISTRY}/${teamName}/${imageName}:${buildId}`;
+      const dockerfilePath = svc.buildContext
+        ? `${svc.buildContext.replace(/^\.\//, "")}/${svc.dockerfile || "Dockerfile"}`
+        : svc.dockerfile || "Dockerfile";
+
+      // Kaniko args
+      const kanikoArgs = [
+        `--dockerfile=/workspace/${dockerfilePath}`,
+        `--context=/workspace/${(svc.buildContext || ".").replace(/^\.\//, "")}`,
+        `--destination=${destination}`,
+        "--cache=true",
+        `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
+        "--snapshot-mode=redo",
+        "--skip-tls-verify",
+      ];
+      if (svc.buildTarget) {
+        kanikoArgs.push(`--target=${svc.buildTarget}`);
+      }
+
+      const jobSpec = {
+        apiVersion: "batch/v1",
+        kind: "Job",
+        metadata: {
+          name: buildId,
+          namespace: BUILD_NAMESPACE,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/build-id": buildId,
+            "sre.io/group-id": groupId,
+            "sre.io/app-name": imageName,
+            "sre.io/team": teamName,
+          },
+        },
+        spec: {
+          backoffLimit: 0,
+          ttlSecondsAfterFinished: 3600,
+          template: {
+            metadata: { labels: { "sre.io/build-id": buildId, "sre.io/group-id": groupId } },
+            spec: {
+              restartPolicy: "Never",
+              initContainers: [{
+                name: "git-clone",
+                image: GIT_CLONE_IMAGE,
+                args: ["clone", "--depth=1", "--branch", safeBranch, gitUrl, "/workspace"],
+                volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+                resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+                securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+              }],
+              containers: [{
+                name: "kaniko",
+                image: KANIKO_IMAGE,
+                args: kanikoArgs,
+                volumeMounts: [
+                  { name: "workspace", mountPath: "/workspace" },
+                  { name: "docker-config", mountPath: "/kaniko/.docker" },
+                ],
+                resources: { requests: { cpu: "250m", memory: "512Mi" }, limits: { cpu: "2", memory: "2Gi" } },
+              }],
+              volumes: [
+                { name: "workspace", emptyDir: {} },
+                { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+              ],
+            },
+          },
+        },
+      };
+
+      await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
+
+      buildRegistry.set(buildId, {
+        id: buildId,
+        groupId,
+        appName: imageName,
+        serviceName: svcName,
+        team: teamName,
+        gitUrl,
+        dockerfile: dockerfilePath,
+        destination,
+        imageRepo: `${HARBOR_REGISTRY}/${teamName}/${imageName}`,
+        imageTag: buildId,
+        port: svc.port || 8080,
+        role: svc.role || "internal",
+        startedAt: new Date().toISOString(),
+        status: "building",
+      });
+
+      builds.push({
+        buildId,
+        serviceName: svcName,
+        destination,
+        port: svc.port || 8080,
+        role: svc.role || "internal",
+      });
+    }
+
+    res.json({
+      success: true,
+      groupId,
+      builds,
+      message: `Started ${builds.length} build(s) for ${safeName}`,
+    });
+  } catch (err) {
+    console.error("Error starting compose build:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deploy/compose-group — Deploy all services from a compose build group
+app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { groupId, appName, team, services: serviceDefs } = req.body;
+
+    if (!appName || !team) {
+      return res.status(400).json({ error: "Missing appName or team" });
+    }
+    if (!Array.isArray(serviceDefs) || serviceDefs.length === 0) {
+      return res.status(400).json({ error: "No services to deploy" });
+    }
+
+    const safeName = sanitizeName(appName);
+    const teamName = sanitizeName(team);
+    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+
+    await ensureNamespace(nsName, teamName);
+
+    const deployed = [];
+
+    for (const svc of serviceDefs) {
+      // Platform services: create CNPG cluster, Redis, etc.
+      if (svc.role === "platform" && svc.sre === "cnpg") {
+        // Deploy a CNPG PostgreSQL cluster
+        const dbName = sanitizeName(`${safeName}-db`);
+        const cnpgCluster = {
+          apiVersion: "postgresql.cnpg.io/v1",
+          kind: "Cluster",
+          metadata: { name: dbName, namespace: nsName },
+          spec: {
+            instances: 1,
+            storage: { size: "5Gi", storageClass: "local-path" },
+            bootstrap: {
+              initdb: {
+                database: safeName.replace(/-/g, "_"),
+                owner: safeName.replace(/-/g, "_"),
+              },
+            },
+          },
+        };
+        await applyManifest(cnpgCluster, nsName);
+        deployed.push({
+          name: dbName,
+          type: "cnpg-database",
+          port: 5432,
+          connectionInfo: {
+            host: `${dbName}-rw.${nsName}.svc.cluster.local`,
+            port: 5432,
+            database: safeName.replace(/-/g, "_"),
+            secretName: `${dbName}-app`,
+          },
+        });
+        continue;
+      }
+
+      if (svc.role === "platform" && svc.sre === "redis") {
+        // Deploy a simple Redis StatefulSet
+        const redisName = sanitizeName(`${safeName}-redis`);
+        const redisManifest = generateHelmRelease({
+          name: redisName,
+          team: nsName,
+          image: "redis",
+          tag: "7-alpine",
+          port: 6379,
+          replicas: 1,
+          ingressHost: "",
+        });
+        await applyManifest(redisManifest, nsName);
+        deployed.push({
+          name: redisName,
+          type: "redis",
+          port: 6379,
+          connectionInfo: { host: `${redisName}.${nsName}.svc.cluster.local`, port: 6379 },
+        });
+        continue;
+      }
+
+      if (svc.role === "platform" && svc.sre === "skip") {
+        deployed.push({ name: svc.name, type: "skipped", reason: svc.sreLabel });
+        continue;
+      }
+
+      // Built services: deploy from Harbor image
+      if (svc.buildId) {
+        const buildMeta = buildRegistry.get(svc.buildId);
+        if (!buildMeta) continue;
+
+        const svcAppName = sanitizeName(svc.deployName || buildMeta.appName);
+        const isIngress = svc.role === "ingress";
+        const ingressHost = isIngress ? `${svcAppName}.apps.sre.example.com` : "";
+
+        // Build environment with service discovery for internal dependencies
+        const env = Array.isArray(svc.env) ? svc.env : [];
+
+        const manifest = generateHelmRelease({
+          name: svcAppName,
+          team: nsName,
+          image: buildMeta.imageRepo,
+          tag: buildMeta.imageTag,
+          port: svc.port || buildMeta.port || 8080,
+          replicas: svc.replicas || (isIngress ? 2 : 1),
+          ingressHost,
+          env,
+        });
+
+        await applyManifest(manifest, nsName);
+        deployed.push({
+          name: svcAppName,
+          type: isIngress ? "ingress" : svc.role === "worker" ? "worker" : "internal",
+          port: svc.port || buildMeta.port,
+          image: `${buildMeta.imageRepo}:${buildMeta.imageTag}`,
+          ingress: ingressHost || null,
+        });
+        continue;
+      }
+
+      // Pre-built images (from compose, no build context)
+      if (svc.image) {
+        let imageRepo = svc.image;
+        let imageTag = "latest";
+        const colonIdx = svc.image.lastIndexOf(":");
+        if (colonIdx > 0 && !svc.image.substring(colonIdx).includes("/")) {
+          imageRepo = svc.image.substring(0, colonIdx);
+          imageTag = svc.image.substring(colonIdx + 1);
+        }
+
+        const svcAppName = sanitizeName(svc.deployName || svc.name);
+        const manifest = generateHelmRelease({
+          name: svcAppName,
+          team: nsName,
+          image: imageRepo,
+          tag: imageTag,
+          port: svc.port || 8080,
+          replicas: 1,
+          ingressHost: "",
+          env: Array.isArray(svc.env) ? svc.env : [],
+        });
+
+        await applyManifest(manifest, nsName);
+        deployed.push({ name: svcAppName, type: "internal", port: svc.port, image: svc.image });
+      }
+    }
+
+    // Generate a summary of service URLs for internal wiring
+    const serviceMap = {};
+    for (const d of deployed) {
+      if (d.port && d.name) {
+        serviceMap[d.name] = `${d.name}.${nsName}.svc.cluster.local:${d.port}`;
+      }
+    }
+
+    res.json({
+      success: true,
+      namespace: nsName,
+      deployed,
+      serviceMap,
+      message: `Deployed ${deployed.length} service(s) to ${nsName}`,
+    });
+  } catch (err) {
+    console.error("Error deploying compose group:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // POST /api/build — Start a Kaniko build from Git URL or inline Dockerfile
 app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
