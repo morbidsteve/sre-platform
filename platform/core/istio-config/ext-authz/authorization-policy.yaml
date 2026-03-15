@@ -40,6 +40,8 @@ spec:
               - "keycloak.apps.sre.example.com"
               - "harbor.apps.sre.example.com"
               - "neuvector.apps.sre.example.com"
+              # Tenant applications — bypass OAuth2 Proxy (apps handle their own auth)
+              - "keystone.apps.sre.example.com"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
