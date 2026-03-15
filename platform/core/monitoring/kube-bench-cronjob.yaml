@@ -65,7 +65,7 @@ spec:
                   cpu: 500m
                   memory: 256Mi
             - name: upload-results
-              image: docker.io/bitnami/kubectl:1.31.4
+              image: docker.io/alpine/k8s:1.31.4
               command:
                 - /bin/sh
                 - -c
