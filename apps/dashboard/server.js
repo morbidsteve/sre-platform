@@ -20,6 +20,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── CORS for platform apps ──────────────────────────────────────────────────
+app.use("/api", (req, res, next) => {
+  const origin = req.headers.origin || "";
+  const domain = process.env.SRE_DOMAIN || "apps.sre.example.com";
+  if (origin.endsWith("." + domain) || origin === "https://" + domain) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // ── Rate Limiting ────────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({ windowMs: 60000, max: 200, standardHeaders: true, legacyHeaders: false });
 const mutateLimiter = rateLimit({ windowMs: 60000, max: 10, message: { error: 'Too many requests' } });
@@ -5223,6 +5237,31 @@ loadAppRegistry().then(function() {
   console.log(`[portal] App registry loaded: ${appRegistry.length} app(s)`);
 }).catch(function(err) {
   console.error("[portal] Failed to initialize app registry:", err.message);
+});
+
+// ── Proxy endpoints for cross-origin platform services ───────────────────────
+// StatusBoard and Intel Feed need Prometheus/Alertmanager data but can't call
+// them directly due to CORS. Dashboard proxies these requests.
+
+app.get("/api/proxy/prometheus", async (req, res) => {
+  try {
+    const query = req.query.query || "up";
+    const resp = await fetch(`http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/query?query=${encodeURIComponent(query)}`);
+    const data = await resp.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: "Prometheus unreachable", detail: err.message });
+  }
+});
+
+app.get("/api/proxy/alertmanager/alerts", async (req, res) => {
+  try {
+    const resp = await fetch("http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093/api/v2/alerts");
+    const data = await resp.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: "Alertmanager unreachable", detail: err.message });
+  }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
