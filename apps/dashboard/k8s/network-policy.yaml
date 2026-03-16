@@ -39,6 +39,16 @@ spec:
           protocol: TCP
         - port: 8080
           protocol: TCP
+    # Harbor registry service (for image operations)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: harbor
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
     # DNS
     - to:
         - namespaceSelector:

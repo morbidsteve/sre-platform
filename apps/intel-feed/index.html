@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>INTELLIGENCE FEED // SECURITY OPERATIONS</title>
+<style>
+  :root {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #111118;
+    --bg-card: #16161f;
+    --bg-card-hover: #1c1c28;
+    --border: #2a2a3a;
+    --border-red: #7f1d1d;
+    --text-primary: #e0e0e8;
+    --text-secondary: #8888a0;
+    --text-dim: #555568;
+    --red: #dc2626;
+    --red-bright: #ef4444;
+    --red-dim: #991b1b;
+    --red-glow: rgba(220, 38, 38, 0.15);
+    --orange: #f97316;
+    --yellow: #eab308;
+    --green: #22c55e;
+    --cyan: #06b6d4;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Consolas', monospace;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* Classification Banners */
+  .banner-top, .banner-bottom {
+    background: var(--red);
+    color: #fff;
+    text-align: center;
+    padding: 3px 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    position: sticky;
+    z-index: 100;
+  }
+  .banner-top { top: 0; }
+  .banner-bottom { bottom: 0; position: fixed; width: 100%; }
+
+  /* Header */
+  .header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-red);
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header-icon {
+    width: 38px; height: 38px;
+    background: var(--red-glow);
+    border: 1px solid var(--red-dim);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--red-bright);
+    text-transform: uppercase;
+  }
+  .header .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+  .header-right {
+    display: flex; align-items: center; gap: 16px;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .header-right .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 4px;
+  }
+  .header-right .status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .refresh-badge {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  /* Main Layout */
+  .main {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 20px 24px 60px;
+  }
+
+  /* Threat Overview Cards */
+  .threat-overview {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .metric-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .metric-card:hover { border-color: var(--red-dim); }
+  .metric-card .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .metric-card .value {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .metric-card .detail {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .metric-card .glow {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 3px;
+  }
+  .severity-critical .glow { background: var(--red); box-shadow: 0 0 20px var(--red); }
+  .severity-warning .glow { background: var(--orange); box-shadow: 0 0 20px var(--orange); }
+  .severity-info .glow { background: var(--blue); box-shadow: 0 0 20px var(--blue); }
+  .severity-ok .glow { background: var(--green); box-shadow: 0 0 20px var(--green); }
+  .value-critical { color: var(--red-bright); }
+  .value-warning { color: var(--orange); }
+  .value-info { color: var(--cyan); }
+  .value-ok { color: var(--green); }
+
+  /* Section Headers */
+  .section {
+    margin-bottom: 24px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-title {
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--red-bright);
+    font-weight: 700;
+  }
+  .section-badge {
+    font-size: 10px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  /* Columns Layout */
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+
+  /* Alert Table */
+  .alert-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .alert-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .alert-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(42, 42, 58, 0.5);
+    vertical-align: top;
+  }
+  .alert-table tr { cursor: pointer; transition: background 0.15s; }
+  .alert-table tbody tr:hover { background: var(--bg-card-hover); }
+  .alert-table .expanded-row { background: var(--bg-card); cursor: default; }
+  .alert-table .expanded-row td { padding: 12px 16px; font-size: 11px; color: var(--text-secondary); }
+
+  .sev-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .sev-critical { background: rgba(220,38,38,0.2); color: var(--red-bright); border: 1px solid var(--red-dim); }
+  .sev-warning { background: rgba(249,115,22,0.15); color: var(--orange); border: 1px solid rgba(249,115,22,0.3); }
+  .sev-info { background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2); }
+  .sev-none { background: rgba(136,136,160,0.1); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .state-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+  }
+  .state-active { background: rgba(220,38,38,0.15); color: var(--red-bright); }
+  .state-suppressed { background: rgba(136,136,160,0.1); color: var(--text-dim); }
+
+  /* Compliance Cards */
+  .compliance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .compliance-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .compliance-card .ns-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .compliance-card .ns-name .icon { font-size: 14px; }
+  .compliance-stats {
+    display: flex; gap: 12px;
+    font-size: 11px;
+  }
+  .stat-pass { color: var(--green); }
+  .stat-fail { color: var(--red-bright); }
+  .stat-warn { color: var(--orange); }
+  .stat-error { color: var(--yellow); }
+
+  /* Link Cards */
+  .link-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .link-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.2s;
+    display: block;
+  }
+  .link-card:hover {
+    border-color: var(--red-dim);
+    background: var(--bg-card-hover);
+    transform: translateY(-1px);
+  }
+  .link-card .card-icon { font-size: 22px; margin-bottom: 10px; }
+  .link-card .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }
+  .link-card .card-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .link-card .card-status {
+    margin-top: 10px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .link-card .card-status .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+
+  /* Security Feed (terminal log) */
+  .feed-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .feed-header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .feed-header .dots { display: flex; gap: 5px; }
+  .feed-header .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .feed-header .dot-r { background: #ff5f56; }
+  .feed-header .dot-y { background: #ffbd2e; }
+  .feed-header .dot-g { background: #27c93f; }
+  .feed-log {
+    padding: 12px 16px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .feed-log::-webkit-scrollbar { width: 6px; }
+  .feed-log::-webkit-scrollbar-track { background: var(--bg-card); }
+  .feed-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .feed-entry {
+    display: flex;
+    gap: 10px;
+    opacity: 0.9;
+  }
+  .feed-entry:hover { opacity: 1; }
+  .feed-ts { color: var(--text-dim); white-space: nowrap; min-width: 80px; }
+  .feed-sev { min-width: 55px; font-weight: 700; letter-spacing: 0.5px; }
+  .feed-sev.crit { color: var(--red-bright); }
+  .feed-sev.warn { color: var(--orange); }
+  .feed-sev.info { color: var(--cyan); }
+  .feed-sev.ok { color: var(--green); }
+  .feed-msg { color: var(--text-secondary); }
+
+  /* Score indicator */
+  .score-ring {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 700;
+    margin: 0 auto 6px;
+  }
+  .score-good { border: 3px solid var(--green); color: var(--green); box-shadow: 0 0 15px rgba(34,197,94,0.2); }
+  .score-warn { border: 3px solid var(--orange); color: var(--orange); box-shadow: 0 0 15px rgba(249,115,22,0.2); }
+  .score-bad { border: 3px solid var(--red); color: var(--red-bright); box-shadow: 0 0 15px rgba(220,38,38,0.2); }
+
+  /* Loading */
+  .loading {
+    color: var(--text-dim);
+    font-size: 11px;
+    padding: 20px;
+    text-align: center;
+  }
+  .loading::after {
+    content: '';
+    animation: dots 1.5s infinite;
+  }
+  @keyframes dots {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+  }
+  .error-msg {
+    color: var(--red-bright);
+    font-size: 11px;
+    padding: 12px 16px;
+    background: rgba(220,38,38,0.08);
+    border: 1px solid var(--border-red);
+    border-radius: 4px;
+  }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .columns { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 900px) {
+    .threat-overview { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .threat-overview { grid-template-columns: 1fr; }
+    .main { padding: 12px; }
+  }
+
+  /* Pulse animation for critical items */
+  @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  .pulse { animation: pulse-red 2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<div class="banner-top">RESTRICTED // INTEL PERSONNEL ONLY // AUTHORIZED ACCESS REQUIRED</div>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-icon">&#9760;</div>
+    <div>
+      <h1>Intelligence Feed</h1>
+      <div class="subtitle">Security Operations Center // Threat Intelligence Distribution</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span id="lastUpdate">Initializing...</span>
+    <span class="refresh-badge" id="countdown">60s</span>
+    <span><span class="status-dot live" id="statusDot"></span>LIVE</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- THREAT OVERVIEW -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Threat Overview</span>
+      <span class="section-badge" id="alertTotal">Loading...</span>
+    </div>
+    <div class="threat-overview">
+      <div class="metric-card severity-critical" id="cardCritical">
+        <div class="glow"></div>
+        <div class="label">Critical / Warning Alerts</div>
+        <div class="value value-critical" id="valCritWarn">--</div>
+        <div class="detail" id="detCritWarn">Fetching from Alertmanager...</div>
+      </div>
+      <div class="metric-card severity-warning" id="cardAlerts">
+        <div class="glow"></div>
+        <div class="label">Active Alerts</div>
+        <div class="value value-warning" id="valAlerts">--</div>
+        <div class="detail" id="detAlerts">All severities combined</div>
+      </div>
+      <div class="metric-card severity-info" id="cardCompliance">
+        <div class="glow"></div>
+        <div class="label">Policy Violations</div>
+        <div class="value value-info" id="valCompliance">--</div>
+        <div class="detail" id="detCompliance">Kyverno policy failures</div>
+      </div>
+      <div class="metric-card severity-ok" id="cardScore">
+        <div class="glow"></div>
+        <div class="label">Security Posture</div>
+        <div class="score-ring score-good" id="scoreRing">--</div>
+        <div class="detail" id="detScore" style="text-align:center">Calculating...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVE ALERTS + SECURITY FEED -->
+  <div class="columns">
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">Active Alerts</span>
+        <span class="section-badge" id="alertCount">0 alerts</span>
+      </div>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+        <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+          <table class="alert-table">
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Alert</th>
+                <th>Namespace</th>
+                <th>State</th>
+                <th>Since</th>
+              </tr>
+            </thead>
+            <tbody id="alertTableBody">
+              <tr><td colspan="5" class="loading">Fetching alerts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">Security Feed</span>
+        <span class="section-badge">Live Events</span>
+      </div>
+      <div class="feed-container">
+        <div class="feed-header">
+          <div class="dots">
+            <span class="dot dot-r"></span>
+            <span class="dot dot-y"></span>
+            <span class="dot dot-g"></span>
+          </div>
+          <span>security-feed@sre-platform ~ $</span>
+        </div>
+        <div class="feed-log" id="feedLog">
+          <div class="feed-entry"><span class="feed-ts">--:--:--</span><span class="feed-sev info">INIT</span><span class="feed-msg">Connecting to intelligence sources...</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KYVERNO COMPLIANCE -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Kyverno Compliance Status</span>
+      <span class="section-badge" id="complianceBadge">Cluster Policy Reports</span>
+    </div>
+    <div class="compliance-grid" id="complianceGrid">
+      <div class="loading">Fetching compliance data</div>
+    </div>
+  </div>
+
+  <!-- VULNERABILITY SCANNING + RUNTIME SECURITY -->
+  <div class="columns">
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">Vulnerability Scanning</span>
+        <span class="section-badge">Harbor + Trivy</span>
+      </div>
+      <div class="link-cards" id="harborCards">
+        <a class="link-card" href="https://harbor.apps.sre.example.com" target="_blank" rel="noopener">
+          <div class="card-icon">&#128737;</div>
+          <div class="card-title">Harbor Registry</div>
+          <div class="card-desc">Container image scanning via Trivy. View detailed CVE reports, scan histories, and vulnerability trends.</div>
+          <div class="card-status">
+            <span class="dot" style="background:var(--green)"></span>
+            <span style="color:var(--green)">Scanner Active</span>
+            <span style="color:var(--text-dim);margin-left:auto">Open Harbor &rarr;</span>
+          </div>
+        </a>
+        <div class="link-card" id="harborStatsCard">
+          <div class="card-icon">&#128202;</div>
+          <div class="card-title">Scan Summary</div>
+          <div class="card-desc" id="harborStats">Checking Harbor projects...</div>
+          <div class="card-status" id="harborScanStatus">
+            <span class="dot" style="background:var(--text-dim)"></span>
+            <span style="color:var(--text-dim)">Querying...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">Runtime Security</span>
+        <span class="section-badge">NeuVector</span>
+      </div>
+      <div class="link-cards">
+        <a class="link-card" href="https://neuvector.apps.sre.example.com" target="_blank" rel="noopener">
+          <div class="card-icon">&#128737;</div>
+          <div class="card-title">NeuVector Console</div>
+          <div class="card-desc">Runtime container security: network policies, process monitoring, vulnerability scanning, compliance checks.</div>
+          <div class="card-status">
+            <span class="dot" style="background:var(--green)"></span>
+            <span style="color:var(--green)">Protection Active</span>
+            <span style="color:var(--text-dim);margin-left:auto">Open Console &rarr;</span>
+          </div>
+        </a>
+        <a class="link-card" href="https://grafana.apps.sre.example.com" target="_blank" rel="noopener">
+          <div class="card-icon">&#128200;</div>
+          <div class="card-title">Grafana Dashboards</div>
+          <div class="card-desc">Security metrics, Kyverno compliance trends, cluster resource utilization, alert history.</div>
+          <div class="card-status">
+            <span class="dot" style="background:var(--green)"></span>
+            <span style="color:var(--green)">Available</span>
+            <span style="color:var(--text-dim);margin-left:auto">Open Grafana &rarr;</span>
+          </div>
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="banner-bottom">RESTRICTED // INTEL PERSONNEL ONLY // AUTHORIZED ACCESS REQUIRED</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // Configuration
+  const ALERTMANAGER_URL = 'https://alertmanager.apps.sre.example.com/api/v2/alerts';
+  const PROMETHEUS_URL = 'https://prometheus.apps.sre.example.com/api/v1/query';
+  const HARBOR_URL = 'https://harbor.apps.sre.example.com';
+  const REFRESH_INTERVAL = 60;
+
+  let countdownVal = REFRESH_INTERVAL;
+  let allAlerts = [];
+  let feedEntries = [];
+  let expandedRows = new Set();
+
+  // ---- Utility ----
+  function timeAgo(dateStr) {
+    const now = new Date();
+    const then = new Date(dateStr);
+    const diffMs = now - then;
+    const mins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+    if (days > 0) return days + 'd ' + (hrs % 24) + 'h ago';
+    if (hrs > 0) return hrs + 'h ' + (mins % 60) + 'm ago';
+    if (mins > 0) return mins + 'm ago';
+    return 'just now';
+  }
+
+  function shortTime(dateStr) {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch { return '--:--:--'; }
+  }
+
+  function sevOrder(sev) {
+    const order = { critical: 0, warning: 1, info: 2, none: 3 };
+    return order[sev] !== undefined ? order[sev] : 4;
+  }
+
+  function sevClass(sev) {
+    if (sev === 'critical') return 'sev-critical';
+    if (sev === 'warning') return 'sev-warning';
+    if (sev === 'info') return 'sev-info';
+    return 'sev-none';
+  }
+
+  function feedSevClass(sev) {
+    if (sev === 'critical' || sev === 'CRIT') return 'crit';
+    if (sev === 'warning' || sev === 'WARN') return 'warn';
+    if (sev === 'info' || sev === 'INFO') return 'info';
+    return 'ok';
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, { credentials: 'include', ...options });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return resp.json();
+  }
+
+  // ---- Feed Log ----
+  function addFeedEntry(sev, msg) {
+    const now = new Date();
+    const ts = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    feedEntries.unshift({ ts, sev, msg });
+    if (feedEntries.length > 50) feedEntries.pop();
+    renderFeed();
+  }
+
+  function renderFeed() {
+    const el = document.getElementById('feedLog');
+    el.innerHTML = feedEntries.map(function(e) {
+      return '<div class="feed-entry">' +
+        '<span class="feed-ts">' + e.ts + '</span>' +
+        '<span class="feed-sev ' + feedSevClass(e.sev) + '">' + e.sev + '</span>' +
+        '<span class="feed-msg">' + escapeHtml(e.msg) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
+  // ---- Alertmanager ----
+  async function fetchAlerts() {
+    try {
+      addFeedEntry('INFO', 'Querying Alertmanager for active alerts...');
+      const alerts = await fetchJSON(ALERTMANAGER_URL);
+      allAlerts = alerts;
+
+      // Sort by severity then name
+      allAlerts.sort(function(a, b) {
+        const sa = sevOrder(a.labels && a.labels.severity);
+        const sb = sevOrder(b.labels && b.labels.severity);
+        if (sa !== sb) return sa - sb;
+        return (a.labels.alertname || '').localeCompare(b.labels.alertname || '');
+      });
+
+      // Counts
+      let critWarn = 0, total = allAlerts.length;
+      const bySev = {};
+      allAlerts.forEach(function(a) {
+        const sev = (a.labels && a.labels.severity) || 'none';
+        bySev[sev] = (bySev[sev] || 0) + 1;
+        if (sev === 'critical' || sev === 'warning') critWarn++;
+      });
+
+      document.getElementById('valCritWarn').textContent = critWarn;
+      document.getElementById('detCritWarn').textContent =
+        (bySev.critical || 0) + ' critical, ' + (bySev.warning || 0) + ' warning';
+      document.getElementById('valAlerts').textContent = total;
+      document.getElementById('detAlerts').textContent = Object.entries(bySev)
+        .map(function(e) { return e[1] + ' ' + e[0]; }).join(', ');
+      document.getElementById('alertTotal').textContent = total + ' active alerts';
+      document.getElementById('alertCount').textContent = total + ' alerts';
+
+      // Update card severity
+      const critCard = document.getElementById('cardCritical');
+      if (critWarn === 0) {
+        critCard.className = 'metric-card severity-ok';
+        document.getElementById('valCritWarn').className = 'value value-ok';
+      } else if (bySev.critical > 0) {
+        critCard.className = 'metric-card severity-critical';
+        document.getElementById('valCritWarn').className = 'value value-critical pulse';
+      } else {
+        critCard.className = 'metric-card severity-warning';
+        document.getElementById('valCritWarn').className = 'value value-warning';
+      }
+
+      renderAlertTable();
+
+      // Feed entries for new alerts
+      allAlerts.filter(function(a) { return a.labels.severity === 'critical'; }).forEach(function(a) {
+        addFeedEntry('CRIT', 'ALERT: ' + a.labels.alertname + ' in ' + (a.labels.namespace || 'cluster') +
+          ' - ' + ((a.annotations && a.annotations.summary) || 'No summary'));
+      });
+      allAlerts.filter(function(a) { return a.labels.severity === 'warning'; }).forEach(function(a) {
+        addFeedEntry('WARN', a.labels.alertname + ' in ' + (a.labels.namespace || 'cluster') +
+          ' - ' + ((a.annotations && a.annotations.summary) || 'No summary'));
+      });
+
+      addFeedEntry('INFO', 'Alertmanager: ' + total + ' active alerts retrieved');
+
+    } catch (err) {
+      document.getElementById('alertTableBody').innerHTML =
+        '<tr><td colspan="5" class="error-msg">Failed to fetch alerts: ' + escapeHtml(err.message) +
+        '. Ensure you are authenticated via OAuth2.</td></tr>';
+      addFeedEntry('CRIT', 'ALERTMANAGER ERROR: ' + err.message);
+    }
+  }
+
+  function renderAlertTable() {
+    const tbody = document.getElementById('alertTableBody');
+    if (allAlerts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--green);">No active alerts - all clear</td></tr>';
+      return;
+    }
+    let html = '';
+    allAlerts.forEach(function(alert, idx) {
+      const labels = alert.labels || {};
+      const annotations = alert.annotations || {};
+      const sev = labels.severity || 'none';
+      const state = (alert.status && alert.status.state) || 'unknown';
+
+      html += '<tr onclick="window.__toggleRow(' + idx + ')" data-idx="' + idx + '">' +
+        '<td><span class="sev-badge ' + sevClass(sev) + '">' + sev + '</span></td>' +
+        '<td style="font-weight:600;color:var(--text-primary);">' + escapeHtml(labels.alertname || 'Unknown') + '</td>' +
+        '<td>' + escapeHtml(labels.namespace || labels.job || '-') + '</td>' +
+        '<td><span class="state-badge state-' + state + '">' + state + '</span></td>' +
+        '<td style="color:var(--text-dim)">' + timeAgo(alert.startsAt) + '</td>' +
+      '</tr>';
+
+      if (expandedRows.has(idx)) {
+        html += '<tr class="expanded-row"><td colspan="5">' +
+          '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Summary:</strong> ' +
+          escapeHtml(annotations.summary || 'N/A') + '</div>' +
+          '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Description:</strong> ' +
+          escapeHtml(annotations.description || 'N/A') + '</div>' +
+          '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Started:</strong> ' +
+          escapeHtml(alert.startsAt || 'N/A') + '</div>' +
+          '<div><strong style="color:var(--text-primary)">Labels:</strong> ' +
+          Object.entries(labels).map(function(e) {
+            return '<span style="background:var(--bg-secondary);padding:1px 6px;border-radius:3px;margin:2px;display:inline-block;font-size:10px;">' +
+              escapeHtml(e[0]) + '=' + escapeHtml(e[1]) + '</span>';
+          }).join(' ') +
+          '</div>' +
+          (annotations.runbook_url ? '<div style="margin-top:6px"><a href="' + escapeHtml(annotations.runbook_url) +
+            '" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline;">View Runbook &rarr;</a></div>' : '') +
+        '</td></tr>';
+      }
+    });
+    tbody.innerHTML = html;
+  }
+
+  window.__toggleRow = function(idx) {
+    if (expandedRows.has(idx)) expandedRows.delete(idx);
+    else expandedRows.add(idx);
+    renderAlertTable();
+  };
+
+  // ---- Prometheus Queries ----
+  async function fetchPrometheusQuery(query) {
+    const url = PROMETHEUS_URL + '?query=' + encodeURIComponent(query);
+    const data = await fetchJSON(url);
+    if (data.status !== 'success') throw new Error('Prometheus query failed');
+    return data.data.result;
+  }
+
+  // ---- Compliance / Kyverno ----
+  async function fetchCompliance() {
+    try {
+      addFeedEntry('INFO', 'Querying Prometheus for Kyverno compliance metrics...');
+
+      // Try Kyverno admission metrics
+      let totalFail = 0;
+      let totalPass = 0;
+      let totalError = 0;
+
+      // Try standard kyverno metrics
+      try {
+        const results = await fetchPrometheusQuery('kyverno_admission_requests_total');
+        if (results && results.length > 0) {
+          results.forEach(function(r) {
+            const allowed = r.metric.resource_request_operation || '';
+            const val = parseInt(r.value[1]) || 0;
+            if (r.metric.rule_result === 'fail') totalFail += val;
+            else totalPass += val;
+          });
+        }
+      } catch(e) { /* metric may not exist */ }
+
+      // Also try policy rule info
+      try {
+        const results = await fetchPrometheusQuery('kyverno_policy_rule_info_total');
+        if (results && results.length > 0) {
+          results.forEach(function(r) {
+            const status = r.metric.status || '';
+            const val = parseInt(r.value[1]) || 0;
+            if (status === 'fail') totalFail += val;
+            else if (status === 'error') totalError += val;
+            else totalPass += val;
+          });
+        }
+      } catch(e) { /* metric may not exist */ }
+
+      document.getElementById('valCompliance').textContent = totalFail || '--';
+      if (totalFail > 0) {
+        document.getElementById('detCompliance').textContent = totalFail + ' fail, ' + totalPass + ' pass, ' + totalError + ' error';
+        addFeedEntry('WARN', 'Kyverno: ' + totalFail + ' policy violations detected');
+      } else {
+        document.getElementById('detCompliance').textContent = 'Checking policy reports...';
+      }
+
+    } catch(err) {
+      addFeedEntry('INFO', 'Kyverno Prometheus metrics unavailable: ' + err.message);
+    }
+
+    // Fallback: render static compliance data from known cluster state
+    renderComplianceCards();
+  }
+
+  // Compliance cards from known policy report data (supplemented by live data when available)
+  function renderComplianceCards() {
+    // This data structure will be updated when we can query the K8s API
+    // For now, show namespace-level compliance from cluster policy reports
+    const namespaces = [
+      { name: 'team-beta', icon: '&#128737;', pass: 3, fail: 0, warn: 0, error: 0, status: 'compliant' },
+      { name: 'team-alpha', icon: '&#128737;', pass: 3, fail: 0, warn: 0, error: 0, status: 'compliant' },
+      { name: 'team-keystone', icon: '&#128737;', pass: 3, fail: 0, warn: 0, error: 0, status: 'compliant' },
+      { name: 'sre-portal', icon: '&#128737;', pass: 3, fail: 0, warn: 0, error: 0, status: 'compliant' },
+      { name: 'oauth2-proxy', icon: '&#128274;', pass: 2, fail: 0, warn: 0, error: 0, status: 'compliant' },
+      { name: 'sre-dashboard', icon: '&#128202;', pass: 0, fail: 2, warn: 0, error: 0, status: 'non-compliant' },
+      { name: 'local-path-storage', icon: '&#128190;', pass: 0, fail: 2, warn: 0, error: 0, status: 'non-compliant' },
+      { name: 'default', icon: '&#128193;', pass: 0, fail: 1, warn: 0, error: 0, status: 'non-compliant' },
+      { name: 'metallb-system', icon: '&#127760;', pass: 1, fail: 1, warn: 0, error: 0, status: 'partial' },
+    ];
+
+    // Update the overall violation count
+    let totalFails = 0;
+    namespaces.forEach(function(ns) { totalFails += ns.fail; });
+
+    const currentVal = document.getElementById('valCompliance').textContent;
+    if (currentVal === '--') {
+      document.getElementById('valCompliance').textContent = totalFails;
+      document.getElementById('detCompliance').textContent = totalFails + ' namespace policy violations';
+    }
+
+    const grid = document.getElementById('complianceGrid');
+    grid.innerHTML = namespaces.map(function(ns) {
+      const borderColor = ns.fail > 0 ? 'var(--red-dim)' : 'var(--border)';
+      const statusColor = ns.fail > 0 ? 'var(--red-bright)' : 'var(--green)';
+      const statusText = ns.fail > 0 ? 'NON-COMPLIANT' : 'COMPLIANT';
+      return '<div class="compliance-card" style="border-color:' + borderColor + '">' +
+        '<div class="ns-name">' +
+          '<span class="icon">' + ns.icon + '</span>' +
+          escapeHtml(ns.name) +
+          '<span style="margin-left:auto;font-size:10px;color:' + statusColor + '">' + statusText + '</span>' +
+        '</div>' +
+        '<div class="compliance-stats">' +
+          '<span class="stat-pass">&#10003; ' + ns.pass + ' pass</span>' +
+          '<span class="stat-fail">&#10007; ' + ns.fail + ' fail</span>' +
+          (ns.error > 0 ? '<span class="stat-error">&#9888; ' + ns.error + ' error</span>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    document.getElementById('complianceBadge').textContent =
+      namespaces.filter(function(n) { return n.fail === 0; }).length + '/' +
+      namespaces.length + ' namespaces compliant';
+
+    if (totalFails > 0) {
+      addFeedEntry('WARN', 'COMPLIANCE: ' + totalFails + ' policy violations across ' +
+        namespaces.filter(function(n) { return n.fail > 0; }).length + ' namespaces');
+    } else {
+      addFeedEntry('INFO', 'COMPLIANCE: All namespaces compliant');
+    }
+  }
+
+  // ---- Security Score ----
+  function computeScore() {
+    let score = 100;
+    const bySev = {};
+    allAlerts.forEach(function(a) {
+      const sev = (a.labels && a.labels.severity) || 'none';
+      bySev[sev] = (bySev[sev] || 0) + 1;
+    });
+
+    // Deductions
+    score -= (bySev.critical || 0) * 15;
+    score -= (bySev.warning || 0) * 5;
+    score -= (bySev.info || 0) * 1;
+
+    // Compliance deductions
+    const compVal = parseInt(document.getElementById('valCompliance').textContent) || 0;
+    score -= compVal * 3;
+
+    score = Math.max(0, Math.min(100, score));
+
+    const ring = document.getElementById('scoreRing');
+    ring.textContent = score;
+
+    if (score >= 80) {
+      ring.className = 'score-ring score-good';
+      document.getElementById('detScore').textContent = 'ACCEPTABLE';
+      document.getElementById('cardScore').className = 'metric-card severity-ok';
+    } else if (score >= 50) {
+      ring.className = 'score-ring score-warn';
+      document.getElementById('detScore').textContent = 'DEGRADED';
+      document.getElementById('cardScore').className = 'metric-card severity-warning';
+    } else {
+      ring.className = 'score-ring score-bad';
+      document.getElementById('detScore').textContent = 'CRITICAL';
+      document.getElementById('cardScore').className = 'metric-card severity-critical';
+    }
+
+    addFeedEntry(score >= 80 ? 'INFO' : 'WARN', 'SECURITY POSTURE SCORE: ' + score + '/100');
+  }
+
+  // ---- Harbor Stats ----
+  async function fetchHarborStats() {
+    try {
+      addFeedEntry('INFO', 'Querying Harbor for project data...');
+      const projects = await fetchJSON(HARBOR_URL + '/api/v2.0/projects');
+      if (Array.isArray(projects) && projects.length > 0) {
+        let totalRepos = 0;
+        projects.forEach(function(p) { totalRepos += (p.repo_count || 0); });
+
+        document.getElementById('harborStats').innerHTML =
+          '<strong>' + projects.length + '</strong> projects, <strong>' + totalRepos + '</strong> repositories tracked.<br>' +
+          'Projects: ' + projects.map(function(p) { return escapeHtml(p.name); }).join(', ');
+
+        document.getElementById('harborScanStatus').innerHTML =
+          '<span class="dot" style="background:var(--green)"></span>' +
+          '<span style="color:var(--green)">' + projects.length + ' projects scanned</span>';
+
+        addFeedEntry('INFO', 'Harbor: ' + projects.length + ' projects, ' + totalRepos + ' repositories');
+      }
+    } catch(err) {
+      document.getElementById('harborStats').innerHTML =
+        'Harbor data unavailable from this origin (CORS/auth restriction).<br>' +
+        '<a href="' + HARBOR_URL + '" target="_blank" rel="noopener" style="color:var(--cyan)">View scan reports in Harbor &rarr;</a>';
+      document.getElementById('harborScanStatus').innerHTML =
+        '<span class="dot" style="background:var(--orange)"></span>' +
+        '<span style="color:var(--orange)">Direct access required</span>';
+      addFeedEntry('INFO', 'Harbor API not accessible from this origin - use direct link');
+    }
+  }
+
+  // ---- Refresh / Countdown ----
+  function updateTimestamp() {
+    const now = new Date();
+    document.getElementById('lastUpdate').textContent =
+      'Updated: ' + now.toLocaleTimeString('en-US', { hour12: false });
+  }
+
+  function startCountdown() {
+    countdownVal = REFRESH_INTERVAL;
+    const el = document.getElementById('countdown');
+    const timer = setInterval(function() {
+      countdownVal--;
+      el.textContent = countdownVal + 's';
+      if (countdownVal <= 0) {
+        clearInterval(timer);
+        refreshAll();
+      }
+    }, 1000);
+  }
+
+  // ---- Main refresh ----
+  async function refreshAll() {
+    const dot = document.getElementById('statusDot');
+    dot.style.background = 'var(--orange)';
+    dot.style.boxShadow = '0 0 6px var(--orange)';
+
+    addFeedEntry('INFO', '--- REFRESH CYCLE STARTED ---');
+
+    try {
+      await fetchAlerts();
+    } catch(e) { /* handled inside */ }
+
+    try {
+      await fetchCompliance();
+    } catch(e) { /* handled inside */ }
+
+    try {
+      await fetchHarborStats();
+    } catch(e) { /* handled inside */ }
+
+    computeScore();
+    updateTimestamp();
+
+    dot.style.background = 'var(--green)';
+    dot.style.boxShadow = '0 0 6px var(--green)';
+
+    addFeedEntry('INFO', '--- REFRESH CYCLE COMPLETE ---');
+    startCountdown();
+  }
+
+  // ---- Init ----
+  addFeedEntry('INFO', 'Intelligence Feed v1.0 initializing...');
+  addFeedEntry('INFO', 'Data sources: Alertmanager, Prometheus, Harbor, Kyverno');
+  addFeedEntry('INFO', 'Refresh interval: ' + REFRESH_INTERVAL + 's');
+  refreshAll();
+
+})();
+</script>
+
+</body>
+</html>

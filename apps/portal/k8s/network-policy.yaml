@@ -52,3 +52,23 @@ spec:
           protocol: TCP
         - port: 15010
           protocol: TCP
+    # Dashboard API (portal proxies /api/ to dashboard)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-dashboard
+      ports:
+        - port: 3001
+          protocol: TCP
+    # OAuth2 Proxy (for /oauth2/userinfo)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: oauth2-proxy
+      ports:
+        - port: 4180
+          protocol: TCP
+    # HTTPS to any (for health checks via Istio gateway)
+    - ports:
+        - port: 443
+          protocol: TCP

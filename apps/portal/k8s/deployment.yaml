@@ -37,14 +37,16 @@ spec:
     spec:
       serviceAccountName: sre-portal
       automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: harbor-pull-creds
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: portal
-          image: docker.io/library/sre-portal:v1.1.0
-          imagePullPolicy: Never
+          image: harbor.apps.sre.example.com/platform/sre-portal:v2.0.0
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false

@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OPERATIONAL STATUS BOARD</title>
+  <style>
+    /* ========== RESET & BASE ========== */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', 'Consolas', 'Liberation Mono', monospace;
+      background: #0a0e1a;
+      color: #c8d6e5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    /* ========== CLASSIFICATION BANNERS ========== */
+    .clf-banner {
+      background: #166534;
+      color: #4ade80;
+      text-align: center;
+      padding: 3px 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      border-bottom: 1px solid #22c55e;
+      position: sticky;
+      z-index: 100;
+    }
+    .clf-banner.top { top: 0; }
+    .clf-banner.bottom { border-top: 1px solid #22c55e; border-bottom: none; }
+
+    /* ========== HEADER ========== */
+    .header {
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1a2236;
+      background: #0d1220;
+    }
+    .header-left h1 {
+      font-size: 22px;
+      color: #06b6d4;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .header-left .subtitle {
+      color: #475569;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .header-right {
+      text-align: right;
+    }
+
+    /* ========== PLATFORM STATUS BADGE ========== */
+    .platform-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+    .platform-status .pulse {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .platform-status.operational {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.4);
+      color: #4ade80;
+    }
+    .platform-status.operational .pulse { background: #22c55e; }
+    .platform-status.degraded {
+      background: rgba(234,179,8,0.1);
+      border: 1px solid rgba(234,179,8,0.4);
+      color: #facc15;
+    }
+    .platform-status.degraded .pulse { background: #eab308; }
+    .platform-status.critical {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.4);
+      color: #f87171;
+    }
+    .platform-status.critical .pulse { background: #ef4444; }
+    .platform-status.loading {
+      background: rgba(100,116,139,0.1);
+      border: 1px solid rgba(100,116,139,0.4);
+      color: #94a3b8;
+    }
+    .platform-status.loading .pulse { background: #64748b; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+
+    /* ========== MAIN CONTENT ========== */
+    .main {
+      flex: 1;
+      padding: 24px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ========== STAT CARDS ROW ========== */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .stat-card {
+      background: #111827;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .stat-card .label {
+      color: #64748b;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #06b6d4;
+    }
+    .stat-card .value .unit {
+      font-size: 16px;
+      color: #475569;
+      font-weight: 400;
+    }
+    .stat-card .detail {
+      margin-top: 10px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .stat-card .node-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      title: attr(data-name);
+    }
+    .dot-green { background: #22c55e; }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #eab308; }
+
+    /* ========== SECTION ========== */
+    .section {
+      background: #111827;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .section-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0d1220;
+    }
+    .section-header h2 {
+      font-size: 13px;
+      color: #06b6d4;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .section-header .badge {
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+    .badge-green { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .badge-red { background: rgba(239,68,68,0.15); color: #f87171; }
+    .badge-yellow { background: rgba(234,179,8,0.15); color: #facc15; }
+    .badge-blue { background: rgba(6,182,212,0.15); color: #22d3ee; }
+    .section-body { padding: 0; }
+
+    /* ========== TABLES ========== */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th {
+      text-align: left;
+      padding: 10px 16px;
+      color: #64748b;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      background: #0d1220;
+      border-bottom: 1px solid #1e293b;
+      font-weight: 600;
+    }
+    td {
+      padding: 10px 16px;
+      border-bottom: 1px solid #0f172a;
+      color: #c8d6e5;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(6,182,212,0.03); }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .text-green { color: #4ade80; }
+    .text-red { color: #f87171; }
+    .text-yellow { color: #facc15; }
+    .text-blue { color: #22d3ee; }
+    .text-muted { color: #64748b; }
+
+    /* ========== SERVICE GRID ========== */
+    .service-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      padding: 16px;
+    }
+    .svc-card {
+      background: #0d1220;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      transition: border-color 0.2s;
+    }
+    .svc-card:hover { border-color: #334155; }
+    .svc-card .svc-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+    .svc-card .svc-info { flex: 1; min-width: 0; }
+    .svc-card .svc-name {
+      font-size: 13px;
+      color: #e2e8f0;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .svc-card .svc-meta {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .svc-card .svc-version {
+      font-size: 10px;
+      color: #475569;
+      margin-top: 2px;
+    }
+
+    /* ========== ALERTS SEVERITY ========== */
+    .severity-critical { color: #f87171; font-weight: 700; }
+    .severity-warning { color: #facc15; }
+    .severity-info { color: #22d3ee; }
+
+    /* ========== EVENTS LOG ========== */
+    .events-log {
+      padding: 12px 16px;
+      max-height: 260px;
+      overflow-y: auto;
+      font-size: 11px;
+    }
+    .events-log::-webkit-scrollbar { width: 6px; }
+    .events-log::-webkit-scrollbar-track { background: #0a0e1a; }
+    .events-log::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    .event-line {
+      padding: 4px 0;
+      border-bottom: 1px solid #0f172a;
+      display: flex;
+      gap: 12px;
+    }
+    .event-line:last-child { border-bottom: none; }
+    .event-time { color: #475569; flex-shrink: 0; width: 72px; }
+    .event-type { flex-shrink: 0; width: 60px; font-weight: 600; }
+    .event-msg { color: #94a3b8; flex: 1; }
+
+    /* ========== NO-DATA & LOADING ========== */
+    .no-data {
+      padding: 32px;
+      text-align: center;
+      color: #475569;
+      font-size: 13px;
+    }
+    .no-data.ok { color: #4ade80; }
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #1e293b;
+      border-top-color: #06b6d4;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-banner {
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: 12px;
+      color: #f87171;
+      display: none;
+    }
+    .error-banner.visible { display: block; }
+
+    /* ========== FOOTER ========== */
+    .footer {
+      padding: 12px 32px;
+      border-top: 1px solid #1a2236;
+      background: #0d1220;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #475569;
+    }
+    .footer .refresh-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .footer .refresh-dot {
+      width: 6px; height: 6px;
+      background: #06b6d4;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @media (max-width: 768px) {
+      .stat-row { grid-template-columns: 1fr; }
+      .service-grid { grid-template-columns: 1fr; }
+      .header { flex-direction: column; gap: 12px; text-align: center; }
+      .header-right { text-align: center; }
+      .main { padding: 16px; }
+      .footer { flex-direction: column; gap: 8px; text-align: center; }
+    }
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .stat-row { grid-template-columns: repeat(3, 1fr); }
+      .service-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ========== RESOURCE BAR ========== */
+    .resource-bar {
+      width: 80px; height: 6px;
+      background: #1e293b;
+      border-radius: 3px;
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    .resource-bar .fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+    .fill-green { background: #22c55e; }
+    .fill-yellow { background: #eab308; }
+    .fill-red { background: #ef4444; }
+  </style>
+</head>
+<body>
+
+<!-- TOP CLASSIFICATION BANNER -->
+<div class="clf-banner top">UNCLASSIFIED</div>
+
+<!-- HEADER WITH PLATFORM STATUS -->
+<div class="header">
+  <div class="header-left">
+    <h1>Operational Status Board</h1>
+    <div class="subtitle">SRE Platform &mdash; Real-time cluster health monitoring</div>
+  </div>
+  <div class="header-right">
+    <div id="platformStatus" class="platform-status loading">
+      <span class="pulse"></span>
+      <span id="platformStatusText">LOADING...</span>
+    </div>
+  </div>
+</div>
+
+<!-- ERROR BANNER -->
+<div class="main">
+  <div id="errorBanner" class="error-banner">
+    Unable to fetch cluster data. Displaying last known state. Will retry in 30 seconds.
+  </div>
+
+  <!-- CLUSTER OVERVIEW: 3 STAT CARDS -->
+  <div class="stat-row">
+    <!-- Nodes Card -->
+    <div class="stat-card">
+      <div class="label">Cluster Nodes</div>
+      <div class="value" id="nodeCount"><span class="spinner"></span></div>
+      <div class="detail" id="nodeDots"></div>
+    </div>
+    <!-- Pods Card -->
+    <div class="stat-card">
+      <div class="label">Running Pods</div>
+      <div class="value" id="podCount"><span class="spinner"></span></div>
+      <div class="detail" id="podDetail"></div>
+    </div>
+    <!-- Services Card -->
+    <div class="stat-card">
+      <div class="label">Platform Services</div>
+      <div class="value" id="svcCount"><span class="spinner"></span></div>
+      <div class="detail" id="svcDetail"></div>
+    </div>
+  </div>
+
+  <!-- NODE STATUS TABLE -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Node Status</h2>
+      <span id="nodeBadge" class="badge badge-blue">--</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>IP Address</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>CPU %</th>
+            <th>Memory %</th>
+            <th>Pods</th>
+            <th>OS</th>
+          </tr>
+        </thead>
+        <tbody id="nodeTableBody">
+          <tr><td colspan="8" class="no-data"><span class="spinner"></span> Loading node data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PLATFORM SERVICES GRID -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Platform Services</h2>
+      <span id="helmBadge" class="badge badge-blue">--</span>
+    </div>
+    <div class="section-body">
+      <div class="service-grid" id="serviceGrid">
+        <div class="no-data" style="grid-column: 1/-1"><span class="spinner"></span> Loading services...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVE ALERTS -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Active Alerts</h2>
+      <span id="alertBadge" class="badge badge-blue">--</span>
+    </div>
+    <div class="section-body">
+      <table id="alertTable">
+        <thead>
+          <tr>
+            <th>Alert</th>
+            <th>Severity</th>
+            <th>State</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody id="alertTableBody">
+          <tr><td colspan="4" class="no-data"><span class="spinner"></span> Loading alerts...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PROBLEM PODS (only shown if any) -->
+  <div class="section" id="problemPodsSection" style="display:none;">
+    <div class="section-header">
+      <h2>Problem Pods</h2>
+      <span id="problemBadge" class="badge badge-red">--</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead>
+          <tr>
+            <th>Pod</th>
+            <th>Namespace</th>
+            <th>Status</th>
+            <th>Restarts</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody id="problemTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RECENT EVENTS -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Recent Events</h2>
+      <span class="badge badge-blue" id="eventBadge">--</span>
+    </div>
+    <div class="section-body">
+      <div class="events-log" id="eventsLog">
+        <div class="no-data"><span class="spinner"></span> Loading events...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <span id="lastUpdated">Last updated: --</span>
+  <span>Powered by SRE Platform &mdash; Prometheus + Kubernetes API</span>
+  <span class="refresh-indicator">
+    <span class="refresh-dot"></span>
+    Auto-refresh: 30s
+  </span>
+</div>
+
+<!-- BOTTOM CLASSIFICATION BANNER -->
+<div class="clf-banner bottom">UNCLASSIFIED</div>
+
+<script>
+  /* ================================================================
+   * CONFIGURATION
+   * ================================================================ */
+  const CONFIG = {
+    dashboardHealthUrl: 'https://dashboard.apps.sre.example.com/api/health',
+    prometheusUrl: 'https://prometheus.apps.sre.example.com/api/v1/query',
+    refreshInterval: 30000,  // 30 seconds
+    fetchTimeout: 15000      // 15 second timeout per request
+  };
+
+  /* ================================================================
+   * STATE — holds last-known-good data for graceful error handling
+   * ================================================================ */
+  let lastData = null;
+  let lastAlerts = [];
+  let lastNodeMetrics = {};
+  let lastPodCounts = {};
+  let fetchErrors = { dashboard: false, prometheus: false };
+
+  /* ================================================================
+   * FETCH HELPERS
+   * ================================================================ */
+  async function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, {
+        credentials: 'include',
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return await resp.json();
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+  }
+
+  async function promQuery(query) {
+    const url = `${CONFIG.prometheusUrl}?query=${encodeURIComponent(query)}`;
+    const data = await fetchWithTimeout(url, CONFIG.fetchTimeout);
+    if (data.status !== 'success') throw new Error('Prometheus query failed');
+    return data.data.result;
+  }
+
+  /* ================================================================
+   * FETCH ALL DATA
+   * ================================================================ */
+  async function fetchAllData() {
+    // Fetch dashboard health + prometheus metrics in parallel
+    const results = await Promise.allSettled([
+      fetchWithTimeout(CONFIG.dashboardHealthUrl, CONFIG.fetchTimeout),
+      promQuery('100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'),
+      promQuery('(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100'),
+      promQuery('kubelet_running_pods'),
+      promQuery('count(kube_pod_info)'),
+      promQuery('ALERTS{alertstate="firing"}'),
+      promQuery('count(kube_namespace_created)')
+    ]);
+
+    // Dashboard health (index 0)
+    if (results[0].status === 'fulfilled') {
+      lastData = results[0].value;
+      fetchErrors.dashboard = false;
+    } else {
+      fetchErrors.dashboard = true;
+      console.warn('Dashboard fetch failed:', results[0].reason);
+    }
+
+    // CPU metrics (index 1)
+    if (results[1].status === 'fulfilled') {
+      results[1].value.forEach(r => {
+        const inst = r.metric.instance || '';
+        if (!lastNodeMetrics[inst]) lastNodeMetrics[inst] = {};
+        lastNodeMetrics[inst].cpu = parseFloat(r.value[1]);
+      });
+    }
+
+    // Memory metrics (index 2)
+    if (results[2].status === 'fulfilled') {
+      results[2].value.forEach(r => {
+        const inst = r.metric.instance || '';
+        if (!lastNodeMetrics[inst]) lastNodeMetrics[inst] = {};
+        lastNodeMetrics[inst].memory = parseFloat(r.value[1]);
+      });
+    }
+
+    // Pod counts per node (index 3)
+    if (results[3].status === 'fulfilled') {
+      results[3].value.forEach(r => {
+        const inst = r.metric.instance || r.metric.node || '';
+        lastPodCounts[inst] = parseInt(r.value[1], 10);
+      });
+    }
+
+    // Total pod count (index 4)
+    if (results[4].status === 'fulfilled' && results[4].value.length > 0) {
+      lastPodCounts._total = parseInt(results[4].value[0].value[1], 10);
+    }
+
+    // Alerts (index 5)
+    if (results[5].status === 'fulfilled') {
+      lastAlerts = results[5].value;
+      fetchErrors.prometheus = false;
+    } else {
+      fetchErrors.prometheus = true;
+    }
+
+    // Namespace count (index 6)
+    if (results[6].status === 'fulfilled' && results[6].value.length > 0) {
+      lastPodCounts._namespaces = parseInt(results[6].value[0].value[1], 10);
+    }
+
+    return lastData;
+  }
+
+  /* ================================================================
+   * RENDER FUNCTIONS
+   * ================================================================ */
+
+  function renderPlatformStatus() {
+    const el = document.getElementById('platformStatus');
+    const textEl = document.getElementById('platformStatusText');
+
+    if (!lastData) {
+      el.className = 'platform-status loading';
+      textEl.textContent = 'CONNECTING...';
+      return;
+    }
+
+    const s = lastData.summary;
+    const allNodesReady = s.nodesReady === s.nodesTotal;
+    const allHelmsReady = s.helmReleasesReady === s.helmReleasesTotal;
+    const noAlerts = lastAlerts.filter(a =>
+      (a.metric.severity === 'critical' || a.metric.severity === 'warning') &&
+      a.metric.alertname !== 'Watchdog'
+    ).length === 0;
+    const noProblemPods = s.problemPodCount === 0;
+
+    if (allNodesReady && allHelmsReady && noAlerts) {
+      el.className = 'platform-status operational';
+      textEl.textContent = 'OPERATIONAL';
+    } else if (!allNodesReady || lastAlerts.some(a => a.metric.severity === 'critical')) {
+      el.className = 'platform-status critical';
+      textEl.textContent = 'CRITICAL';
+    } else {
+      el.className = 'platform-status degraded';
+      textEl.textContent = 'DEGRADED';
+    }
+  }
+
+  function renderStatCards() {
+    if (!lastData) return;
+    const s = lastData.summary;
+
+    // Nodes
+    document.getElementById('nodeCount').innerHTML =
+      `${s.nodesReady}<span class="unit"> / ${s.nodesTotal} Ready</span>`;
+    const dotsHtml = lastData.nodes.map(n =>
+      `<span class="node-dot ${n.ready ? 'dot-green' : 'dot-red'}" title="${n.name}"></span>`
+    ).join('');
+    document.getElementById('nodeDots').innerHTML = dotsHtml;
+
+    // Pods
+    const totalPods = lastPodCounts._total || '--';
+    const ns = lastPodCounts._namespaces || '--';
+    document.getElementById('podCount').innerHTML =
+      `${totalPods}`;
+    document.getElementById('podDetail').innerHTML =
+      `<span style="font-size:11px;color:#64748b">across ${ns} namespaces &mdash; ${s.problemPodCount} problem${s.problemPodCount !== 1 ? 's' : ''}</span>`;
+
+    // Services
+    document.getElementById('svcCount').innerHTML =
+      `${s.helmReleasesReady}<span class="unit"> / ${s.helmReleasesTotal} Healthy</span>`;
+    const unhealthy = s.helmReleasesTotal - s.helmReleasesReady;
+    document.getElementById('svcDetail').innerHTML = unhealthy > 0
+      ? `<span style="font-size:11px;color:#f87171">${unhealthy} unhealthy release${unhealthy > 1 ? 's' : ''}</span>`
+      : `<span style="font-size:11px;color:#4ade80">All releases reconciled</span>`;
+  }
+
+  function matchNodeMetric(nodeName, nodeIp) {
+    // Prometheus instance labels may contain IP:port or hostname
+    for (const inst of Object.keys(lastNodeMetrics)) {
+      if (inst.includes(nodeIp) || inst.includes(nodeName)) {
+        return lastNodeMetrics[inst];
+      }
+    }
+    return {};
+  }
+
+  function matchNodePods(nodeName, nodeIp) {
+    for (const inst of Object.keys(lastPodCounts)) {
+      if (inst.startsWith('_')) continue;
+      if (inst.includes(nodeIp) || inst.includes(nodeName)) {
+        return lastPodCounts[inst];
+      }
+    }
+    return '--';
+  }
+
+  function resourceBar(pct) {
+    if (pct === undefined || isNaN(pct)) return '<span class="text-muted">--</span>';
+    const v = Math.round(pct);
+    const cls = v > 90 ? 'fill-red' : v > 80 ? 'fill-yellow' : 'fill-green';
+    const textCls = v > 90 ? 'text-red' : v > 80 ? 'text-yellow' : 'text-green';
+    return `<span class="resource-bar"><span class="fill ${cls}" style="width:${v}%"></span></span><span class="${textCls}">${v}%</span>`;
+  }
+
+  function renderNodeTable() {
+    if (!lastData) return;
+    const tbody = document.getElementById('nodeTableBody');
+    const nodes = lastData.nodes;
+
+    if (nodes.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="no-data">No node data available</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = nodes.map(n => {
+      const metrics = matchNodeMetric(n.name, n.ip);
+      const pods = matchNodePods(n.name, n.ip);
+      const statusClass = n.ready ? 'text-green' : 'text-red';
+      const statusText = n.ready ? 'Ready' : 'Not Ready';
+      const dotClass = n.ready ? 'dot-green' : 'dot-red';
+      return `<tr>
+        <td style="font-weight:600">${n.name}</td>
+        <td class="text-muted">${n.ip}</td>
+        <td>${n.roles}</td>
+        <td><span class="status-dot ${dotClass}"></span><span class="${statusClass}">${statusText}</span></td>
+        <td>${resourceBar(metrics.cpu)}</td>
+        <td>${resourceBar(metrics.memory)}</td>
+        <td>${pods}</td>
+        <td class="text-muted">${n.os}</td>
+      </tr>`;
+    }).join('');
+
+    // Badge
+    const allReady = nodes.every(n => n.ready);
+    const badge = document.getElementById('nodeBadge');
+    badge.textContent = `${nodes.filter(n => n.ready).length}/${nodes.length} Ready`;
+    badge.className = `badge ${allReady ? 'badge-green' : 'badge-red'}`;
+  }
+
+  function renderServiceGrid() {
+    if (!lastData) return;
+    const grid = document.getElementById('serviceGrid');
+    const releases = [...lastData.helmReleases].sort((a, b) => {
+      // Unhealthy first, then alphabetical
+      if (a.ready !== b.ready) return a.ready ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    if (releases.length === 0) {
+      grid.innerHTML = '<div class="no-data" style="grid-column:1/-1">No HelmReleases found</div>';
+      return;
+    }
+
+    grid.innerHTML = releases.map(r => {
+      const dotCls = r.ready ? 'dot-green' : 'dot-red';
+      return `<div class="svc-card">
+        <span class="svc-dot ${dotCls}"></span>
+        <div class="svc-info">
+          <div class="svc-name" title="${r.name}">${r.name}</div>
+          <div class="svc-meta">${r.namespace}</div>
+          <div class="svc-version">${r.chart} v${r.version}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Badge
+    const s = lastData.summary;
+    const badge = document.getElementById('helmBadge');
+    badge.textContent = `${s.helmReleasesReady}/${s.helmReleasesTotal} Healthy`;
+    badge.className = `badge ${s.helmReleasesReady === s.helmReleasesTotal ? 'badge-green' : 'badge-yellow'}`;
+  }
+
+  function renderAlerts() {
+    const tbody = document.getElementById('alertTableBody');
+    const badge = document.getElementById('alertBadge');
+
+    // Filter out Watchdog (informational heartbeat alert)
+    const alerts = lastAlerts.filter(a => a.metric.alertname !== 'Watchdog');
+
+    if (alerts.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="no-data ok">No active alerts &mdash; all clear</td></tr>`;
+      badge.textContent = '0 Active';
+      badge.className = 'badge badge-green';
+      return;
+    }
+
+    // Sort: critical first, then warning, then info
+    const sevOrder = { critical: 0, warning: 1, info: 2 };
+    alerts.sort((a, b) => {
+      const sa = sevOrder[a.metric.severity] ?? 3;
+      const sb = sevOrder[b.metric.severity] ?? 3;
+      return sa - sb;
+    });
+
+    tbody.innerHTML = alerts.map(a => {
+      const m = a.metric;
+      const sev = m.severity || 'info';
+      const sevCls = `severity-${sev}`;
+      const summary = m.description || m.summary || m.message || '--';
+      return `<tr>
+        <td style="font-weight:600">${m.alertname || '--'}</td>
+        <td class="${sevCls}">${sev.toUpperCase()}</td>
+        <td>${m.alertstate || 'firing'}</td>
+        <td class="text-muted" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(summary)}">${escapeHtml(truncate(summary, 120))}</td>
+      </tr>`;
+    }).join('');
+
+    const critCount = alerts.filter(a => a.metric.severity === 'critical').length;
+    badge.textContent = `${alerts.length} Active`;
+    badge.className = `badge ${critCount > 0 ? 'badge-red' : 'badge-yellow'}`;
+  }
+
+  function renderProblemPods() {
+    if (!lastData) return;
+    const section = document.getElementById('problemPodsSection');
+    const tbody = document.getElementById('problemTableBody');
+    const badge = document.getElementById('problemBadge');
+    const pods = lastData.problemPods || [];
+
+    if (pods.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = '';
+    badge.textContent = `${pods.length} Problem${pods.length > 1 ? 's' : ''}`;
+
+    tbody.innerHTML = pods.map(p => {
+      const reason = p.reason || p.phase || '--';
+      const msg = p.message || '--';
+      return `<tr>
+        <td style="font-weight:600;color:#f87171">${p.name}</td>
+        <td>${p.namespace}</td>
+        <td class="text-yellow">${reason}</td>
+        <td>${p.restarts}</td>
+        <td class="text-muted" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(msg)}">${escapeHtml(truncate(msg, 100))}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderEvents() {
+    const log = document.getElementById('eventsLog');
+    const badge = document.getElementById('eventBadge');
+
+    // Build events from problem pods and helm releases as pseudo-events
+    const events = [];
+
+    if (lastData) {
+      // Problem pods as events
+      lastData.problemPods.forEach(p => {
+        events.push({
+          time: 'Recent',
+          type: 'Warning',
+          msg: `${p.namespace}/${p.name}: ${p.reason || p.phase}${p.restarts > 0 ? ' (restarts: ' + p.restarts + ')' : ''}`
+        });
+      });
+
+      // Unhealthy helm releases
+      lastData.helmReleases.filter(r => !r.ready).forEach(r => {
+        events.push({
+          time: 'Recent',
+          type: 'Warning',
+          msg: `HelmRelease ${r.namespace}/${r.name} not ready: ${r.status}`
+        });
+      });
+
+      // Healthy summary as info
+      const s = lastData.summary;
+      events.push({
+        time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        type: 'Info',
+        msg: `Cluster scan: ${s.nodesReady}/${s.nodesTotal} nodes, ${s.helmReleasesReady}/${s.helmReleasesTotal} releases, ${s.problemPodCount} problems`
+      });
+    }
+
+    // Add alert events
+    lastAlerts.filter(a => a.metric.alertname !== 'Watchdog').forEach(a => {
+      const m = a.metric;
+      events.push({
+        time: 'Active',
+        type: (m.severity === 'critical') ? 'Critical' : 'Warning',
+        msg: `ALERT ${m.alertname}: ${m.description || m.summary || m.message || 'firing'}`
+      });
+    });
+
+    if (events.length === 0) {
+      log.innerHTML = '<div class="no-data">No recent events</div>';
+      badge.textContent = '0';
+      badge.className = 'badge badge-blue';
+      return;
+    }
+
+    // Take last 10
+    const display = events.slice(0, 10);
+    badge.textContent = `${display.length}`;
+    badge.className = 'badge badge-blue';
+
+    log.innerHTML = display.map(e => {
+      const typeCls = e.type === 'Critical' ? 'text-red' :
+                      e.type === 'Warning' ? 'text-yellow' : 'text-blue';
+      return `<div class="event-line">
+        <span class="event-time">${e.time}</span>
+        <span class="event-type ${typeCls}">${e.type}</span>
+        <span class="event-msg">${escapeHtml(e.msg)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function renderErrorBanner() {
+    const banner = document.getElementById('errorBanner');
+    if (fetchErrors.dashboard && !lastData) {
+      banner.textContent = 'Unable to connect to Dashboard API. Ensure you are authenticated.';
+      banner.classList.add('visible');
+    } else if (fetchErrors.dashboard) {
+      banner.textContent = 'Unable to fetch latest data. Displaying last known state. Will retry in 30 seconds.';
+      banner.classList.add('visible');
+    } else {
+      banner.classList.remove('visible');
+    }
+  }
+
+  function renderLastUpdated() {
+    const el = document.getElementById('lastUpdated');
+    const now = new Date();
+    el.textContent = `Last updated: ${now.toLocaleString('en-US', {
+      hour12: false, year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    })}`;
+  }
+
+  /* ================================================================
+   * UTILITY
+   * ================================================================ */
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function truncate(str, len) {
+    if (!str) return '';
+    return str.length > len ? str.slice(0, len) + '...' : str;
+  }
+
+  /* ================================================================
+   * MAIN REFRESH LOOP
+   * ================================================================ */
+  async function refresh() {
+    try {
+      await fetchAllData();
+    } catch (e) {
+      console.error('Refresh error:', e);
+    }
+
+    // Render all sections regardless of partial failures
+    renderPlatformStatus();
+    renderStatCards();
+    renderNodeTable();
+    renderServiceGrid();
+    renderAlerts();
+    renderProblemPods();
+    renderEvents();
+    renderErrorBanner();
+    renderLastUpdated();
+  }
+
+  // Initial load
+  refresh();
+
+  // Auto-refresh every 30 seconds
+  setInterval(refresh, CONFIG.refreshInterval);
+</script>
+
+</body>
+</html>

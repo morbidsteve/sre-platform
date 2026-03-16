@@ -222,6 +222,20 @@ function escapeHtml(str) {
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 
+// Debug: dump auth headers (remove in production)
+app.get("/api/debug/headers", (req, res) => {
+  res.json({
+    "x-auth-request-user": req.headers["x-auth-request-user"] || null,
+    "x-auth-request-email": req.headers["x-auth-request-email"] || null,
+    "x-auth-request-groups": req.headers["x-auth-request-groups"] || null,
+    "x-auth-request-preferred-username": req.headers["x-auth-request-preferred-username"] || null,
+    "x-forwarded-for": req.headers["x-forwarded-for"] || null,
+    "all-x-auth-headers": Object.fromEntries(
+      Object.entries(req.headers).filter(([k]) => k.startsWith("x-auth"))
+    ),
+  });
+});
+
 // Sample apps catalog
 app.get("/api/samples", (req, res) => {
   res.json({ samples: SAMPLE_APPS });
