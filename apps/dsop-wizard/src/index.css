@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-navy-900: #0a0e1a;
+    --color-navy-800: #0f1628;
+    --color-navy-700: #151d35;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0f1628;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #243050;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #06b6d4;
+  }
+}
+
+@layer components {
+  .gate-card {
+    @apply border border-navy-600 bg-navy-800 rounded-lg p-4 transition-all duration-200;
+  }
+  .gate-card:hover {
+    @apply border-cyan-500/30 bg-navy-700;
+  }
+  .gate-card.expanded {
+    @apply border-cyan-500/50;
+  }
+
+  .progress-bar {
+    @apply h-2 rounded-full bg-navy-600 overflow-hidden;
+  }
+  .progress-bar-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+    background: linear-gradient(90deg, #06b6d4, #22d3ee);
+  }
+
+  .step-dot {
+    @apply w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300;
+  }
+  .step-dot.active {
+    @apply bg-cyan-500 text-navy-900 ring-4 ring-cyan-500/20;
+  }
+  .step-dot.completed {
+    @apply bg-emerald-500 text-white;
+  }
+  .step-dot.upcoming {
+    @apply bg-navy-600 text-gray-400;
+  }
+
+  .source-card {
+    @apply border-2 border-navy-600 bg-navy-800 rounded-xl p-6 cursor-pointer transition-all duration-200 hover:border-cyan-500/40 hover:bg-navy-700;
+  }
+  .source-card.selected {
+    @apply border-cyan-500 bg-navy-700 ring-2 ring-cyan-500/20;
+  }
+
+  .banner-unclassified {
+    @apply bg-emerald-600;
+  }
+  .banner-cui {
+    @apply bg-purple-700;
+  }
+  .banner-confidential {
+    @apply bg-blue-700;
+  }
+  .banner-secret {
+    @apply bg-red-700;
+  }
+  .banner-top-secret {
+    @apply bg-orange-600;
+  }
+  .banner-ts-sci {
+    @apply bg-yellow-500 text-black;
+  }
+
+  .glow-text {
+    text-shadow: 0 0 10px rgba(6, 182, 212, 0.5), 0 0 20px rgba(6, 182, 212, 0.2);
+  }
+}
+
+/* Animations for pipeline gates */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.scanline-effect {
+  position: relative;
+  overflow: hidden;
+}
+.scanline-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+  animation: scanline 2s linear infinite;
+}
