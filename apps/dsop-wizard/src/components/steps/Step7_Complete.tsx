@@ -38,6 +38,10 @@ function downloadCompliancePackage(
       title: f.title,
       description: f.description,
       location: f.location || null,
+      disposition: f.disposition || null,
+      mitigation: f.mitigation || null,
+      mitigatedBy: f.mitigatedBy || null,
+      mitigatedAt: f.mitigatedAt || null,
     })),
   }));
 
@@ -76,6 +80,26 @@ function downloadCompliancePackage(
       scanCompleted: cveGate?.status === 'passed' || cveGate?.status === 'warning',
       summary: cveGate?.summary || 'Not scanned',
       findings: cveGate?.findings || [],
+    },
+    mitigationSummary: {
+      totalFindings: gates.reduce((acc, g) => acc + g.findings.length, 0),
+      reviewedFindings: gates.reduce(
+        (acc, g) => acc + g.findings.filter((f) => f.disposition).length,
+        0
+      ),
+      findings: gates.flatMap((g) =>
+        g.findings
+          .filter((f) => f.disposition)
+          .map((f) => ({
+            gate: g.name,
+            severity: f.severity,
+            title: f.title,
+            disposition: f.disposition,
+            mitigation: f.mitigation || null,
+            mitigatedBy: f.mitigatedBy || null,
+            mitigatedAt: f.mitigatedAt || null,
+          }))
+      ),
     },
   };
 

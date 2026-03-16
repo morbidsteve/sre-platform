@@ -9,6 +9,8 @@ import {
   Server,
   Tag,
   Lock,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -42,13 +44,17 @@ export function Step5_Review({
   const total = gates.length;
 
   const cveGate = gates.find((g) => g.id === 4);
-  const totalFindings = gates.reduce((acc, g) => acc + g.findings.length, 0);
-  const criticalFindings = gates
-    .flatMap((g) => g.findings)
-    .filter((f) => f.severity === 'critical').length;
-  const highFindings = gates
-    .flatMap((g) => g.findings)
-    .filter((f) => f.severity === 'high').length;
+  const allFindings = gates.flatMap((g) => g.findings);
+  const totalFindings = allFindings.length;
+  const reviewedFindings = allFindings.filter((f) => f.disposition).length;
+  const criticalFindings = allFindings.filter((f) => f.severity === 'critical').length;
+  const highFindings = allFindings.filter((f) => f.severity === 'high').length;
+
+  const critHighFindings = allFindings.filter(
+    (f) => f.severity === 'critical' || f.severity === 'high'
+  );
+  const critHighReviewed = critHighFindings.filter((f) => f.disposition).length;
+  const allCritHighReviewed = critHighFindings.length > 0 && critHighReviewed === critHighFindings.length;
 
   return (
     <div className="space-y-6">
@@ -143,6 +149,51 @@ export function Step5_Review({
           </div>
         </div>
       </div>
+
+      {/* Findings Review Status */}
+      {totalFindings > 0 && (
+        <div className="bg-navy-800 border border-navy-600 rounded-xl p-6 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+            <FileCheck className="w-4 h-4" />
+            Finding Mitigations
+          </h3>
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-sm text-gray-300">
+                  {reviewedFindings} of {totalFindings} findings reviewed with mitigations
+                </span>
+                <span className="text-xs font-mono text-gray-500">
+                  {Math.round((reviewedFindings / totalFindings) * 100)}%
+                </span>
+              </div>
+              <div className="h-2 bg-navy-900 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    reviewedFindings === totalFindings ? 'bg-emerald-500' : 'bg-cyan-500'
+                  }`}
+                  style={{ width: `${(reviewedFindings / totalFindings) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          {allCritHighReviewed ? (
+            <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm text-emerald-400">
+                All critical/high findings addressed
+              </span>
+            </div>
+          ) : critHighFindings.length > 0 ? (
+            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <span className="text-sm text-amber-400">
+                {critHighFindings.length - critHighReviewed} critical/high finding{critHighFindings.length - critHighReviewed !== 1 ? 's' : ''} still need mitigations
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

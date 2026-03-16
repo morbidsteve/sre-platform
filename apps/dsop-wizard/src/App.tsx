@@ -77,6 +77,8 @@ export default function App() {
             gates={state.gates}
             isPipelineRunning={state.isPipelineRunning}
             onUpdateGate={wizard.updateGate}
+            onUpdateFinding={wizard.updateFinding}
+            username={user?.name || 'operator'}
             onBack={() => wizard.setStep(3)}
             onNext={() => wizard.setStep(5)}
           />

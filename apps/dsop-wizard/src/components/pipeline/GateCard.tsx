@@ -11,13 +11,17 @@ import {
   ExternalLink,
   SquareCheck,
   Square,
+  Check,
+  Save,
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
-import type { SecurityGate } from '../../types';
+import type { SecurityGate, GateFinding, FindingDisposition } from '../../types';
 
 interface GateCardProps {
   gate: SecurityGate;
   onAcknowledge?: (gateId: number) => void;
+  onUpdateFinding?: (gateId: number, findingIndex: number, updates: Partial<GateFinding>) => void;
+  username?: string;
 }
 
 const statusConfig = {
@@ -37,7 +41,133 @@ const severityColors = {
   info: 'neutral',
 } as const;
 
-export function GateCard({ gate, onAcknowledge }: GateCardProps) {
+const dispositionOptions: { value: FindingDisposition; label: string }[] = [
+  { value: 'will_fix', label: 'Will Fix' },
+  { value: 'accepted_risk', label: 'Accepted Risk' },
+  { value: 'false_positive', label: 'False Positive' },
+  { value: 'na', label: 'N/A' },
+];
+
+interface FindingCommentFormProps {
+  finding: GateFinding;
+  gateId: number;
+  findingIndex: number;
+  onSave: (gateId: number, findingIndex: number, updates: Partial<GateFinding>) => void;
+  username: string;
+}
+
+function FindingCommentForm({ finding, gateId, findingIndex, onSave, username }: FindingCommentFormProps) {
+  const [disposition, setDisposition] = useState<FindingDisposition | undefined>(finding.disposition);
+  const [mitigation, setMitigation] = useState(finding.mitigation || '');
+  const [saved, setSaved] = useState(!!finding.disposition);
+
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!disposition) return;
+    onSave(gateId, findingIndex, {
+      disposition,
+      mitigation,
+      mitigatedBy: username,
+      mitigatedAt: new Date().toISOString(),
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-navy-600/50" onClick={(e) => e.stopPropagation()}>
+      {/* Disposition Radio Buttons */}
+      <div className="mb-2">
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">
+          Disposition
+        </label>
+        <div className="flex flex-wrap gap-3">
+          {dispositionOptions.map((opt) => (
+            <label
+              key={opt.value}
+              className="flex items-center gap-1.5 cursor-pointer text-sm"
+            >
+              <input
+                type="radio"
+                name={`disposition-${gateId}-${findingIndex}`}
+                value={opt.value}
+                checked={disposition === opt.value}
+                onChange={() => setDisposition(opt.value)}
+                className="sr-only"
+              />
+              <span
+                className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                  disposition === opt.value
+                    ? 'border-cyan-400 bg-cyan-400'
+                    : 'border-gray-500 bg-transparent'
+                }`}
+              >
+                {disposition === opt.value && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-navy-900" />
+                )}
+              </span>
+              <span
+                className={`${
+                  disposition === opt.value ? 'text-cyan-300' : 'text-gray-400'
+                }`}
+              >
+                {opt.label}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Mitigation Textarea */}
+      <div className="mb-2">
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">
+          Mitigation / Comment
+        </label>
+        <textarea
+          value={mitigation}
+          onChange={(e) => setMitigation(e.target.value)}
+          placeholder="Describe mitigating controls or remediation plan..."
+          rows={2}
+          className="w-full bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 resize-none"
+        />
+      </div>
+
+      {/* Save Button */}
+      <div className="flex items-center justify-end gap-2">
+        {finding.mitigatedAt && (
+          <span className="text-xs text-gray-500">
+            Last saved {new Date(finding.mitigatedAt).toLocaleString()}
+          </span>
+        )}
+        <button
+          onClick={handleSave}
+          disabled={!disposition}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            !disposition
+              ? 'bg-navy-700 text-gray-500 cursor-not-allowed'
+              : saved
+              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+              : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/40'
+          }`}
+        >
+          {saved ? (
+            <>
+              <Check className="w-3.5 h-3.5" />
+              Saved
+            </>
+          ) : (
+            <>
+              <Save className="w-3.5 h-3.5" />
+              Save
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function GateCard({ gate, onAcknowledge, onUpdateFinding, username = 'operator' }: GateCardProps) {
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[gate.status];
   const StatusIcon = config.icon;
@@ -47,6 +177,10 @@ export function GateCard({ gate, onAcknowledge }: GateCardProps) {
     gate.summary ||
     !gate.implemented ||
     gate.reportUrl;
+
+  // Count reviewed findings (those with a disposition set)
+  const reviewedCount = gate.findings.filter((f) => f.disposition).length;
+  const totalFindings = gate.findings.length;
 
   return (
     <div
@@ -75,6 +209,20 @@ export function GateCard({ gate, onAcknowledge }: GateCardProps) {
             <span className="text-sm font-medium text-gray-200 truncate">
               {gate.shortName}
             </span>
+            {/* Review Badge */}
+            {totalFindings > 0 && (
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono ${
+                  reviewedCount === totalFindings
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : reviewedCount > 0
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    : 'bg-navy-700 text-gray-500 border border-navy-600'
+                }`}
+              >
+                {reviewedCount}/{totalFindings} reviewed
+              </span>
+            )}
           </div>
           {gate.status === 'running' && (
             <div className="mt-2 progress-bar">
@@ -132,24 +280,44 @@ export function GateCard({ gate, onAcknowledge }: GateCardProps) {
               {gate.findings.map((finding, i) => (
                 <div
                   key={i}
-                  className="flex items-start gap-2 bg-navy-900/50 rounded-lg p-3"
+                  className={`bg-navy-900/50 rounded-lg p-3 border-l-4 ${
+                    finding.disposition
+                      ? 'border-l-emerald-500/60'
+                      : 'border-l-amber-500/60'
+                  }`}
                 >
-                  <Badge variant={severityColors[finding.severity]}>
-                    {finding.severity.toUpperCase()}
-                  </Badge>
-                  <div className="min-w-0">
-                    <p className="text-sm text-gray-200 font-medium">
-                      {finding.title}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {finding.description}
-                    </p>
-                    {finding.location && (
-                      <p className="text-xs text-gray-500 font-mono mt-1">
-                        {finding.location}
+                  <div className="flex items-start gap-2">
+                    <Badge variant={severityColors[finding.severity]}>
+                      {finding.severity.toUpperCase()}
+                    </Badge>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-200 font-medium">
+                        {finding.title}
                       </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {finding.description}
+                      </p>
+                      {finding.location && (
+                        <p className="text-xs text-gray-500 font-mono mt-1">
+                          {finding.location}
+                        </p>
+                      )}
+                    </div>
+                    {finding.disposition && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
                     )}
                   </div>
+
+                  {/* Inline Comment Form */}
+                  {onUpdateFinding && (
+                    <FindingCommentForm
+                      finding={finding}
+                      gateId={gate.id}
+                      findingIndex={i}
+                      onSave={onUpdateFinding}
+                      username={username}
+                    />
+                  )}
                 </div>
               ))}
             </div>

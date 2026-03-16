@@ -5,12 +5,14 @@ import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
 import { PipelineProgress } from '../pipeline/PipelineProgress';
 import { GateCard } from '../pipeline/GateCard';
-import type { SecurityGate } from '../../types';
+import type { SecurityGate, GateFinding } from '../../types';
 
 interface Step4Props {
   gates: SecurityGate[];
   isPipelineRunning: boolean;
   onUpdateGate: (gateId: number, updates: Partial<SecurityGate>) => void;
+  onUpdateFinding: (gateId: number, findingIndex: number, updates: Partial<GateFinding>) => void;
+  username: string;
   onBack: () => void;
   onNext: () => void;
 }
@@ -38,6 +40,8 @@ export function Step4_SecurityPipeline({
   gates,
   isPipelineRunning,
   onUpdateGate,
+  onUpdateFinding,
+  username,
   onBack,
   onNext,
 }: Step4Props) {
@@ -88,6 +92,8 @@ export function Step4_SecurityPipeline({
             <GateCard
               gate={gate}
               onAcknowledge={handleAcknowledge}
+              onUpdateFinding={onUpdateFinding}
+              username={username}
             />
           </div>
         ))}
