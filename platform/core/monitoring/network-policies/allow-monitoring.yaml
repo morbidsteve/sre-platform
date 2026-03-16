@@ -117,6 +117,16 @@ spec:
           protocol: TCP
         - port: 9093
           protocol: TCP
+    # Dashboard proxy (for StatusBoard/Intel Feed proxy endpoints)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-dashboard
+      ports:
+        - port: 9090
+          protocol: TCP
+        - port: 9093
+          protocol: TCP
     # Webhook traffic from API server
     - ports:
         - port: 443
