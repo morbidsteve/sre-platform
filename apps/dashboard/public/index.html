@@ -1364,6 +1364,15 @@
 
     /* ── Command Palette ─────────────────────────────────────── */
 
+    @keyframes cmd-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes cmd-slide-up {
+      from { opacity: 0; transform: translateY(16px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
     .cmd-overlay {
       display: none;
       position: fixed;
@@ -1371,34 +1380,42 @@
       background: var(--overlay-bg);
       z-index: 1000;
       justify-content: center;
-      padding-top: 12vh;
+      padding-top: 10vh;
     }
 
-    .cmd-overlay.show { display: flex; backdrop-filter: blur(4px); }
+    .cmd-overlay.show {
+      display: flex;
+      backdrop-filter: blur(6px);
+      animation: cmd-fade-in 0.15s ease-out;
+    }
+
+    .cmd-overlay.show .cmd-palette {
+      animation: cmd-slide-up 0.2s ease-out;
+    }
 
     .cmd-palette {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      width: 600px;
-      max-width: 90vw;
-      max-height: 60vh;
+      border-radius: 12px;
+      width: 680px;
+      max-width: 92vw;
+      max-height: 70vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
       overflow: hidden;
       align-self: flex-start;
     }
 
     .cmd-input-wrap {
-      padding: 12px 16px;
+      padding: 14px 18px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
-    .cmd-input-wrap .cmd-search-icon { color: var(--text-dim); font-size: 15px; }
+    .cmd-input-wrap .cmd-search-icon { color: var(--text-dim); font-size: 16px; }
 
     .cmd-input {
       flex: 1;
@@ -1406,7 +1423,7 @@
       border: none;
       color: var(--text);
       font-family: var(--font-mono);
-      font-size: 14px;
+      font-size: 15px;
       outline: none;
     }
 
@@ -1425,18 +1442,28 @@
       overflow-y: auto;
       flex: 1;
       padding: 8px;
+      scroll-behavior: smooth;
     }
 
+    .cmd-results::-webkit-scrollbar { width: 6px; }
+    .cmd-results::-webkit-scrollbar-track { background: transparent; }
+    .cmd-results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
     .cmd-category {
-      padding: 4px 8px;
+      padding: 6px 10px 2px;
       font-family: var(--font-mono);
       font-size: 10px;
       color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 1.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .cmd-category:not(:first-child) { margin-top: 8px; }
+    .cmd-category:not(:first-child) { margin-top: 10px; }
+
+    .cmd-category-icon { font-size: 11px; }
 
     .cmd-item {
       padding: 8px 12px;
@@ -1452,16 +1479,67 @@
     .cmd-item.selected { background: var(--accent); color: #fff; }
     .cmd-item:not(.selected):hover { background: var(--surface); }
 
-    .cmd-item-icon { font-size: 16px; width: 24px; text-align: center; }
-    .cmd-item-label { flex: 1; }
-    .cmd-item-hint { font-size: 11px; color: var(--text-dim); }
+    .cmd-item-icon { font-size: 16px; width: 24px; text-align: center; flex-shrink: 0; }
+
+    .cmd-item-text { flex: 1; min-width: 0; }
+
+    .cmd-item-label { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .cmd-item-desc {
+      display: block;
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 1px;
+    }
+    .cmd-item.selected .cmd-item-desc { color: rgba(255,255,255,0.65); }
+
+    .cmd-item-hint { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
     .cmd-item.selected .cmd-item-hint { color: rgba(255,255,255,0.7); }
 
+    .cmd-item-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .cmd-item.selected .cmd-item-badge { background: rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); }
+
+    .cmd-footer {
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .cmd-footer kbd {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 1px 5px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+    }
+
+    .cmd-footer-sep { opacity: 0.3; }
+
+    .cmd-match { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+
     .cmd-empty {
-      padding: 20px;
+      padding: 32px 20px;
       text-align: center;
       color: var(--text-dim);
     }
+
+    .cmd-empty-icon { font-size: 28px; margin-bottom: 8px; display: block; }
+    .cmd-empty-text { font-size: 13px; }
 
     /* ── Toast ────────────────────────────────────────────────── */
 
@@ -3335,10 +3413,19 @@ services:
   <div class="cmd-palette">
     <div class="cmd-input-wrap">
       <span class="cmd-search-icon">&#x1F50D;</span>
-      <input class="cmd-input" id="cmd-input" placeholder="Search commands, users, apps, services..." oninput="filterCommands()" onkeydown="handleCmdKey(event)" />
+      <input class="cmd-input" id="cmd-input" placeholder="Type a command, search services, users, docs..." oninput="filterCommands()" onkeydown="handleCmdKey(event)" />
       <kbd class="cmd-esc-hint">ESC</kbd>
     </div>
     <div class="cmd-results" id="cmd-results"></div>
+    <div class="cmd-footer">
+      <span><kbd>&uarr;</kbd> <kbd>&darr;</kbd> navigate</span>
+      <span class="cmd-footer-sep">|</span>
+      <span><kbd>Enter</kbd> select</span>
+      <span class="cmd-footer-sep">|</span>
+      <span><kbd>Esc</kbd> close</span>
+      <span class="cmd-footer-sep">|</span>
+      <span id="cmd-result-count"></span>
+    </div>
   </div>
 </div>
 
@@ -6301,107 +6388,226 @@ async function toggleCordon(cordon) {
 
 // ── Command Palette ─────────────────────────────────────────────────────────
 
+// Category icons for display
+var cmdCategoryIcons = {
+  'Recent': '\u23F1',
+  'Navigation': '\u2794',
+  'Actions': '\u26A1',
+  'Services': '\uD83C\uDF10',
+  'Dashboards': '\uD83D\uDCCA',
+  'Cluster': '\u2699\uFE0F',
+  'Users': '\uD83D\uDC65',
+  'Components': '\uD83D\uDCE6',
+  'Clipboard': '\uD83D\uDCCB',
+  'System': '\uD83D\uDD27',
+  'Docs': '\uD83D\uDCD6',
+  'Apps': '\uD83D\uDCBB'
+};
+
+// Recently used commands — persisted to localStorage
+function getCmdRecents() {
+  try { return JSON.parse(localStorage.getItem('cmd-recents') || '[]'); } catch(e) { return []; }
+}
+function addCmdRecent(label) {
+  var recents = getCmdRecents().filter(function(r) { return r !== label; });
+  recents.unshift(label);
+  if (recents.length > 8) recents = recents.slice(0, 8);
+  try { localStorage.setItem('cmd-recents', JSON.stringify(recents)); } catch(e) {}
+}
+
+// Fuzzy matching — scores how well query matches text
+function fuzzyMatch(text, query) {
+  if (!query) return { match: true, score: 0, ranges: [] };
+  text = text.toLowerCase();
+  query = query.toLowerCase();
+  // Exact substring match gets top score
+  var subIdx = text.indexOf(query);
+  if (subIdx >= 0) return { match: true, score: 100 + (subIdx === 0 ? 50 : 0), ranges: [[subIdx, subIdx + query.length]] };
+  // Word-start matching
+  var words = text.split(/[\s:\-\/\(\)]+/);
+  var wordStarts = [];
+  var pos = 0;
+  for (var w = 0; w < words.length; w++) {
+    var wi = text.indexOf(words[w], pos);
+    if (wi >= 0) { wordStarts.push(wi); pos = wi + words[w].length; }
+  }
+  // Fuzzy char-by-char
+  var qi = 0, score = 0, ranges = [], rangeStart = -1;
+  for (var i = 0; i < text.length && qi < query.length; i++) {
+    if (text[i] === query[qi]) {
+      if (rangeStart === -1) rangeStart = i;
+      qi++;
+      score += (wordStarts.indexOf(i) >= 0) ? 10 : 1;
+      // Consecutive bonus
+      if (i > 0 && rangeStart === i - 1) score += 3;
+    } else {
+      if (rangeStart >= 0) { ranges.push([rangeStart, i]); rangeStart = -1; }
+    }
+  }
+  if (rangeStart >= 0) ranges.push([rangeStart, text.length]);
+  if (qi < query.length) return { match: false, score: 0, ranges: [] };
+  return { match: true, score: score, ranges: ranges };
+}
+
 function getCommands() {
   var cmds = [];
 
-  // Navigation
-  cmds.push({ category: 'Navigation', label: 'Go to Home', icon: '\uD83C\uDFE0', action: function() { switchTabByName('portal'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Overview', icon: '\uD83D\uDCCA', action: function() { switchTabByName('overview'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Services', icon: '\uD83D\uDD27', action: function() { switchTabByName('services'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Deploy', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to My Apps', icon: '\uD83D\uDCE6', action: function() { switchTabByName('apps'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Cluster', icon: '\u2699\uFE0F', action: function() { switchTabByName('cluster'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Users', icon: '\uD83D\uDC65', action: function() { switchTabByName('users'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Audit', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Status', icon: '\uD83D\uDFE2', action: function() { switchTabByName('status'); } });
+  // ── Navigation ──
+  cmds.push({ category: 'Navigation', label: 'Go to Home', desc: 'Portal landing page', icon: '\uD83C\uDFE0', keys: '', action: function() { switchTabByName('portal'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Overview', desc: 'Admin dashboard overview', icon: '\uD83D\uDCCA', keys: '', action: function() { switchTabByName('overview'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Services', desc: 'Platform services status', icon: '\uD83D\uDD27', keys: '', action: function() { switchTabByName('services'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Deploy', desc: 'Deploy new applications', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to My Apps', desc: 'Registered applications', icon: '\uD83D\uDCE6', keys: '', action: function() { switchTabByName('apps'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Cluster', desc: 'Cluster management panel', icon: '\u2699\uFE0F', keys: '', action: function() { switchTabByName('cluster'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Users', desc: 'User and group management', icon: '\uD83D\uDC65', keys: '', action: function() { switchTabByName('users'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Audit', desc: 'Audit logs and events', icon: '\uD83D\uDCDD', keys: '', action: function() { switchTabByName('audit'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Credentials', desc: 'Service credentials vault', icon: '\uD83D\uDD11', keys: '', action: function() { switchTabByName('credentials'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Status', desc: 'System health status', icon: '\uD83D\uDFE2', keys: '', action: function() { switchTabByName('status'); } });
 
   // Cluster sub-panels
-  cmds.push({ category: 'Navigation', label: 'Cluster: View Nodes', icon: '\uD83D\uDDA5', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('nodes'); }, 100); } });
-  cmds.push({ category: 'Navigation', label: 'Cluster: View Pods', icon: '\uD83D\uDCE6', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('pods'); }, 100); } });
-  cmds.push({ category: 'Navigation', label: 'Cluster: View Logs', icon: '\uD83D\uDCDC', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('logs'); }, 100); } });
-  cmds.push({ category: 'Navigation', label: 'Cluster: View Events', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('events'); }, 100); } });
-  cmds.push({ category: 'Navigation', label: 'Cluster: Namespaces', icon: '\uD83D\uDCC1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('namespaces'); }, 100); } });
-  cmds.push({ category: 'Navigation', label: 'Cluster: Top Resource Consumers', icon: '\uD83D\uDCCA', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('resources'); }, 100); } });
-  cmds.push({ category: 'Navigation', label: 'Cluster: Quick Actions', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('actions'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: View Nodes', desc: 'Node health, CPU, memory, taints', icon: '\uD83D\uDDA5', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('nodes'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: View Pods', desc: 'All pods across namespaces', icon: '\uD83D\uDCE6', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('pods'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: View Logs', desc: 'Real-time pod log viewer', icon: '\uD83D\uDCDC', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('logs'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: View Events', desc: 'Kubernetes cluster events', icon: '\u26A1', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('events'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: Namespaces', desc: 'Namespace list and status', icon: '\uD83D\uDCC1', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('namespaces'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: Top Resource Consumers', desc: 'CPU and memory hogs', icon: '\uD83D\uDCCA', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('resources'); }, 100); } });
+  cmds.push({ category: 'Cluster', label: 'Cluster: Quick Actions', desc: 'Restart, scale, cordon operations', icon: '\u26A1', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('actions'); }, 100); } });
 
-  // Quick Actions
-  cmds.push({ category: 'Actions', label: 'Create new user', icon: '\u2795', action: function() { switchTabByName('users'); setTimeout(showCreateUserModal, 300); } });
-  cmds.push({ category: 'Actions', label: 'Create new group', icon: '\u2795', action: function() { switchTabByName('users'); setTimeout(showCreateGroupModal, 300); } });
-  cmds.push({ category: 'Actions', label: 'Deploy app', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } });
-  cmds.push({ category: 'Actions', label: 'Deploy from Git', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); setTimeout(function() { var card = document.querySelector('.deploy-mode-card:nth-child(2)'); if (card) card.click(); }, 300); } });
-  cmds.push({ category: 'Actions', label: 'Deploy: Quick NGINX demo', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); setTimeout(function() { var nameEl = document.getElementById('deploy-name'); if(nameEl) { nameEl.value = 'demo-nginx'; } }, 200); } });
-  cmds.push({ category: 'Actions', label: 'View problem pods', icon: '\u26A0\uFE0F', action: function() { switchTabByName('overview'); setTimeout(toggleProblemPods, 300); } });
-  cmds.push({ category: 'Actions', label: 'View cluster logs', icon: '\uD83D\uDCDC', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('logs'); }, 300); } });
-  cmds.push({ category: 'Actions', label: 'View cluster events', icon: '\uD83D\uDCCB', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('events'); }, 300); } });
-  cmds.push({ category: 'Actions', label: 'Restart a deployment', icon: '\uD83D\uDD04', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('actions'); }, 300); } });
-  cmds.push({ category: 'Actions', label: 'Refresh health data', icon: '\uD83D\uDD04', action: function() { loadHealth(); showToast('Health data refreshed'); } });
+  // ── Quick Actions ──
+  cmds.push({ category: 'Actions', label: 'Create new user', desc: 'Add a user to the platform via Keycloak', icon: '\u2795', keys: '', action: function() { switchTabByName('users'); setTimeout(showCreateUserModal, 300); } });
+  cmds.push({ category: 'Actions', label: 'Create new group', desc: 'Create a Keycloak RBAC group', icon: '\u2795', keys: '', action: function() { switchTabByName('users'); setTimeout(showCreateGroupModal, 300); } });
+  cmds.push({ category: 'Actions', label: 'Deploy app', desc: 'Open the deployment wizard', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); } });
+  cmds.push({ category: 'Actions', label: 'Deploy from Git', desc: 'Auto-detect and deploy from a Git repository', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); setTimeout(function() { var card = document.querySelector('.deploy-mode-card:nth-child(2)'); if (card) card.click(); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'Deploy: Quick NGINX demo', desc: 'Pre-fill a demo NGINX deployment', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); setTimeout(function() { var nameEl = document.getElementById('deploy-name'); if(nameEl) { nameEl.value = 'demo-nginx'; } }, 200); } });
+  cmds.push({ category: 'Actions', label: 'View problem pods', desc: 'Show pods in CrashLoopBackOff, Error, Pending', icon: '\u26A0\uFE0F', keys: '', action: function() { switchTabByName('overview'); setTimeout(toggleProblemPods, 300); } });
+  cmds.push({ category: 'Actions', label: 'View cluster logs', desc: 'Real-time log stream from cluster', icon: '\uD83D\uDCDC', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('logs'); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'View cluster events', desc: 'Warnings, errors, scheduling events', icon: '\uD83D\uDCCB', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('events'); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'Restart a deployment', desc: 'Rolling restart via Quick Actions panel', icon: '\uD83D\uDD04', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('actions'); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'Refresh health data', desc: 'Reload health checks from all services', icon: '\uD83D\uDD04', keys: '', action: function() { loadHealth(); showToast('Health data refreshed'); } });
+  cmds.push({ category: 'Actions', label: 'View cluster health', desc: 'Scroll to health metrics on Overview', icon: '\uD83D\uDFE2', keys: '', action: function() { switchTabByName('overview'); } });
+  cmds.push({ category: 'Actions', label: 'View alerts', desc: 'Open Alertmanager in a new tab', icon: '\uD83D\uDD14', keys: '', action: function() { openService('https://alertmanager.apps.sre.example.com'); } });
+  cmds.push({ category: 'Actions', label: 'Scan images', desc: 'Open Harbor vulnerability scanner', icon: '\uD83D\uDD0D', keys: '', action: function() { openService('https://harbor.apps.sre.example.com'); } });
+  cmds.push({ category: 'Actions', label: 'Manage secrets', desc: 'Open OpenBao secrets vault', icon: '\uD83D\uDD10', keys: '', action: function() { openService('https://openbao.apps.sre.example.com'); } });
+  cmds.push({ category: 'Actions', label: 'View HelmReleases', desc: 'Show all Flux HelmRelease status', icon: '\u2699\uFE0F', keys: '', action: function() { switchTabByName('status'); } });
+  cmds.push({ category: 'Actions', label: 'View Kyverno policies', desc: 'Policy compliance on Services tab', icon: '\uD83D\uDEE1', keys: '', action: function() { switchTabByName('services'); } });
 
-  // External Services
-  cmds.push({ category: 'Services', label: 'Open Grafana', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com'); } });
-  cmds.push({ category: 'Services', label: 'Open Prometheus', icon: '\uD83D\uDD0D', action: function() { openService('https://prometheus.apps.sre.example.com'); } });
-  cmds.push({ category: 'Services', label: 'Open AlertManager', icon: '\uD83D\uDD14', action: function() { openService('https://alertmanager.apps.sre.example.com'); } });
-  cmds.push({ category: 'Services', label: 'Open Harbor Registry', icon: '\uD83D\uDEA2', action: function() { openService('https://harbor.apps.sre.example.com'); } });
-  cmds.push({ category: 'Services', label: 'Open Keycloak Admin', icon: '\uD83D\uDD10', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/'); } });
-  cmds.push({ category: 'Services', label: 'Open NeuVector', icon: '\uD83D\uDEE1', action: function() { openService('https://neuvector.apps.sre.example.com'); } });
-  cmds.push({ category: 'Services', label: 'Open OpenBao', icon: '\uD83D\uDD10', action: function() { openService('https://openbao.apps.sre.example.com'); } });
+  // ── External Services ──
+  cmds.push({ category: 'Services', label: 'Open Grafana', desc: 'Metrics dashboards and visualization', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open Prometheus', desc: 'Metric queries and alerting rules', icon: '\uD83D\uDD0D', keys: '', action: function() { openService('https://prometheus.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open AlertManager', desc: 'Active alerts and silences', icon: '\uD83D\uDD14', keys: '', action: function() { openService('https://alertmanager.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open Harbor Registry', desc: 'Container image registry and scanning', icon: '\uD83D\uDEA2', keys: '', action: function() { openService('https://harbor.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open Keycloak Admin', desc: 'SSO and identity management console', icon: '\uD83D\uDD10', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/'); } });
+  cmds.push({ category: 'Services', label: 'Open NeuVector', desc: 'Runtime security and network segmentation', icon: '\uD83D\uDEE1', keys: '', action: function() { openService('https://neuvector.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open OpenBao', desc: 'Secrets management and PKI', icon: '\uD83D\uDD10', keys: '', action: function() { openService('https://openbao.apps.sre.example.com'); } });
 
   // Grafana dashboards
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Cluster Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Node Exporter (system metrics)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Kubernetes Pods', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Kubernetes Compute Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/efa86fd1d0c121a26444b636'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Namespace Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-namespace-resources'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Istio Mesh Traffic', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-istio-mesh'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Kyverno Compliance', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-kyverno-compliance'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Flux GitOps Status', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-flux-gitops'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Alertmanager Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/alertmanager-overview'); } });
-  cmds.push({ category: 'Dashboards', label: 'Grafana: Explore (Loki logs)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/explore'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Cluster Overview', desc: 'CPU, memory, pod counts per node', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Node Exporter (system metrics)', desc: 'Disk, network, CPU per node', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Kubernetes Pods', desc: 'Pod resource usage and restarts', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Kubernetes Compute Resources', desc: 'Namespace-level compute breakdown', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/efa86fd1d0c121a26444b636'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Namespace Resources', desc: 'Resource quotas and limits', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-namespace-resources'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Istio Mesh Traffic', desc: 'Service-to-service traffic flow', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-istio-mesh'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Kyverno Compliance', desc: 'Policy violations and compliance rate', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-kyverno-compliance'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Flux GitOps Status', desc: 'Reconciliation status and drift', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-flux-gitops'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Alertmanager Overview', desc: 'Alert counts, silences, inhibitions', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/d/alertmanager-overview'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Explore (Loki logs)', desc: 'Search and filter log streams', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com/explore'); } });
 
   // Keycloak admin shortcuts
-  cmds.push({ category: 'Services', label: 'Keycloak: Manage Users', icon: '\uD83D\uDC64', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users'); } });
-  cmds.push({ category: 'Services', label: 'Keycloak: Manage Groups', icon: '\uD83D\uDC65', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/groups'); } });
-  cmds.push({ category: 'Services', label: 'Keycloak: OIDC Clients', icon: '\uD83D\uDD17', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/clients'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: Manage Users', desc: 'View and edit Keycloak users', icon: '\uD83D\uDC64', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: Manage Groups', desc: 'RBAC group management', icon: '\uD83D\uDC65', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/groups'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: OIDC Clients', desc: 'SSO client registrations', icon: '\uD83D\uDD17', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/clients'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: Realm Settings', desc: 'Login themes, sessions, tokens', icon: '\u2699\uFE0F', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/realm-settings'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: Identity Providers', desc: 'LDAP, SAML, social logins', icon: '\uD83D\uDD17', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/identity-providers'); } });
 
   // Harbor shortcuts
-  cmds.push({ category: 'Services', label: 'Harbor: Projects', icon: '\uD83D\uDC33', action: function() { openService('https://harbor.apps.sre.example.com/harbor/projects'); } });
-  cmds.push({ category: 'Services', label: 'Harbor: Robot Accounts', icon: '\uD83E\uDD16', action: function() { openService('https://harbor.apps.sre.example.com/harbor/robots'); } });
-  cmds.push({ category: 'Services', label: 'Harbor: Registries (replication)', icon: '\uD83D\uDD04', action: function() { openService('https://harbor.apps.sre.example.com/harbor/registries'); } });
+  cmds.push({ category: 'Services', label: 'Harbor: Projects', desc: 'Container image repositories', icon: '\uD83D\uDC33', keys: '', action: function() { openService('https://harbor.apps.sre.example.com/harbor/projects'); } });
+  cmds.push({ category: 'Services', label: 'Harbor: Robot Accounts', desc: 'CI/CD service accounts', icon: '\uD83E\uDD16', keys: '', action: function() { openService('https://harbor.apps.sre.example.com/harbor/robots'); } });
+  cmds.push({ category: 'Services', label: 'Harbor: Registries (replication)', desc: 'Upstream registry mirrors', icon: '\uD83D\uDD04', keys: '', action: function() { openService('https://harbor.apps.sre.example.com/harbor/registries'); } });
+  cmds.push({ category: 'Services', label: 'Harbor: Vulnerability Scanner', desc: 'Trivy scan results and policies', icon: '\uD83D\uDD0D', keys: '', action: function() { openService('https://harbor.apps.sre.example.com/harbor/interrogation-services/scanners'); } });
 
-  // Clipboard helpers
-  cmds.push({ category: 'Clipboard', label: 'Copy SSO username (sre-admin)', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('sre-admin'); showToast('Copied: sre-admin'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy SSO password', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('SreAdmin123!'); showToast('Copied password'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get pods -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get pods -A'); showToast('Copied to clipboard'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get helmreleases -A'); showToast('Copied to clipboard'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get clusterpolicies', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get clusterpolicies'); showToast('Copied to clipboard'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy flux get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux get helmreleases -A'); showToast('Copied to clipboard'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy flux logs --kind=HelmRelease', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux logs --kind=HelmRelease --all-namespaces'); showToast('Copied to clipboard'); } });
-  cmds.push({ category: 'Clipboard', label: 'Copy /etc/hosts entry for all services', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('192.168.2.200 portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com'); showToast('Copied /etc/hosts entry'); } });
+  // NeuVector shortcuts
+  cmds.push({ category: 'Services', label: 'NeuVector: Network Activity', desc: 'Container network flow visualization', icon: '\uD83D\uDEE1', keys: '', action: function() { openService('https://neuvector.apps.sre.example.com/#/network-activity'); } });
+  cmds.push({ category: 'Services', label: 'NeuVector: Security Events', desc: 'Runtime security violations', icon: '\uD83D\uDEE1', keys: '', action: function() { openService('https://neuvector.apps.sre.example.com/#/security-events'); } });
+  cmds.push({ category: 'Services', label: 'NeuVector: Vulnerabilities', desc: 'Container CVE scanning results', icon: '\uD83D\uDEE1', keys: '', action: function() { openService('https://neuvector.apps.sre.example.com/#/vulnerabilities'); } });
 
-  // System
-  cmds.push({ category: 'System', label: 'Toggle Dark / Light Theme', icon: '\u263E', action: function() { toggleTheme(); } });
-  cmds.push({ category: 'System', label: 'Refresh Dashboard Data', icon: '\uD83D\uDD04', action: function() { location.reload(); } });
-  cmds.push({ category: 'System', label: 'Clear cache (hard reload)', icon: '\uD83D\uDDD1', action: function() { location.reload(true); } });
+  // ── Clipboard helpers ──
+  cmds.push({ category: 'Clipboard', label: 'Copy SSO username (sre-admin)', desc: 'Copy the admin username to clipboard', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('sre-admin'); showToast('Copied: sre-admin'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy SSO password', desc: 'WARNING: Copies password to clipboard', icon: '\u26A0\uFE0F', keys: '', action: function() { if (confirm('This will copy the sre-admin password to your clipboard. Continue?')) { navigator.clipboard.writeText('SreAdmin123!'); showToast('Copied password to clipboard'); } } });
+  cmds.push({ category: 'Clipboard', label: 'Copy cluster IP (192.168.2.200)', desc: 'Primary cluster ingress IP', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('192.168.2.200'); showToast('Copied: 192.168.2.200'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy Keycloak admin URL', desc: 'https://keycloak.apps.sre.example.com/admin/', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('https://keycloak.apps.sre.example.com/admin/sre/console/'); showToast('Copied Keycloak URL'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy Harbor URL', desc: 'https://harbor.apps.sre.example.com', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('https://harbor.apps.sre.example.com'); showToast('Copied Harbor URL'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy Grafana URL', desc: 'https://grafana.apps.sre.example.com', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('https://grafana.apps.sre.example.com'); showToast('Copied Grafana URL'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy OpenBao URL', desc: 'https://openbao.apps.sre.example.com', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('https://openbao.apps.sre.example.com'); showToast('Copied OpenBao URL'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get pods -A', desc: 'List all pods across namespaces', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl get pods -A'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get nodes -o wide', desc: 'Show nodes with IPs and versions', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl get nodes -o wide'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get helmreleases -A', desc: 'List all Flux HelmReleases', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl get helmreleases -A'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get clusterpolicies', desc: 'List all Kyverno cluster policies', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl get clusterpolicies'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get namespaces', desc: 'List all namespaces', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl get namespaces'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl top pods -A', desc: 'Resource usage for all pods', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl top pods -A --sort-by=cpu'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl top nodes', desc: 'Node-level resource usage', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('kubectl top nodes'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy flux get helmreleases -A', desc: 'Flux reconciliation status', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('flux get helmreleases -A'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy flux logs --kind=HelmRelease', desc: 'Debug Flux reconciliation failures', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('flux logs --kind=HelmRelease --all-namespaces'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy flux reconcile source git flux-system', desc: 'Force Git source reconciliation', icon: '\uD83D\uDCBB', keys: '', action: function() { navigator.clipboard.writeText('flux reconcile source git flux-system'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy /etc/hosts entry for all services', desc: 'Add all *.apps.sre.example.com hostnames', icon: '\uD83D\uDCCB', keys: '', action: function() { navigator.clipboard.writeText('192.168.2.200 portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com'); showToast('Copied /etc/hosts entry'); } });
 
-  // Documentation
-  cmds.push({ category: 'Docs', label: 'Docs: Developer Guide', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/developer-guide.md'); } });
-  cmds.push({ category: 'Docs', label: 'Docs: Architecture', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/architecture.md'); } });
-  cmds.push({ category: 'Docs', label: 'Docs: Incident Response Runbooks', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/tree/main/docs/runbooks'); } });
-  cmds.push({ category: 'Docs', label: 'Docs: User Stories', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/user-stories.md'); } });
-  cmds.push({ category: 'Docs', label: 'GitHub: SRE Platform Repo', icon: '\uD83D\uDC19', action: function() { openService('https://github.com/morbidsteve/sre-platform'); } });
+  // ── System / Settings ──
+  cmds.push({ category: 'System', label: 'Toggle Dark / Light Theme', desc: 'Switch color scheme', icon: '\u263E', keys: '', action: function() { toggleTheme(); } });
+  cmds.push({ category: 'System', label: 'Refresh Dashboard Data', desc: 'Full page reload', icon: '\uD83D\uDD04', keys: 'F5', action: function() { location.reload(); } });
+  cmds.push({ category: 'System', label: 'Clear cache (hard reload)', desc: 'Bypass cache and reload', icon: '\uD83D\uDDD1', keys: 'Ctrl+Shift+R', action: function() { location.reload(true); } });
+  cmds.push({ category: 'System', label: 'Show session info', desc: 'Current user, role, session time', icon: '\u2139\uFE0F', keys: '', action: function() { showToast('User: ' + currentUser.user + ' | Role: ' + currentUser.role + ' | Groups: ' + (currentUser.groups||[]).join(', ')); } });
+  cmds.push({ category: 'System', label: 'Open browser DevTools', desc: 'Inspect elements and console', icon: '\uD83D\uDEE0', keys: 'F12', action: function() { showToast('Press F12 to open DevTools'); } });
 
-  // Dynamic: Users (from allUsers if loaded)
+  // ── Documentation ──
+  cmds.push({ category: 'Docs', label: 'Docs: Developer Guide', desc: 'How to deploy apps on SRE', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/developer-guide.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Architecture', desc: 'Platform architecture and design decisions', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/architecture.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Incident Response Runbooks', desc: 'Step-by-step incident procedures', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/tree/main/docs/runbooks'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: User Stories', desc: 'Product requirements and use cases', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/user-stories.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: SSO Integration Guide', desc: 'Keycloak OIDC setup for tenant apps', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/sso-integration.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Production Deployment Guide', desc: 'Hardened production deployment steps', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/production-deployment.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Cloudflare Tunnel Guide', desc: 'Expose services via Cloudflare tunnels', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/cloudflare-tunnel.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Compliance Review', desc: 'NIST 800-53, CMMC, FedRAMP mappings', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/compliance-guide.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: On-Prem Planning Guide', desc: 'Air-gapped and on-premises deployment', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/on-prem-planning.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Kyverno Patterns', desc: 'Policy writing conventions for SRE', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/agent-docs/kyverno-patterns.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Helm Conventions', desc: 'Chart standards and security contexts', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/agent-docs/helm-conventions.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Flux Patterns', desc: 'GitOps reconciliation patterns', icon: '\uD83D\uDCD6', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/agent-docs/flux-patterns.md'); } });
+  cmds.push({ category: 'Docs', label: 'GitHub: SRE Platform Repo', desc: 'Source code and issue tracker', icon: '\uD83D\uDC19', keys: '', action: function() { openService('https://github.com/morbidsteve/sre-platform'); } });
+
+  // ── Dynamic: Users (from allUsers if loaded) ──
   if (allUsers && allUsers.length > 0) {
     allUsers.forEach(function(u) {
-      cmds.push({ category: 'Users', label: 'Edit user: ' + u.username + (u.firstName ? ' (' + u.firstName + ' ' + (u.lastName || '') + ')' : ''), icon: '\uD83D\uDC64', action: function() { switchTabByName('users'); setTimeout(function() { editUser(u.id); }, 300); } });
-      cmds.push({ category: 'Users', label: 'Edit groups: ' + u.username, icon: '\uD83D\uDC65', action: function() { switchTabByName('users'); setTimeout(function() { editUserGroups(u.id, u.username); }, 300); } });
+      cmds.push({ category: 'Users', label: 'Edit user: ' + u.username + (u.firstName ? ' (' + u.firstName + ' ' + (u.lastName || '') + ')' : ''), desc: 'Modify user profile and attributes', icon: '\uD83D\uDC64', keys: '', action: function() { switchTabByName('users'); setTimeout(function() { editUser(u.id); }, 300); } });
+      cmds.push({ category: 'Users', label: 'Edit groups: ' + u.username, desc: 'Change group memberships', icon: '\uD83D\uDC65', keys: '', action: function() { switchTabByName('users'); setTimeout(function() { editUserGroups(u.id, u.username); }, 300); } });
+      cmds.push({ category: 'Users', label: 'Reset password: ' + u.username, desc: 'Set a new password for this user', icon: '\uD83D\uDD11', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users/' + u.id + '/credentials'); } });
     });
   }
 
-  // Dynamic: Deployed components from healthData
+  // ── Dynamic: Deployed components from healthData ──
   if (healthData && healthData.helmReleases) {
     healthData.helmReleases.forEach(function(hr) {
-      cmds.push({ category: 'Components', label: 'View component: ' + hr.name + ' (' + hr.namespace + ')', icon: '\uD83D\uDCE6', action: function() { switchTabByName('overview'); } });
+      var statusBadge = (hr.ready === true || hr.status === 'Ready' || hr.status === 'deployed') ? 'Ready' : (hr.status || 'Unknown');
+      cmds.push({ category: 'Components', label: hr.name + ' (' + hr.namespace + ')', desc: 'HelmRelease: ' + statusBadge, icon: '\uD83D\uDCE6', badge: statusBadge, keys: '', action: function() { switchTabByName('overview'); } });
+    });
+  }
+
+  // ── Dynamic: Registered Apps ──
+  if (typeof registeredApps !== 'undefined' && registeredApps && registeredApps.length > 0) {
+    registeredApps.forEach(function(app) {
+      var appName = app.name || app.appName || 'Unknown';
+      var appUrl = app.url || app.externalUrl || '';
+      if (appUrl) {
+        cmds.push({ category: 'Apps', label: 'Open ' + appName, desc: appUrl, icon: '\uD83D\uDCBB', keys: '', action: function() { openService(appUrl); } });
+      }
+    });
+  }
+
+  // ── Dynamic: Service status from serviceStatus ──
+  if (serviceStatus && serviceStatus.length > 0) {
+    serviceStatus.forEach(function(svc) {
+      var svcName = svc.name || svc.service || '';
+      var svcUrl = svc.url || '';
+      if (svcName && svcUrl) {
+        cmds.push({ category: 'Services', label: 'Status: ' + svcName, desc: (svc.healthy ? 'Healthy' : 'Unhealthy') + ' - ' + svcUrl, icon: svc.healthy ? '\uD83D\uDFE2' : '\uD83D\uDD34', badge: svc.healthy ? 'UP' : 'DOWN', keys: '', action: function() { openService(svcUrl); } });
+      }
     });
   }
 
@@ -6428,22 +6634,66 @@ function closeCommandPalette() {
 }
 
 function filterCommands() {
-  var query = (document.getElementById('cmd-input').value || '').toLowerCase();
+  var query = (document.getElementById('cmd-input').value || '').trim();
   var cmds = getCommands();
+  var recents = getCmdRecents();
 
   var filtered;
   if (!query) {
-    // Show top actions when no query (Navigation + Actions first)
-    filtered = cmds.slice(0, 20);
-  } else {
-    filtered = cmds.filter(function(c) {
-      return c.label.toLowerCase().indexOf(query) >= 0 || c.category.toLowerCase().indexOf(query) >= 0;
+    // Show recently used first, then top navigation + actions
+    var recentCmds = [];
+    recents.forEach(function(rLabel) {
+      for (var i = 0; i < cmds.length; i++) {
+        if (cmds[i].label === rLabel) {
+          var rc = {};
+          for (var k in cmds[i]) rc[k] = cmds[i][k];
+          rc.category = 'Recent';
+          recentCmds.push(rc);
+          break;
+        }
+      }
     });
+    // Then show navigation + actions (excluding those already in recent)
+    var rest = cmds.filter(function(c) {
+      return recents.indexOf(c.label) < 0;
+    }).slice(0, 20 - recentCmds.length);
+    filtered = recentCmds.concat(rest);
+  } else {
+    // Fuzzy match against label, desc, and category
+    var scored = [];
+    cmds.forEach(function(c) {
+      var labelMatch = fuzzyMatch(c.label, query);
+      var descMatch = fuzzyMatch(c.desc || '', query);
+      var catMatch = fuzzyMatch(c.category, query);
+      var bestScore = Math.max(labelMatch.match ? labelMatch.score : 0, descMatch.match ? descMatch.score * 0.7 : 0, catMatch.match ? catMatch.score * 0.5 : 0);
+      if (bestScore > 0) {
+        scored.push({ cmd: c, score: bestScore, labelRanges: labelMatch.match ? labelMatch.ranges : [] });
+      }
+    });
+    scored.sort(function(a, b) { return b.score - a.score; });
+    filtered = scored.map(function(s) { s.cmd._matchRanges = s.labelRanges; return s.cmd; });
   }
 
   cmdFilteredItems = filtered;
   cmdSelectedIndex = Math.min(cmdSelectedIndex, Math.max(0, filtered.length - 1));
   renderCmdResults();
+
+  // Update result count
+  var countEl = document.getElementById('cmd-result-count');
+  if (countEl) countEl.textContent = filtered.length + ' result' + (filtered.length !== 1 ? 's' : '');
+}
+
+function highlightText(text, ranges) {
+  if (!ranges || ranges.length === 0) return esc(text);
+  var result = '';
+  var last = 0;
+  ranges.forEach(function(r) {
+    if (r[0] > last) result += esc(text.substring(last, r[0]));
+    result += '<span class="cmd-match">' + esc(text.substring(r[0], r[1])) + '</span>';
+    last = r[1];
+  });
+  if (last < text.length) result += esc(text.substring(last));
+  return result;
 }
 
 function renderCmdResults() {
@@ -6451,7 +6701,7 @@ function renderCmdResults() {
   var filtered = cmdFilteredItems;
 
   if (filtered.length === 0) {
-    container.innerHTML = '<div class="cmd-empty">No results found</div>';
+    container.innerHTML = '<div class="cmd-empty"><span class="cmd-empty-icon">\uD83D\uDD0D</span><span class="cmd-empty-text">No commands found. Try a different search term.</span></div>';
     return;
   }
 
@@ -6469,15 +6719,26 @@ function renderCmdResults() {
   var html = '';
   var idx = 0;
   groupOrder.forEach(function(cat) {
-    html += '<div class="cmd-category">' + esc(cat) + '</div>';
+    var catIcon = cmdCategoryIcons[cat] || '\u2022';
+    html += '<div class="cmd-category"><span class="cmd-category-icon">' + catIcon + '</span> ' + esc(cat) + '</div>';
     groups[cat].forEach(function(c) {
+      var labelHtml = c._matchRanges ? highlightText(c.label, c._matchRanges) : esc(c.label);
       html += '<div class="cmd-item' + (idx === cmdSelectedIndex ? ' selected' : '') + '" ' +
         'data-idx="' + idx + '" ' +
         'onclick="executeCmdItem(' + idx + ')" ' +
         'onmouseenter="cmdSelectedIndex=' + idx + ';highlightCmd()">' +
         '<span class="cmd-item-icon">' + c.icon + '</span>' +
-        '<span class="cmd-item-label">' + esc(c.label) + '</span>' +
-        '</div>';
+        '<span class="cmd-item-text">' +
+          '<span class="cmd-item-label">' + labelHtml + '</span>' +
+          (c.desc ? '<span class="cmd-item-desc">' + esc(c.desc) + '</span>' : '') +
+        '</span>';
+      if (c.badge) {
+        html += '<span class="cmd-item-badge">' + esc(c.badge) + '</span>';
+      }
+      if (c.keys) {
+        html += '<span class="cmd-item-hint">' + esc(c.keys) + '</span>';
+      }
+      html += '</div>';
       idx++;
     });
   });
@@ -6515,13 +6776,33 @@ function handleCmdKey(e) {
   } else if (e.key === 'Enter') {
     e.preventDefault();
     executeCmdItem(cmdSelectedIndex);
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    // Tab cycles through categories
+    if (items.length === 0) return;
+    var currentCat = items[cmdSelectedIndex] ? items[cmdSelectedIndex].category : '';
+    var found = false;
+    for (var i = cmdSelectedIndex + 1; i < items.length; i++) {
+      if (items[i].category !== currentCat) {
+        cmdSelectedIndex = i;
+        found = true;
+        break;
+      }
+    }
+    if (!found) cmdSelectedIndex = 0;
+    highlightCmd();
+    var el = document.querySelector('.cmd-item[data-idx="' + cmdSelectedIndex + '"]');
+    if (el) el.scrollIntoView({ block: 'nearest' });
   }
 }
 
 function executeCmdItem(index) {
   if (cmdFilteredItems[index]) {
+    var item = cmdFilteredItems[index];
+    // Track in recents (use original label, not "Recent" category relabel)
+    addCmdRecent(item.label);
     closeCommandPalette();
-    cmdFilteredItems[index].action();
+    item.action();
   }
 }
 
