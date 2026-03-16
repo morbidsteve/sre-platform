@@ -7,6 +7,7 @@ import type { Classification } from '../types';
 interface WizardLayoutProps {
   currentStep: number;
   classification: Classification;
+  onStepClick?: (step: number) => void;
   children: React.ReactNode;
 }
 
@@ -20,7 +21,7 @@ const stepLabels = [
   'Complete',
 ];
 
-export function WizardLayout({ currentStep, classification, children }: WizardLayoutProps) {
+export function WizardLayout({ currentStep, classification, onStepClick, children }: WizardLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-navy-900">
       <ClassificationBanner classification={classification} />
@@ -55,6 +56,7 @@ export function WizardLayout({ currentStep, classification, children }: WizardLa
             currentStep={currentStep}
             totalSteps={7}
             labels={stepLabels}
+            onStepClick={onStepClick}
           />
         </div>
       </div>

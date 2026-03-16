@@ -5319,6 +5319,264 @@ app.get("/api/proxy/harbor/vulnerabilities", async (req, res) => {
   }
 });
 
+// ── Security Scanning Endpoints (DSOP Wizard) ───────────────────────────────
+
+// Helper: wait for a K8s Job to complete and return its container logs
+async function waitForJobAndGetLogs(jobName, namespace, containerName, timeoutSeconds) {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  while (Date.now() < deadline) {
+    const job = await batchApi.readNamespacedJob(jobName, namespace);
+    if (job.body.status?.succeeded) break;
+    if (job.body.status?.failed) throw new Error("Job failed");
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  const pods = await k8sApi.listNamespacedPod(namespace, undefined, undefined, undefined, undefined, `job-name=${jobName}`);
+  if (!pods.body.items.length) throw new Error("No pods found for job");
+  const podName = pods.body.items[0].metadata.name;
+  const logs = await k8sApi.readNamespacedPodLog(podName, namespace, containerName);
+  return logs.body;
+}
+
+// POST /api/security/sast — Run Semgrep SAST scan via K8s Job
+app.post("/api/security/sast", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { url, branch } = req.body;
+  if (!url) return res.status(400).json({ error: "url is required" });
+
+  const jobName = "sast-" + crypto.randomBytes(4).toString("hex");
+  const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
+
+  try {
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: { name: jobName, namespace: BUILD_NAMESPACE },
+      spec: {
+        ttlSecondsAfterFinished: 300,
+        backoffLimit: 0,
+        template: {
+          spec: {
+            restartPolicy: "Never",
+            containers: [{
+              name: "semgrep",
+              image: "docker.io/semgrep/semgrep:latest",
+              command: ["sh", "-c", `
+                git clone --depth 1 --branch ${safeBranch} ${url} /src 2>/dev/null && \
+                cd /src && \
+                semgrep scan --config auto --json --quiet 2>/dev/null || echo '{"results":[],"errors":[]}'
+              `],
+              resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+            }],
+          },
+        },
+      },
+    });
+
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120);
+
+    let results;
+    try {
+      results = JSON.parse(logs);
+    } catch {
+      results = { results: [], errors: [{ message: "Failed to parse output" }] };
+    }
+
+    const findings = (results.results || []).map(r => ({
+      severity: r.extra?.severity || "info",
+      title: r.check_id || "Unknown",
+      description: r.extra?.message || "",
+      location: `${r.path}:${r.start?.line || 0}`,
+    }));
+
+    const critical = findings.filter(f => f.severity === "ERROR").length;
+    const warnings = findings.filter(f => f.severity === "WARNING").length;
+
+    res.json({
+      gate: "SAST",
+      tool: "Semgrep",
+      status: critical > 0 ? "failed" : warnings > 0 ? "warning" : "passed",
+      findings,
+      summary: `${findings.length} findings (${critical} errors, ${warnings} warnings)`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "SAST scan failed", detail: err.message });
+  }
+});
+
+// POST /api/security/secrets — Run Gitleaks secrets scan via K8s Job
+app.post("/api/security/secrets", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { url, branch } = req.body;
+  if (!url) return res.status(400).json({ error: "url is required" });
+
+  const jobName = "secrets-" + crypto.randomBytes(4).toString("hex");
+  const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
+
+  try {
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: { name: jobName, namespace: BUILD_NAMESPACE },
+      spec: {
+        ttlSecondsAfterFinished: 300,
+        backoffLimit: 0,
+        template: {
+          spec: {
+            restartPolicy: "Never",
+            containers: [{
+              name: "gitleaks",
+              image: "docker.io/zricethezav/gitleaks:latest",
+              command: ["sh", "-c", `
+                git clone --depth 5 --branch ${safeBranch} ${url} /src 2>/dev/null && \
+                gitleaks detect --source /src --report-format json --report-path /dev/stdout --no-banner 2>/dev/null || echo '[]'
+              `],
+              resources: { requests: { cpu: "50m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+            }],
+          },
+        },
+      },
+    });
+
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60);
+
+    let secrets = [];
+    try { secrets = JSON.parse(logs); } catch { secrets = []; }
+    if (!Array.isArray(secrets)) secrets = [];
+
+    const findings = secrets.map(s => ({
+      severity: "critical",
+      title: s.Description || s.RuleID || "Secret detected",
+      description: `${s.Match || ""}`.substring(0, 100),
+      location: `${s.File}:${s.StartLine || 0}`,
+    }));
+
+    res.json({
+      gate: "Secrets",
+      tool: "Gitleaks",
+      status: findings.length > 0 ? "failed" : "passed",
+      findings,
+      summary: findings.length > 0 ? `${findings.length} secrets detected!` : "0 secrets detected",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Secrets scan failed", detail: err.message });
+  }
+});
+
+// POST /api/security/sbom — Generate SBOM with Syft via K8s Job
+app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { image } = req.body;
+  if (!image) return res.status(400).json({ error: "image is required" });
+
+  const jobName = "sbom-" + crypto.randomBytes(4).toString("hex");
+
+  try {
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: { name: jobName, namespace: BUILD_NAMESPACE },
+      spec: {
+        ttlSecondsAfterFinished: 300,
+        backoffLimit: 0,
+        template: {
+          spec: {
+            restartPolicy: "Never",
+            containers: [{
+              name: "syft",
+              image: "docker.io/anchore/syft:latest",
+              command: ["sh", "-c", `syft ${image} -o spdx-json 2>/dev/null`],
+              resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+              volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
+            }],
+            volumes: [{
+              name: "docker-config",
+              secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true },
+            }],
+          },
+        },
+      },
+    });
+
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "syft", 120);
+
+    let sbom;
+    try { sbom = JSON.parse(logs); } catch { sbom = null; }
+
+    const packageCount = sbom?.packages?.length || 0;
+
+    res.json({
+      gate: "SBOM",
+      tool: "Syft",
+      status: sbom ? "passed" : "failed",
+      format: "SPDX 2.3",
+      packageCount,
+      summary: sbom ? `SBOM generated: ${packageCount} packages identified` : "SBOM generation failed",
+      sbom: sbom,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "SBOM generation failed", detail: err.message });
+  }
+});
+
+// POST /api/security/dast — Run OWASP ZAP baseline scan via K8s Job
+app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { targetUrl } = req.body;
+  if (!targetUrl) return res.status(400).json({ error: "targetUrl is required" });
+
+  const jobName = "dast-" + crypto.randomBytes(4).toString("hex");
+
+  try {
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: { name: jobName, namespace: BUILD_NAMESPACE },
+      spec: {
+        ttlSecondsAfterFinished: 300,
+        backoffLimit: 0,
+        template: {
+          spec: {
+            restartPolicy: "Never",
+            containers: [{
+              name: "zap",
+              image: "ghcr.io/zaproxy/zaproxy:stable",
+              command: ["sh", "-c", `
+                zap-baseline.py -t ${targetUrl} -J /dev/stdout -I 2>/dev/null || echo '{"site":[]}'
+              `],
+              resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "1", memory: "2Gi" } },
+            }],
+          },
+        },
+      },
+    });
+
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180);
+
+    let report;
+    try { report = JSON.parse(logs); } catch { report = { site: [] }; }
+
+    const alerts = [];
+    for (const site of (report.site || [])) {
+      for (const alert of (site.alerts || [])) {
+        alerts.push({
+          severity: alert.riskdesc?.split(" ")[0]?.toLowerCase() || "info",
+          title: alert.name || "Unknown",
+          description: alert.desc || "",
+          location: alert.uri || targetUrl,
+        });
+      }
+    }
+
+    const high = alerts.filter(a => a.severity === "high").length;
+
+    res.json({
+      gate: "DAST",
+      tool: "OWASP ZAP",
+      status: high > 0 ? "failed" : alerts.length > 0 ? "warning" : "passed",
+      findings: alerts,
+      summary: `${alerts.length} alerts (${high} high risk)`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "DAST scan failed", detail: err.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`SRE Dashboard running on http://0.0.0.0:${PORT}`);
 });

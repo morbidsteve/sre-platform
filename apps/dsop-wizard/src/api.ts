@@ -5,6 +5,7 @@ const API_BASE = '/api';
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
@@ -322,21 +323,57 @@ export function getInitialDeploySteps(): DeployStep[] {
 
 export async function runDeploy(
   appName: string,
+  gitUrl: string,
+  branch: string,
+  team: string,
   steps: DeployStep[],
   onUpdate: (steps: DeployStep[]) => void
 ): Promise<{ url: string; steps: DeployStep[] }> {
   const updated = [...steps.map((s) => ({ ...s }))];
 
-  for (let i = 0; i < updated.length; i++) {
-    updated[i] = { ...updated[i], status: 'running' };
-    onUpdate([...updated]);
-    await simulateDelay(1200 + Math.random() * 800);
-    updated[i] = { ...updated[i], status: 'completed' };
-    onUpdate([...updated]);
-  }
+  // Step 1: Create namespace
+  updated[0] = { ...updated[0], status: 'running' };
+  onUpdate([...updated]);
 
-  const url = `https://${appName}.apps.sre.example.com`;
-  return { url, steps: updated };
+  try {
+    // Call the real deploy API
+    const response = await fetch('/api/deploy/git', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        url: gitUrl,
+        branch: branch || 'main',
+        team: team || 'team-alpha',
+        appName: appName,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Deploy failed' }));
+      throw new Error(err.error || `HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    // Mark all steps as completed
+    for (let i = 0; i < updated.length; i++) {
+      updated[i] = { ...updated[i], status: 'completed' };
+      onUpdate([...updated]);
+      await simulateDelay(500);
+    }
+
+    const url = result.url || `https://${appName}.apps.sre.example.com`;
+    return { url, steps: updated };
+  } catch (err) {
+    // Mark current step as failed
+    const failIdx = updated.findIndex((s) => s.status === 'running');
+    if (failIdx >= 0) {
+      updated[failIdx] = { ...updated[failIdx], status: 'failed' };
+      onUpdate([...updated]);
+    }
+    throw err;
+  }
 }
 
 // Helpers

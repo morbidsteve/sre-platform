@@ -9,14 +9,96 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
+import type { SecurityGate } from '../../types';
 
 interface Step7Props {
   appName: string;
   deployedUrl: string;
+  classification?: string;
+  gates?: SecurityGate[];
   onReset: () => void;
 }
 
-export function Step7_Complete({ appName, deployedUrl, onReset }: Step7Props) {
+function downloadCompliancePackage(
+  appName: string,
+  classification: string,
+  gates: SecurityGate[]
+) {
+  const now = new Date().toISOString();
+  const gateResults = gates.map((g) => ({
+    id: g.id,
+    name: g.name,
+    shortName: g.shortName,
+    status: g.status,
+    implemented: g.implemented,
+    summary: g.summary || null,
+    findingsCount: g.findings.length,
+    findings: g.findings.map((f) => ({
+      severity: f.severity,
+      title: f.title,
+      description: f.description,
+      location: f.location || null,
+    })),
+  }));
+
+  const passed = gates.filter((g) => g.status === 'passed').length;
+  const warned = gates.filter((g) => g.status === 'warning').length;
+  const failed = gates.filter((g) => g.status === 'failed').length;
+  const skipped = gates.filter((g) => g.status === 'skipped').length;
+
+  const cveGate = gates.find((g) => g.shortName === 'CVE SCAN');
+  const sbomGate = gates.find((g) => g.shortName === 'SBOM');
+
+  const compliancePackage = {
+    metadata: {
+      appName,
+      deployTime: now,
+      classificationLevel: classification,
+      generatedBy: 'DSOP Deployment Wizard',
+      version: '1.1.0',
+    },
+    securityGates: {
+      summary: {
+        total: gates.length,
+        passed,
+        warning: warned,
+        failed,
+        skipped,
+      },
+      gates: gateResults,
+    },
+    sbomStatus: {
+      generated: sbomGate?.status === 'passed',
+      format: sbomGate?.status === 'passed' ? 'SPDX + CycloneDX' : 'N/A',
+      summary: sbomGate?.summary || 'Not generated',
+    },
+    vulnerabilitySummary: {
+      scanCompleted: cveGate?.status === 'passed' || cveGate?.status === 'warning',
+      summary: cveGate?.summary || 'Not scanned',
+      findings: cveGate?.findings || [],
+    },
+  };
+
+  const blob = new Blob([JSON.stringify(compliancePackage, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${appName}-compliance-package-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function Step7_Complete({
+  appName,
+  deployedUrl,
+  classification = 'UNCLASSIFIED',
+  gates = [],
+  onReset,
+}: Step7Props) {
   return (
     <div className="space-y-8">
       {/* Success Header */}
@@ -45,20 +127,31 @@ export function Step7_Complete({ appName, deployedUrl, onReset }: Step7Props) {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
-        <a
-          href={deployedUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={() => window.open(deployedUrl, '_blank')}
           className="flex flex-col items-center gap-3 p-6 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group cursor-pointer"
         >
           <ExternalLink className="w-8 h-8 text-gray-400 group-hover:text-cyan-400 transition-colors" />
           <span className="text-sm font-medium text-gray-200">Open App</span>
-        </a>
-        <button className="flex flex-col items-center gap-3 p-6 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group">
+        </button>
+        <button
+          onClick={() =>
+            window.open(
+              'https://dashboard.apps.sre.example.com/#services',
+              '_blank'
+            )
+          }
+          className="flex flex-col items-center gap-3 p-6 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group cursor-pointer"
+        >
           <ScrollText className="w-8 h-8 text-gray-400 group-hover:text-cyan-400 transition-colors" />
           <span className="text-sm font-medium text-gray-200">View Logs</span>
         </button>
-        <button className="flex flex-col items-center gap-3 p-6 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group">
+        <button
+          onClick={() =>
+            window.open('https://grafana.apps.sre.example.com', '_blank')
+          }
+          className="flex flex-col items-center gap-3 p-6 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group cursor-pointer"
+        >
           <BarChart3 className="w-8 h-8 text-gray-400 group-hover:text-cyan-400 transition-colors" />
           <span className="text-sm font-medium text-gray-200">Metrics</span>
         </button>
@@ -66,7 +159,12 @@ export function Step7_Complete({ appName, deployedUrl, onReset }: Step7Props) {
 
       {/* Compliance Package */}
       <div className="max-w-2xl mx-auto">
-        <button className="w-full flex items-center justify-center gap-3 p-5 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group">
+        <button
+          onClick={() =>
+            downloadCompliancePackage(appName, classification, gates)
+          }
+          className="w-full flex items-center justify-center gap-3 p-5 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group cursor-pointer"
+        >
           <Download className="w-6 h-6 text-gray-400 group-hover:text-cyan-400 transition-colors" />
           <div className="text-left">
             <p className="text-sm font-semibold text-gray-200 group-hover:text-gray-100">

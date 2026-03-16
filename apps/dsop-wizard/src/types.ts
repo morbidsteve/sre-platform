@@ -57,11 +57,17 @@ export interface DetectionResult {
   externalAccess: ExternalAccess[];
 }
 
+export type FindingDisposition = 'will_fix' | 'accepted_risk' | 'false_positive' | 'na';
+
 export interface GateFinding {
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
   title: string;
   description: string;
   location?: string;
+  disposition?: FindingDisposition;
+  mitigation?: string;
+  mitigatedBy?: string;
+  mitigatedAt?: string;
 }
 
 export interface SecurityGate {

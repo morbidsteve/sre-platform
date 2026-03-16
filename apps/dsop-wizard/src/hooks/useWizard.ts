@@ -4,6 +4,7 @@ import type {
   AppSource,
   AppInfo,
   SecurityGate,
+  GateFinding,
   DeployStep,
   DetectionResult,
 } from '../types';
@@ -127,6 +128,18 @@ export function useWizard() {
     }));
   }, []);
 
+  const updateFinding = useCallback((gateId: number, findingIndex: number, updates: Partial<GateFinding>) => {
+    setState((prev) => ({
+      ...prev,
+      gates: prev.gates.map((g) => {
+        if (g.id !== gateId) return g;
+        const findings = [...g.findings];
+        findings[findingIndex] = { ...findings[findingIndex], ...updates };
+        return { ...g, findings };
+      }),
+    }));
+  }, []);
+
   const deploy = useCallback(async () => {
     setState((prev) => ({
       ...prev,
@@ -139,6 +152,9 @@ export function useWizard() {
     try {
       const result = await runDeploy(
         state.appInfo.name || 'my-app',
+        state.source.gitUrl || '',
+        state.source.branch || 'main',
+        state.appInfo.team || 'team-alpha',
         getInitialDeploySteps(),
         (steps: DeployStep[]) => {
           setState((prev) => ({ ...prev, deploySteps: steps }));
@@ -158,7 +174,7 @@ export function useWizard() {
         error: err instanceof Error ? err.message : 'Deployment failed',
       }));
     }
-  }, [state.appInfo.name]);
+  }, [state.appInfo.name, state.source.gitUrl, state.source.branch, state.appInfo.team]);
 
   const reset = useCallback(() => {
     setState(initialState);
@@ -175,6 +191,7 @@ export function useWizard() {
     setDetection,
     runPipeline,
     updateGate,
+    updateFinding,
     deploy,
     reset,
   };

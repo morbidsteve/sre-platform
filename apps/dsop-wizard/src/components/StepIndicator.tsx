@@ -5,9 +5,10 @@ interface StepIndicatorProps {
   currentStep: number;
   totalSteps: number;
   labels: string[];
+  onStepClick?: (step: number) => void;
 }
 
-export function StepIndicator({ currentStep, totalSteps, labels }: StepIndicatorProps) {
+export function StepIndicator({ currentStep, totalSteps, labels, onStepClick }: StepIndicatorProps) {
   return (
     <div className="w-full px-4 py-6">
       <div className="flex items-center justify-between max-w-4xl mx-auto">
@@ -16,6 +17,7 @@ export function StepIndicator({ currentStep, totalSteps, labels }: StepIndicator
           const isCompleted = step < currentStep;
           const isActive = step === currentStep;
           const isUpcoming = step > currentStep;
+          const isClickable = isCompleted && onStepClick;
 
           return (
             <React.Fragment key={step}>
@@ -23,7 +25,17 @@ export function StepIndicator({ currentStep, totalSteps, labels }: StepIndicator
                 <div
                   className={`step-dot ${
                     isCompleted ? 'completed' : isActive ? 'active' : 'upcoming'
+                  } ${
+                    isClickable
+                      ? 'cursor-pointer hover:ring-2 hover:ring-cyan-400/50 hover:scale-110 transition-all'
+                      : ''
                   }`}
+                  onClick={() => {
+                    if (isClickable) {
+                      onStepClick(step);
+                    }
+                  }}
+                  title={isClickable ? `Go back to ${labels[i]}` : undefined}
                 >
                   {isCompleted ? (
                     <Check className="w-4 h-4" />
@@ -38,7 +50,12 @@ export function StepIndicator({ currentStep, totalSteps, labels }: StepIndicator
                       : isCompleted
                       ? 'text-emerald-400'
                       : 'text-gray-500'
-                  }`}
+                  } ${isClickable ? 'cursor-pointer hover:text-cyan-300' : ''}`}
+                  onClick={() => {
+                    if (isClickable) {
+                      onStepClick(step);
+                    }
+                  }}
                 >
                   {labels[i]}
                 </span>

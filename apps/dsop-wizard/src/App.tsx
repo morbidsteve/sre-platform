@@ -111,6 +111,8 @@ export default function App() {
               state.deployedUrl ||
               `https://${state.appInfo.name || 'my-app'}.apps.sre.example.com`
             }
+            classification={state.appInfo.classification}
+            gates={state.gates}
             onReset={wizard.reset}
           />
         );
@@ -124,6 +126,12 @@ export default function App() {
     <WizardLayout
       currentStep={state.currentStep}
       classification={state.appInfo.classification}
+      onStepClick={(step) => {
+        // Only allow navigating to completed steps (before current)
+        if (step < state.currentStep && !state.isDeploying && !state.isPipelineRunning && !state.isAnalyzing) {
+          wizard.setStep(step);
+        }
+      }}
     >
       {/* Error Banner */}
       {state.error && state.currentStep !== 6 && (
