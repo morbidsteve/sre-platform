@@ -635,6 +635,186 @@
   /* Pulse animation for critical items */
   @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
   .pulse { animation: pulse-red 2s ease-in-out infinite; }
+
+  /* Clickable metric cards */
+  .metric-card.clickable {
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  }
+  .metric-card.clickable:hover {
+    border-color: var(--red-dim);
+    box-shadow: 0 0 12px rgba(220, 38, 38, 0.15), 0 0 4px rgba(220, 38, 38, 0.1);
+    transform: translateY(-1px);
+  }
+  .metric-card.clickable::after {
+    content: 'Click for details';
+    position: absolute;
+    bottom: 4px;
+    right: 8px;
+    font-size: 9px;
+    color: var(--text-dim);
+    opacity: 0;
+    transition: opacity 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .metric-card.clickable:hover::after {
+    opacity: 1;
+  }
+
+  /* Score breakdown in modal */
+  .score-factor-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    background: var(--bg-card);
+  }
+  .score-factor-name { flex: 1; color: var(--text-primary); }
+  .score-factor-count { min-width: 40px; text-align: center; font-weight: 600; }
+  .score-factor-impact { min-width: 60px; text-align: right; font-weight: 700; }
+  .score-factor-impact.negative { color: var(--red-bright); }
+  .score-factor-impact.base { color: var(--green); }
+  .score-factor-bar {
+    width: 60px;
+    height: 6px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .score-factor-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+  .score-overall {
+    text-align: center;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .score-overall .score-ring-lg {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .score-overall .score-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Alert list in modal */
+  .modal-alert-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .modal-alert-row:hover {
+    background: var(--bg-card-hover);
+  }
+  .modal-alert-name { flex: 1; font-weight: 600; color: var(--text-primary); }
+  .modal-alert-ns { color: var(--text-secondary); font-size: 11px; min-width: 100px; }
+  .modal-alert-time { color: var(--text-dim); font-size: 10px; min-width: 70px; text-align: right; }
+  .modal-alert-summary { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* Vuln summary bars in modal */
+  .vuln-sev-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .vuln-sev-bar-label { min-width: 70px; font-weight: 600; }
+  .vuln-sev-bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-card);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .vuln-sev-bar-track .fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s;
+  }
+  .vuln-sev-bar-count { min-width: 40px; text-align: right; font-weight: 700; }
+
+  /* Expanded alert row enhancements */
+  .alert-action-btn {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    letter-spacing: 0.5px;
+    margin-right: 8px;
+    margin-top: 6px;
+    transition: background 0.15s;
+  }
+  .alert-action-btn.view {
+    background: rgba(6, 182, 212, 0.1);
+    color: var(--cyan);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+  }
+  .alert-action-btn.view:hover { background: rgba(6, 182, 212, 0.2); }
+  .alert-action-btn.silence {
+    background: rgba(136, 136, 160, 0.1);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .alert-action-btn.silence:hover { background: rgba(136, 136, 160, 0.2); }
+
+  /* Modal button */
+  .modal-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    letter-spacing: 0.5px;
+    text-align: center;
+    transition: background 0.15s, border-color 0.15s;
+    cursor: pointer;
+    border: 1px solid;
+  }
+  .modal-btn.primary {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--cyan);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+  .modal-btn.primary:hover { background: rgba(6, 182, 212, 0.25); }
+
+  /* Violation group in modal */
+  .violation-group-header {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 10px 0 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+  }
 </style>
 </head>
 <body>
@@ -665,31 +845,31 @@
       <span class="section-badge" id="alertTotal">Loading...</span>
     </div>
     <div class="threat-overview">
-      <div class="metric-card severity-critical" id="cardCritical">
+      <div class="metric-card severity-critical clickable" id="cardCritical" onclick="window.__openCritWarnModal()">
         <div class="glow"></div>
         <div class="label">Critical / Warning Alerts</div>
         <div class="value value-critical" id="valCritWarn">--</div>
         <div class="detail" id="detCritWarn">Fetching from Alertmanager...</div>
       </div>
-      <div class="metric-card severity-warning" id="cardAlerts">
+      <div class="metric-card severity-warning clickable" id="cardAlerts" onclick="window.__openAllAlertsModal()">
         <div class="glow"></div>
         <div class="label">Active Alerts</div>
         <div class="value value-warning" id="valAlerts">--</div>
         <div class="detail" id="detAlerts">All severities combined</div>
       </div>
-      <div class="metric-card severity-info" id="cardCompliance">
+      <div class="metric-card severity-info clickable" id="cardCompliance" onclick="window.__openViolationsModal()">
         <div class="glow"></div>
         <div class="label">Policy Violations</div>
         <div class="value value-info" id="valCompliance">--</div>
         <div class="detail" id="detCompliance">Kyverno policy failures</div>
       </div>
-      <div class="metric-card severity-ok" id="cardScore">
+      <div class="metric-card severity-ok clickable" id="cardScore" onclick="window.__openScoreModal()">
         <div class="glow"></div>
         <div class="label">Security Posture</div>
         <div class="score-ring score-good" id="scoreRing">--</div>
         <div class="detail" id="detScore" style="text-align:center">Calculating...</div>
       </div>
-      <div class="metric-card severity-warning" id="cardCVE">
+      <div class="metric-card severity-warning clickable" id="cardCVE" onclick="window.__openCVEModal()">
         <div class="glow"></div>
         <div class="label">Image Vulnerabilities</div>
         <div class="value value-warning" id="valCVE">--</div>
@@ -829,11 +1009,11 @@
 
 </div>
 
-<!-- Compliance Detail Modal -->
-<div class="modal-backdrop" id="complianceModal">
-  <div class="modal" id="complianceModalContent">
+<!-- Generic Detail Modal (reused for all clickable elements) -->
+<div class="modal-backdrop" id="detailModal">
+  <div class="modal" id="detailModalContent">
     <div class="modal-header">
-      <h2 id="modalNsName">Namespace</h2>
+      <h2 id="modalTitle">Details</h2>
       <button class="modal-close" onclick="window.__closeModal()">&times;</button>
     </div>
     <div class="modal-body" id="modalBody"></div>
@@ -966,13 +1146,13 @@
       // Update card severity
       const critCard = document.getElementById('cardCritical');
       if (critWarn === 0) {
-        critCard.className = 'metric-card severity-ok';
+        critCard.className = 'metric-card severity-ok clickable';
         document.getElementById('valCritWarn').className = 'value value-ok';
       } else if (bySev.critical > 0) {
-        critCard.className = 'metric-card severity-critical';
+        critCard.className = 'metric-card severity-critical clickable';
         document.getElementById('valCritWarn').className = 'value value-critical pulse';
       } else {
-        critCard.className = 'metric-card severity-warning';
+        critCard.className = 'metric-card severity-warning clickable';
         document.getElementById('valCritWarn').className = 'value value-warning';
       }
 
@@ -1020,21 +1200,45 @@
       '</tr>';
 
       if (expandedRows.has(idx)) {
+        var amBaseUrl = ALERTMANAGER_URL.replace('/api/proxy/alertmanager/alerts', '');
+        var amAlertsUrl = amBaseUrl + '/#/alerts';
+        var silenceParams = Object.entries(labels).map(function(e) {
+          return encodeURIComponent(e[0]) + '=' + encodeURIComponent(e[1]);
+        }).join('&');
+        var silenceUrl = amBaseUrl + '/#/silences/new?' + silenceParams;
+
         html += '<tr class="expanded-row"><td colspan="5">' +
           '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Summary:</strong> ' +
           escapeHtml(annotations.summary || 'N/A') + '</div>' +
           '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Description:</strong> ' +
           escapeHtml(annotations.description || 'N/A') + '</div>' +
           '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Started:</strong> ' +
-          escapeHtml(alert.startsAt || 'N/A') + '</div>' +
-          '<div><strong style="color:var(--text-primary)">Labels:</strong> ' +
+          escapeHtml(alert.startsAt || 'N/A') + '</div>';
+
+        // Annotations section
+        var annotationKeys = Object.keys(annotations);
+        if (annotationKeys.length > 0) {
+          html += '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Annotations:</strong><br>' +
+            annotationKeys.map(function(k) {
+              if (k === 'summary' || k === 'description' || k === 'runbook_url') return '';
+              return '<span style="display:inline-block;margin:2px;font-size:10px;color:var(--text-secondary)">' +
+                escapeHtml(k) + ': ' + escapeHtml(annotations[k]) + '</span>';
+            }).filter(Boolean).join('<br>') +
+          '</div>';
+        }
+
+        html += '<div style="margin-bottom:6px"><strong style="color:var(--text-primary)">Labels:</strong> ' +
           Object.entries(labels).map(function(e) {
             return '<span style="background:var(--bg-secondary);padding:1px 6px;border-radius:3px;margin:2px;display:inline-block;font-size:10px;">' +
               escapeHtml(e[0]) + '=' + escapeHtml(e[1]) + '</span>';
           }).join(' ') +
           '</div>' +
-          (annotations.runbook_url ? '<div style="margin-top:6px"><a href="' + escapeHtml(annotations.runbook_url) +
+          (annotations.runbook_url ? '<div style="margin-bottom:6px"><a href="' + escapeHtml(annotations.runbook_url) +
             '" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline;">View Runbook &rarr;</a></div>' : '') +
+          '<div style="margin-top:8px">' +
+            '<a href="' + escapeHtml(amAlertsUrl) + '" target="_blank" rel="noopener" class="alert-action-btn view">View in Alertmanager &rarr;</a>' +
+            '<a href="' + escapeHtml(silenceUrl) + '" target="_blank" rel="noopener" class="alert-action-btn silence">Silence This Alert</a>' +
+          '</div>' +
         '</td></tr>';
       }
     });
@@ -1210,11 +1414,31 @@
     }
   ];
 
-  // Modal open/close
+  // ---- Generic Modal open/close ----
+  function openModal(title, bodyHtml) {
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+    document.getElementById('detailModal').classList.add('active');
+  }
+
+  window.__closeModal = function() {
+    document.getElementById('detailModal').classList.remove('active');
+  };
+
+  // Close modal on backdrop click
+  document.getElementById('detailModal').addEventListener('click', function(e) {
+    if (e.target === this) window.__closeModal();
+  });
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') window.__closeModal();
+  });
+
+  // ---- Compliance Modal (Kyverno namespace detail) ----
   window.__openComplianceModal = function(idx) {
     var ns = complianceData[idx];
     if (!ns) return;
-    document.getElementById('modalNsName').textContent = ns.name;
 
     var html = '';
 
@@ -1252,23 +1476,258 @@
       html += '<div style="text-align:center;color:var(--text-dim);padding:20px;">No policy data available for this namespace.</div>';
     }
 
-    document.getElementById('modalBody').innerHTML = html;
-    document.getElementById('complianceModal').classList.add('active');
+    openModal('Namespace: ' + ns.name, html);
   };
 
-  window.__closeModal = function() {
-    document.getElementById('complianceModal').classList.remove('active');
+  // ---- Security Posture Score Modal ----
+  window.__openScoreModal = function() {
+    var score = parseInt(document.getElementById('scoreRing').textContent) || 0;
+    var bySev = {};
+    allAlerts.forEach(function(a) {
+      var sev = (a.labels && a.labels.severity) || 'none';
+      bySev[sev] = (bySev[sev] || 0) + 1;
+    });
+
+    var critAlerts = bySev.critical || 0;
+    var warnAlerts = bySev.warning || 0;
+    var infoAlerts = bySev.info || 0;
+    var compViolations = parseInt(document.getElementById('valCompliance').textContent) || 0;
+    var critCVEs = parseInt(document.getElementById('vulnSumCrit').textContent) || 0;
+    var highCVEs = parseInt(document.getElementById('vulnSumHigh').textContent) || 0;
+
+    // Determine score color
+    var scoreColor = score >= 80 ? 'var(--green)' : (score >= 50 ? 'var(--orange)' : 'var(--red-bright)');
+    var scoreBorder = score >= 80 ? '3px solid var(--green)' : (score >= 50 ? '3px solid var(--orange)' : '3px solid var(--red)');
+    var scoreShadow = score >= 80 ? '0 0 20px rgba(34,197,94,0.3)' : (score >= 50 ? '0 0 20px rgba(249,115,22,0.3)' : '0 0 20px rgba(220,38,38,0.3)');
+    var scoreText = score >= 80 ? 'ACCEPTABLE' : (score >= 50 ? 'DEGRADED' : 'CRITICAL');
+
+    var html = '<div class="score-overall">' +
+      '<div class="score-ring-lg" style="border:' + scoreBorder + ';color:' + scoreColor + ';box-shadow:' + scoreShadow + '">' + score + '</div>' +
+      '<div class="score-label" style="color:' + scoreColor + '">' + scoreText + ' // ' + score + '/100</div>' +
+      '</div>';
+
+    html += '<div class="modal-section"><div class="modal-section-title">Score Breakdown</div>';
+
+    var factors = [
+      { name: 'Base Score', count: '', impact: '+100', color: 'var(--green)', barPct: 100, isBase: true },
+      { name: 'Critical Alerts', count: critAlerts, impact: critAlerts > 0 ? '-' + (critAlerts * 15) : '0', color: 'var(--red-bright)', barPct: Math.min(100, critAlerts * 15) },
+      { name: 'Warning Alerts', count: warnAlerts, impact: warnAlerts > 0 ? '-' + (warnAlerts * 5) : '0', color: 'var(--orange)', barPct: Math.min(100, warnAlerts * 5) },
+      { name: 'Info Alerts', count: infoAlerts, impact: infoAlerts > 0 ? '-' + (infoAlerts * 1) : '0', color: 'var(--cyan)', barPct: Math.min(100, infoAlerts * 1) },
+      { name: 'Critical CVEs', count: critCVEs, impact: critCVEs > 0 ? '-' + (critCVEs * 5) : '0', color: 'var(--red-bright)', barPct: Math.min(100, critCVEs * 5) },
+      { name: 'High CVEs', count: highCVEs, impact: highCVEs > 0 ? '-' + (highCVEs * 2) : '0', color: 'var(--orange)', barPct: Math.min(100, highCVEs * 2) },
+      { name: 'Policy Violations', count: compViolations, impact: compViolations > 0 ? '-' + (compViolations * 3) : '0', color: 'var(--yellow)', barPct: Math.min(100, compViolations * 3) }
+    ];
+
+    factors.forEach(function(f) {
+      var impactClass = f.isBase ? 'base' : 'negative';
+      html += '<div class="score-factor-row">' +
+        '<span class="score-factor-name">' + f.name + '</span>' +
+        '<span class="score-factor-count" style="color:' + f.color + '">' + f.count + '</span>' +
+        '<div class="score-factor-bar"><div class="score-factor-bar-fill" style="width:' + f.barPct + '%;background:' + f.color + '"></div></div>' +
+        '<span class="score-factor-impact ' + impactClass + '">' + f.impact + '</span>' +
+      '</div>';
+    });
+
+    html += '</div>';
+
+    html += '<div class="modal-section" style="margin-top:12px;font-size:11px;color:var(--text-dim);padding:10px;background:var(--bg-card);border-radius:4px;">' +
+      '<strong style="color:var(--text-secondary)">Scoring Formula:</strong> Start at 100. ' +
+      'Critical alerts: -15 each. Warning alerts: -5 each. Info alerts: -1 each. ' +
+      'Critical CVEs: -5 each. High CVEs: -2 each. Policy violations: -3 each. Minimum: 0.</div>';
+
+    openModal('Security Posture Score', html);
   };
 
-  // Close modal on backdrop click
-  document.getElementById('complianceModal').addEventListener('click', function(e) {
-    if (e.target === this) window.__closeModal();
-  });
+  // ---- Critical/Warning Alerts Modal ----
+  window.__openCritWarnModal = function() {
+    var critWarn = allAlerts.filter(function(a) {
+      var sev = (a.labels && a.labels.severity) || 'none';
+      return sev === 'critical' || sev === 'warning';
+    });
 
-  // Close modal on Escape key
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') window.__closeModal();
-  });
+    var html = '<div class="modal-section"><div class="modal-section-title">' +
+      critWarn.length + ' Critical &amp; Warning Alerts</div>';
+
+    if (critWarn.length === 0) {
+      html += '<div style="text-align:center;color:var(--green);padding:20px;">No critical or warning alerts. All clear.</div>';
+    } else {
+      critWarn.forEach(function(a) {
+        var labels = a.labels || {};
+        var annotations = a.annotations || {};
+        var sev = labels.severity || 'none';
+        var ns = labels.namespace || labels.job || 'cluster';
+        var summary = annotations.summary || annotations.description || 'No summary available';
+        var amUrl = ALERTMANAGER_URL.replace('/api/proxy/alertmanager/alerts', '') + '/#/alerts';
+
+        html += '<div class="modal-alert-row" onclick="window.open(\'' + escapeHtml(amUrl) + '\', \'_blank\')">' +
+          '<span class="sev-badge ' + sevClass(sev) + '">' + sev + '</span>' +
+          '<div style="flex:1">' +
+            '<div class="modal-alert-name">' + escapeHtml(labels.alertname || 'Unknown') + '</div>' +
+            '<div class="modal-alert-summary">' + escapeHtml(summary) + '</div>' +
+          '</div>' +
+          '<span class="modal-alert-ns">' + escapeHtml(ns) + '</span>' +
+          '<span class="modal-alert-time">' + timeAgo(a.startsAt) + '</span>' +
+        '</div>';
+      });
+    }
+
+    html += '</div>';
+    openModal('Critical & Warning Alerts', html);
+  };
+
+  // ---- All Alerts Modal ----
+  window.__openAllAlertsModal = function() {
+    var html = '<div class="modal-section"><div class="modal-section-title">' +
+      allAlerts.length + ' Active Alerts (All Severities)</div>';
+
+    if (allAlerts.length === 0) {
+      html += '<div style="text-align:center;color:var(--green);padding:20px;">No active alerts. All systems operational.</div>';
+    } else {
+      var grouped = {};
+      allAlerts.forEach(function(a) {
+        var sev = (a.labels && a.labels.severity) || 'none';
+        if (!grouped[sev]) grouped[sev] = [];
+        grouped[sev].push(a);
+      });
+
+      ['critical', 'warning', 'info', 'none'].forEach(function(sev) {
+        if (!grouped[sev] || grouped[sev].length === 0) return;
+        html += '<div class="violation-group-header" style="margin-top:8px">' +
+          '<span class="sev-badge ' + sevClass(sev) + '">' + sev + '</span> ' +
+          grouped[sev].length + ' alert' + (grouped[sev].length > 1 ? 's' : '') + '</div>';
+
+        grouped[sev].forEach(function(a) {
+          var labels = a.labels || {};
+          var annotations = a.annotations || {};
+          var ns = labels.namespace || labels.job || 'cluster';
+          var summary = annotations.summary || annotations.description || 'No summary';
+          var amUrl = ALERTMANAGER_URL.replace('/api/proxy/alertmanager/alerts', '') + '/#/alerts';
+
+          html += '<div class="modal-alert-row" onclick="window.open(\'' + escapeHtml(amUrl) + '\', \'_blank\')">' +
+            '<span class="sev-badge ' + sevClass(sev) + '" style="flex-shrink:0">' + sev + '</span>' +
+            '<div style="flex:1">' +
+              '<div class="modal-alert-name">' + escapeHtml(labels.alertname || 'Unknown') + '</div>' +
+              '<div class="modal-alert-summary">' + escapeHtml(summary) + '</div>' +
+            '</div>' +
+            '<span class="modal-alert-ns">' + escapeHtml(ns) + '</span>' +
+            '<span class="modal-alert-time">' + timeAgo(a.startsAt) + '</span>' +
+          '</div>';
+        });
+      });
+    }
+
+    html += '</div>';
+    openModal('Active Alerts', html);
+  };
+
+  // ---- Policy Violations Modal ----
+  window.__openViolationsModal = function() {
+    var totalViolations = 0;
+    var violatingNs = [];
+    complianceData.forEach(function(ns) {
+      if (ns.failed.length > 0) {
+        totalViolations += ns.failed.length;
+        violatingNs.push(ns);
+      }
+    });
+
+    var html = '<div class="modal-section"><div class="modal-section-title">' +
+      totalViolations + ' Violations Across ' + violatingNs.length + ' Namespaces</div>';
+
+    if (violatingNs.length === 0) {
+      html += '<div style="text-align:center;color:var(--green);padding:20px;">No policy violations detected. All namespaces compliant.</div>';
+    } else {
+      violatingNs.forEach(function(ns) {
+        html += '<div class="violation-group-header">' + escapeHtml(ns.name) + ' (' + ns.failed.length + ' violation' + (ns.failed.length > 1 ? 's' : '') + ')</div>';
+        ns.failed.forEach(function(p) {
+          html += '<div class="modal-policy-item fail">' +
+            '<span class="modal-policy-icon fail">&#10007;</span>' +
+            '<div class="modal-policy-details">' +
+              '<div class="modal-policy-name">' + escapeHtml(p.policy) + '</div>' +
+              '<div class="modal-policy-rule">Rule: ' + escapeHtml(p.rule) + '</div>' +
+              '<div class="modal-policy-message">' + escapeHtml(p.message) + '</div>' +
+              '<div class="modal-remediation"><strong>Remediation:</strong> ' + escapeHtml(getRemediation(p.policy)) + '</div>' +
+            '</div></div>';
+        });
+      });
+    }
+
+    html += '</div>';
+    openModal('Policy Violations', html);
+  };
+
+  // ---- Image Vulnerabilities Modal ----
+  var vulnDataCache = [];
+
+  window.__openCVEModal = function() {
+    var totalCrit = parseInt(document.getElementById('vulnSumCrit').textContent) || 0;
+    var totalHigh = parseInt(document.getElementById('vulnSumHigh').textContent) || 0;
+    var totalMed = parseInt(document.getElementById('vulnSumMed').textContent) || 0;
+    var totalLow = parseInt(document.getElementById('vulnSumLow').textContent) || 0;
+    var totalAll = parseInt(document.getElementById('vulnTotalCVEs').textContent) || 0;
+    var totalImages = parseInt(document.getElementById('vulnTotalImages').textContent) || 0;
+
+    var maxVal = Math.max(totalCrit, totalHigh, totalMed, totalLow, 1);
+
+    var html = '<div class="modal-section"><div class="modal-section-title">' +
+      totalAll + ' Total CVEs Across ' + totalImages + ' Images</div>';
+
+    // Severity breakdown bars
+    var sevs = [
+      { label: 'Critical', count: totalCrit, color: 'var(--red-bright)' },
+      { label: 'High', count: totalHigh, color: 'var(--orange)' },
+      { label: 'Medium', count: totalMed, color: 'var(--yellow)' },
+      { label: 'Low', count: totalLow, color: 'var(--green)' }
+    ];
+
+    sevs.forEach(function(s) {
+      var pct = maxVal > 0 ? (s.count / maxVal) * 100 : 0;
+      html += '<div class="vuln-sev-bar-row">' +
+        '<span class="vuln-sev-bar-label" style="color:' + s.color + '">' + s.label + '</span>' +
+        '<div class="vuln-sev-bar-track"><div class="fill" style="width:' + pct + '%;background:' + s.color + '"></div></div>' +
+        '<span class="vuln-sev-bar-count" style="color:' + s.color + '">' + s.count + '</span>' +
+      '</div>';
+    });
+
+    html += '</div>';
+
+    // Top 10 most critical images
+    if (vulnDataCache.length > 0) {
+      var sorted = vulnDataCache.slice().sort(function(a, b) {
+        if ((b.critical || 0) !== (a.critical || 0)) return (b.critical || 0) - (a.critical || 0);
+        if ((b.high || 0) !== (a.high || 0)) return (b.high || 0) - (a.high || 0);
+        return (b.total || 0) - (a.total || 0);
+      });
+
+      var top10 = sorted.slice(0, 10);
+
+      html += '<div class="modal-section"><div class="modal-section-title">Top ' + top10.length + ' Most Vulnerable Images</div>';
+      top10.forEach(function(v) {
+        var repoShort = v.repository.split('/').pop();
+        var link = harborArtifactLink(v.project, v.repository);
+        html += '<div class="modal-alert-row" onclick="window.open(\'' + escapeHtml(link) + '\', \'_blank\')">' +
+          vulnSevBadge(v.severity) +
+          '<div style="flex:1">' +
+            '<div class="modal-alert-name">' + escapeHtml(repoShort) + ':' + escapeHtml(v.tag || 'latest') + '</div>' +
+            '<div class="modal-alert-summary" style="display:flex;gap:8px;">' +
+              '<span class="vuln-count cnt-critical">' + (v.critical || 0) + ' C</span>' +
+              '<span class="vuln-count cnt-high">' + (v.high || 0) + ' H</span>' +
+              '<span class="vuln-count cnt-medium">' + (v.medium || 0) + ' M</span>' +
+              '<span class="vuln-count cnt-low">' + (v.low || 0) + ' L</span>' +
+            '</div>' +
+          '</div>' +
+          '<span class="modal-alert-time" style="font-weight:600">' + (v.total || 0) + ' total</span>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
+    html += '<div style="text-align:center;margin-top:16px;padding-bottom:4px;">' +
+      '<a href="' + HARBOR_URL + '/harbor/projects" target="_blank" rel="noopener" class="modal-btn primary">View All in Harbor &rarr;</a>' +
+    '</div>';
+
+    openModal('Image Vulnerabilities', html);
+  };
 
   // Compliance cards from known policy report data (supplemented by live data when available)
   function renderComplianceCards() {
@@ -1359,15 +1818,15 @@
     if (score >= 80) {
       ring.className = 'score-ring score-good';
       document.getElementById('detScore').textContent = 'ACCEPTABLE';
-      document.getElementById('cardScore').className = 'metric-card severity-ok';
+      document.getElementById('cardScore').className = 'metric-card severity-ok clickable';
     } else if (score >= 50) {
       ring.className = 'score-ring score-warn';
       document.getElementById('detScore').textContent = 'DEGRADED';
-      document.getElementById('cardScore').className = 'metric-card severity-warning';
+      document.getElementById('cardScore').className = 'metric-card severity-warning clickable';
     } else {
       ring.className = 'score-ring score-bad';
       document.getElementById('detScore').textContent = 'CRITICAL';
-      document.getElementById('cardScore').className = 'metric-card severity-critical';
+      document.getElementById('cardScore').className = 'metric-card severity-critical clickable';
     }
 
     addFeedEntry(score >= 80 ? 'INFO' : 'WARN', 'SECURITY POSTURE SCORE: ' + score + '/100');
@@ -1404,6 +1863,7 @@
       addFeedEntry('INFO', 'Querying Harbor for vulnerability scan results...');
       var data = await fetchJSON(HARBOR_VULN_URL);
       var vulns = data.vulnerabilities || [];
+      vulnDataCache = vulns;
 
       // Compute totals
       var totalCrit = 0, totalHigh = 0, totalMed = 0, totalLow = 0, totalAll = 0;
@@ -1429,16 +1889,16 @@
       document.getElementById('valCVE').textContent = totalAll;
       document.getElementById('detCVE').textContent = totalCrit + ' critical, ' + totalHigh + ' high, ' + totalMed + ' medium';
       if (totalCrit > 0) {
-        cveCard.className = 'metric-card severity-critical';
+        cveCard.className = 'metric-card severity-critical clickable';
         document.getElementById('valCVE').className = 'value value-critical pulse';
       } else if (totalHigh > 0) {
-        cveCard.className = 'metric-card severity-warning';
+        cveCard.className = 'metric-card severity-warning clickable';
         document.getElementById('valCVE').className = 'value value-warning';
       } else if (totalMed > 0) {
-        cveCard.className = 'metric-card severity-info';
+        cveCard.className = 'metric-card severity-info clickable';
         document.getElementById('valCVE').className = 'value value-info';
       } else {
-        cveCard.className = 'metric-card severity-ok';
+        cveCard.className = 'metric-card severity-ok clickable';
         document.getElementById('valCVE').className = 'value value-ok';
       }
 
