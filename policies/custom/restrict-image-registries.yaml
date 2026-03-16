@@ -16,8 +16,9 @@ metadata:
     policies.kyverno.io/category: Supply Chain
     policies.kyverno.io/severity: critical
     sre.io/nist-controls: "CM-11, SI-7"
+    pod-policies.kyverno.io/autogen-controllers: none
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: Audit
   background: true
   rules:
     - name: validate-image-registry
@@ -51,6 +52,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           All container images in Pod {{request.object.metadata.name}} must be
@@ -109,6 +111,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

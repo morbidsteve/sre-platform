@@ -47,8 +47,11 @@ spec:
                 - velero
                 - keycloak
                 - sre-dashboard
+                - sre-portal
+                - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Namespace {{request.object.metadata.name}} must have at least one

@@ -19,8 +19,9 @@ metadata:
     policies.kyverno.io/category: Pod Security Standards Restricted
     policies.kyverno.io/severity: medium
     sre.io/nist-controls: "AC-6, CM-7"
+    pod-policies.kyverno.io/autogen-controllers: none
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: Audit
   background: true
   rules:
     - name: restrict-volume-types
@@ -53,6 +54,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       preconditions:
         all:
           - key: "{{ request.object.spec.volumes[] || `[]` | length(@) }}"

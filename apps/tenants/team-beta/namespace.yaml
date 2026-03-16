@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/part-of: sre-platform
     sre.io/team: team-beta
     sre.io/network-policy-configured: "true"
+    sre.io/security-categorization: "moderate"
     # PSS: privileged enforcement required for Istio init containers
     # (NET_ADMIN/NET_RAW not allowed even at baseline level)
     # Kyverno policies enforce restricted-level rules at the pod level

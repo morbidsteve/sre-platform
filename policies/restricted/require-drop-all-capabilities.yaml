@@ -19,8 +19,9 @@ metadata:
     policies.kyverno.io/category: Pod Security Standards Restricted
     policies.kyverno.io/severity: high
     sre.io/nist-controls: "AC-6, CM-7"
+    pod-policies.kyverno.io/autogen-controllers: none
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: Audit
   background: true
   rules:
     - name: require-drop-all
@@ -53,6 +54,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must drop ALL

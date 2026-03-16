@@ -47,8 +47,11 @@ spec:
                 - velero
                 - keycloak
                 - sre-dashboard
+                - sre-portal
+                - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Pod {{request.object.metadata.name}} in namespace

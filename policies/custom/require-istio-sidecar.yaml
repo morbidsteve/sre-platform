@@ -47,8 +47,11 @@ spec:
                 - velero
                 - keycloak
                 - sre-dashboard
+                - sre-portal
+                - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
                 - default
           - resources:
               selector:

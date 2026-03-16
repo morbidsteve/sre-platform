@@ -7,6 +7,7 @@ const rateLimit = require("express-rate-limit");
 const yaml = require("js-yaml");
 
 const app = express();
+app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
 
 // ── Security Headers ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
@@ -59,6 +60,65 @@ const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
 const appsApi = kc.makeApiClient(k8s.AppsV1Api);
 const batchApi = kc.makeApiClient(k8s.BatchV1Api);
 const metricsClient = new k8s.Metrics(kc);
+
+// ── App Portal Registry ─────────────────────────────────────────────────────
+
+const APP_REGISTRY_CM = "sre-app-registry";
+const APP_REGISTRY_NS = "sre-dashboard";
+let appRegistry = [];
+
+async function loadAppRegistry() {
+  try {
+    const cm = await k8sApi.readNamespacedConfigMap(APP_REGISTRY_CM, APP_REGISTRY_NS);
+    appRegistry = JSON.parse(cm.body.data?.apps || "[]");
+    // Migrate old requiredGroups format to new access model
+    var migrated = false;
+    appRegistry.forEach(function(app) {
+      if (app.requiredGroups && !app.access) {
+        app.access = {
+          mode: app.requiredGroups.length > 0 ? "restricted" : "everyone",
+          groups: app.requiredGroups,
+          users: [],
+          attributes: [],
+        };
+        delete app.requiredGroups;
+        migrated = true;
+      }
+    });
+    if (migrated) {
+      console.log("[portal] Migrated app registry from requiredGroups to access model");
+      await saveAppRegistry();
+    }
+  } catch (err) {
+    if (err.statusCode === 404) {
+      try {
+        await k8sApi.createNamespacedConfigMap(APP_REGISTRY_NS, {
+          metadata: { name: APP_REGISTRY_CM, labels: { "app.kubernetes.io/part-of": "sre-platform" } },
+          data: { apps: "[]" },
+        });
+      } catch (createErr) {
+        console.error("Failed to create app registry ConfigMap:", createErr.message);
+      }
+    } else {
+      console.error("Failed to load app registry:", err.message);
+    }
+    appRegistry = [];
+  }
+}
+
+async function saveAppRegistry() {
+  try {
+    await k8sApi.patchNamespacedConfigMap(APP_REGISTRY_CM, APP_REGISTRY_NS, {
+      data: { apps: JSON.stringify(appRegistry) },
+    }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+  } catch (err) {
+    console.error("Failed to save app registry:", err.message);
+  }
+}
+
+async function getRegisteredApps() {
+  return appRegistry.map(function(app) { return Object.assign({}, app); });
+}
 
 // ── Resource parsing helpers ────────────────────────────────────────────────
 
@@ -792,9 +852,51 @@ function sanitizeEnvArray(env) {
     .slice(0, 50);
 }
 
+function isInternalUrl(hostname) {
+  if (!hostname) return true;
+  const h = hostname.toLowerCase();
+  // Loopback
+  if (h === "localhost" || h === "[::1]") return true;
+  // Metadata endpoints
+  if (h === "metadata.internal" || h === "metadata.google.internal") return true;
+  // K8s internal DNS
+  if (h.endsWith(".svc.cluster.local") || h.endsWith(".svc")) return true;
+  // Check IP-based patterns
+  const ipMatch = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipMatch) {
+    const [, a, b] = ipMatch.map(Number);
+    // Loopback 127.x.x.x
+    if (a === 127) return true;
+    // Private 10.x.x.x
+    if (a === 10) return true;
+    // Private 172.16-31.x.x
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    // Private 192.168.x.x
+    if (a === 192 && b === 168) return true;
+    // Link-local 169.254.x.x
+    if (a === 169 && b === 254) return true;
+  }
+  return false;
+}
+
 function isValidGitUrl(url) {
   if (typeof url !== "string") return false;
-  return /^https?:\/\/.+/.test(url) || /^git@.+:.+/.test(url);
+  if (!/^https?:\/\/.+/.test(url) && !/^git@.+:.+/.test(url)) return false;
+  // SSRF protection: block internal/private URLs
+  try {
+    const parsed = new URL(url);
+    if (isInternalUrl(parsed.hostname)) return false;
+  } catch {
+    // git@ URLs won't parse as URL — allow them (no HTTP SSRF risk)
+    if (!/^git@.+:.+/.test(url)) return false;
+  }
+  return true;
+}
+
+function isSafePath(p) {
+  if (!p || typeof p !== "string") return false;
+  // Reject path traversal, absolute paths, and null bytes
+  return !p.includes("..") && !p.startsWith("/") && !p.includes("\0");
 }
 
 // ── Deploy Endpoints ─────────────────────────────────────────────────────
@@ -1163,7 +1265,8 @@ app.get("/api/deploy/:namespace/:name/status", async (req, res) => {
   }
 });
 
-// POST /api/deploy/git — Deploy from a Git repository URL
+// POST /api/deploy/git — Smart deploy from a Git repository URL
+// Auto-detects repo type (compose, helm, dockerfile, kustomize) and routes to the right strategy
 app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
     const { url, branch, team, name } = req.body;
@@ -1187,58 +1290,638 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
     const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
     const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
 
+    // Phase 1: Analyze the repo to detect project type
+    console.log(`[deploy-git] Analyzing repo ${url} (branch: ${safeBranch}) for app "${safeName}"`);
+    const analyzeId = "analyze-" + crypto.randomBytes(4).toString("hex");
+    const jobSpec = createAnalyzeJobSpec(analyzeId, url, safeBranch);
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
+
+    const logs = await runAnalyzeJob(analyzeId);
+
+    if (logs && logs.error) {
+      return res.status(400).json({ error: logs.error });
+    }
+    if (!logs) {
+      return res.status(504).json({ error: "Repository analysis timed out" });
+    }
+
+    const analysis = parseRepoAnalysisLogs(logs);
+    console.log(`[deploy-git] Detected type: ${analysis.repoType} for "${safeName}" (services: ${analysis.services.length}, chart: ${analysis.chart?.name || "none"}, kustomizePath: ${analysis.kustomizePath || "none"})`);
+
     await ensureNamespace(nsName, teamName);
 
-    // Create a Flux GitRepository pointing to the repo
+    // Phase 2: Deploy based on detected type
+    // ── COMPOSE STRATEGY ──
+    if (analysis.repoType === "compose") {
+      console.log(`[deploy-git] Using compose strategy for "${safeName}" — ${analysis.services.length} service(s) detected`);
+
+      if (analysis.services.length === 0) {
+        return res.status(400).json({ error: "Compose file detected but no services found" });
+      }
+      if (analysis.services.length > 10) {
+        return res.status(400).json({ error: "Too many services (max 10). Simplify the compose file." });
+      }
+
+      const groupId = "group-" + crypto.randomBytes(4).toString("hex");
+      const builds = [];
+      const deployedPrebuilt = [];
+      const skippedServices = [];
+      const buildContextToImage = new Map(); // Track build context → built image for shared context reuse
+
+      // Ensure Harbor project exists before any builds push to it
+      await ensureHarborProject(teamName);
+
+      // Build services that need building via Kaniko, deploy pre-built images directly
+      for (const svc of analysis.services) {
+        if (svc.needsBuild && svc.buildContext) {
+          const svcName = sanitizeName(svc.name);
+          const buildCtx = (svc.buildContext || ".").replace(/^\.\//, "");
+          const normalizedCtx = `${buildCtx}:${svc.dockerfile || "Dockerfile"}:${svc.buildTarget || ""}`;
+
+          // Check if another service already built with the same context/dockerfile/target
+          const sharedImage = buildContextToImage.get(normalizedCtx);
+          if (sharedImage) {
+            // Reuse the already-built image instead of building again
+            const reuseBuildId = generateBuildId();
+            buildRegistry.set(reuseBuildId, {
+              id: reuseBuildId,
+              groupId,
+              appName: `${safeName}-${svcName}`,
+              serviceName: svcName,
+              team: teamName,
+              gitUrl: url,
+              dockerfile: null,
+              destination: `${sharedImage.imageRepo}:${sharedImage.imageTag}`,
+              imageRepo: sharedImage.imageRepo,
+              imageTag: sharedImage.imageTag,
+              port: svc.port || 8080,
+              role: svc.role || "internal",
+              startedAt: new Date().toISOString(),
+              status: "building", // Will resolve when the shared build completes
+              sharedBuild: true,
+            });
+            builds.push({
+              buildId: reuseBuildId,
+              serviceName: svcName,
+              destination: `${sharedImage.imageRepo}:${sharedImage.imageTag}`,
+              port: svc.port || 8080,
+              role: svc.role || "internal",
+              sharedBuild: true,
+            });
+            console.log(`[deploy-git] Service "${svcName}" shares build context "${normalizedCtx}" — reusing image ${sharedImage.imageRepo}:${sharedImage.imageTag}`);
+            continue;
+          }
+
+          const buildId = generateBuildId();
+          const imageName = analysis.services.filter((s) => s.needsBuild).length === 1 ? safeName : `${safeName}-${svcName}`;
+          const destination = `${HARBOR_REGISTRY}/${teamName}/${imageName}:${buildId}`;
+          const dockerfilePath = svc.buildContext
+            ? `${buildCtx}/${svc.dockerfile || "Dockerfile"}`
+            : svc.dockerfile || "Dockerfile";
+
+          if (!isSafePath(dockerfilePath) || !isSafePath(buildCtx)) {
+            console.warn(`[deploy-git] Skipping service "${svcName}" — unsafe path: dockerfile="${dockerfilePath}", context="${buildCtx}"`);
+            continue;
+          }
+
+          const kanikoArgs = [
+            `--dockerfile=/workspace/${dockerfilePath}`,
+            `--context=/workspace/${buildCtx}`,
+            `--destination=${destination}`,
+            "--cache=true",
+            `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
+            "--snapshot-mode=redo",
+            "--insecure",
+            "--skip-tls-verify",
+            "--skip-tls-verify-pull",
+          ];
+          if (svc.buildTarget) {
+            kanikoArgs.push(`--target=${svc.buildTarget}`);
+          }
+
+          const buildJobSpec = {
+            apiVersion: "batch/v1",
+            kind: "Job",
+            metadata: {
+              name: buildId,
+              namespace: BUILD_NAMESPACE,
+              labels: {
+                "app.kubernetes.io/part-of": "sre-platform",
+                "sre.io/build-id": buildId,
+                "sre.io/group-id": groupId,
+                "sre.io/app-name": imageName,
+                "sre.io/team": teamName,
+              },
+            },
+            spec: {
+              backoffLimit: 1,
+              ttlSecondsAfterFinished: 3600,
+              template: {
+                metadata: { labels: { "sre.io/build-id": buildId, "sre.io/group-id": groupId }, annotations: { "sidecar.istio.io/inject": "false" } },
+                spec: {
+                  restartPolicy: "Never",
+                  initContainers: [{
+                    name: "git-clone",
+                    image: GIT_CLONE_IMAGE,
+                    args: ["clone", "--depth=1", "--branch", safeBranch, url, "/workspace"],
+                    volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+                    resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+                    securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+                  }],
+                  containers: [{
+                    name: "kaniko",
+                    image: KANIKO_IMAGE,
+                    args: kanikoArgs,
+                    volumeMounts: [
+                      { name: "workspace", mountPath: "/workspace" },
+                      { name: "docker-config", mountPath: "/kaniko/.docker" },
+                    ],
+                    resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+                  }],
+                  volumes: [
+                    { name: "workspace", emptyDir: {} },
+                    { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+                  ],
+                },
+              },
+            },
+          };
+
+          await batchApi.createNamespacedJob(BUILD_NAMESPACE, buildJobSpec);
+
+          buildRegistry.set(buildId, {
+            id: buildId,
+            groupId,
+            appName: imageName,
+            serviceName: svcName,
+            team: teamName,
+            gitUrl: url,
+            dockerfile: dockerfilePath,
+            destination,
+            imageRepo: `${HARBOR_REGISTRY}/${teamName}/${imageName}`,
+            imageTag: buildId,
+            port: svc.port || 8080,
+            role: svc.role || "internal",
+            startedAt: new Date().toISOString(),
+            status: "building",
+          });
+
+          builds.push({
+            buildId,
+            serviceName: svcName,
+            destination,
+            port: svc.port || 8080,
+            role: svc.role || "internal",
+          });
+
+          // Store build context → image mapping for shared context reuse
+          buildContextToImage.set(normalizedCtx, { imageRepo: `${HARBOR_REGISTRY}/${teamName}/${imageName}`, imageTag: buildId });
+          console.log(`[deploy-git] Built service "${svcName}" — context="${normalizedCtx}" → ${destination}`);
+        } else if (svc.needsBuild && !svc.buildContext) {
+          // Service has needsBuild flag but no build context — check for shared build context reuse
+          const svcName = sanitizeName(svc.name);
+          // Look for another service that already built the same image this service references
+          let reusedImage = null;
+          if (svc.image) {
+            // Check if any already-built service shares this image name (compose image reuse pattern)
+            for (const [ctx, img] of buildContextToImage.entries()) {
+              reusedImage = img;
+              break;
+            }
+          }
+          if (reusedImage) {
+            const buildId = generateBuildId();
+            buildRegistry.set(buildId, {
+              id: buildId,
+              groupId,
+              appName: `${safeName}-${svcName}`,
+              serviceName: svcName,
+              team: teamName,
+              gitUrl: url,
+              dockerfile: null,
+              destination: `${reusedImage.imageRepo}:${reusedImage.imageTag}`,
+              imageRepo: reusedImage.imageRepo,
+              imageTag: reusedImage.imageTag,
+              port: svc.port || 8080,
+              role: svc.role || "internal",
+              startedAt: new Date().toISOString(),
+              status: "building", // Will resolve when the shared build completes
+              sharedBuild: true,
+            });
+            builds.push({
+              buildId,
+              serviceName: svcName,
+              destination: `${reusedImage.imageRepo}:${reusedImage.imageTag}`,
+              port: svc.port || 8080,
+              role: svc.role || "internal",
+              sharedBuild: true,
+            });
+            console.log(`[deploy-git] Service "${svcName}" reuses built image from shared context → ${reusedImage.imageRepo}:${reusedImage.imageTag}`);
+          } else {
+            console.log(`[deploy-git] Skipping service "${svcName}" — build defined but no context and no reusable image found`);
+            skippedServices.push({ name: svc.name, reason: "build defined without context or reusable image" });
+          }
+        } else if (svc.role === "platform") {
+          // Platform services (postgres, redis, etc.) — deploy SRE equivalents directly
+          if (svc.sre === "cnpg") {
+            const dbName = sanitizeName(`${safeName}-db`);
+            // Deploy simple PostgreSQL Deployment+Service (CNPG operator may not be available)
+            const pgDeployment = {
+              apiVersion: "apps/v1",
+              kind: "Deployment",
+              metadata: {
+                name: dbName,
+                namespace: nsName,
+                labels: { app: dbName, "app.kubernetes.io/name": dbName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName },
+              },
+              spec: {
+                replicas: 1,
+                selector: { matchLabels: { app: dbName } },
+                template: {
+                  metadata: { labels: { app: dbName, "app.kubernetes.io/name": dbName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName } },
+                  spec: {
+                    securityContext: {
+                      seccompProfile: { type: "RuntimeDefault" },
+                    },
+                    containers: [{
+                      name: "postgres",
+                      image: "docker.io/library/postgres:16-alpine",
+                      ports: [{ containerPort: 5432 }],
+                      env: [
+                        { name: "POSTGRES_DB", value: safeName.replace(/-/g, "_") },
+                        { name: "POSTGRES_USER", value: safeName.replace(/-/g, "_") },
+                        { name: "POSTGRES_PASSWORD", value: "changeme" },
+                      ],
+                      resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "512Mi" } },
+                      volumeMounts: [{ name: "data", mountPath: "/var/lib/postgresql/data", subPath: "pgdata" }],
+                      securityContext: {
+                        runAsNonRoot: false,
+                        allowPrivilegeEscalation: false,
+                        capabilities: { drop: ["ALL"], add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"] },
+                      },
+                    }],
+                    volumes: [{ name: "data", emptyDir: {} }],
+                  },
+                },
+              },
+            };
+            const pgSvc = {
+              apiVersion: "v1",
+              kind: "Service",
+              metadata: { name: dbName, namespace: nsName, labels: { app: dbName, "sre.io/team": teamName } },
+              spec: { selector: { app: dbName }, ports: [{ port: 5432, targetPort: 5432 }] },
+            };
+            await applyRawDeployment(pgDeployment, nsName).catch(err => {
+              console.log(`[deploy-git] PostgreSQL deployment failed: ${err.body?.message || err.message}`);
+            });
+            await applyRawService(pgSvc, nsName).catch(err => {
+              console.log(`[deploy-git] PostgreSQL service failed: ${err.body?.message || err.message}`);
+            });
+            deployedPrebuilt.push({ name: dbName, type: "postgresql", port: 5432 });
+            // Create alias "db" (or whatever compose name) -> keystone-db
+            await k8sApi.createNamespacedService(nsName, {
+              metadata: { name: svc.name, namespace: nsName, labels: { "sre.io/alias-for": dbName } },
+              spec: { selector: { app: dbName }, ports: [{ port: 5432, targetPort: 5432 }] },
+            }).catch(e => { if (e.statusCode !== 409) console.log(`[deploy-git] Alias "${svc.name}" failed: ${e.message}`); });
+          } else if (svc.sre === "redis") {
+            const redisName = sanitizeName(`${safeName}-redis`);
+            // Deploy raw Redis Deployment+Service (fully-qualified image for Kyverno policy compliance)
+            const redisDeployment = {
+              apiVersion: "apps/v1",
+              kind: "Deployment",
+              metadata: {
+                name: redisName,
+                namespace: nsName,
+                labels: { app: redisName, "app.kubernetes.io/name": redisName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName },
+              },
+              spec: {
+                replicas: 1,
+                selector: { matchLabels: { app: redisName } },
+                template: {
+                  metadata: { labels: { app: redisName, "app.kubernetes.io/name": redisName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName } },
+                  spec: {
+                    securityContext: {
+                      runAsNonRoot: true,
+                      seccompProfile: { type: "RuntimeDefault" },
+                    },
+                    containers: [{
+                      name: "redis",
+                      image: "docker.io/library/redis:7-alpine",
+                      ports: [{ containerPort: 6379 }],
+                      resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "256Mi" } },
+                      securityContext: {
+                        runAsNonRoot: true,
+                        allowPrivilegeEscalation: false,
+                        capabilities: { drop: ["ALL"] },
+                      },
+                    }],
+                  },
+                },
+              },
+            };
+            const redisSvc = {
+              apiVersion: "v1",
+              kind: "Service",
+              metadata: { name: redisName, namespace: nsName, labels: { app: redisName, "sre.io/team": teamName } },
+              spec: { selector: { app: redisName }, ports: [{ port: 6379, targetPort: 6379 }] },
+            };
+            await applyRawDeployment(redisDeployment, nsName).catch(err => {
+              console.log(`[deploy-git] Redis deployment failed: ${err.body?.message || err.message}`);
+            });
+            await applyRawService(redisSvc, nsName).catch(err => {
+              console.log(`[deploy-git] Redis service failed: ${err.body?.message || err.message}`);
+            });
+            deployedPrebuilt.push({ name: redisName, type: "redis", port: 6379 });
+            // Create alias "redis" (or whatever compose name) -> keystone-redis
+            await k8sApi.createNamespacedService(nsName, {
+              metadata: { name: svc.name, namespace: nsName, labels: { "sre.io/alias-for": redisName } },
+              spec: { selector: { app: redisName }, ports: [{ port: 6379, targetPort: 6379 }] },
+            }).catch(e => { if (e.statusCode !== 409) console.log(`[deploy-git] Alias "${svc.name}" failed: ${e.message}`); });
+          } else if (svc.sre === "skip") {
+            deployedPrebuilt.push({ name: svc.name, type: "skipped", reason: svc.sreLabel });
+          }
+        } else if (svc.image && !svc.needsBuild) {
+          // Pre-built image from compose — deploy directly
+          let imageRepo = svc.image;
+          let imageTag = "latest";
+          const colonIdx = svc.image.lastIndexOf(":");
+          if (colonIdx > 0 && !svc.image.substring(colonIdx).includes("/")) {
+            imageRepo = svc.image.substring(0, colonIdx);
+            imageTag = svc.image.substring(colonIdx + 1);
+          }
+
+          const svcAppName = sanitizeName(`${safeName}-${svc.name}`);
+          const manifest = generateHelmRelease({
+            name: svcAppName, team: nsName, image: imageRepo, tag: imageTag,
+            port: svc.port || 8080, replicas: 1, ingressHost: "",
+            env: svc.environment || [],
+          });
+          await applyManifest(manifest, nsName);
+          deployedPrebuilt.push({ name: svcAppName, type: "internal", port: svc.port, image: svc.image });
+        } else {
+          // Catch-all: service has no image, no build context, and no platform role — log and skip
+          const svcName = sanitizeName(svc.name);
+          console.log(`[deploy-git] Skipping undeployable service "${svcName}" — no image, build context, or platform role (role="${svc.role}", needsBuild=${svc.needsBuild}, image="${svc.image || ""}")`);
+          skippedServices.push({ name: svc.name, reason: "no image or build context" });
+        }
+      }
+
+      // Log service disposition summary
+      console.log(`[deploy-git] Service disposition for "${safeName}":`);
+      console.log(`  Built via Kaniko: ${builds.filter(b => !b.sharedBuild).map(b => b.serviceName).join(", ") || "none"}`);
+      console.log(`  Shared build (reused image): ${builds.filter(b => b.sharedBuild).map(b => b.serviceName).join(", ") || "none"}`);
+      console.log(`  Platform services: ${deployedPrebuilt.filter(d => ["postgresql", "redis"].includes(d.type)).map(d => d.name).join(", ") || "none"}`);
+      console.log(`  Pre-built images: ${deployedPrebuilt.filter(d => d.type === "internal").map(d => d.name).join(", ") || "none"}`);
+      console.log(`  Skipped/dropped: ${skippedServices.map(s => `${s.name} (${s.reason})`).join(", ") || "none"}`);
+
+      // Auto-deploy built services when all builds in the group complete (fire-and-forget)
+      if (builds.length > 0) {
+        autoDeployOnBuildComplete(groupId, builds, nsName, safeName, teamName, url);
+      }
+
+      return res.json({
+        success: true,
+        detectedType: "compose",
+        strategy: "compose-build-deploy",
+        services: analysis.services.map((s) => ({ name: s.name, role: s.role, needsBuild: s.needsBuild, port: s.port })),
+        allServices: analysis.services.map((s) => ({ name: s.name, role: s.role, needsBuild: s.needsBuild, image: s.image, buildContext: s.buildContext })),
+        skipped: skippedServices,
+        groupId,
+        builds,
+        deployed: deployedPrebuilt,
+        namespace: nsName,
+        message: `Compose repo detected: started ${builds.length} build(s) and deployed ${deployedPrebuilt.length} pre-built service(s) for "${safeName}" in ${nsName}. Builds will auto-deploy when complete.`,
+      });
+    }
+
+    // ── HELM STRATEGY ──
+    if (analysis.repoType === "helm") {
+      console.log(`[deploy-git] Using helm strategy for "${safeName}" — chart: ${analysis.chart?.name || "unknown"} at path: ${analysis.chartPath || "."}`);
+
+      // Create a Flux GitRepository pointing to the repo
+      const gitRepoName = `git-${safeName}`;
+      const gitRepo = {
+        apiVersion: "source.toolkit.fluxcd.io/v1",
+        kind: "GitRepository",
+        metadata: {
+          name: gitRepoName,
+          namespace: nsName,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/team": nsName,
+            "sre.io/deploy-type": "helm-git",
+          },
+        },
+        spec: {
+          interval: "5m",
+          url: url,
+          ref: { branch: safeBranch },
+        },
+      };
+
+      try {
+        await customApi.createNamespacedCustomObject("source.toolkit.fluxcd.io", "v1", nsName, "gitrepositories", gitRepo);
+      } catch (err) {
+        if (err.statusCode === 409) {
+          await customApi.patchNamespacedCustomObject("source.toolkit.fluxcd.io", "v1", nsName, "gitrepositories", gitRepoName, gitRepo, undefined, undefined, undefined, { headers: { "Content-Type": "application/merge-patch+json" } });
+        } else {
+          throw err;
+        }
+      }
+
+      // Create a Flux HelmRelease that uses the GitRepository as its chart source
+      if (analysis.chartPath && analysis.chartPath !== "." && !isSafePath(analysis.chartPath)) {
+        return res.status(400).json({ error: "Invalid chart path detected in repository" });
+      }
+      const chartPath = analysis.chartPath === "." ? "./" : `./${analysis.chartPath}`;
+      const helmRelease = {
+        apiVersion: "helm.toolkit.fluxcd.io/v2",
+        kind: "HelmRelease",
+        metadata: {
+          name: safeName,
+          namespace: nsName,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/team": nsName,
+            "sre.io/deploy-type": "helm-git",
+          },
+        },
+        spec: {
+          interval: "10m",
+          chart: {
+            spec: {
+              chart: chartPath,
+              reconcileStrategy: "Revision",
+              sourceRef: {
+                kind: "GitRepository",
+                name: gitRepoName,
+              },
+            },
+          },
+          install: {
+            createNamespace: false,
+            remediation: { retries: 3 },
+          },
+          upgrade: {
+            cleanupOnFail: true,
+            remediation: { retries: 3 },
+          },
+          values: {},
+        },
+      };
+
+      await applyManifest(helmRelease, nsName);
+
+      return res.json({
+        success: true,
+        detectedType: "helm",
+        strategy: "flux-git-helmrelease",
+        chart: analysis.chart,
+        chartPath: analysis.chartPath,
+        gitRepository: gitRepoName,
+        helmRelease: safeName,
+        namespace: nsName,
+        message: `Helm chart "${analysis.chart?.name || safeName}" deployed as "${safeName}" in namespace "${nsName}" from ${escapeHtml(url)} (branch: ${escapeHtml(safeBranch)})`,
+      });
+    }
+
+    // ── DOCKERFILE STRATEGY ──
+    if (analysis.repoType === "dockerfile") {
+      console.log(`[deploy-git] Using dockerfile strategy for "${safeName}" — building via Kaniko`);
+      await ensureHarborProject(teamName);
+
+      const buildId = generateBuildId();
+      const destination = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${buildId}`;
+
+      const buildJobSpec = {
+        apiVersion: "batch/v1",
+        kind: "Job",
+        metadata: {
+          name: buildId,
+          namespace: BUILD_NAMESPACE,
+          labels: {
+            "app.kubernetes.io/part-of": "sre-platform",
+            "sre.io/build-id": buildId,
+            "sre.io/app-name": safeName,
+            "sre.io/team": teamName,
+          },
+        },
+        spec: {
+          backoffLimit: 1,
+          ttlSecondsAfterFinished: 3600,
+          template: {
+            metadata: { labels: { "sre.io/build-id": buildId }, annotations: { "sidecar.istio.io/inject": "false" } },
+            spec: {
+              restartPolicy: "Never",
+              initContainers: [{
+                name: "git-clone",
+                image: GIT_CLONE_IMAGE,
+                args: ["clone", "--depth=1", "--branch", safeBranch, url, "/workspace"],
+                volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+                resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+                securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+              }],
+              containers: [{
+                name: "kaniko",
+                image: KANIKO_IMAGE,
+                args: [
+                  "--dockerfile=Dockerfile",
+                  "--context=/workspace",
+                  `--destination=${destination}`,
+                  "--cache=true",
+                  `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
+                  "--snapshot-mode=redo",
+                  "--insecure",
+                  "--skip-tls-verify",
+                  "--skip-tls-verify-pull",
+                ],
+                volumeMounts: [
+                  { name: "workspace", mountPath: "/workspace" },
+                  { name: "docker-config", mountPath: "/kaniko/.docker" },
+                ],
+                resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+              }],
+              volumes: [
+                { name: "workspace", emptyDir: {} },
+                { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+              ],
+            },
+          },
+        },
+      };
+
+      await batchApi.createNamespacedJob(BUILD_NAMESPACE, buildJobSpec);
+
+      const svcInfo = analysis.services[0] || {};
+      buildRegistry.set(buildId, {
+        id: buildId,
+        appName: safeName,
+        serviceName: safeName,
+        team: teamName,
+        gitUrl: url,
+        dockerfile: "Dockerfile",
+        destination,
+        imageRepo: `${HARBOR_REGISTRY}/${teamName}/${safeName}`,
+        imageTag: buildId,
+        port: svcInfo.port || 8080,
+        role: "ingress",
+        startedAt: new Date().toISOString(),
+        status: "building",
+      });
+
+      return res.json({
+        success: true,
+        detectedType: "dockerfile",
+        strategy: "kaniko-build-deploy",
+        buildId,
+        destination,
+        port: svcInfo.port || 8080,
+        namespace: nsName,
+        services: analysis.services,
+        message: `Dockerfile detected: build started as "${buildId}". Monitor via /api/build/status/${buildId}, then deploy via /api/deploy/from-build.`,
+      });
+    }
+
+    // ── KUSTOMIZE STRATEGY (fallback, includes unknown) ──
+    // This is the original behavior: create Flux GitRepository + Kustomization
+    console.log(`[deploy-git] Using kustomize strategy for "${safeName}" — path: ${analysis.kustomizePath || "."}`);
+
+    const gitRepoName = `git-${safeName}`;
     const gitRepo = {
       apiVersion: "source.toolkit.fluxcd.io/v1",
       kind: "GitRepository",
       metadata: {
-        name: `git-${safeName}`,
+        name: gitRepoName,
         namespace: nsName,
         labels: {
           "app.kubernetes.io/part-of": "sre-platform",
           "sre.io/team": nsName,
+          "sre.io/deploy-type": "kustomize",
         },
       },
       spec: {
         interval: "5m",
         url: url,
-        ref: {
-          branch: safeBranch,
-        },
+        ref: { branch: safeBranch },
       },
     };
 
     // Apply GitRepository
     try {
-      await customApi.createNamespacedCustomObject(
-        "source.toolkit.fluxcd.io",
-        "v1",
-        nsName,
-        "gitrepositories",
-        gitRepo
-      );
+      await customApi.createNamespacedCustomObject("source.toolkit.fluxcd.io", "v1", nsName, "gitrepositories", gitRepo);
     } catch (err) {
       if (err.statusCode === 409) {
-        await customApi.patchNamespacedCustomObject(
-          "source.toolkit.fluxcd.io",
-          "v1",
-          nsName,
-          "gitrepositories",
-          `git-${safeName}`,
-          gitRepo,
-          undefined,
-          undefined,
-          undefined,
-          { headers: { "Content-Type": "application/merge-patch+json" } }
-        );
+        await customApi.patchNamespacedCustomObject("source.toolkit.fluxcd.io", "v1", nsName, "gitrepositories", gitRepoName, gitRepo, undefined, undefined, undefined, { headers: { "Content-Type": "application/merge-patch+json" } });
       } else {
         throw err;
       }
     }
 
     // Create a Flux Kustomization to deploy from the repo
+    const kustomizePath = analysis.kustomizePath || ".";
+    if (kustomizePath !== "." && !isSafePath(kustomizePath)) {
+      return res.status(400).json({ error: "Invalid kustomize path detected in repository" });
+    }
     const kustomization = {
       apiVersion: "kustomize.toolkit.fluxcd.io/v1",
       kind: "Kustomization",
@@ -1248,16 +1931,17 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
         labels: {
           "app.kubernetes.io/part-of": "sre-platform",
           "sre.io/team": nsName,
+          "sre.io/deploy-type": "kustomize",
         },
       },
       spec: {
         interval: "5m",
-        path: "./",
+        path: kustomizePath === "." ? "./" : `./${kustomizePath}`,
         prune: true,
         targetNamespace: nsName,
         sourceRef: {
           kind: "GitRepository",
-          name: `git-${safeName}`,
+          name: gitRepoName,
         },
         healthChecks: [],
       },
@@ -1265,27 +1949,10 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
 
     // Apply Kustomization
     try {
-      await customApi.createNamespacedCustomObject(
-        "kustomize.toolkit.fluxcd.io",
-        "v1",
-        nsName,
-        "kustomizations",
-        kustomization
-      );
+      await customApi.createNamespacedCustomObject("kustomize.toolkit.fluxcd.io", "v1", nsName, "kustomizations", kustomization);
     } catch (err) {
       if (err.statusCode === 409) {
-        await customApi.patchNamespacedCustomObject(
-          "kustomize.toolkit.fluxcd.io",
-          "v1",
-          nsName,
-          "kustomizations",
-          `deploy-${safeName}`,
-          kustomization,
-          undefined,
-          undefined,
-          undefined,
-          { headers: { "Content-Type": "application/merge-patch+json" } }
-        );
+        await customApi.patchNamespacedCustomObject("kustomize.toolkit.fluxcd.io", "v1", nsName, "kustomizations", `deploy-${safeName}`, kustomization, undefined, undefined, undefined, { headers: { "Content-Type": "application/merge-patch+json" } });
       } else {
         throw err;
       }
@@ -1293,10 +1960,13 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
 
     res.json({
       success: true,
-      message: `Git deploy "${escapeHtml(safeName)}" created in namespace "${escapeHtml(nsName)}" from ${escapeHtml(url)} (branch: ${escapeHtml(safeBranch)})`,
-      gitRepository: `git-${safeName}`,
+      detectedType: analysis.repoType,
+      strategy: "flux-kustomization",
+      gitRepository: gitRepoName,
       kustomization: `deploy-${safeName}`,
+      kustomizePath,
       namespace: nsName,
+      message: `Git deploy "${escapeHtml(safeName)}" created in namespace "${escapeHtml(nsName)}" from ${escapeHtml(url)} (branch: ${escapeHtml(safeBranch)}) using Flux Kustomization`,
     });
   } catch (err) {
     console.error("Error deploying from git:", err);
@@ -1368,13 +2038,96 @@ app.post("/api/deploy/env", mutateLimiter, requireGroups("sre-admins", "develope
 // ── Build Pipeline API ──────────────────────────────────────────────────────
 
 const BUILD_NAMESPACE = "sre-builds";
-const HARBOR_REGISTRY = "harbor.apps.sre.example.com";
+const HARBOR_REGISTRY = "harbor.harbor.svc.cluster.local";  // For Kaniko push (in-cluster DNS)
+const HARBOR_PULL_REGISTRY = "harbor.apps.sre.example.com"; // For node image pulls (node DNS)
 const KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.2";
 const GIT_CLONE_IMAGE = "alpine/git:2.43.0";
 const REPO_ANALYZE_IMAGE = "alpine/git:2.43.0";
 
 // In-memory build tracking (supplements K8s Job status)
 const buildRegistry = new Map();
+
+// Ensure a Harbor project exists before pushing images
+// Uses Node.js built-in http module as primary (more reliable in-cluster than global fetch)
+// Falls back to global fetch if available
+async function ensureHarborProject(projectName) {
+  // Try multiple Harbor endpoints — the service name may vary by deployment
+  const harborUrls = [
+    "http://harbor-core.harbor.svc.cluster.local:80",
+    "http://harbor-core.harbor.svc:80",
+    "http://harbor.harbor.svc.cluster.local:80",
+    "http://harbor.harbor.svc:80",
+  ];
+  const authHeader = "Basic " + Buffer.from("admin:Harbor12345").toString("base64");
+
+  for (const harborUrl of harborUrls) {
+    try {
+      // Check if project already exists
+      const checkResp = await httpRequest(`${harborUrl}/api/v2.0/projects?name=${encodeURIComponent(projectName)}`, {
+        headers: { "Authorization": authHeader },
+        timeout: 5000,
+      });
+      if (checkResp.status === 200) {
+        const projects = JSON.parse(checkResp.body);
+        if (Array.isArray(projects) && projects.some(p => p.name === projectName)) {
+          console.log(`[harbor] Project "${projectName}" already exists (via ${harborUrl})`);
+          return;
+        }
+      }
+
+      // Create the project
+      const createResp = await httpRequest(`${harborUrl}/api/v2.0/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": authHeader,
+        },
+        body: JSON.stringify({ project_name: projectName, public: false }),
+        timeout: 5000,
+      });
+      if (createResp.status === 201 || createResp.status === 200 || createResp.status === 409) {
+        console.log(`[harbor] Project "${projectName}" ensured (via ${harborUrl})`);
+        return;
+      } else {
+        console.warn(`[harbor] Failed to create project "${projectName}" at ${harborUrl}: ${createResp.status} — ${createResp.body}`);
+      }
+    } catch (err) {
+      console.warn(`[harbor] Could not reach ${harborUrl}: ${err.message}`);
+      continue; // Try next URL
+    }
+  }
+  console.warn(`[harbor] Could not ensure project "${projectName}" — all Harbor endpoints failed. Build may still succeed if project exists.`);
+}
+
+// Simple HTTP request helper using Node built-in http module (no external deps)
+function httpRequest(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const httpModule = parsedUrl.protocol === "https:" ? require("https") : require("http");
+    const reqOpts = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: options.method || "GET",
+      headers: options.headers || {},
+      timeout: options.timeout || 10000,
+    };
+
+    const req = httpModule.request(reqOpts, (res) => {
+      let body = "";
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => { resolve({ status: res.statusCode, body, headers: res.headers }); });
+    });
+
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error(`Request to ${url} timed out`)); });
+
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+}
 
 function generateBuildId() {
   return "build-" + crypto.randomBytes(4).toString("hex");
@@ -1447,7 +2200,7 @@ function classifyService(svcName, svc, composeParsed) {
   const ingressNames = ["frontend", "web", "ui", "app", "client", "portal", "dashboard"];
   if (ingressNames.includes(svcName.toLowerCase()) || hasExternalPorts) {
     // Check if it has a build context (i.e., we need to build it)
-    const hasBuild = svc.build || svc.dockerfile;
+    const hasBuild = svc.buildContext || svc.build || svc.dockerfile;
     return { role: "ingress", needsBuild: !!hasBuild };
   }
 
@@ -1483,75 +2236,316 @@ function detectPort(svc, dockerfileContent) {
 
 // Parse docker-compose build context
 function parseComposeBuildContext(yamlText) {
-  // Enhanced parser that also extracts build: context, depends_on, networks, profiles
-  const services = parseDockerCompose(yamlText);
-  const lines = yamlText.split("\n");
-  let inServices = false;
-  let currentService = null;
-  let serviceIndent = -1;
+  // Use js-yaml for reliable parsing instead of hand-rolled line parser
+  try {
+    const doc = yaml.load(yamlText);
+    if (!doc || !doc.services) return {};
 
-  for (const raw of lines) {
-    if (raw.trimStart().startsWith("#") || raw.trim() === "") continue;
-    const stripped = raw.trimEnd();
-    const indent = stripped.length - stripped.trimStart().length;
-    const content = stripped.trim();
+    const services = {};
+    for (const [svcName, svcDef] of Object.entries(doc.services)) {
+      if (!svcDef || typeof svcDef !== "object") continue;
 
-    if (/^services\s*:/.test(content) && indent === 0) { inServices = true; currentService = null; continue; }
-    if (!inServices) continue;
-    if (indent === 0 && /^\w/.test(content) && !content.startsWith("-")) { inServices = false; continue; }
+      const svc = {
+        image: svcDef.image || "",
+        ports: [],
+        environment: [],
+        buildContext: null,
+        buildTarget: null,
+        dockerfile: null,
+        profiles: null,
+      };
 
-    // Detect service names
-    if (indent > 0 && indent <= 4 && /^[a-zA-Z0-9_-]+\s*:\s*$/.test(content)) {
-      currentService = content.replace(/\s*:\s*$/, "").trim();
-      serviceIndent = indent;
-      continue;
-    }
-
-    if (!currentService || !services[currentService]) continue;
-
-    // build: ./path or build:\n  context: ./path
-    const buildMatch = content.match(/^build\s*:\s*(.+)$/);
-    if (buildMatch && indent > serviceIndent) {
-      const val = buildMatch[1].trim();
-      if (val && !val.endsWith(":")) {
-        // Inline build context: build: ./backend
-        services[currentService].buildContext = val.replace(/^["']|["']$/g, "");
+      // Parse ports (handles both array and object formats)
+      if (Array.isArray(svcDef.ports)) {
+        svc.ports = svcDef.ports.map(String);
       }
-      continue;
+
+      // Parse environment
+      if (Array.isArray(svcDef.environment)) {
+        svc.environment = svcDef.environment.map(String);
+      } else if (svcDef.environment && typeof svcDef.environment === "object") {
+        svc.environment = Object.entries(svcDef.environment).map(([k, v]) => `${k}=${v}`);
+      }
+
+      // Parse build context
+      if (typeof svcDef.build === "string") {
+        svc.buildContext = svcDef.build || ".";
+      } else if (svcDef.build && typeof svcDef.build === "object") {
+        svc.buildContext = svcDef.build.context || ".";
+        svc.buildTarget = svcDef.build.target || null;
+        svc.dockerfile = svcDef.build.dockerfile || null;
+      } else if (svcDef.build === null || svcDef.build === true) {
+        // Handle `build:` with no value (YAML null) or `build: true`
+        svc.buildContext = ".";
+      }
+
+      // Parse profiles
+      if (Array.isArray(svcDef.profiles)) {
+        svc.profiles = svcDef.profiles.map(String);
+      }
+
+      services[svcName] = svc;
     }
-    const contextMatch = content.match(/^context\s*:\s*(.+)$/);
-    if (contextMatch && indent > serviceIndent + 2) {
-      services[currentService].buildContext = contextMatch[1].trim().replace(/^["']|["']$/g, "");
-      continue;
+
+    return services;
+  } catch (e) {
+    console.error("[parseComposeBuildContext] YAML parse error:", e.message);
+    // Fallback to old line-based parser
+    return parseDockerCompose(yamlText);
+  }
+}
+
+// ── Repo Analysis Helpers ───────────────────────────────────────────────────
+
+// Parse structured log output from the repo analysis Job into a result object
+function parseRepoAnalysisLogs(logs) {
+  const fileListMatch = logs.split("===SRE_FILE_LIST===")[1]?.split("===SRE_COMPOSE_CONTENT===")[0];
+  const composeMatch = logs.split("===SRE_COMPOSE_CONTENT===")[1]?.split("===SRE_DOCKERFILE_CONTENT===")[0];
+  const dockerfileMatch = logs.split("===SRE_DOCKERFILE_CONTENT===")[1]?.split("===SRE_CHART_CONTENT===")[0];
+  const chartMatch = logs.split("===SRE_CHART_CONTENT===")[1]?.split("===SRE_KUSTOMIZE_CONTENT===")[0];
+  const kustomizeMatch = logs.split("===SRE_KUSTOMIZE_CONTENT===")[1]?.split("===SRE_VALUES_CONTENT===")[0];
+  const valuesMatch = logs.split("===SRE_VALUES_CONTENT===")[1]?.split("===SRE_DONE===")[0];
+
+  const files = (fileListMatch || "").trim().split("\n").filter(Boolean);
+  const hasCompose = files.some((f) => f.startsWith("docker-compose") || f.includes("/docker-compose"));
+  const hasDockerfile = files.some((f) => f === "Dockerfile" || f.match(/^Dockerfile\./) || f.match(/\/Dockerfile(\..*)?$/));
+  const hasChart = files.some((f) => f === "Chart.yaml" || f.match(/\/Chart\.yaml$/));
+  const hasKustomize = files.some((f) => f === "kustomization.yaml" || f === "kustomize.yaml" || f.match(/\/(kustomization|kustomize)\.yaml$/));
+
+  // Parse file contents keyed by path
+  function parseFileBlocks(rawBlock) {
+    const result = {};
+    if (!rawBlock) return result;
+    const parts = rawBlock.split(/===FILE:(.+?)===/);
+    for (let i = 1; i < parts.length; i += 2) {
+      result[parts[i]] = parts[i + 1]?.trim() || "";
     }
-    const targetMatch = content.match(/^target\s*:\s*(.+)$/);
-    if (targetMatch && indent > serviceIndent + 2) {
-      services[currentService].buildTarget = targetMatch[1].trim().replace(/^["']|["']$/g, "");
-      continue;
+    return result;
+  }
+
+  const dockerfiles = parseFileBlocks(dockerfileMatch);
+  const chartFiles = parseFileBlocks(chartMatch);
+  const kustomizeFiles = parseFileBlocks(kustomizeMatch);
+  const valuesFiles = parseFileBlocks(valuesMatch);
+
+  // Determine repoType with priority: compose > helm > dockerfile > kustomize > unknown
+  let repoType = "unknown";
+  if (hasCompose) {
+    repoType = "compose";
+  } else if (hasChart) {
+    repoType = "helm";
+  } else if (hasDockerfile) {
+    repoType = "dockerfile";
+  } else if (hasKustomize) {
+    repoType = "kustomize";
+  }
+
+  console.log(`[repo-analyze] Detected repoType=${repoType}, files: compose=${hasCompose}, chart=${hasChart}, dockerfile=${hasDockerfile}, kustomize=${hasKustomize}`);
+
+  const result = {
+    repoType,
+    files,
+    services: [],
+    chart: null,
+    chartPath: null,
+    kustomizePath: null,
+    valuesContent: null,
+  };
+
+  // Parse Helm chart info
+  if (hasChart) {
+    for (const [chartFilePath, chartContent] of Object.entries(chartFiles)) {
+      try {
+        const chartData = yaml.load(chartContent) || {};
+        result.chart = {
+          name: chartData.name || null,
+          version: chartData.version || null,
+          appVersion: chartData.appVersion || null,
+          description: chartData.description || null,
+          type: chartData.type || "application",
+        };
+        // chartPath is the directory containing Chart.yaml
+        const pathParts = chartFilePath.split("/");
+        result.chartPath = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : ".";
+        console.log(`[repo-analyze] Found Chart.yaml at ${chartFilePath}: name=${chartData.name}, version=${chartData.version}`);
+      } catch (parseErr) {
+        console.log(`[repo-analyze] Failed to parse Chart.yaml at ${chartFilePath}: ${parseErr.message}`);
+      }
+      break; // Use the first Chart.yaml found
     }
-    const dockerfileMatch = content.match(/^dockerfile\s*:\s*(.+)$/);
-    if (dockerfileMatch && indent > serviceIndent + 2) {
-      services[currentService].dockerfile = dockerfileMatch[1].trim().replace(/^["']|["']$/g, "");
-      continue;
-    }
-    // profiles:
-    const profileMatch = content.match(/^-\s*["']?(\w+)["']?$/);
-    // detect profiles block
-    if (/^profiles\s*:\s*$/.test(content)) {
-      services[currentService]._inProfiles = true;
-      continue;
-    }
-    if (services[currentService]._inProfiles && content.startsWith("-")) {
-      services[currentService].profiles = services[currentService].profiles || [];
-      services[currentService].profiles.push(content.replace(/^-\s*/, "").replace(/^["']|["']$/g, ""));
-      continue;
-    }
-    if (services[currentService]._inProfiles && !content.startsWith("-")) {
-      delete services[currentService]._inProfiles;
+    // Find matching values.yaml
+    if (result.chartPath) {
+      const valuesPath = result.chartPath === "." ? "values.yaml" : `${result.chartPath}/values.yaml`;
+      if (valuesFiles[valuesPath]) {
+        result.valuesContent = valuesFiles[valuesPath];
+      }
     }
   }
 
-  return services;
+  // Parse kustomize info
+  if (hasKustomize) {
+    for (const kustomizePath of Object.keys(kustomizeFiles)) {
+      const pathParts = kustomizePath.split("/");
+      result.kustomizePath = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : ".";
+      console.log(`[repo-analyze] Found kustomization at ${kustomizePath}, path=${result.kustomizePath}`);
+      break; // Use the first kustomization.yaml found
+    }
+  }
+
+  // Parse compose services
+  if (hasCompose && composeMatch) {
+    let composeContent = "";
+    const composeParts = composeMatch.split(/===FILE:(.+?)===/);
+    if (composeParts.length >= 3) {
+      composeContent = composeParts[2]?.trim() || "";
+    }
+
+    const parsed = parseComposeBuildContext(composeContent);
+
+    for (const [svcName, svc] of Object.entries(parsed)) {
+      const classification = classifyService(svcName, svc, parsed);
+      const dockerfilePath = svc.buildContext
+        ? `${svc.buildContext.replace(/^\.\//, "")}/${svc.dockerfile || "Dockerfile"}`
+        : null;
+      const dockerfileContent = dockerfilePath ? dockerfiles[dockerfilePath] : null;
+      const port = detectPort(svc, dockerfileContent);
+
+      // Skip services that are in non-default profiles (demo, monitoring, backup)
+      const skipProfiles = ["demo", "monitoring", "backup", "debug", "test"];
+      if (svc.profiles && svc.profiles.some((p) => skipProfiles.includes(p))) {
+        continue;
+      }
+
+      // Prefer 'sre' build target if the Dockerfile has one (FROM ... AS sre)
+      let effectiveTarget = svc.buildTarget || null;
+      if (dockerfileContent && /^FROM\s+.+\s+AS\s+sre\s*$/mi.test(dockerfileContent)) {
+        effectiveTarget = "sre";
+        console.log(`[repo-analyze] Service "${svcName}" has 'sre' Dockerfile stage — using --target=sre`);
+      }
+
+      result.services.push({
+        name: svcName,
+        image: svc.image || null,
+        buildContext: svc.buildContext || null,
+        buildTarget: effectiveTarget,
+        dockerfile: svc.dockerfile || (svc.buildContext ? "Dockerfile" : null),
+        port,
+        exposedPorts: dockerfileContent ? parseDockerfileExpose(dockerfileContent) : [],
+        environment: (svc.environment || []).map((e) => {
+          const idx = e.indexOf("=");
+          return idx > 0 ? { name: e.substring(0, idx), value: e.substring(idx + 1) } : null;
+        }).filter(Boolean),
+        role: classification.role,
+        sre: classification.sre || null,
+        sreLabel: classification.label || null,
+        needsBuild: !!svc.buildContext,
+      });
+    }
+  } else if (repoType === "dockerfile") {
+    // Single Dockerfile repo
+    const rootDockerfile = dockerfiles["Dockerfile"] || "";
+    const ports = parseDockerfileExpose(rootDockerfile);
+    result.services.push({
+      name: "app",
+      image: null,
+      buildContext: ".",
+      dockerfile: "Dockerfile",
+      port: ports[0] || 8080,
+      exposedPorts: ports,
+      environment: [],
+      role: "ingress",
+      sre: null,
+      needsBuild: true,
+    });
+  }
+
+  return result;
+}
+
+// Create the analyze Job spec for cloning and scanning a repo
+function createAnalyzeJobSpec(analyzeId, gitUrl, safeBranch) {
+  return {
+    apiVersion: "batch/v1",
+    kind: "Job",
+    metadata: {
+      name: analyzeId,
+      namespace: BUILD_NAMESPACE,
+      labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/type": "analyze" },
+    },
+    spec: {
+      backoffLimit: 1,
+      ttlSecondsAfterFinished: 300,
+      activeDeadlineSeconds: 120,
+      template: {
+        metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
+        spec: {
+          restartPolicy: "Never",
+          initContainers: [{
+            name: "git-clone",
+            image: GIT_CLONE_IMAGE,
+            args: ["clone", "--depth=1", "--branch", safeBranch, gitUrl, "/workspace"],
+            volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+            resources: {
+              requests: { cpu: "100m", memory: "128Mi" },
+              limits: { cpu: "500m", memory: "512Mi" },
+            },
+            securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+          }],
+          containers: [{
+            name: "analyze",
+            image: REPO_ANALYZE_IMAGE,
+            command: ["/bin/sh", "-c", [
+              `echo '===SRE_FILE_LIST==='`,
+              `find /workspace -maxdepth 3 -type f \\( -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' -o -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name 'Chart.yaml' -o -name 'kustomization.yaml' -o -name 'kustomize.yaml' -o -name 'values.yaml' \\) | sed 's|/workspace/||' | sort`,
+              `echo '===SRE_COMPOSE_CONTENT==='`,
+              `for f in docker-compose.yml docker-compose.yaml; do if [ -f /workspace/$f ]; then echo "===FILE:$f==="; cat /workspace/$f; fi; done`,
+              `echo '===SRE_DOCKERFILE_CONTENT==='`,
+              `find /workspace -maxdepth 3 -name 'Dockerfile' -o -name 'Dockerfile.*' | head -10 | while read df; do relpath=$(echo $df | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $df; done`,
+              `echo '===SRE_CHART_CONTENT==='`,
+              `find /workspace -maxdepth 2 -name 'Chart.yaml' | head -5 | while read cf; do relpath=$(echo $cf | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $cf; done`,
+              `echo '===SRE_KUSTOMIZE_CONTENT==='`,
+              `find /workspace -maxdepth 2 \\( -name 'kustomization.yaml' -o -name 'kustomize.yaml' \\) | head -5 | while read kf; do relpath=$(echo $kf | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $kf; done`,
+              `echo '===SRE_VALUES_CONTENT==='`,
+              `find /workspace -maxdepth 2 -name 'values.yaml' | head -5 | while read vf; do relpath=$(echo $vf | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $vf; done`,
+              `echo '===SRE_DONE==='`,
+            ].join(" && ")],
+            volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+            resources: {
+              requests: { cpu: "100m", memory: "128Mi" },
+              limits: { cpu: "500m", memory: "512Mi" },
+            },
+            securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+          }],
+          volumes: [
+            { name: "workspace", emptyDir: {} },
+          ],
+        },
+      },
+    },
+  };
+}
+
+// Run the analyze Job and wait for logs. Returns logs string or null on timeout.
+async function runAnalyzeJob(analyzeId) {
+  let logs = "";
+  for (let i = 0; i < 150; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const jr = await batchApi.readNamespacedJob(analyzeId, BUILD_NAMESPACE);
+      if (jr.body.status?.succeeded) {
+        const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${analyzeId}`);
+        if (pods.body.items.length > 0) {
+          const logResp = await k8sApi.readNamespacedPodLog(pods.body.items[0].metadata.name, BUILD_NAMESPACE, "analyze");
+          logs = logResp.body || "";
+        }
+        return logs;
+      }
+      if (jr.body.status?.failed) {
+        return { error: "Failed to clone repository. Check the URL and branch." };
+      }
+    } catch { /* retry */ }
+  }
+  return null; // timeout
 }
 
 // POST /api/repo/analyze — Analyze a Git repo to detect project type, services, ports
@@ -1565,160 +2559,23 @@ app.post("/api/repo/analyze", mutateLimiter, requireGroups("sre-admins", "develo
     const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
     const analyzeId = "analyze-" + crypto.randomBytes(4).toString("hex");
 
-    // Create a lightweight Job that clones the repo and outputs file listing + key file contents
-    const jobSpec = {
-      apiVersion: "batch/v1",
-      kind: "Job",
-      metadata: {
-        name: analyzeId,
-        namespace: BUILD_NAMESPACE,
-        labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/type": "analyze" },
-      },
-      spec: {
-        backoffLimit: 0,
-        ttlSecondsAfterFinished: 300,
-        activeDeadlineSeconds: 60,
-        template: {
-          spec: {
-            restartPolicy: "Never",
-            containers: [{
-              name: "analyze",
-              image: REPO_ANALYZE_IMAGE,
-              command: ["/bin/sh", "-c", [
-                `git clone --depth=1 --branch '${safeBranch}' '${gitUrl}' /workspace 2>&1`,
-                `echo '===SRE_FILE_LIST==='`,
-                `find /workspace -maxdepth 3 -type f \\( -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' -o -name 'Dockerfile' -o -name 'Dockerfile.*' \\) | sed 's|/workspace/||' | sort`,
-                `echo '===SRE_COMPOSE_CONTENT==='`,
-                // Output docker-compose.yml if it exists
-                `for f in docker-compose.yml docker-compose.yaml; do if [ -f /workspace/$f ]; then echo "===FILE:$f==="; cat /workspace/$f; fi; done`,
-                `echo '===SRE_DOCKERFILE_CONTENT==='`,
-                // Output each Dockerfile (up to 3 levels deep)
-                `find /workspace -maxdepth 3 -name 'Dockerfile' -o -name 'Dockerfile.*' | head -10 | while read df; do relpath=$(echo $df | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $df; done`,
-                `echo '===SRE_DONE==='`,
-              ].join(" && ")],
-              resources: {
-                requests: { cpu: "100m", memory: "128Mi" },
-                limits: { cpu: "500m", memory: "512Mi" },
-              },
-              securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
-            }],
-          },
-        },
-      },
-    };
-
+    // Create and run the analyze Job using shared helpers
+    const jobSpec = createAnalyzeJobSpec(analyzeId, gitUrl, safeBranch);
     await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
 
-    // Wait for job to complete (up to 45s)
-    let logs = "";
-    for (let i = 0; i < 45; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const jr = await batchApi.readNamespacedJob(analyzeId, BUILD_NAMESPACE);
-        if (jr.body.status?.succeeded) {
-          const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${analyzeId}`);
-          if (pods.body.items.length > 0) {
-            const logResp = await k8sApi.readNamespacedPodLog(pods.body.items[0].metadata.name, BUILD_NAMESPACE, "analyze");
-            logs = logResp.body || "";
-          }
-          break;
-        }
-        if (jr.body.status?.failed) {
-          return res.status(400).json({ error: "Failed to clone repository. Check the URL and branch." });
-        }
-      } catch { /* retry */ }
-    }
+    const logs = await runAnalyzeJob(analyzeId);
 
+    if (logs && logs.error) {
+      return res.status(400).json({ error: logs.error });
+    }
     if (!logs) {
       return res.status(504).json({ error: "Repository analysis timed out" });
     }
 
     // Parse the structured output
-    const fileListMatch = logs.split("===SRE_FILE_LIST===")[1]?.split("===SRE_COMPOSE_CONTENT===")[0];
-    const composeMatch = logs.split("===SRE_COMPOSE_CONTENT===")[1]?.split("===SRE_DOCKERFILE_CONTENT===")[0];
-    const dockerfileMatch = logs.split("===SRE_DOCKERFILE_CONTENT===")[1]?.split("===SRE_DONE===")[0];
+    const analysisResult = parseRepoAnalysisLogs(logs);
 
-    const files = (fileListMatch || "").trim().split("\n").filter(Boolean);
-    const hasCompose = files.some((f) => f.startsWith("docker-compose"));
-    const hasDockerfile = files.some((f) => f === "Dockerfile" || f.match(/^Dockerfile\./));
-
-    // Parse Dockerfiles content keyed by path
-    const dockerfiles = {};
-    if (dockerfileMatch) {
-      const parts = dockerfileMatch.split(/===FILE:(.+?)===/);
-      for (let i = 1; i < parts.length; i += 2) {
-        dockerfiles[parts[i]] = parts[i + 1]?.trim() || "";
-      }
-    }
-
-    // Build the analysis result
-    const result = {
-      repoType: hasCompose ? "compose" : hasDockerfile ? "dockerfile" : "unknown",
-      files,
-      services: [],
-    };
-
-    if (hasCompose && composeMatch) {
-      // Parse the compose content
-      let composeContent = "";
-      const composeParts = composeMatch.split(/===FILE:(.+?)===/);
-      if (composeParts.length >= 3) {
-        composeContent = composeParts[2]?.trim() || "";
-      }
-
-      const parsed = parseComposeBuildContext(composeContent);
-
-      for (const [svcName, svc] of Object.entries(parsed)) {
-        const classification = classifyService(svcName, svc, parsed);
-        const dockerfilePath = svc.buildContext
-          ? `${svc.buildContext.replace(/^\.\//, "")}/${svc.dockerfile || "Dockerfile"}`
-          : null;
-        const dockerfileContent = dockerfilePath ? dockerfiles[dockerfilePath] : null;
-        const port = detectPort(svc, dockerfileContent);
-
-        // Skip services that are in non-default profiles (demo, monitoring, backup)
-        const skipProfiles = ["demo", "monitoring", "backup", "debug", "test"];
-        if (svc.profiles && svc.profiles.some((p) => skipProfiles.includes(p))) {
-          continue;
-        }
-
-        result.services.push({
-          name: svcName,
-          image: svc.image || null,
-          buildContext: svc.buildContext || null,
-          buildTarget: svc.buildTarget || null,
-          dockerfile: svc.dockerfile || (svc.buildContext ? "Dockerfile" : null),
-          port,
-          exposedPorts: dockerfileContent ? parseDockerfileExpose(dockerfileContent) : [],
-          environment: (svc.environment || []).map((e) => {
-            const idx = e.indexOf("=");
-            return idx > 0 ? { name: e.substring(0, idx), value: e.substring(idx + 1) } : null;
-          }).filter(Boolean),
-          role: classification.role,
-          sre: classification.sre || null,
-          sreLabel: classification.label || null,
-          needsBuild: !!svc.buildContext,
-        });
-      }
-    } else if (hasDockerfile) {
-      // Single Dockerfile repo
-      const rootDockerfile = dockerfiles["Dockerfile"] || "";
-      const ports = parseDockerfileExpose(rootDockerfile);
-      result.services.push({
-        name: "app",
-        image: null,
-        buildContext: ".",
-        dockerfile: "Dockerfile",
-        port: ports[0] || 8080,
-        exposedPorts: ports,
-        environment: [],
-        role: "ingress",
-        sre: null,
-        needsBuild: true,
-      });
-    }
-
-    res.json({ success: true, ...result });
+    res.json({ success: true, ...analysisResult });
   } catch (err) {
     console.error("Error analyzing repo:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -1755,19 +2612,27 @@ app.post("/api/build/compose", mutateLimiter, requireGroups("sre-admins", "devel
       const buildId = generateBuildId();
       const imageName = serviceDefs.length === 1 ? safeName : `${safeName}-${svcName}`;
       const destination = `${HARBOR_REGISTRY}/${teamName}/${imageName}:${buildId}`;
+      const buildCtx = (svc.buildContext || ".").replace(/^\.\//, "");
       const dockerfilePath = svc.buildContext
-        ? `${svc.buildContext.replace(/^\.\//, "")}/${svc.dockerfile || "Dockerfile"}`
+        ? `${buildCtx}/${svc.dockerfile || "Dockerfile"}`
         : svc.dockerfile || "Dockerfile";
+
+      if (!isSafePath(dockerfilePath) || !isSafePath(buildCtx)) {
+        console.warn(`[build-compose] Skipping service "${svcName}" — unsafe path: dockerfile="${dockerfilePath}", context="${buildCtx}"`);
+        continue;
+      }
 
       // Kaniko args
       const kanikoArgs = [
         `--dockerfile=/workspace/${dockerfilePath}`,
-        `--context=/workspace/${(svc.buildContext || ".").replace(/^\.\//, "")}`,
+        `--context=/workspace/${buildCtx}`,
         `--destination=${destination}`,
         "--cache=true",
         `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
         "--snapshot-mode=redo",
+        "--insecure",
         "--skip-tls-verify",
+        "--skip-tls-verify-pull",
       ];
       if (svc.buildTarget) {
         kanikoArgs.push(`--target=${svc.buildTarget}`);
@@ -1788,10 +2653,10 @@ app.post("/api/build/compose", mutateLimiter, requireGroups("sre-admins", "devel
           },
         },
         spec: {
-          backoffLimit: 0,
+          backoffLimit: 1,
           ttlSecondsAfterFinished: 3600,
           template: {
-            metadata: { labels: { "sre.io/build-id": buildId, "sre.io/group-id": groupId } },
+            metadata: { labels: { "sre.io/build-id": buildId, "sre.io/group-id": groupId }, annotations: { "sidecar.istio.io/inject": "false" } },
             spec: {
               restartPolicy: "Never",
               initContainers: [{
@@ -1810,7 +2675,7 @@ app.post("/api/build/compose", mutateLimiter, requireGroups("sre-admins", "devel
                   { name: "workspace", mountPath: "/workspace" },
                   { name: "docker-config", mountPath: "/kaniko/.docker" },
                 ],
-                resources: { requests: { cpu: "250m", memory: "512Mi" }, limits: { cpu: "2", memory: "2Gi" } },
+                resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
               }],
               volumes: [
                 { name: "workspace", emptyDir: {} },
@@ -2050,6 +2915,9 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
     const imageTag = buildId;
     const destination = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${imageTag}`;
     const dockerfilePath = dockerfile || "Dockerfile";
+    if (!isSafePath(dockerfilePath)) {
+      return res.status(400).json({ error: "Invalid dockerfile path" });
+    }
 
     let jobSpec;
 
@@ -2074,12 +2942,15 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
           },
         },
         spec: {
-          backoffLimit: 0,
+          backoffLimit: 1,
           ttlSecondsAfterFinished: 3600,
           template: {
             metadata: {
               labels: {
                 "sre.io/build-id": buildId,
+              },
+              annotations: {
+                "sidecar.istio.io/inject": "false",
               },
             },
             spec: {
@@ -2111,7 +2982,9 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
                     "--cache=true",
                     `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
                     "--snapshot-mode=redo",
+                    "--insecure",
                     "--skip-tls-verify",
+                    "--skip-tls-verify-pull",
                   ],
                   volumeMounts: [
                     { name: "workspace", mountPath: "/workspace" },
@@ -2163,11 +3036,12 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
           },
         },
         spec: {
-          backoffLimit: 0,
+          backoffLimit: 1,
           ttlSecondsAfterFinished: 3600,
           template: {
             metadata: {
               labels: { "sre.io/build-id": buildId },
+              annotations: { "sidecar.istio.io/inject": "false" },
             },
             spec: {
               restartPolicy: "Never",
@@ -2179,7 +3053,9 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
                     "--dockerfile=/workspace/Dockerfile",
                     "--context=dir:///workspace",
                     `--destination=${destination}`,
+                    "--insecure",
                     "--skip-tls-verify",
+                    "--skip-tls-verify-pull",
                   ],
                   volumeMounts: [
                     { name: "dockerfile", mountPath: "/workspace" },
@@ -2988,6 +3864,18 @@ app.get("/api/cluster/pods/:namespace/:name", async (req, res) => {
   }
 });
 
+// DELETE /api/cluster/pods/:namespace/:name — delete a pod
+app.delete("/api/cluster/pods/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    await k8sApi.deleteNamespacedPod(name, namespace);
+    res.json({ ok: true, message: `Pod ${name} deleted` });
+  } catch (err) {
+    console.error("Error deleting pod:", err);
+    res.status(err.statusCode || 500).json({ error: err.body?.message || "Failed to delete pod" });
+  }
+});
+
 // GET /api/cluster/pods/:namespace/:name/logs — container logs
 app.get("/api/cluster/pods/:namespace/:name/logs", async (req, res) => {
   try {
@@ -3245,16 +4133,66 @@ async function getProblemPods() {
   return resp.body.items
     .filter((pod) => {
       const phase = pod.status?.phase;
-      return phase !== "Running" && phase !== "Succeeded";
+      if (phase === "Running") {
+        // Catch Running pods with containers that are not ready right now
+        // or actively crash-looping (waiting state like CrashLoopBackOff)
+        const containerStatuses = pod.status?.containerStatuses || [];
+        return containerStatuses.some(cs =>
+          !cs.ready ||
+          cs.state?.waiting?.reason === "CrashLoopBackOff"
+        );
+      }
+      return phase !== "Succeeded";
     })
-    .map((pod) => ({
-      name: pod.metadata.name,
-      namespace: pod.metadata.namespace,
-      phase: pod.status?.phase || "Unknown",
-      reason:
-        pod.status?.containerStatuses?.[0]?.state?.waiting?.reason || "",
-    }))
-    .slice(0, 20);
+    .map((pod) => {
+      const containerStatuses = pod.status?.containerStatuses || pod.status?.initContainerStatuses || [];
+      const waiting = containerStatuses.find(cs => cs.state?.waiting);
+      const terminated = containerStatuses.find(cs => cs.state?.terminated);
+      const totalRestarts = containerStatuses.reduce((sum, cs) => sum + (cs.restartCount || 0), 0);
+
+      // Determine the most useful status message
+      let reason = "";
+      let message = "";
+      if (waiting) {
+        reason = waiting.state.waiting.reason || "";
+        message = waiting.state.waiting.message || "";
+      } else if (terminated) {
+        reason = terminated.state.terminated.reason || "";
+        message = terminated.state.terminated.message || "";
+      }
+
+      // Owner reference for context
+      const owner = pod.metadata?.ownerReferences?.[0];
+      const ownerKind = owner?.kind || "";
+      const ownerName = owner?.name || "";
+
+      // Age
+      const created = pod.metadata?.creationTimestamp;
+      const ageMs = created ? Date.now() - new Date(created).getTime() : 0;
+      const ageStr = ageMs > 86400000 ? Math.floor(ageMs/86400000) + "d" :
+                     ageMs > 3600000 ? Math.floor(ageMs/3600000) + "h" :
+                     Math.floor(ageMs/60000) + "m";
+
+      return {
+        name: pod.metadata.name,
+        namespace: pod.metadata.namespace,
+        phase: pod.status?.phase || "Unknown",
+        reason,
+        message,
+        restarts: totalRestarts,
+        ownerKind,
+        ownerName,
+        age: ageStr,
+        containers: containerStatuses.map(cs => ({
+          name: cs.name,
+          ready: cs.ready || false,
+          restartCount: cs.restartCount || 0,
+          image: cs.image || "",
+          state: cs.state?.waiting?.reason || cs.state?.terminated?.reason || (cs.state?.running ? "Running" : "Unknown"),
+        })),
+      };
+    })
+    .slice(0, 30);
 }
 
 async function getIngressRoutes() {
@@ -3343,6 +4281,203 @@ async function getTenantApps(namespace) {
   }
 }
 
+// ── Raw K8s manifest apply helpers (for Deployment/Service, not HelmRelease) ──
+
+async function applyRawDeployment(manifest, namespace) {
+  try {
+    await appsApi.createNamespacedDeployment(namespace, manifest);
+  } catch (err) {
+    if (err.statusCode === 409) {
+      await appsApi.patchNamespacedDeployment(
+        manifest.metadata.name,
+        namespace,
+        manifest,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { headers: { "Content-Type": "application/strategic-merge-patch+json" } }
+      );
+    } else {
+      throw err;
+    }
+  }
+}
+
+async function applyRawService(manifest, namespace) {
+  try {
+    await k8sApi.createNamespacedService(namespace, manifest);
+  } catch (err) {
+    if (err.statusCode === 409) {
+      // Service already exists — patch it
+      await k8sApi.patchNamespacedService(
+        manifest.metadata.name,
+        namespace,
+        manifest,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { headers: { "Content-Type": "application/strategic-merge-patch+json" } }
+      );
+    } else {
+      throw err;
+    }
+  }
+}
+
+// ── Auto-deploy built services when all Kaniko builds in a group complete ──
+
+async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, teamName, gitUrl) {
+  const maxIterations = 300; // 300 * 2s = 10 minutes max
+  const pollInterval = 2000;
+
+  for (let i = 0; i < maxIterations; i++) {
+    await new Promise(r => setTimeout(r, pollInterval));
+    try {
+      // Check if all builds in the group are done via K8s Job status
+      const jobs = await batchApi.listNamespacedJob(
+        BUILD_NAMESPACE, undefined, undefined, undefined, undefined,
+        `sre.io/group-id=${groupId}`
+      );
+      const allJobs = jobs.body.items;
+      if (allJobs.length === 0) continue;
+
+      const succeeded = allJobs.filter(j => j.status?.succeeded);
+      const failed = allJobs.filter(j => j.status?.failed);
+      const pending = allJobs.filter(j => !j.status?.succeeded && !j.status?.failed);
+
+      if (pending.length > 0) continue; // Still building
+
+      if (failed.length > 0) {
+        console.log(`[deploy-git] Group ${groupId}: ${failed.length} build(s) failed, ${succeeded.length} succeeded`);
+      }
+
+      // All done — deploy each successfully built service as a HelmRelease
+      console.log(`[deploy-git] Group ${groupId}: all builds complete (${succeeded.length} ok, ${failed.length} failed). Creating HelmReleases...`);
+
+      for (const build of builds) {
+        const meta = buildRegistry.get(build.buildId);
+        if (!meta) continue;
+
+        // Check if this specific build succeeded
+        const buildSucceeded = build.sharedBuild ||
+          succeeded.some(j => j.metadata.name === build.buildId) ||
+          (meta.status === "complete");
+
+        if (!buildSucceeded) {
+          console.log(`[deploy-git] Skipping failed build ${build.buildId} (${build.serviceName})`);
+          meta.status = "failed";
+          continue;
+        }
+
+        const svcName = sanitizeName(build.serviceName);
+        const appName = builds.length === 1 ? safeName : `${safeName}-${svcName}`;
+
+        // Determine if this service should get external ingress
+        const isIngress = build.role === "ingress" ||
+          build.role === "web" ||
+          svcName.includes("frontend") ||
+          svcName.includes("nginx") ||
+          svcName.includes("web") ||
+          (builds.filter(b => !b.sharedBuild).length === 1); // Single buildable service gets ingress
+        const ingressHost = isIngress ? `${safeName}.apps.sre.example.com` : "";
+
+        // Collect environment variables — inject DB/Redis connection info for platform services
+        const envVars = meta.environment || [];
+
+        const manifest = generateHelmRelease({
+          name: appName,
+          team: nsName,
+          image: (meta.imageRepo || `${HARBOR_REGISTRY}/${teamName}/${appName}`).replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY),
+          tag: meta.imageTag || build.buildId,
+          port: build.port || 8080,
+          replicas: 1,
+          ingressHost,
+          env: envVars,
+        });
+
+        try {
+          await applyManifest(manifest, nsName);
+          console.log(`[deploy-git] Deployed ${appName} in ${nsName} (ingress: ${ingressHost || "none"})`);
+          meta.status = "deployed";
+        } catch (err) {
+          console.error(`[deploy-git] Failed to deploy ${appName}: ${err.body?.message || err.message}`);
+          meta.status = "deploy-failed";
+        }
+      }
+
+      // Create service name aliases for compose compatibility
+      // Map compose service names to K8s service names
+      try {
+        for (const build of builds) {
+          const svcName = sanitizeName(build.serviceName);
+          const appName = builds.length === 1 ? safeName : `${safeName}-${svcName}`;
+          // The Helm chart creates a service named "${appName}-${appName}"
+          // Create an alias with just the compose service name
+          const aliasSpec = {
+            apiVersion: "v1",
+            kind: "Service",
+            metadata: {
+              name: svcName,
+              namespace: nsName,
+              labels: {
+                "app.kubernetes.io/part-of": "sre-platform",
+                "sre.io/team": teamName,
+                "sre.io/alias-for": appName,
+              },
+            },
+            spec: {
+              selector: { "app.kubernetes.io/name": appName },
+              ports: [{ port: build.port || 8080, targetPort: build.port || 8080 }],
+            },
+          };
+          await k8sApi.createNamespacedService(nsName, aliasSpec).catch(err => {
+            if (err.statusCode !== 409) {
+              console.log(`[deploy-git] Could not create service alias "${svcName}": ${err.body?.message || err.message}`);
+            }
+          });
+        }
+        console.log(`[deploy-git] Created service aliases: ${builds.map(b => sanitizeName(b.serviceName)).join(", ")}`);
+      } catch (err) {
+        console.error(`[deploy-git] Error creating service aliases: ${err.message}`);
+      }
+
+      // Auto-register in app portal
+      try {
+        const frontendBuild = builds.find(b => b.role === 'ingress' || b.role === 'web');
+        if (frontendBuild) {
+          const appEntry = {
+            name: safeName,
+            displayName: safeName.toUpperCase(),
+            description: 'Deployed from Git',
+            url: `https://${safeName}.apps.sre.example.com`,
+            icon: 'package',
+            namespace: nsName,
+            access: { mode: 'restricted', groups: [teamName, 'sre-admins'], users: [], attributes: [] },
+            owner: '',
+            deployedAt: new Date().toISOString(),
+            status: 'running',
+          };
+          const existing = appRegistry.findIndex(a => a.name === safeName);
+          if (existing >= 0) appRegistry[existing] = Object.assign({}, appRegistry[existing], appEntry);
+          else appRegistry.push(appEntry);
+          await saveAppRegistry();
+          console.log(`[deploy-git] Registered "${safeName}" in app portal`);
+        }
+      } catch (portalErr) {
+        console.error(`[deploy-git] Failed to register in portal: ${portalErr.message}`);
+      }
+
+      return; // Done
+    } catch (err) {
+      console.error(`[deploy-git] Error checking build group ${groupId}: ${err.message}`);
+    }
+  }
+  console.error(`[deploy-git] Group ${groupId} timed out waiting for builds after ${maxIterations * pollInterval / 1000}s`);
+}
+
 function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env }) {
   const safeEnv = Array.isArray(env) ? env.filter((e) => e && e.name) : [];
   const hr = {
@@ -3421,6 +4556,7 @@ async function ensureNamespace(nsName, teamLabel) {
             "sre.io/tenant": "true",
             "sre.io/team": teamLabel,
             "sre.io/network-policy-configured": "true",
+            "sre.io/security-categorization": "moderate",
             "pod-security.kubernetes.io/enforce": "privileged",
             "istio-injection": "enabled",
             "kubernetes.io/metadata.name": nsName,
@@ -3455,6 +4591,32 @@ async function ensureNamespace(nsName, teamLabel) {
           ],
         },
       }).catch(() => {});
+      // Create Harbor pull secret for image pulls
+      try {
+        await k8sApi.createNamespacedSecret(nsName, {
+          metadata: { name: "harbor-pull-creds", namespace: nsName },
+          type: "kubernetes.io/dockerconfigjson",
+          data: {
+            ".dockerconfigjson": Buffer.from(JSON.stringify({
+              auths: {
+                "harbor.apps.sre.example.com": {
+                  username: "admin",
+                  password: "Harbor12345",
+                  auth: Buffer.from("admin:Harbor12345").toString("base64"),
+                },
+              },
+            })).toString("base64"),
+          },
+        });
+      } catch (e) {
+        if (e.statusCode !== 409) console.log(`[ensureNamespace] Could not create harbor-pull-creds in ${nsName}: ${e.message}`);
+      }
+      // Patch default SA with pull secret
+      try {
+        await k8sApi.patchNamespacedServiceAccount("default", nsName, {
+          imagePullSecrets: [{ name: "harbor-pull-creds" }],
+        }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+      } catch (e) {}
     } else {
       throw err;
     }
@@ -3665,9 +4827,390 @@ async function getCredentials() {
   return result;
 }
 
+// ── App Portal API ──────────────────────────────────────────────────────────
+
+app.get("/api/portal/apps", async (req, res) => {
+  const userGroups = (req.headers["x-auth-request-groups"] || "")
+    .split(/[,\s]+/).map(g => g.trim().replace(/^\//, "")).filter(Boolean);
+  const userEmail = req.headers["x-auth-request-email"] || "";
+  const isAdmin = userGroups.includes("sre-admins") || userGroups.includes("platform-admins");
+
+  const apps = await getRegisteredApps();
+
+  const userName = req.headers["x-auth-request-user"] || "";
+
+  const visible = apps.filter(app => {
+    if (isAdmin) return true;
+    if (!app.access || app.access.mode === "everyone") return true;
+    if (app.access.mode === "private") return false;
+    // Mode: restricted — check groups, users, attributes
+    var access = app.access;
+    if (access.groups && access.groups.length > 0) {
+      if (access.groups.some(function(g) { return userGroups.includes(g); })) return true;
+    }
+    if (access.users && access.users.length > 0) {
+      if (access.users.includes(userName) || access.users.includes(userEmail)) return true;
+    }
+    // Attribute matching is reserved for future Keycloak integration
+    return false;
+  });
+
+  res.json({ apps: visible, isAdmin, userGroups });
+});
+
+app.post("/api/portal/apps", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { name, displayName, description, url, icon, namespace, requiredGroups, access } = req.body;
+    if (!name || !url) {
+      return res.status(400).json({ error: "name and url are required" });
+    }
+    if (appRegistry.find(a => a.name === name)) {
+      return res.status(409).json({ error: "App already registered" });
+    }
+    // Support both old requiredGroups and new access model
+    var appAccess;
+    if (access && access.mode) {
+      appAccess = {
+        mode: access.mode,
+        groups: Array.isArray(access.groups) ? access.groups : [],
+        users: Array.isArray(access.users) ? access.users : [],
+        attributes: Array.isArray(access.attributes) ? access.attributes : [],
+      };
+    } else if (Array.isArray(requiredGroups)) {
+      appAccess = {
+        mode: requiredGroups.length > 0 ? "restricted" : "everyone",
+        groups: requiredGroups,
+        users: [],
+        attributes: [],
+      };
+    } else {
+      appAccess = { mode: "everyone", groups: [], users: [], attributes: [] };
+    }
+    const entry = {
+      name: name,
+      displayName: displayName || name.toUpperCase(),
+      description: description || "",
+      url: url,
+      icon: icon || "package",
+      namespace: namespace || "",
+      access: appAccess,
+      owner: req.headers["x-auth-request-email"] || "",
+      deployedAt: new Date().toISOString(),
+      status: "running",
+    };
+    appRegistry.push(entry);
+    await saveAppRegistry();
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error("Failed to register app:", err.message);
+    res.status(500).json({ error: "Failed to register app" });
+  }
+});
+
+app.patch("/api/portal/apps/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const idx = appRegistry.findIndex(a => a.name === req.params.name);
+    if (idx < 0) return res.status(404).json({ error: "App not found" });
+    const { requiredGroups, access, displayName, description, icon } = req.body;
+    if (access !== undefined && access.mode) {
+      appRegistry[idx].access = {
+        mode: access.mode,
+        groups: Array.isArray(access.groups) ? access.groups : [],
+        users: Array.isArray(access.users) ? access.users : [],
+        attributes: Array.isArray(access.attributes) ? access.attributes : [],
+      };
+      delete appRegistry[idx].requiredGroups;
+    } else if (requiredGroups !== undefined) {
+      // Legacy support: convert requiredGroups to access model
+      appRegistry[idx].access = {
+        mode: Array.isArray(requiredGroups) && requiredGroups.length > 0 ? "restricted" : "everyone",
+        groups: Array.isArray(requiredGroups) ? requiredGroups : [],
+        users: [],
+        attributes: [],
+      };
+      delete appRegistry[idx].requiredGroups;
+    }
+    if (displayName !== undefined) appRegistry[idx].displayName = displayName;
+    if (description !== undefined) appRegistry[idx].description = description;
+    if (icon !== undefined) appRegistry[idx].icon = icon;
+    await saveAppRegistry();
+    res.json(appRegistry[idx]);
+  } catch (err) {
+    console.error("Failed to update app:", err.message);
+    res.status(500).json({ error: "Failed to update app" });
+  }
+});
+
+app.get("/api/portal/apps/:name/access", requireGroups("sre-admins", "developers"), async (req, res) => {
+  const app = appRegistry.find(a => a.name === req.params.name);
+  if (!app) return res.status(404).json({ error: "App not found" });
+  res.json(app.access || { mode: "everyone", groups: [], users: [], attributes: [] });
+});
+
+app.delete("/api/portal/apps/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const idx = appRegistry.findIndex(a => a.name === req.params.name);
+    if (idx < 0) return res.status(404).json({ error: "App not found" });
+    const removed = appRegistry.splice(idx, 1)[0];
+    await saveAppRegistry();
+    res.json({ deleted: removed.name });
+  } catch (err) {
+    console.error("Failed to delete app:", err.message);
+    res.status(500).json({ error: "Failed to delete app" });
+  }
+});
+
+app.get("/api/portal/groups", async (req, res) => {
+  const knownGroups = ["sre-admins", "platform-admins", "developers", "sre-viewers", "logistics"];
+  // Also extract groups from the registry
+  var registryGroups = [];
+  appRegistry.forEach(function(app) {
+    var groups = (app.access && app.access.groups) ? app.access.groups : (app.requiredGroups || []);
+    groups.forEach(function(g) {
+      if (registryGroups.indexOf(g) < 0) registryGroups.push(g);
+    });
+  });
+  knownGroups.forEach(function(g) {
+    if (registryGroups.indexOf(g) < 0) registryGroups.push(g);
+  });
+  res.json({ groups: registryGroups.sort() });
+});
+
+// ── Keycloak Admin API ───────────────────────────────────────────────────────
+
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || "http://keycloak.keycloak.svc.cluster.local";
+const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || "sre";
+const KEYCLOAK_ADMIN_USER = process.env.KEYCLOAK_ADMIN_USER || "admin";
+const KEYCLOAK_ADMIN_PASS = process.env.KEYCLOAK_ADMIN_PASS || "03F2tLffxi";
+
+async function getKeycloakAdminToken() {
+  const resp = await fetch(`${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: "admin-cli",
+      username: KEYCLOAK_ADMIN_USER,
+      password: KEYCLOAK_ADMIN_PASS,
+      grant_type: "password",
+    }),
+  });
+  const data = await resp.json();
+  if (!data.access_token) throw new Error("Failed to get Keycloak admin token");
+  return data.access_token;
+}
+
+async function keycloakApi(method, path, body) {
+  const token = await getKeycloakAdminToken();
+  const opts = {
+    method,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(`${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}${path}`, opts);
+  if (resp.status === 204) return {};
+  const text = await resp.text();
+  if (!resp.ok) throw new Error(`Keycloak ${method} ${path}: ${resp.status} ${text}`);
+  return text ? JSON.parse(text) : {};
+}
+
+// ── User Management Endpoints ────────────────────────────────────────────────
+
+// GET /api/admin/users — List all users with groups
+app.get("/api/admin/users", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const users = await keycloakApi("GET", "/users?max=100");
+    const usersWithGroups = await Promise.all(users.map(async (u) => {
+      const groups = await keycloakApi("GET", `/users/${u.id}/groups`);
+      return {
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        enabled: u.enabled,
+        createdTimestamp: u.createdTimestamp,
+        groups: groups.map((g) => g.name),
+        attributes: u.attributes || {},
+      };
+    }));
+    res.json(usersWithGroups);
+  } catch (err) {
+    console.error("Failed to list users:", err.message);
+    res.status(502).json({ error: "Failed to fetch users from Keycloak" });
+  }
+});
+
+// POST /api/admin/users — Create a new user
+app.post("/api/admin/users", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { username, email, firstName, lastName, password, groups, enabled, attributes } = req.body;
+    if (!username) return res.status(400).json({ error: "Username required" });
+
+    await keycloakApi("POST", "/users", {
+      username, email, firstName, lastName,
+      enabled: enabled !== false,
+      attributes: attributes || {},
+      credentials: password ? [{ type: "password", value: password, temporary: false }] : [],
+    });
+
+    const users = await keycloakApi("GET", `/users?username=${encodeURIComponent(username)}&exact=true`);
+    if (users.length === 0) return res.status(500).json({ error: "User created but not found" });
+    const userId = users[0].id;
+
+    if (groups && groups.length > 0) {
+      const allGroups = await keycloakApi("GET", "/groups");
+      for (const groupName of groups) {
+        const group = allGroups.find((g) => g.name === groupName);
+        if (group) {
+          await keycloakApi("PUT", `/users/${userId}/groups/${group.id}`, {});
+        }
+      }
+    }
+
+    res.json({ success: true, id: userId });
+  } catch (err) {
+    console.error("Failed to create user:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/users/:id — Update user
+app.patch("/api/admin/users/:id", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, firstName, lastName, enabled, attributes } = req.body;
+    const update = {};
+    if (email !== undefined) update.email = email;
+    if (firstName !== undefined) update.firstName = firstName;
+    if (lastName !== undefined) update.lastName = lastName;
+    if (enabled !== undefined) update.enabled = enabled;
+    if (attributes !== undefined) update.attributes = attributes;
+    await keycloakApi("PUT", `/users/${id}`, update);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to update user:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/users/:id/password — Reset password
+app.put("/api/admin/users/:id/password", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "Password required" });
+    await keycloakApi("PUT", `/users/${id}/reset-password`, {
+      type: "password", value: password, temporary: false,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to reset password:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/users/:id — Delete user
+app.delete("/api/admin/users/:id", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    await keycloakApi("DELETE", `/users/${req.params.id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to delete user:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/users/:id/groups — Set user's groups (replace all)
+app.put("/api/admin/users/:id/groups", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { groups } = req.body;
+
+    const allGroups = await keycloakApi("GET", "/groups");
+    const currentGroups = await keycloakApi("GET", `/users/${id}/groups`);
+
+    for (const g of currentGroups) {
+      await keycloakApi("DELETE", `/users/${id}/groups/${g.id}`);
+    }
+
+    for (const groupName of (groups || [])) {
+      const group = allGroups.find((g) => g.name === groupName);
+      if (group) {
+        await keycloakApi("PUT", `/users/${id}/groups/${group.id}`, {});
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to update user groups:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/groups — List all groups
+app.get("/api/admin/groups", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const groups = await keycloakApi("GET", "/groups");
+    res.json(groups.map((g) => ({ id: g.id, name: g.name, path: g.path, subGroups: g.subGroups || [] })));
+  } catch (err) {
+    console.error("Failed to list groups:", err.message);
+    res.status(502).json({ error: "Failed to fetch groups from Keycloak" });
+  }
+});
+
+// POST /api/admin/groups — Create a group
+app.post("/api/admin/groups", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Group name required" });
+    await keycloakApi("POST", "/groups", { name });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to create group:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/groups/:id — Delete a group
+app.delete("/api/admin/groups/:id", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    await keycloakApi("DELETE", `/groups/${req.params.id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to delete group:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Start Server ─────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3001;
+
+// Load app registry on startup, then seed keystone if not present
+loadAppRegistry().then(function() {
+  if (!appRegistry.find(a => a.name === 'keystone')) {
+    appRegistry.push({
+      name: 'keystone',
+      displayName: 'KEYSTONE',
+      description: 'Logistics Common Operating Picture — USMC',
+      url: 'https://keystone.apps.sre.example.com',
+      icon: 'map',
+      namespace: 'team-keystone',
+      access: { mode: 'restricted', groups: ['logistics', 'sre-admins'], users: [], attributes: [] },
+      owner: 'sre-admin@sre.example.com',
+      deployedAt: new Date().toISOString(),
+      status: 'running',
+    });
+    saveAppRegistry();
+  }
+  console.log(`[portal] App registry loaded: ${appRegistry.length} app(s)`);
+}).catch(function(err) {
+  console.error("[portal] Failed to initialize app registry:", err.message);
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`SRE Dashboard running on http://0.0.0.0:${PORT}`);
 });

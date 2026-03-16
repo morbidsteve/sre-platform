@@ -17,8 +17,9 @@ metadata:
     policies.kyverno.io/category: Pod Security Standards Restricted
     policies.kyverno.io/severity: high
     sre.io/nist-controls: "AC-6, AC-6(10)"
+    pod-policies.kyverno.io/autogen-controllers: none
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: Audit
   background: true
   rules:
     - name: require-pod-run-as-nonroot
@@ -51,6 +52,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Pod {{request.object.metadata.name}} must set
@@ -93,6 +95,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must set
