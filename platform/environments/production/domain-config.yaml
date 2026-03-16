@@ -8,3 +8,6 @@ metadata:
   namespace: flux-system
 data:
   SRE_DOMAIN: "apps.sre.example.com"
+  SRE_REGISTRY: "harbor.apps.sre.example.com"
+  SRE_KEYCLOAK_URL: "https://keycloak.apps.sre.example.com"
+  SRE_CLUSTER_NAME: "sre-production"

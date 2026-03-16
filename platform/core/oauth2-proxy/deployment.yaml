@@ -57,7 +57,7 @@ spec:
             - --cookie-secure=true
             - --cookie-samesite=lax
             - --cookie-httponly=true
-            - --cookie-domain=.apps.sre.example.com
+            - --cookie-domain=.${SRE_DOMAIN}
             - --upstream=static://200
             - --http-address=0.0.0.0:4180
             # TODO: Restrict to organization domain in production
@@ -68,13 +68,13 @@ spec:
             - --pass-authorization-header=true
             - --skip-auth-route=^/healthz$
             - --skip-auth-route=^/api/health$
-            - --whitelist-domain=.apps.sre.example.com
+            - --whitelist-domain=.${SRE_DOMAIN}
             - --reverse-proxy=true
             # Skip OIDC discovery — Keycloak hostname doesn't resolve in-cluster
             # Browser-facing URLs use external hostname, backend URLs use internal service
             - --skip-oidc-discovery=true
-            - --oidc-issuer-url=https://keycloak.apps.sre.example.com/realms/sre
-            - --login-url=https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/auth
+            - --oidc-issuer-url=https://keycloak.${SRE_DOMAIN}/realms/sre
+            - --login-url=https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/auth
             - --redeem-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/token
             - --oidc-jwks-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/certs
             - --validate-url=http://keycloak.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/userinfo
@@ -82,7 +82,7 @@ spec:
             - --insecure-oidc-skip-issuer-verification=true
             - --oidc-groups-claim=groups
             - --code-challenge-method=S256
-            - --redirect-url=https://dashboard.apps.sre.example.com/oauth2/callback
+            - --redirect-url=https://dashboard.${SRE_DOMAIN}/oauth2/callback
             - --scope=openid profile email groups
             - --custom-templates-dir=/templates
           env:

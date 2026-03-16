@@ -37,11 +37,11 @@ spec:
               - /oauth2/*
               - /ui/vault/auth/oidc/oidc/callback*
             notHosts:
-              - "keycloak.apps.sre.example.com"
-              - "harbor.apps.sre.example.com"
-              - "neuvector.apps.sre.example.com"
+              - "keycloak.${SRE_DOMAIN}"
+              - "harbor.${SRE_DOMAIN}"
+              - "neuvector.${SRE_DOMAIN}"
               # Tenant apps — SSO handled by nginx auth_request pattern inside the app
-              - "keystone.apps.sre.example.com"
+              - "keystone.${SRE_DOMAIN}"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.

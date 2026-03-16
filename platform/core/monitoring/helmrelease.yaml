@@ -68,7 +68,7 @@ spec:
       # Do NOT set adminPassword inline — use bootstrap-secrets.sh
       grafana.ini:
         server:
-          root_url: "https://grafana.apps.sre.example.com"
+          root_url: "https://grafana.${SRE_DOMAIN}"
           serve_from_sub_path: false
         security:
           cookie_samesite: none
@@ -80,7 +80,7 @@ spec:
           allow_sign_up: true
           client_id: "grafana"
           scopes: "openid profile email groups"
-          auth_url: "https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/auth"
+          auth_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/auth"
           token_url: "http://keycloak-http.keycloak.svc.cluster.local:80/realms/sre/protocol/openid-connect/token"
           api_url: "http://keycloak-http.keycloak.svc.cluster.local:80/realms/sre/protocol/openid-connect/userinfo"
           role_attribute_path: "contains(groups[*], 'platform-admins') && 'Admin' || contains(groups[*], 'developers') && 'Editor' || 'Viewer'"

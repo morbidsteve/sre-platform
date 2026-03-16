@@ -64,8 +64,8 @@ metadata:
     sre.io/nist-controls: "SC-8, SC-12, SC-13"
 spec:
   dnsNames:
-    - "*.apps.sre.example.com"
-    - "apps.sre.example.com"
+    - "*.${SRE_DOMAIN}"
+    - "${SRE_DOMAIN}"
   duration: 2160h
   renewBefore: 720h
   secretName: sre-wildcard-tls

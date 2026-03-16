@@ -65,7 +65,7 @@ spec:
     # Domain filter — only manage records for our domain
     # ---------------------------------------------------------------
     domainFilters:
-      - "apps.sre.example.com"
+      - "${SRE_DOMAIN}"
 
     # ---------------------------------------------------------------
     # Monitoring

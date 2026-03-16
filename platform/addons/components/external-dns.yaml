@@ -1,27 +1,27 @@
 ---
-# Flux Kustomization for SRE Dashboard
-# Depends on: istio, keycloak, harbor
+# Flux Kustomization for ExternalDNS (automatic DNS record management)
+# Depends on: istio
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: sre-dashboard
+  name: sre-external-dns
   namespace: flux-system
+  annotations:
+    sre.io/nist-controls: "CM-2, CM-3"
 spec:
   interval: 10m
-  path: ./apps/dashboard/k8s
+  path: ./platform/addons/external-dns
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
   dependsOn:
     - name: sre-istio
-    - name: sre-harbor
-    - name: sre-keycloak
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: sre-dashboard
-      namespace: sre-dashboard
+      name: external-dns
+      namespace: external-dns
   timeout: 5m
   postBuild:
     substituteFrom:

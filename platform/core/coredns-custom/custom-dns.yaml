@@ -1,5 +1,5 @@
 ---
-# CoreDNS custom DNS entries for *.apps.sre.example.com
+# CoreDNS custom DNS entries for *.${SRE_DOMAIN}
 # This allows in-cluster pods to resolve the domain, but nodes still need
 # /etc/hosts or a real DNS server.
 #
@@ -14,24 +14,24 @@ metadata:
     app.kubernetes.io/part-of: sre-platform
 data:
   hosts-entries: |
-    # SRE Platform — MetalLB gateway IP for all *.apps.sre.example.com services
-    192.168.2.200 harbor.apps.sre.example.com
-    192.168.2.200 dashboard.apps.sre.example.com
-    192.168.2.200 grafana.apps.sre.example.com
-    192.168.2.200 keycloak.apps.sre.example.com
-    192.168.2.200 neuvector.apps.sre.example.com
-    192.168.2.200 openbao.apps.sre.example.com
-    192.168.2.200 oauth2.apps.sre.example.com
-    192.168.2.200 portal.apps.sre.example.com
-    192.168.2.200 prometheus.apps.sre.example.com
-    192.168.2.200 alertmanager.apps.sre.example.com
+    # SRE Platform — MetalLB gateway IP for all *.${SRE_DOMAIN} services
+    192.168.2.200 harbor.${SRE_DOMAIN}
+    192.168.2.200 dashboard.${SRE_DOMAIN}
+    192.168.2.200 grafana.${SRE_DOMAIN}
+    192.168.2.200 keycloak.${SRE_DOMAIN}
+    192.168.2.200 neuvector.${SRE_DOMAIN}
+    192.168.2.200 openbao.${SRE_DOMAIN}
+    192.168.2.200 oauth2.${SRE_DOMAIN}
+    192.168.2.200 portal.${SRE_DOMAIN}
+    192.168.2.200 prometheus.${SRE_DOMAIN}
+    192.168.2.200 alertmanager.${SRE_DOMAIN}
   registries-yaml: |
     mirrors:
-      harbor.apps.sre.example.com:
+      harbor.${SRE_DOMAIN}:
         endpoint:
-          - "https://harbor.apps.sre.example.com"
+          - "https://harbor.${SRE_DOMAIN}"
     configs:
-      "harbor.apps.sre.example.com":
+      "harbor.${SRE_DOMAIN}":
         tls:
           insecure_skip_verify: true
 ---
@@ -66,17 +66,17 @@ spec:
               # Add SRE platform hosts entries if not already present
               MARKER="# SRE-PLATFORM-MANAGED"
               while true; do
-                if ! grep -q "$MARKER" /host-etc/hosts; then
+                if ! grep -q "$${MARKER}" /host-etc/hosts; then
                   echo "" >> /host-etc/hosts
-                  echo "$MARKER" >> /host-etc/hosts
+                  echo "$${MARKER}" >> /host-etc/hosts
                   cat /config/hosts-entries >> /host-etc/hosts
                   echo "Added SRE platform hosts entries"
                 fi
                 # Write RKE2 registries.yaml for Harbor TLS trust
                 REGISTRIES="/host-rancher/registries.yaml"
-                if [ ! -f "$REGISTRIES" ] || ! grep -q "harbor.apps.sre.example.com" "$REGISTRIES" 2>/dev/null; then
+                if [ ! -f "$${REGISTRIES}" ] || ! grep -q "harbor.${SRE_DOMAIN}" "$${REGISTRIES}" 2>/dev/null; then
                   mkdir -p /host-rancher
-                  cp /config/registries-yaml "$REGISTRIES"
+                  cp /config/registries-yaml "$${REGISTRIES}"
                   echo "Wrote RKE2 registries.yaml (RKE2 restart needed to pick up)"
                 fi
                 sleep 3600

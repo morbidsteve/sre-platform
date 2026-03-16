@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/part-of: sre-platform
 spec:
   hosts:
-    - "dashboard.apps.sre.example.com"
+    - "dashboard.${SRE_DOMAIN}"
   gateways:
     - istio-system/main
   http:
