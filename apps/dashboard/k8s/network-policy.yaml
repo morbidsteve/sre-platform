@@ -49,6 +49,16 @@ spec:
           protocol: TCP
         - port: 8080
           protocol: TCP
+    # Monitoring services (Prometheus, Alertmanager) for proxy endpoints
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9090
+          protocol: TCP
+        - port: 9093
+          protocol: TCP
     # DNS
     - to:
         - namespaceSelector:

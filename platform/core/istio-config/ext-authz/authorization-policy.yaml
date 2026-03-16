@@ -40,7 +40,8 @@ spec:
               - "keycloak.apps.sre.example.com"
               - "harbor.apps.sre.example.com"
               - "neuvector.apps.sre.example.com"
-              # Tenant applications — keystone now uses SSO via OAuth2 Proxy
+              # Tenant apps — SSO handled by nginx auth_request pattern inside the app
+              - "keystone.apps.sre.example.com"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
