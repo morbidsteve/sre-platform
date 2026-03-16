@@ -105,7 +105,9 @@ export function useWizard() {
         getInitialGates(),
         (gates: SecurityGate[]) => {
           setState((prev) => ({ ...prev, gates }));
-        }
+        },
+        state.source.gitUrl,
+        state.source.branch
       );
       setState((prev) => ({
         ...prev,
