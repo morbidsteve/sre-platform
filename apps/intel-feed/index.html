@@ -110,7 +110,7 @@
   /* Threat Overview Cards */
   .threat-overview {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
     margin-bottom: 24px;
   }
@@ -558,6 +558,68 @@
     border-radius: 4px;
   }
 
+  /* Vulnerability Table */
+  .vuln-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .vuln-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .vuln-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(42, 42, 58, 0.5);
+    vertical-align: middle;
+  }
+  .vuln-table tbody tr { transition: background 0.15s; }
+  .vuln-table tbody tr:hover { background: var(--bg-card-hover); }
+  .vuln-table tbody tr.row-critical { border-left: 3px solid var(--red); }
+  .vuln-table tbody tr.row-high { border-left: 3px solid var(--orange); }
+  .vuln-table tbody tr.row-medium { border-left: 3px solid var(--yellow); }
+  .vuln-table tbody tr.row-low { border-left: 3px solid var(--green); }
+  .vuln-table tbody tr.row-none { border-left: 3px solid var(--text-dim); }
+  .vuln-count {
+    display: inline-block;
+    min-width: 22px;
+    text-align: center;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .vuln-count.cnt-critical { background: rgba(220,38,38,0.2); color: var(--red-bright); }
+  .vuln-count.cnt-high { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .vuln-count.cnt-medium { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .vuln-count.cnt-low { background: rgba(34,197,94,0.1); color: var(--green); }
+  .vuln-summary-bar {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .vuln-summary-bar .vuln-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .vuln-harbor-link {
+    color: var(--cyan);
+    text-decoration: none;
+    font-size: 11px;
+  }
+  .vuln-harbor-link:hover { text-decoration: underline; }
+
   /* Responsive */
   @media (max-width: 1200px) {
     .columns { grid-template-columns: 1fr; }
@@ -627,6 +689,12 @@
         <div class="score-ring score-good" id="scoreRing">--</div>
         <div class="detail" id="detScore" style="text-align:center">Calculating...</div>
       </div>
+      <div class="metric-card severity-warning" id="cardCVE">
+        <div class="glow"></div>
+        <div class="label">Image Vulnerabilities</div>
+        <div class="value value-warning" id="valCVE">--</div>
+        <div class="detail" id="detCVE">Scanning Harbor images...</div>
+      </div>
     </div>
   </div>
 
@@ -690,82 +758,72 @@
   </div>
 
   <!-- VULNERABILITY SCANNING + RUNTIME SECURITY -->
-  <div class="columns">
-    <div class="section">
-      <div class="section-header">
-        <span class="section-title">Vulnerability Scanning</span>
-        <span class="section-badge">Harbor + Trivy</span>
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Vulnerability Scanning</span>
+      <span class="section-badge" id="vulnBadge">Harbor + Trivy // Auto-Scan Enabled</span>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+      <div class="vuln-summary-bar" id="vulnSummaryBar">
+        <div class="vuln-stat"><strong>Total Images:</strong> <span id="vulnTotalImages">--</span></div>
+        <div class="vuln-stat"><span class="vuln-count cnt-critical" id="vulnSumCrit">0</span> Critical</div>
+        <div class="vuln-stat"><span class="vuln-count cnt-high" id="vulnSumHigh">0</span> High</div>
+        <div class="vuln-stat"><span class="vuln-count cnt-medium" id="vulnSumMed">0</span> Medium</div>
+        <div class="vuln-stat"><span class="vuln-count cnt-low" id="vulnSumLow">0</span> Low</div>
+        <div class="vuln-stat" style="margin-left:auto"><strong>Total CVEs:</strong> <span id="vulnTotalCVEs">--</span></div>
+        <a href="https://harbor.apps.sre.example.com/harbor/projects" target="_blank" rel="noopener" class="vuln-harbor-link">Open Harbor &rarr;</a>
       </div>
-      <div class="link-cards" id="harborCards">
-        <a class="link-card" href="https://harbor.apps.sre.example.com/harbor/projects" target="_blank" rel="noopener">
-          <div class="card-icon">&#128737;</div>
-          <div class="card-title">Harbor Registry</div>
-          <div class="card-desc">Container image scanning via Trivy. View detailed CVE reports, scan histories, and vulnerability trends.</div>
-          <div class="card-status">
-            <span class="dot" style="background:var(--green)"></span>
-            <span style="color:var(--green)">Scanner Active</span>
-            <span style="color:var(--text-dim);margin-left:auto">Open Harbor &rarr;</span>
-          </div>
-        </a>
-        <a class="link-card" href="https://harbor.apps.sre.example.com/harbor/projects/1/repositories" target="_blank" rel="noopener">
-          <div class="card-icon">&#128230;</div>
-          <div class="card-title">Platform Images</div>
-          <div class="card-desc">Platform project repositories: base images, infrastructure components, and platform service containers.</div>
-          <div class="card-status">
-            <span class="dot" style="background:var(--green)"></span>
-            <span style="color:var(--green)">Project Active</span>
-            <span style="color:var(--text-dim);margin-left:auto">View Repos &rarr;</span>
-          </div>
-        </a>
-        <a class="link-card" href="https://harbor.apps.sre.example.com/harbor/projects/2/repositories" target="_blank" rel="noopener">
-          <div class="card-icon">&#128273;</div>
-          <div class="card-title">Keystone Images</div>
-          <div class="card-desc">Keystone project repositories: application images for the Keystone tenant deployment stack.</div>
-          <div class="card-status">
-            <span class="dot" style="background:var(--green)"></span>
-            <span style="color:var(--green)">Project Active</span>
-            <span style="color:var(--text-dim);margin-left:auto">View Repos &rarr;</span>
-          </div>
-        </a>
-        <div class="link-card" id="harborStatsCard">
-          <div class="card-icon">&#128202;</div>
-          <div class="card-title">Scan Summary</div>
-          <div class="card-desc" id="harborStats">Checking Harbor projects...</div>
-          <div class="card-status" id="harborScanStatus">
-            <span class="dot" style="background:var(--text-dim)"></span>
-            <span style="color:var(--text-dim)">Querying...</span>
-          </div>
-        </div>
+      <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+        <table class="vuln-table">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>Project</th>
+              <th>Tag</th>
+              <th>Severity</th>
+              <th>Critical</th>
+              <th>High</th>
+              <th>Medium</th>
+              <th>Low</th>
+              <th>Total</th>
+              <th>Last Scan</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="vulnTableBody">
+            <tr><td colspan="11" class="loading">Fetching vulnerability data from Harbor</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
+  </div>
 
-    <div class="section">
-      <div class="section-header">
-        <span class="section-title">Runtime Security</span>
-        <span class="section-badge">NeuVector</span>
-      </div>
-      <div class="link-cards">
-        <a class="link-card" href="https://neuvector.apps.sre.example.com" target="_blank" rel="noopener">
-          <div class="card-icon">&#128737;</div>
-          <div class="card-title">NeuVector Console</div>
-          <div class="card-desc">Runtime container security: network policies, process monitoring, vulnerability scanning, compliance checks.</div>
-          <div class="card-status">
-            <span class="dot" style="background:var(--green)"></span>
-            <span style="color:var(--green)">Protection Active</span>
-            <span style="color:var(--text-dim);margin-left:auto">Open Console &rarr;</span>
-          </div>
-        </a>
-        <a class="link-card" href="https://grafana.apps.sre.example.com" target="_blank" rel="noopener">
-          <div class="card-icon">&#128200;</div>
-          <div class="card-title">Grafana Dashboards</div>
-          <div class="card-desc">Security metrics, Kyverno compliance trends, cluster resource utilization, alert history.</div>
-          <div class="card-status">
-            <span class="dot" style="background:var(--green)"></span>
-            <span style="color:var(--green)">Available</span>
-            <span style="color:var(--text-dim);margin-left:auto">Open Grafana &rarr;</span>
-          </div>
-        </a>
-      </div>
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Runtime Security</span>
+      <span class="section-badge">NeuVector</span>
+    </div>
+    <div class="link-cards">
+      <a class="link-card" href="https://neuvector.apps.sre.example.com" target="_blank" rel="noopener">
+        <div class="card-icon">&#128737;</div>
+        <div class="card-title">NeuVector Console</div>
+        <div class="card-desc">Runtime container security: network policies, process monitoring, vulnerability scanning, compliance checks.</div>
+        <div class="card-status">
+          <span class="dot" style="background:var(--green)"></span>
+          <span style="color:var(--green)">Protection Active</span>
+          <span style="color:var(--text-dim);margin-left:auto">Open Console &rarr;</span>
+        </div>
+      </a>
+      <a class="link-card" href="https://grafana.apps.sre.example.com" target="_blank" rel="noopener">
+        <div class="card-icon">&#128200;</div>
+        <div class="card-title">Grafana Dashboards</div>
+        <div class="card-desc">Security metrics, Kyverno compliance trends, cluster resource utilization, alert history.</div>
+        <div class="card-status">
+          <span class="dot" style="background:var(--green)"></span>
+          <span style="color:var(--green)">Available</span>
+          <span style="color:var(--text-dim);margin-left:auto">Open Grafana &rarr;</span>
+        </div>
+      </a>
     </div>
   </div>
 
@@ -792,6 +850,7 @@
   const ALERTMANAGER_URL = 'https://dashboard.apps.sre.example.com/api/proxy/alertmanager/alerts';
   const PROMETHEUS_URL = 'https://dashboard.apps.sre.example.com/api/proxy/prometheus';
   const HARBOR_URL = 'https://harbor.apps.sre.example.com';
+  const HARBOR_VULN_URL = 'https://dashboard.apps.sre.example.com/api/proxy/harbor/vulnerabilities';
   const REFRESH_INTERVAL = 60;
 
   let countdownVal = REFRESH_INTERVAL;
@@ -1286,6 +1345,12 @@
     const compVal = parseInt(document.getElementById('valCompliance').textContent) || 0;
     score -= compVal * 3;
 
+    // CVE deductions
+    const critCVEs = parseInt(document.getElementById('vulnSumCrit').textContent) || 0;
+    const highCVEs = parseInt(document.getElementById('vulnSumHigh').textContent) || 0;
+    score -= critCVEs * 5;
+    score -= highCVEs * 2;
+
     score = Math.max(0, Math.min(100, score));
 
     const ring = document.getElementById('scoreRing');
@@ -1308,33 +1373,126 @@
     addFeedEntry(score >= 80 ? 'INFO' : 'WARN', 'SECURITY POSTURE SCORE: ' + score + '/100');
   }
 
-  // ---- Harbor Stats ----
-  async function fetchHarborStats() {
+  // ---- Harbor Vulnerability Data ----
+  function vulnSevClass(sev) {
+    if (!sev) return 'row-none';
+    var s = sev.toLowerCase();
+    if (s === 'critical') return 'row-critical';
+    if (s === 'high') return 'row-high';
+    if (s === 'medium') return 'row-medium';
+    if (s === 'low') return 'row-low';
+    return 'row-none';
+  }
+
+  function vulnSevBadge(sev) {
+    if (!sev) return '<span class="sev-badge sev-none">unknown</span>';
+    var s = sev.toLowerCase();
+    if (s === 'critical') return '<span class="sev-badge sev-critical">critical</span>';
+    if (s === 'high') return '<span class="sev-badge sev-warning">high</span>';
+    if (s === 'medium') return '<span class="sev-badge" style="background:rgba(234,179,8,0.15);color:var(--yellow);border:1px solid rgba(234,179,8,0.3)">medium</span>';
+    if (s === 'low') return '<span class="sev-badge" style="background:rgba(34,197,94,0.1);color:var(--green);border:1px solid rgba(34,197,94,0.2)">low</span>';
+    return '<span class="sev-badge sev-none">' + escapeHtml(s) + '</span>';
+  }
+
+  function harborArtifactLink(proj, repo) {
+    var repoName = repo.split('/').pop();
+    return HARBOR_URL + '/harbor/projects/' + encodeURIComponent(proj) + '/repositories/' + encodeURIComponent(repoName);
+  }
+
+  async function fetchVulnerabilities() {
     try {
-      addFeedEntry('INFO', 'Querying Harbor for project data...');
-      const projects = await fetchJSON(HARBOR_URL + '/api/v2.0/projects');
-      if (Array.isArray(projects) && projects.length > 0) {
-        let totalRepos = 0;
-        projects.forEach(function(p) { totalRepos += (p.repo_count || 0); });
+      addFeedEntry('INFO', 'Querying Harbor for vulnerability scan results...');
+      var data = await fetchJSON(HARBOR_VULN_URL);
+      var vulns = data.vulnerabilities || [];
 
-        document.getElementById('harborStats').innerHTML =
-          '<strong>' + projects.length + '</strong> projects, <strong>' + totalRepos + '</strong> repositories tracked.<br>' +
-          'Projects: ' + projects.map(function(p) { return escapeHtml(p.name); }).join(', ');
+      // Compute totals
+      var totalCrit = 0, totalHigh = 0, totalMed = 0, totalLow = 0, totalAll = 0;
+      vulns.forEach(function(v) {
+        totalCrit += v.critical || 0;
+        totalHigh += v.high || 0;
+        totalMed += v.medium || 0;
+        totalLow += v.low || 0;
+        totalAll += v.total || 0;
+      });
 
-        document.getElementById('harborScanStatus').innerHTML =
-          '<span class="dot" style="background:var(--green)"></span>' +
-          '<span style="color:var(--green)">' + projects.length + ' projects scanned</span>';
+      // Update summary bar
+      document.getElementById('vulnTotalImages').textContent = vulns.length;
+      document.getElementById('vulnSumCrit').textContent = totalCrit;
+      document.getElementById('vulnSumHigh').textContent = totalHigh;
+      document.getElementById('vulnSumMed').textContent = totalMed;
+      document.getElementById('vulnSumLow').textContent = totalLow;
+      document.getElementById('vulnTotalCVEs').textContent = totalAll;
+      document.getElementById('vulnBadge').textContent = vulns.length + ' images scanned // ' + totalAll + ' CVEs';
 
-        addFeedEntry('INFO', 'Harbor: ' + projects.length + ' projects, ' + totalRepos + ' repositories');
+      // Update Threat Overview CVE card
+      var cveCard = document.getElementById('cardCVE');
+      document.getElementById('valCVE').textContent = totalAll;
+      document.getElementById('detCVE').textContent = totalCrit + ' critical, ' + totalHigh + ' high, ' + totalMed + ' medium';
+      if (totalCrit > 0) {
+        cveCard.className = 'metric-card severity-critical';
+        document.getElementById('valCVE').className = 'value value-critical pulse';
+      } else if (totalHigh > 0) {
+        cveCard.className = 'metric-card severity-warning';
+        document.getElementById('valCVE').className = 'value value-warning';
+      } else if (totalMed > 0) {
+        cveCard.className = 'metric-card severity-info';
+        document.getElementById('valCVE').className = 'value value-info';
+      } else {
+        cveCard.className = 'metric-card severity-ok';
+        document.getElementById('valCVE').className = 'value value-ok';
       }
+
+      // Sort: critical first, then high, medium, low
+      var sevPriority = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4, none: 5 };
+      vulns.sort(function(a, b) {
+        var sa = sevPriority[(a.severity || 'none').toLowerCase()] || 5;
+        var sb = sevPriority[(b.severity || 'none').toLowerCase()] || 5;
+        if (sa !== sb) return sa - sb;
+        return (b.total || 0) - (a.total || 0);
+      });
+
+      // Render table
+      var tbody = document.getElementById('vulnTableBody');
+      if (vulns.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" style="padding:20px;text-align:center;color:var(--text-dim);">No scan results available. Push an image to trigger a scan.</td></tr>';
+      } else {
+        var html = '';
+        vulns.forEach(function(v) {
+          var repoShort = v.repository.split('/').pop();
+          var scanTime = v.scanTime ? timeAgo(v.scanTime) : 'N/A';
+          var link = harborArtifactLink(v.project, v.repository);
+          html += '<tr class="' + vulnSevClass(v.severity) + '">' +
+            '<td style="font-weight:600;color:var(--text-primary)">' + escapeHtml(repoShort) + '</td>' +
+            '<td>' + escapeHtml(v.project) + '</td>' +
+            '<td style="color:var(--text-dim)">' + escapeHtml(v.tag || 'N/A') + '</td>' +
+            '<td>' + vulnSevBadge(v.severity) + '</td>' +
+            '<td><span class="vuln-count cnt-critical">' + (v.critical || 0) + '</span></td>' +
+            '<td><span class="vuln-count cnt-high">' + (v.high || 0) + '</span></td>' +
+            '<td><span class="vuln-count cnt-medium">' + (v.medium || 0) + '</span></td>' +
+            '<td><span class="vuln-count cnt-low">' + (v.low || 0) + '</span></td>' +
+            '<td style="font-weight:600">' + (v.total || 0) + '</td>' +
+            '<td style="color:var(--text-dim);font-size:10px">' + scanTime + '</td>' +
+            '<td><a href="' + escapeHtml(link) + '" target="_blank" rel="noopener" class="vuln-harbor-link">View &rarr;</a></td>' +
+          '</tr>';
+        });
+        tbody.innerHTML = html;
+      }
+
+      // Feed entries
+      if (totalCrit > 0) {
+        addFeedEntry('CRIT', 'HARBOR SCAN: ' + totalCrit + ' CRITICAL vulnerabilities across ' + vulns.length + ' images');
+      }
+      if (totalHigh > 0) {
+        addFeedEntry('WARN', 'HARBOR SCAN: ' + totalHigh + ' HIGH vulnerabilities detected');
+      }
+      addFeedEntry('INFO', 'Harbor: ' + vulns.length + ' images scanned, ' + totalAll + ' total CVEs');
+
     } catch(err) {
-      document.getElementById('harborStats').innerHTML =
-        'Harbor data unavailable from this origin (CORS/auth restriction).<br>' +
-        '<a href="' + HARBOR_URL + '/harbor/projects" target="_blank" rel="noopener" style="color:var(--cyan)">View scan reports in Harbor &rarr;</a>';
-      document.getElementById('harborScanStatus').innerHTML =
-        '<span class="dot" style="background:var(--orange)"></span>' +
-        '<span style="color:var(--orange)">Direct access required</span>';
-      addFeedEntry('INFO', 'Harbor API not accessible from this origin - use direct link');
+      // Fallback: show link cards if proxy is unavailable
+      document.getElementById('vulnTableBody').innerHTML =
+        '<tr><td colspan="11" class="error-msg">Harbor vulnerability data unavailable: ' + escapeHtml(err.message) +
+        '. <a href="' + HARBOR_URL + '/harbor/projects" target="_blank" rel="noopener" style="color:var(--cyan)">View in Harbor &rarr;</a></td></tr>';
+      addFeedEntry('WARN', 'Harbor vulnerability proxy unreachable: ' + err.message);
     }
   }
 
@@ -1375,7 +1533,7 @@
     } catch(e) { /* handled inside */ }
 
     try {
-      await fetchHarborStats();
+      await fetchVulnerabilities();
     } catch(e) { /* handled inside */ }
 
     computeScore();

@@ -5264,6 +5264,61 @@ app.get("/api/proxy/alertmanager/alerts", async (req, res) => {
   }
 });
 
+// Harbor vulnerability proxy - fetches scan results from Harbor
+app.get("/api/proxy/harbor/vulnerabilities", async (req, res) => {
+  try {
+    const harborUrl = "http://harbor-core.harbor.svc.cluster.local";
+    const auth = "Basic " + Buffer.from("admin:Harbor12345").toString("base64");
+
+    // Get all projects
+    const projResp = await fetch(harborUrl + "/api/v2.0/projects", {
+      headers: { Authorization: auth }
+    });
+    const projects = await projResp.json();
+
+    const results = [];
+    for (const proj of projects.slice(0, 10)) {
+      // Get repos in project
+      const repoResp = await fetch(
+        harborUrl + `/api/v2.0/projects/${proj.name}/repositories?page_size=50`,
+        { headers: { Authorization: auth } }
+      );
+      const repos = await repoResp.json();
+
+      for (const repo of repos.slice(0, 20)) {
+        const repoName = repo.name.split("/").pop();
+        // Get latest artifact
+        const artResp = await fetch(
+          harborUrl + `/api/v2.0/projects/${proj.name}/repositories/${encodeURIComponent(repoName)}/artifacts?page_size=1&with_scan_overview=true`,
+          { headers: { Authorization: auth } }
+        );
+        const artifacts = await artResp.json();
+
+        if (artifacts.length > 0 && artifacts[0].scan_overview) {
+          const scan = Object.values(artifacts[0].scan_overview)[0];
+          results.push({
+            project: proj.name,
+            repository: repo.name,
+            tag: artifacts[0].tags?.[0]?.name || artifacts[0].digest?.substring(0, 12),
+            scanStatus: scan?.scan_status || "not_scanned",
+            severity: scan?.severity || "unknown",
+            critical: scan?.summary?.critical || 0,
+            high: scan?.summary?.high || 0,
+            medium: scan?.summary?.medium || 0,
+            low: scan?.summary?.low || 0,
+            total: scan?.summary?.total || 0,
+            scanTime: scan?.end_time || null,
+          });
+        }
+      }
+    }
+
+    res.json({ vulnerabilities: results, scannedAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(502).json({ error: "Harbor unreachable", detail: err.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`SRE Dashboard running on http://0.0.0.0:${PORT}`);
 });
