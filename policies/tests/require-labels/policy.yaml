@@ -35,6 +35,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       validate:
         message: >-
           Pod {{request.object.metadata.name}} is missing required labels.

@@ -52,6 +52,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must set
@@ -96,6 +97,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

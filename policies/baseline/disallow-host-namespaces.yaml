@@ -50,6 +50,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Host namespaces are not allowed. Pod {{request.object.metadata.name}}

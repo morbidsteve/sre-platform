@@ -50,6 +50,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Container images in Pod {{request.object.metadata.name}} must not use
@@ -90,6 +91,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

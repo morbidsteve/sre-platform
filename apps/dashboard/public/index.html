@@ -13,29 +13,46 @@
   </script>
   <style>
     :root, [data-theme="dark"] {
-      --bg: #0f172a;
-      --surface: #1e293b;
-      --surface-hover: #334155;
-      --border: #334155;
-      --text: #e2e8f0;
-      --text-dim: #94a3b8;
-      --accent: #3b82f6;
-      --accent-hover: #2563eb;
-      --green: #22c55e;
-      --red: #ef4444;
-      --yellow: #eab308;
-      --radius: 8px;
-      --overlay-bg: rgba(0,0,0,0.6);
-      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --bg: #0a0e1a;
+      --bg-secondary: #0d1117;
+      --surface: #111827;
+      --surface-hover: #1a2332;
+      --card: #0f1623;
+      --border: #1a2332;
+      --border-hover: #2a3a4e;
+      --text: #c9d1d9;
+      --text-bright: #e6edf3;
+      --text-dim: #546478;
+      --text-muted: #3d4f63;
+      --accent: #4dabf7;
+      --accent-hover: #74c0fc;
+      --accent-dim: rgba(77,171,247,0.15);
+      --green: #40c057;
+      --red: #fa5252;
+      --yellow: #fab005;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --radius: 6px;
+      --transition: 150ms ease;
+      --overlay-bg: rgba(0,0,0,0.7);
+      --shadow: 0 4px 24px rgba(0,0,0,0.5);
     }
 
     [data-theme="light"] {
       --bg: #f8fafc;
+      --bg-secondary: #f1f5f9;
       --surface: #ffffff;
       --surface-hover: #f1f5f9;
+      --card: #ffffff;
       --border: #e2e8f0;
+      --border-hover: #cbd5e1;
       --text: #0f172a;
+      --text-bright: #020617;
       --text-dim: #64748b;
+      --text-muted: #94a3b8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-dim: rgba(37,99,235,0.1);
       --overlay-bg: rgba(0,0,0,0.3);
       --shadow: 0 4px 24px rgba(0,0,0,0.1);
     }
@@ -43,18 +60,57 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-family: var(--font-sans);
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
       min-height: 100vh;
+      padding-bottom: 24px;
       transition: background 0.2s, color 0.2s;
+    }
+
+    /* ── Scrollbar ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* ── Classification Banner ──────────────────────────────── */
+    .classification-banner {
+      background: #40c057;
+      text-align: center;
+      padding: 3px 0;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #000;
+      position: relative;
+      z-index: 101;
+    }
+
+    .classification-banner-bottom {
+      background: #40c057;
+      text-align: center;
+      padding: 3px 0;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #000;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 101;
     }
 
     /* ── Layout ──────────────────────────────────────────────── */
 
     .header {
-      background: var(--surface);
+      background: var(--bg-secondary);
       border-bottom: 1px solid var(--border);
       padding: 12px 24px;
       display: flex;
@@ -83,8 +139,12 @@
     }
 
     .header h1 {
-      font-size: 18px;
+      font-family: var(--font-mono);
+      font-size: 14px;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-bright);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -105,13 +165,15 @@
     }
 
     .kbd-hint {
-      font-size: 11px;
+      font-family: var(--font-mono);
+      font-size: 10px;
       color: var(--text-dim);
       background: var(--bg);
       padding: 2px 8px;
       border-radius: 4px;
       border: 1px solid var(--border);
       cursor: pointer;
+      letter-spacing: 0.5px;
     }
 
     .kbd-hint:hover { border-color: var(--accent); }
@@ -159,12 +221,13 @@
 
     .role-badge {
       display: inline-block;
-      font-size: 10px;
+      font-family: var(--font-mono);
+      font-size: 9px;
       padding: 1px 6px;
-      border-radius: 8px;
+      border-radius: 3px;
       text-transform: uppercase;
-      font-weight: 600;
-      letter-spacing: 0.03em;
+      font-weight: 500;
+      letter-spacing: 0.5px;
     }
 
     .role-badge.admin { background: rgba(239,68,68,0.15); color: var(--red); }
@@ -173,15 +236,18 @@
     .role-badge.anonymous { background: rgba(148,163,184,0.1); color: var(--text-dim); }
 
     .btn-auth {
+      font-family: var(--font-mono);
       padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 13px;
+      border-radius: var(--radius);
+      font-size: 11px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
       cursor: pointer;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
-      transition: all 0.15s;
+      transition: all var(--transition);
     }
 
     .btn-auth:hover { border-color: var(--accent); color: var(--accent); }
@@ -263,7 +329,7 @@
     /* ── Nav ──────────────────────────────────────────────────── */
 
     nav {
-      background: var(--surface);
+      background: var(--bg-secondary);
       border-bottom: 1px solid var(--border);
       padding: 0 24px;
       display: flex;
@@ -272,16 +338,21 @@
     }
 
     nav button {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
       background: none;
       border: none;
       color: var(--text-dim);
       padding: 12px 16px;
-      font-size: 14px;
       cursor: pointer;
       border-bottom: 2px solid transparent;
-      transition: all 0.15s;
+      transition: color var(--transition);
       white-space: nowrap;
       min-height: 44px;
+      position: relative;
     }
 
     nav button:hover { color: var(--text); }
@@ -309,26 +380,30 @@
     }
 
     .card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 20px;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
-    .card:hover { border-color: var(--surface-hover); }
+    .card:hover { border-color: var(--border-hover); }
 
     .card h3 {
-      font-size: 13px;
+      font-family: var(--font-mono);
+      font-size: 10px;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 2px;
       color: var(--text-dim);
       margin-bottom: 8px;
+      font-weight: 500;
     }
 
     .card .big-number {
+      font-family: var(--font-mono);
       font-size: 36px;
-      font-weight: 700;
+      font-weight: 600;
+      letter-spacing: -1px;
     }
 
     .card .big-number.green { color: var(--green); }
@@ -337,7 +412,7 @@
     /* ── Tables ───────────────────────────────────────────────── */
 
     .table-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
@@ -353,8 +428,12 @@
     }
 
     .table-card .table-header h2 {
-      font-size: 16px;
-      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-dim);
     }
 
     .table-wrap {
@@ -364,38 +443,44 @@
     table {
       width: 100%;
       border-collapse: collapse;
+      font-size: 13px;
     }
 
     th {
+      font-family: var(--font-mono);
       text-align: left;
-      padding: 10px 20px;
-      font-size: 12px;
+      padding: 10px 16px;
+      font-size: 10px;
+      font-weight: 500;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 1.5px;
       color: var(--text-dim);
       border-bottom: 1px solid var(--border);
-      background: rgba(0,0,0,0.05);
+      background: transparent;
     }
 
-    [data-theme="dark"] th { background: rgba(0,0,0,0.2); }
+    [data-theme="dark"] th { background: transparent; }
 
     td {
-      padding: 12px 20px;
-      font-size: 14px;
-      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(26,35,50,0.5);
     }
 
     tr:last-child td { border-bottom: none; }
-    tr:hover { background: var(--surface-hover); }
+    tr:hover td { background: rgba(77,171,247,0.03); }
 
     .badge {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-size: 12px;
+      font-family: var(--font-mono);
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 10px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .badge.green { background: rgba(34,197,94,0.15); color: var(--green); }
@@ -405,7 +490,7 @@
     /* ── Forms ────────────────────────────────────────────────── */
 
     .form-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
@@ -413,8 +498,12 @@
     }
 
     .form-card h2 {
-      font-size: 18px;
-      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-dim);
       margin-bottom: 20px;
     }
 
@@ -424,8 +513,11 @@
 
     .form-group label {
       display: block;
-      font-size: 13px;
+      font-family: var(--font-mono);
+      font-size: 10px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
       color: var(--text-dim);
       margin-bottom: 4px;
     }
@@ -433,18 +525,20 @@
     .form-group input, .form-group select {
       width: 100%;
       padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 13px;
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius);
       color: var(--text);
-      font-size: 14px;
       outline: none;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
       min-height: 44px;
     }
 
     .form-group input:focus, .form-group select:focus {
       border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(77,171,247,0.1);
     }
 
     .form-group .hint {
@@ -460,22 +554,33 @@
     }
 
     .btn {
-      padding: 10px 20px;
-      border-radius: 6px;
-      font-size: 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
       cursor: pointer;
-      border: none;
-      transition: all 0.15s;
+      transition: all var(--transition);
       min-height: 44px;
+    }
+
+    .btn:hover {
+      border-color: var(--border-hover);
+      background: var(--bg-secondary);
     }
 
     .btn-primary {
       background: var(--accent);
-      color: white;
+      border-color: var(--accent);
+      color: #fff;
     }
 
-    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
     .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .btn-danger {
@@ -523,22 +628,24 @@
 
     .section-divider {
       grid-column: 1 / -1;
-      font-size: 13px;
+      font-family: var(--font-mono);
+      font-size: 10px;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 2px;
       color: var(--text-dim);
       padding: 8px 0 4px;
       border-bottom: 1px solid var(--border);
       margin-bottom: 4px;
+      font-weight: 500;
     }
 
     .service-tile {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 20px;
+      padding: 16px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--transition);
       position: relative;
       display: flex;
       flex-direction: column;
@@ -547,8 +654,7 @@
 
     .service-tile:hover {
       border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: var(--shadow);
+      box-shadow: 0 0 20px rgba(77,171,247,0.05);
     }
 
     .service-tile-header {
@@ -577,15 +683,17 @@
     .service-tile-star.active { color: var(--yellow); }
 
     .service-tile-name {
-      font-size: 15px;
+      font-family: var(--font-sans);
+      font-size: 14px;
       font-weight: 600;
+      color: var(--text-bright);
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
     .service-tile-desc {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-dim);
     }
 
@@ -597,12 +705,12 @@
     }
 
     .app-tile {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 20px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all var(--transition);
       position: relative;
       display: flex;
       flex-direction: column;
@@ -611,8 +719,7 @@
 
     .app-tile:hover {
       border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 0 20px rgba(77,171,247,0.05);
     }
 
     .app-tile-header {
@@ -622,18 +729,20 @@
     }
 
     .app-tile-name {
-      font-size: 16px;
-      font-weight: 700;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-bright);
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
     .app-tile-badge {
-      font-size: 10px;
-      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 500;
       padding: 2px 8px;
-      border-radius: 10px;
+      border-radius: 3px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -654,12 +763,12 @@
     }
 
     .app-tile-image {
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-      font-size: 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
       color: var(--text-dim);
       background: var(--bg);
       padding: 4px 8px;
-      border-radius: 4px;
+      border-radius: 3px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -734,16 +843,18 @@
       flex: 1;
       min-width: 200px;
       padding: 8px 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
+      font-family: var(--font-mono);
       font-size: 13px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
       outline: none;
     }
 
     .app-gallery-filters input:focus {
       border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(77,171,247,0.1);
     }
 
     .app-gallery-count {
@@ -766,7 +877,7 @@
     /* ── Credentials ──────────────────────────────────────────── */
 
     .cred-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px 20px;
@@ -789,27 +900,27 @@
     .cred-row .label { color: var(--text-dim); }
 
     .cred-row .value {
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: var(--font-mono);
       background: var(--bg);
       padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 12px;
+      border-radius: 3px;
+      font-size: 11px;
       cursor: pointer;
     }
 
-    .cred-row .value:hover { background: var(--surface-hover); }
+    .cred-row .value:hover { background: var(--surface); }
 
     /* ── Sample app cards ─────────────────────────────────────── */
 
     .sample-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
     .sample-card:hover { border-color: var(--accent); }
@@ -871,32 +982,35 @@
     }
 
     .cluster-subnav-btn {
+      font-family: var(--font-mono);
       padding: 7px 16px;
-      border-radius: 20px;
+      border-radius: var(--radius);
       border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text);
-      font-size: 13px;
+      background: var(--card);
+      color: var(--text-dim);
+      font-size: 10px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all var(--transition);
     }
 
-    .cluster-subnav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .cluster-subnav-btn:hover { border-color: var(--accent); color: var(--text); }
     .cluster-subnav-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
     .cluster-panel { display: none; }
     .cluster-panel.active { display: block; }
 
     .node-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px 20px;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
-    .node-card:hover { border-color: var(--accent); }
+    .node-card:hover { border-color: var(--border-hover); }
 
     .node-header {
       display: flex;
@@ -914,15 +1028,16 @@
     }
 
     .node-role {
-      font-size: 10px;
-      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 500;
       padding: 2px 8px;
-      border-radius: 10px;
+      border-radius: 3px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
 
-    .node-role.control-plane { background: rgba(99,102,241,0.15); color: #818cf8; }
+    .node-role.control-plane { background: rgba(77,171,247,0.15); color: var(--accent); }
     .node-role.worker { background: rgba(34,197,94,0.15); color: var(--green); }
 
     .node-meta {
@@ -994,12 +1109,13 @@
     }
 
     .pod-controls select, .pod-controls input {
+      font-family: var(--font-mono);
       padding: 7px 12px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: var(--surface);
+      background: var(--bg);
       color: var(--text);
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .pod-table {
@@ -1026,7 +1142,7 @@
     }
 
     .pod-table tr { cursor: pointer; transition: background 0.1s; }
-    .pod-table tbody tr:hover { background: var(--surface-hover); }
+    .pod-table tbody tr:hover { background: rgba(77,171,247,0.03); }
 
     .pod-status {
       display: inline-flex;
@@ -1075,9 +1191,9 @@
 
     /* Log viewer */
     .log-viewer {
-      background: #0d1117;
+      background: var(--bg);
       color: #c9d1d9;
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
       line-height: 1.5;
       padding: 16px;
@@ -1097,12 +1213,13 @@
     }
 
     .log-controls select, .log-controls input {
+      font-family: var(--font-mono);
       padding: 7px 12px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: var(--surface);
+      background: var(--bg);
       color: var(--text);
-      font-size: 13px;
+      font-size: 12px;
     }
 
     /* Events feed */
@@ -1136,11 +1253,11 @@
 
     /* Namespace cards */
     .ns-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 14px 18px;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
     .ns-card:hover { border-color: var(--accent); }
@@ -1191,11 +1308,11 @@
     }
 
     .qa-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
     .qa-card:hover { border-color: var(--accent); }
@@ -1220,12 +1337,13 @@
     }
 
     .qa-card select, .qa-card input[type="number"] {
+      font-family: var(--font-mono);
       padding: 5px 10px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: var(--surface);
+      background: var(--bg);
       color: var(--text);
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .btn-warn {
@@ -1253,58 +1371,97 @@
       background: var(--overlay-bg);
       z-index: 1000;
       justify-content: center;
-      padding-top: 15vh;
+      padding-top: 12vh;
     }
 
-    .cmd-overlay.show { display: flex; }
+    .cmd-overlay.show { display: flex; backdrop-filter: blur(4px); }
 
     .cmd-palette {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      width: 500px;
+      border-radius: 8px;
+      width: 600px;
       max-width: 90vw;
-      max-height: 400px;
+      max-height: 60vh;
       display: flex;
       flex-direction: column;
-      box-shadow: var(--shadow);
+      box-shadow: 0 25px 50px rgba(0,0,0,0.6);
       overflow: hidden;
       align-self: flex-start;
     }
 
+    .cmd-input-wrap {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cmd-input-wrap .cmd-search-icon { color: var(--text-dim); font-size: 15px; }
+
     .cmd-input {
-      padding: 14px 16px;
+      flex: 1;
       background: transparent;
       border: none;
-      border-bottom: 1px solid var(--border);
       color: var(--text);
-      font-size: 15px;
+      font-family: var(--font-mono);
+      font-size: 14px;
       outline: none;
-      width: 100%;
     }
 
     .cmd-input::placeholder { color: var(--text-dim); }
 
+    .cmd-esc-hint {
+      font-size: 11px;
+      padding: 2px 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+    }
+
     .cmd-results {
       overflow-y: auto;
       flex: 1;
+      padding: 8px;
     }
 
+    .cmd-category {
+      padding: 4px 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    .cmd-category:not(:first-child) { margin-top: 8px; }
+
     .cmd-item {
-      padding: 10px 16px;
+      padding: 8px 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 10px;
       font-size: 14px;
-      transition: background 0.1s;
+      border-radius: 6px;
+      transition: background 0.1s, color 0.1s;
     }
 
-    .cmd-item:hover, .cmd-item.selected { background: var(--surface-hover); }
+    .cmd-item.selected { background: var(--accent); color: #fff; }
+    .cmd-item:not(.selected):hover { background: var(--surface); }
 
     .cmd-item-icon { font-size: 16px; width: 24px; text-align: center; }
     .cmd-item-label { flex: 1; }
     .cmd-item-hint { font-size: 11px; color: var(--text-dim); }
+    .cmd-item.selected .cmd-item-hint { color: rgba(255,255,255,0.7); }
+
+    .cmd-empty {
+      padding: 20px;
+      text-align: center;
+      color: var(--text-dim);
+    }
 
     /* ── Toast ────────────────────────────────────────────────── */
 
@@ -1319,7 +1476,7 @@
     }
 
     .toast {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 12px 16px;
@@ -1359,12 +1516,12 @@
       align-items: center;
     }
 
-    .onboard-overlay.show { display: flex; }
+    .onboard-overlay.show { display: flex; backdrop-filter: blur(4px); }
 
     .onboard-modal {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 8px;
       width: 480px;
       max-width: 90vw;
       padding: 32px;
@@ -1419,17 +1576,17 @@
     /* ── Status Page ─────────────────────────────────────────── */
 
     .status-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px 20px;
       display: flex;
       align-items: center;
       gap: 16px;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
-    .status-card:hover { border-color: var(--accent); }
+    .status-card:hover { border-color: var(--border-hover); }
 
     .status-card .status-icon {
       width: 40px;
@@ -1496,14 +1653,17 @@
 
     .audit-filters { display: flex; gap: 4px; }
     .audit-filter-btn {
+      font-family: var(--font-mono);
       padding: 4px 12px;
-      border-radius: 6px;
+      border-radius: var(--radius);
       border: 1px solid var(--border);
-      background: var(--surface);
+      background: var(--card);
       color: var(--text-dim);
-      font-size: 12px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all var(--transition);
     }
     .audit-filter-btn.active {
       background: var(--accent);
@@ -1511,27 +1671,29 @@
       border-color: var(--accent);
     }
     .audit-page-btn {
+      font-family: var(--font-mono);
       padding: 4px 12px;
-      border-radius: 6px;
+      border-radius: var(--radius);
       border: 1px solid var(--border);
-      background: var(--surface);
+      background: var(--card);
       color: var(--text);
-      font-size: 12px;
+      font-size: 11px;
       cursor: pointer;
+      transition: all var(--transition);
     }
-    .audit-page-btn:hover { background: var(--surface-hover); }
+    .audit-page-btn:hover { background: var(--surface); border-color: var(--border-hover); }
 
     /* ── Service grid (old, for DNS section) ──────────────────── */
 
     .service-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
     .service-card:hover { border-color: var(--accent); }
@@ -1550,24 +1712,23 @@
     }
 
     .deploy-mode-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--transition);
       text-align: center;
     }
 
     .deploy-mode-card:hover {
       border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: var(--shadow);
+      box-shadow: 0 0 20px rgba(77,171,247,0.05);
     }
 
     .deploy-mode-card.active {
       border-color: var(--accent);
-      background: rgba(59,130,246,0.08);
+      background: var(--accent-dim);
     }
 
     .deploy-mode-card .mode-icon {
@@ -1577,13 +1738,16 @@
     }
 
     .deploy-mode-card .mode-title {
-      font-size: 14px;
-      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
       margin-bottom: 2px;
     }
 
     .deploy-mode-card .mode-desc {
-      font-size: 11px;
+      font-size: 10px;
       color: var(--text-dim);
     }
 
@@ -1647,15 +1811,18 @@
     }
 
     .btn-outline {
+      font-family: var(--font-mono);
       padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 13px;
+      border-radius: var(--radius);
+      font-size: 11px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
       cursor: pointer;
       border: 1px solid var(--border);
-      background: var(--surface);
+      background: var(--card);
       color: var(--text);
-      transition: all 0.15s;
+      transition: all var(--transition);
       min-height: 36px;
     }
 
@@ -1665,7 +1832,7 @@
     }
 
     .multi-service-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 20px;
@@ -1711,20 +1878,21 @@
       border: 1px solid var(--border);
       border-radius: 6px;
       color: var(--text);
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
       outline: none;
       resize: vertical;
       tab-size: 2;
-      transition: border-color 0.15s;
+      transition: border-color var(--transition);
     }
 
     .compose-area:focus {
       border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(77,171,247,0.1);
     }
 
     .compose-preview {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
@@ -1810,7 +1978,7 @@
     /* Deploy Progress */
 
     .deploy-progress {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 20px;
@@ -1931,17 +2099,18 @@
     }
 
     .section-label {
-      font-size: 13px;
-      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
       color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 2px;
       margin-bottom: 8px;
       margin-top: 16px;
     }
 
     .form-card-wide {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
@@ -1971,10 +2140,10 @@
     /* ── Build Log Viewer ────────────────────────────────────── */
 
     .build-log-viewer {
-      background: #0d1117;
+      background: var(--bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
       line-height: 1.6;
       color: #c9d1d9;
@@ -2003,7 +2172,7 @@
       align-items: center;
       gap: 8px;
       padding: 8px 16px;
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       font-size: 13px;
       font-weight: 500;
@@ -2014,7 +2183,7 @@
     .build-step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
     .build-step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
     .build-step:not(:first-child) { border-left: none; }
-    .build-step.active { color: var(--accent); border-color: var(--accent); background: rgba(59,130,246,0.08); }
+    .build-step.active { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
     .build-step.done { color: var(--green); border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.05); }
     .build-step.failed { color: var(--red); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.05); }
 
@@ -2023,11 +2192,11 @@
     .yaml-editor {
       width: 100%;
       min-height: 200px;
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
       line-height: 1.5;
       padding: 12px;
-      background: #0d1117;
+      background: var(--bg);
       color: #c9d1d9;
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -2036,10 +2205,10 @@
       outline: none;
     }
 
-    .yaml-editor:focus { border-color: var(--accent); }
+    .yaml-editor:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(77,171,247,0.1); }
 
     .db-card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
@@ -2099,7 +2268,7 @@
         top: 100%;
         left: 0;
         right: 0;
-        background: var(--surface);
+        background: var(--bg-secondary);
         border-bottom: 1px solid var(--border);
         z-index: 99;
         padding: 0;
@@ -2122,6 +2291,9 @@
   </style>
 </head>
 <body>
+
+<!-- Classification Banner (Top) -->
+<div class="classification-banner">UNCLASSIFIED</div>
 
 <!-- Alert Banner -->
 <div id="alert-banner" class="alert-banner" onclick="toggleAlertDetails()">
@@ -2149,7 +2321,8 @@
 </div>
 
 <nav id="main-nav">
-  <button class="active" data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
+  <button class="active" data-tab="portal" onclick="switchTab('portal', this)">Home</button>
+  <button data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
   <button data-tab="services" onclick="switchTab('services', this)">Services</button>
   <button data-tab="apps" onclick="switchTab('apps', this)">My Apps</button>
   <button data-tab="deploy" onclick="switchTab('deploy', this)">Deploy App</button>
@@ -2157,11 +2330,36 @@
   <button data-tab="cluster" onclick="switchTab('cluster', this)">Cluster</button>
   <button data-tab="audit" onclick="switchTab('audit', this)">Audit</button>
   <button data-tab="credentials" onclick="switchTab('credentials', this)">Credentials</button>
+  <button data-tab="users" onclick="switchTab('users', this)">Users</button>
 </nav>
 
 <main>
+  <!-- Portal Tab -->
+  <div id="tab-portal" class="tab-content active">
+    <div id="portal-header" style="margin-bottom: 24px;">
+      <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 4px;">Welcome to SRE Platform</h1>
+      <p id="portal-user-info" style="color: var(--text-dim); font-size: 14px;"></p>
+    </div>
+
+    <div id="portal-admin-banner" style="display:none; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; justify-content: space-between; align-items: center;">
+      <span style="font-size: 13px; color: var(--accent);">You have administrator access</span>
+      <button class="btn" style="font-size: 12px;" onclick="switchTab('overview', document.querySelector('[data-tab=overview]'))">Open Admin Dashboard</button>
+    </div>
+
+    <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);">Your Applications</h2>
+
+    <div id="portal-apps-grid" class="services-grid">
+      <div class="loading"><span class="spinner"></span></div>
+    </div>
+
+    <div id="portal-no-apps" style="display:none; text-align: center; padding: 60px 20px; color: var(--text-dim);">
+      <h3 style="font-size: 18px; color: var(--text); margin-bottom: 8px;">No applications available</h3>
+      <p style="font-size: 14px;">Contact your administrator to get access to applications.</p>
+    </div>
+  </div>
+
   <!-- Overview Tab -->
-  <div id="tab-overview" class="tab-content active">
+  <div id="tab-overview" class="tab-content">
     <div class="grid" id="summary-cards">
       <div class="card">
         <h3>Components</h3>
@@ -2171,10 +2369,35 @@
         <h3>Nodes</h3>
         <div class="big-number" id="node-count">--</div>
       </div>
-      <div class="card">
+      <div class="card" style="cursor:pointer;" onclick="toggleProblemPods()">
         <h3>Problem Pods</h3>
         <div class="big-number" id="pod-count">--</div>
+        <div id="pod-card-hint" style="font-size:11px;color:var(--text-dim);margin-top:4px;display:none;">Click for details</div>
       </div>
+    </div>
+
+    <div id="problem-pods-panel" class="table-card" style="display:none;">
+      <div class="table-header">
+        <h2>Problem Pods</h2>
+        <span id="problem-pods-summary" style="font-size:13px;color:var(--text-dim);"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Pod</th>
+              <th>Namespace</th>
+              <th>Reason</th>
+              <th>Restarts</th>
+              <th>Age</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="problem-pods-table"></tbody>
+        </table>
+      </div>
+      <div id="problem-pod-detail" style="padding:0 16px 16px;"></div>
     </div>
 
     <div class="table-card">
@@ -2249,9 +2472,9 @@
         <div class="mode-desc">One-click sample apps</div>
       </div>
       <div class="deploy-mode-card" onclick="switchDeployMode('build-git')">
-        <span class="mode-icon">&#x1F528;</span>
-        <div class="mode-title">Build from Git</div>
-        <div class="mode-desc">Clone, build, deploy</div>
+        <span class="mode-icon">&#x1F680;</span>
+        <div class="mode-title">Deploy from Git</div>
+        <div class="mode-desc">Auto-detect &amp; deploy</div>
       </div>
       <div class="deploy-mode-card" onclick="switchDeployMode('dockerfile')">
         <span class="mode-icon">&#x1F4DD;</span>
@@ -2302,7 +2525,7 @@
         <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Deploy a sample app with one click to try the platform.</p>
         <div class="form-group" style="max-width: 300px; margin-bottom: 16px;">
           <label>Team Name</label>
-          <input type="text" id="qs-team" placeholder="demo" value="demo" pattern="[a-z0-9-]+" />
+          <input type="text" id="qs-team" placeholder="demo" value="demo" pattern="[a-z0-9\-]+" />
           <div class="hint">Namespace for sample deployments</div>
         </div>
         <div class="grid" id="samples-grid">
@@ -2314,8 +2537,8 @@
     <!-- Mode: Build from Git -->
     <div id="panel-build-git" class="deploy-panel">
       <div class="form-card-wide">
-        <h2 style="margin-bottom: 4px;">Build from Git</h2>
-        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Point to a Git repo. We'll auto-detect Dockerfiles and docker-compose services, build, push to Harbor, and deploy with full Istio mTLS + SSO.</p>
+        <h2 style="margin-bottom: 4px;">Deploy from Git</h2>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Point to any Git repo. We'll auto-detect the project type &mdash; Docker Compose, Helm chart, Dockerfile, or Kubernetes manifests &mdash; and deploy it with full Istio mTLS + SSO.</p>
         <form id="build-git-form" onsubmit="handleAnalyzeRepo(event)">
           <div class="form-row">
             <div class="form-group" style="flex:2">
@@ -2330,18 +2553,24 @@
           <div class="form-row">
             <div class="form-group">
               <label>App Name</label>
-              <input type="text" id="bg-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+              <input type="text" id="bg-name" placeholder="my-app" required pattern="[a-z0-9\-]+" />
               <div class="hint">Lowercase letters, numbers, hyphens only</div>
             </div>
             <div class="form-group">
               <label>Team Name</label>
-              <input type="text" id="bg-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+              <input type="text" id="bg-team" placeholder="my-team" required pattern="[a-z0-9\-]+" list="team-list" />
             </div>
           </div>
           <div class="btn-group">
-            <button type="submit" class="btn btn-primary" id="build-git-btn">Analyze &amp; Build</button>
+            <button type="submit" class="btn btn-primary" id="build-git-btn">Deploy</button>
           </div>
         </form>
+
+        <!-- Detected Type Banner -->
+        <div id="detected-type-banner" style="display:none; margin-top:12px; padding:10px 14px; border-radius:6px; border:1px solid var(--border); background:var(--bg);">
+          <span id="detected-type-icon" style="font-size:18px;margin-right:8px;"></span>
+          <span id="detected-type-text" style="font-size:13px;"></span>
+        </div>
 
         <!-- Repo Analysis Results -->
         <div id="repo-analysis" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
@@ -2409,11 +2638,11 @@
           <div class="form-row">
             <div class="form-group">
               <label>App Name</label>
-              <input type="text" id="df-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+              <input type="text" id="df-name" placeholder="my-app" required pattern="[a-z0-9\-]+" />
             </div>
             <div class="form-group">
               <label>Team Name</label>
-              <input type="text" id="df-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+              <input type="text" id="df-team" placeholder="my-team" required pattern="[a-z0-9\-]+" list="team-list" />
             </div>
           </div>
           <div class="form-group">
@@ -2471,12 +2700,12 @@ CMD [&quot;node&quot;, &quot;server.js&quot;]"></textarea>
             </div>
             <div class="form-group">
               <label>Release Name</label>
-              <input type="text" id="hc-name" placeholder="my-nginx" required pattern="[a-z0-9-]+" />
+              <input type="text" id="hc-name" placeholder="my-nginx" required pattern="[a-z0-9\-]+" />
             </div>
           </div>
           <div class="form-group">
             <label>Team Name</label>
-            <input type="text" id="hc-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" style="max-width:300px;" />
+            <input type="text" id="hc-team" placeholder="my-team" required pattern="[a-z0-9\-]+" list="team-list" style="max-width:300px;" />
           </div>
           <div class="form-group">
             <label>Values Override (YAML)</label>
@@ -2513,11 +2742,11 @@ service:
           <div class="form-row">
             <div class="form-group">
               <label>Database Name</label>
-              <input type="text" id="db-name" placeholder="my-database" required pattern="[a-z0-9-]+" />
+              <input type="text" id="db-name" placeholder="my-database" required pattern="[a-z0-9\-]+" />
             </div>
             <div class="form-group">
               <label>Team Name</label>
-              <input type="text" id="db-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+              <input type="text" id="db-team" placeholder="my-team" required pattern="[a-z0-9\-]+" list="team-list" />
             </div>
           </div>
           <div class="form-row">
@@ -2565,12 +2794,12 @@ service:
           <div class="form-row">
             <div class="form-group">
               <label>App Name</label>
-              <input type="text" id="d-name" placeholder="my-app" required pattern="[a-z0-9-]+" />
+              <input type="text" id="d-name" placeholder="my-app" required pattern="[a-z0-9\-]+" />
               <div class="hint">Lowercase letters, numbers, hyphens only</div>
             </div>
             <div class="form-group">
               <label>Team Name</label>
-              <input type="text" id="d-team" placeholder="my-team" required pattern="[a-z0-9-]+" list="team-list" />
+              <input type="text" id="d-team" placeholder="my-team" required pattern="[a-z0-9\-]+" list="team-list" />
               <datalist id="team-list"></datalist>
               <div class="hint">Type a name -- namespace is created automatically</div>
             </div>
@@ -2661,11 +2890,11 @@ service:
           <div class="form-row">
             <div class="form-group">
               <label>Team Name</label>
-              <input type="text" id="m-team" placeholder="my-team" required pattern="[a-z0-9-]+" />
+              <input type="text" id="m-team" placeholder="my-team" required pattern="[a-z0-9\-]+" />
             </div>
             <div class="form-group">
               <label>App Group Name</label>
-              <input type="text" id="m-group" placeholder="my-app-stack" required pattern="[a-z0-9-]+" />
+              <input type="text" id="m-group" placeholder="my-app-stack" required pattern="[a-z0-9\-]+" />
               <div class="hint">Logical name for this group of services</div>
             </div>
           </div>
@@ -2678,7 +2907,7 @@ service:
               <div class="form-row">
                 <div class="form-group">
                   <label>Service Name</label>
-                  <input type="text" class="ms-name" placeholder="frontend" required pattern="[a-z0-9-]+" />
+                  <input type="text" class="ms-name" placeholder="frontend" required pattern="[a-z0-9\-]+" />
                 </div>
                 <div class="form-group">
                   <label>Image</label>
@@ -2721,7 +2950,7 @@ service:
         <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Paste a docker-compose.yml or upload a file. Services will be converted to Kubernetes deployments.</p>
         <div class="form-group">
           <label>Team Name</label>
-          <input type="text" id="c-team" placeholder="my-team" required pattern="[a-z0-9-]+" style="max-width:300px;" />
+          <input type="text" id="c-team" placeholder="my-team" required pattern="[a-z0-9\-]+" style="max-width:300px;" />
         </div>
         <div class="upload-area">
           <button type="button" class="btn-outline" onclick="document.getElementById('compose-file-input').click()">Upload File</button>
@@ -3055,12 +3284,60 @@ services:
       </div>
     </details>
   </div>
+
+  <!-- Users Tab -->
+  <div id="tab-users" class="tab-content">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2>User Management</h2>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="showCreateUserModal()">Create User</button>
+        <button class="btn" onclick="showCreateGroupModal()">Create Group</button>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:16px;">
+      <input type="text" id="user-search" placeholder="Search users..." oninput="filterUsers()" style="flex:1; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px;" />
+      <select id="group-filter" onchange="filterUsers()" style="padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px;">
+        <option value="">All Groups</option>
+      </select>
+    </div>
+
+    <div class="table-card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Username</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Groups</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-table">
+            <tr><td colspan="7" class="loading"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:24px;">
+      <h3 style="font-size:15px; font-weight:600; margin-bottom:12px;">Groups</h3>
+      <div id="groups-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+    </div>
+  </div>
 </main>
 
 <!-- Command Palette -->
 <div class="cmd-overlay" id="cmd-overlay" onclick="if(event.target===this)closeCommandPalette()">
   <div class="cmd-palette">
-    <input class="cmd-input" id="cmd-input" placeholder="Search services, pages, actions..." oninput="filterCommands()" onkeydown="handleCmdKey(event)" />
+    <div class="cmd-input-wrap">
+      <span class="cmd-search-icon">&#x1F50D;</span>
+      <input class="cmd-input" id="cmd-input" placeholder="Search commands, users, apps, services..." oninput="filterCommands()" onkeydown="handleCmdKey(event)" />
+      <kbd class="cmd-esc-hint">ESC</kbd>
+    </div>
     <div class="cmd-results" id="cmd-results"></div>
   </div>
 </div>
@@ -3150,6 +3427,7 @@ function switchTab(tab, btn) {
   clearInterval(auditRefreshTimer);
   clearInterval(clusterRefreshTimer);
 
+  if (tab === 'portal') { loadPortalApps(); }
   if (tab === 'deploy') { loadTenants(); }
   if (tab === 'apps') { loadAppGallery(); }
   if (tab === 'services') { loadServiceTiles(); }
@@ -3166,6 +3444,7 @@ function switchTab(tab, btn) {
     initClusterTab();
     clusterRefreshTimer = setInterval(refreshActiveClusterPanel, 30000);
   }
+  if (tab === 'users') { loadUsers(); }
 }
 
 function toggleMobileNav() {
@@ -3177,6 +3456,7 @@ function toggleMobileNav() {
 function applyRBAC() {
   var role = currentUser.role;
   var tabs = {
+    portal: true,
     overview: true,
     services: true,
     apps: true,
@@ -3184,7 +3464,8 @@ function applyRBAC() {
     cluster: role === 'admin' || role === 'developer',
     status: true,
     audit: role === 'admin',
-    credentials: role === 'admin'
+    credentials: role === 'admin',
+    users: role === 'admin'
   };
 
   document.querySelectorAll('nav button[data-tab]').forEach(function(btn) {
@@ -3374,6 +3655,11 @@ function renderHealth() {
   document.getElementById('pod-count').textContent = s.problemPodCount;
   document.getElementById('pod-count').className = 'big-number ' + (s.problemPodCount === 0 ? 'green' : 'red');
 
+  // Show hint and render problem pods table
+  var hint = document.getElementById('pod-card-hint');
+  if (hint) hint.style.display = s.problemPodCount > 0 ? 'block' : 'none';
+  renderProblemPods(d.problemPods);
+
   // HelmRelease table
   document.getElementById('hr-table').innerHTML = d.helmReleases
     .sort(function(a, b) { return a.namespace.localeCompare(b.namespace); })
@@ -3397,6 +3683,141 @@ function renderHealth() {
       '<td>' + esc(n.version) + '</td>' +
       '</tr>';
   }).join('');
+}
+
+function toggleProblemPods() {
+  var panel = document.getElementById('problem-pods-panel');
+  if (!panel) return;
+  if (!healthData || !healthData.problemPods || healthData.problemPods.length === 0) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function renderProblemPods(pods) {
+  var panel = document.getElementById('problem-pods-panel');
+  var tbody = document.getElementById('problem-pods-table');
+  var summary = document.getElementById('problem-pods-summary');
+  if (!panel || !tbody) return;
+
+  if (!pods || pods.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  summary.textContent = pods.length + ' pod' + (pods.length !== 1 ? 's' : '') + ' need attention';
+
+  tbody.innerHTML = pods.map(function(p) {
+    var statusClass = p.phase === 'Pending' ? 'pending' : 'failed';
+    var dot = p.reason === 'ImagePullBackOff' || p.reason === 'ErrImagePull' ? 'red' :
+              p.reason === 'CrashLoopBackOff' ? 'red' :
+              p.phase === 'Pending' ? 'yellow' : 'red';
+    var reasonBadge = p.reason ? '<span class="badge ' + (dot === 'red' ? 'red' : 'yellow') + '" style="font-size:11px;">' + esc(p.reason) + '</span>' : '<span style="color:var(--text-dim);">-</span>';
+    var messageSnippet = p.message ? '<div style="font-size:11px;color:var(--text-dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(p.message) + '">' + esc(p.message) + '</div>' : '';
+
+    return '<tr style="cursor:pointer;" onclick="expandProblemPod(this, ' + "'" + esc(p.namespace) + "'" + ', ' + "'" + esc(p.name) + "'" + ')">' +
+      '<td><span class="pod-status ' + statusClass + '"><span class="health-dot ' + dot + '"></span> ' + esc(p.phase) + '</span></td>' +
+      '<td><strong style="font-size:13px;">' + esc(p.name) + '</strong>' +
+        (p.ownerKind ? '<div style="font-size:11px;color:var(--text-dim);">' + esc(p.ownerKind) + ': ' + esc(p.ownerName) + '</div>' : '') + '</td>' +
+      '<td>' + esc(p.namespace) + '</td>' +
+      '<td>' + reasonBadge + messageSnippet + '</td>' +
+      '<td>' + (p.restarts > 0 ? '<span style="color:var(--yellow);font-weight:500;">' + p.restarts + '</span>' : '0') + '</td>' +
+      '<td>' + esc(p.age) + '</td>' +
+      '<td style="white-space:nowrap;">' +
+        '<button class="btn" style="font-size:11px;padding:3px 8px;margin-right:4px;" onclick="event.stopPropagation();goToPodLogs(\'' + esc(p.namespace) + '\',\'' + esc(p.name) + '\')">Logs</button>' +
+        '<button class="btn" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();deleteProblemPod(\'' + esc(p.namespace) + '\',\'' + esc(p.name) + '\')">Delete</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function expandProblemPod(rowEl, ns, name) {
+  var detail = document.getElementById('problem-pod-detail');
+  if (detail.dataset.current === ns + '/' + name) {
+    detail.innerHTML = '';
+    detail.dataset.current = '';
+    return;
+  }
+  detail.dataset.current = ns + '/' + name;
+  detail.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+  try {
+    var resp = await fetch('/api/cluster/pods/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name));
+    var pod = await resp.json();
+
+    var containers = (pod.containers || []).map(function(c) {
+      return '<div style="padding:6px 0;border-bottom:1px solid var(--border);">' +
+        '<span style="font-weight:500;">' + esc(c.name) + '</span> ' +
+        '<span class="condition-badge ' + (c.ready ? 'ok' : 'warn') + '">' + (c.ready ? 'Ready' : 'Not Ready') + '</span> ' +
+        '<span style="font-size:11px;color:var(--text-dim);">Image: ' + esc(c.image) + '</span>' +
+        (c.restartCount > 0 ? ' <span style="font-size:11px;color:var(--yellow);">Restarts: ' + c.restartCount + '</span>' : '') +
+      '</div>';
+    }).join('');
+
+    var events = (pod.events || []).slice(0, 8).map(function(e) {
+      return '<div class="event-item" style="padding:4px 0;">' +
+        '<span class="event-badge ' + esc(e.type) + '">' + esc(e.type) + '</span>' +
+        '<div><div style="font-size:12px;">' + esc(e.message) + '</div>' +
+        '<div class="event-meta">' + esc(e.reason) + ' &middot; ' + esc(e.age) + '</div></div>' +
+      '</div>';
+    }).join('') || '<div style="color:var(--text-dim);font-size:12px;">No recent events</div>';
+
+    detail.innerHTML = '<div class="pod-detail-panel" style="margin-top:12px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+        '<h3 style="font-size:15px;font-weight:600;">' + esc(name) + '</h3>' +
+        '<div>' +
+          '<button class="btn" style="font-size:11px;margin-right:6px;" onclick="goToPodLogs(\'' + esc(ns) + '\',\'' + esc(name) + '\')">View Logs</button>' +
+          '<button class="btn" style="font-size:11px;" onclick="deleteProblemPod(\'' + esc(ns) + '\',\'' + esc(name) + '\')">Delete Pod</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pod-detail-grid">' +
+        '<div class="detail-item"><span class="dlabel">Namespace</span>' + esc(pod.namespace) + '</div>' +
+        '<div class="detail-item"><span class="dlabel">Node</span>' + esc(pod.node || '-') + '</div>' +
+        '<div class="detail-item"><span class="dlabel">IP</span>' + esc(pod.ip || '-') + '</div>' +
+        '<div class="detail-item"><span class="dlabel">Status</span>' + esc(pod.status) + '</div>' +
+        '<div class="detail-item"><span class="dlabel">QoS Class</span>' + esc(pod.qosClass || '-') + '</div>' +
+        '<div class="detail-item"><span class="dlabel">Service Account</span>' + esc(pod.serviceAccount || '-') + '</div>' +
+      '</div>' +
+      '<h4 style="font-size:13px;font-weight:600;margin:12px 0 6px;">Containers</h4>' + containers +
+      '<h4 style="font-size:13px;font-weight:600;margin:12px 0 6px;">Recent Events</h4>' + events +
+    '</div>';
+  } catch (err) {
+    detail.innerHTML = '<div style="color:var(--red);padding:12px;">Failed to load pod details: ' + esc(err.message) + '</div>';
+  }
+}
+
+function goToPodLogs(ns, name) {
+  switchTab('cluster', document.querySelector('[data-tab="cluster"]'));
+  setTimeout(function() {
+    // Switch to logs panel but skip its auto populateNsFilter — we'll do it ourselves
+    activeClusterPanel = 'logs';
+    document.querySelectorAll('.cluster-panel').forEach(function(el) { el.classList.remove('active'); });
+    document.querySelectorAll('.cluster-subnav-btn').forEach(function(el) { el.classList.remove('active'); });
+    document.getElementById('cluster-logs').classList.add('active');
+    document.querySelector('.cluster-subnav-btn:nth-child(3)').classList.add('active');
+    // Populate namespaces, THEN set namespace and load pods+logs
+    populateNsFilter('log-ns').then(function() {
+      document.getElementById('log-ns').value = ns;
+      return populateLogPods();
+    }).then(function() {
+      document.getElementById('log-pod').value = name;
+      populateLogContainers();
+      loadClusterLogs();
+    });
+  }, 100);
+}
+
+async function deleteProblemPod(ns, name) {
+  if (!confirm('Delete pod ' + name + ' in ' + ns + '? If owned by a controller, it will be recreated.')) return;
+  try {
+    var resp = await fetch('/api/cluster/pods/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+    if (resp.ok) {
+      showToast('Pod ' + name + ' deleted');
+      loadHealth();
+    } else {
+      var err = await resp.json();
+      showToast('Failed: ' + (err.error || resp.statusText), 'error');
+    }
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'error');
+  }
 }
 
 // ── Service Tiles (NEW) ─────────────────────────────────────────────────────
@@ -3676,7 +4097,7 @@ function addServiceCard() {
     '<div class="form-row">' +
       '<div class="form-group">' +
         '<label>Service Name</label>' +
-        '<input type="text" class="ms-name" placeholder="backend" required pattern="[a-z0-9-]+" />' +
+        '<input type="text" class="ms-name" placeholder="backend" required pattern="[a-z0-9\-]+" />' +
       '</div>' +
       '<div class="form-group">' +
         '<label>Image</label>' +
@@ -4300,10 +4721,11 @@ function resetAnalysis() {
   document.getElementById('repo-analysis-results').style.display = 'none';
   document.getElementById('compose-pipeline').style.display = 'none';
   document.getElementById('build-pipeline').style.display = 'none';
+  document.getElementById('detected-type-banner').style.display = 'none';
   currentAnalysis = null;
   var btn = document.getElementById('build-git-btn');
   btn.disabled = false;
-  btn.textContent = 'Analyze & Build';
+  btn.textContent = 'Deploy';
 }
 
 function renderServiceCard(svc, idx) {
@@ -4321,12 +4743,12 @@ function renderServiceCard(svc, idx) {
     } else if (svc.sre === 'redis') {
       actionHtml = '<div style="font-size:11px;color:#f59e0b;margin-top:4px;">&#x2192; Deployed as managed Redis instance</div>';
     } else if (svc.sre === 'skip') {
-      actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">&#x2192; Skipped: ' + (svc.sreLabel || 'already in SRE') + '</div>';
+      actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">&#x2192; Skipped: ' + esc(svc.sreLabel || 'already in SRE') + '</div>';
     }
   } else if (svc.needsBuild) {
-    actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Build: ' + (svc.buildContext || '.') + '/' + (svc.dockerfile || 'Dockerfile') + '</div>';
+    actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Build: ' + esc(svc.buildContext || '.') + '/' + esc(svc.dockerfile || 'Dockerfile') + '</div>';
   } else if (svc.image) {
-    actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Image: ' + svc.image + '</div>';
+    actionHtml = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Image: ' + esc(svc.image) + '</div>';
   }
 
   var portHtml = svc.port && svc.role !== 'platform' ? '<span style="font-size:11px;color:var(--text-dim);">:' + svc.port + '</span>' : '';
@@ -4335,7 +4757,7 @@ function renderServiceCard(svc, idx) {
     '<div style="font-size:18px;line-height:1;">' + icon + '</div>' +
     '<div style="flex:1;min-width:0;">' +
       '<div style="display:flex;align-items:center;gap:8px;">' +
-        '<strong style="font-size:13px;">' + svc.name + '</strong> ' + portHtml +
+        '<strong style="font-size:13px;">' + esc(svc.name) + '</strong> ' + portHtml +
         '<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44;">' + label + '</span>' +
       '</div>' +
       actionHtml +
@@ -4357,7 +4779,8 @@ async function handleAnalyzeRepo(e) {
   var appName = document.getElementById('bg-name').value.trim();
   var team = document.getElementById('bg-team').value.trim();
 
-  // Show analysis section
+  // Hide previous results
+  document.getElementById('detected-type-banner').style.display = 'none';
   document.getElementById('repo-analysis').style.display = 'block';
   document.getElementById('repo-analysis-loading').style.display = 'block';
   document.getElementById('repo-analysis-results').style.display = 'none';
@@ -4365,10 +4788,10 @@ async function handleAnalyzeRepo(e) {
   document.getElementById('compose-pipeline').style.display = 'none';
 
   try {
-    var resp = await fetch('/api/repo/analyze', {
+    var resp = await fetch('/api/deploy/git', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gitUrl: url, branch: branch }),
+      body: JSON.stringify({ url: url, branch: branch, name: appName, team: team }),
     });
     var data = await resp.json();
 
@@ -4376,45 +4799,237 @@ async function handleAnalyzeRepo(e) {
 
     if (!data.success) {
       btn.disabled = false;
-      btn.textContent = 'Analyze & Build';
+      btn.textContent = 'Deploy';
       showDeployAlert('error', data.error || 'Failed to analyze repository');
       document.getElementById('repo-analysis').style.display = 'none';
       return;
     }
 
-    currentAnalysis = { ...data, appName: appName, team: team, gitUrl: url, branch: branch };
+    var detectedType = data.detectedType || 'unknown';
+    currentAnalysis = { ...data, appName: appName, team: team, gitUrl: url, branch: branch, repoType: detectedType };
 
-    // Single Dockerfile mode: skip analysis UI, go straight to build
-    if (data.repoType === 'dockerfile' && data.services.length === 1) {
+    // Show the detection banner
+    showDetectedTypeBanner(detectedType, data);
+
+    // Handle each detected type
+    if (detectedType === 'helm') {
+      // Helm chart — deployed via Flux, no build needed
       document.getElementById('repo-analysis').style.display = 'none';
-      var svc = data.services[0];
-      startSingleBuild(url, branch, appName, team, svc.dockerfile || 'Dockerfile', svc.port || 8080);
+      var chartInfo = data.chartName ? (' (' + data.chartName + (data.chartVersion ? ' v' + data.chartVersion : '') + ')') : '';
+      showDeployAlert('success', 'Detected Helm chart' + chartInfo + ' — deployed via Flux HelmRelease. Reconciling...');
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
       return;
     }
 
-    // Compose / multi-service mode: show detected services
-    document.getElementById('repo-analysis-results').style.display = 'block';
-
-    var typeLabels = { compose: 'Docker Compose project', dockerfile: 'Dockerfile', unknown: 'Unknown project type' };
-    document.getElementById('repo-type-label').textContent =
-      typeLabels[data.repoType] + ' \u2014 ' + data.services.length + ' service(s) detected. ' +
-      'Istio mTLS + SSO applied automatically. Platform services mapped to SRE equivalents.';
-
-    var html = '';
-    for (var i = 0; i < data.services.length; i++) {
-      html += renderServiceCard(data.services[i], i);
+    if (detectedType === 'kustomize') {
+      // Kustomize / raw K8s manifests — deployed via Flux GitOps
+      document.getElementById('repo-analysis').style.display = 'none';
+      showDeployAlert('success', 'Detected Kubernetes manifests — deployed via Flux GitOps. Reconciling...');
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
+      return;
     }
-    document.getElementById('detected-services').innerHTML = html;
 
+    if (detectedType === 'unknown') {
+      // Unknown type — deploy as raw manifests via Flux
+      document.getElementById('repo-analysis').style.display = 'none';
+      showDeployAlert('warning', 'Could not auto-detect project type. Deploying as raw Kubernetes manifests via Flux GitOps.');
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
+      return;
+    }
+
+    if (detectedType === 'dockerfile') {
+      // Single Dockerfile — kick off build pipeline
+      document.getElementById('repo-analysis').style.display = 'none';
+      var svc = (data.services && data.services.length > 0) ? data.services[0] : {};
+      var dockerfile = svc.dockerfile || 'Dockerfile';
+      var port = svc.port || 8080;
+
+      // If the backend already started the build and returned a buildId, monitor it
+      if (data.buildId) {
+        startSingleBuild(url, branch, appName, team, dockerfile, port);
+      } else {
+        startSingleBuild(url, branch, appName, team, dockerfile, port);
+      }
+      return;
+    }
+
+    if (detectedType === 'compose') {
+      // Docker Compose project — show detected services or monitor builds
+      if (data.deployed) {
+        // Backend already deployed everything
+        document.getElementById('repo-analysis').style.display = 'none';
+        showDeployAlert('success', 'Docker Compose project deployed — ' + data.deployed.length + ' service(s) running.');
+        btn.disabled = false;
+        btn.textContent = 'Deploy';
+        return;
+      }
+
+      if (data.builds && data.builds.length > 0 && data.groupId) {
+        // Backend kicked off builds — monitor them via compose pipeline
+        document.getElementById('repo-analysis').style.display = 'none';
+        currentAnalysis.groupId = data.groupId;
+        currentAnalysis.builds = data.builds;
+        currentAnalysis.services = data.services || [];
+        monitorComposeBuildFromGit(data);
+        return;
+      }
+
+      // Show detected services for user confirmation
+      var services = data.services || [];
+      if (services.length > 0) {
+        document.getElementById('repo-analysis-results').style.display = 'block';
+
+        document.getElementById('repo-type-label').textContent =
+          'Docker Compose project \u2014 ' + services.length + ' service(s) detected. ' +
+          'Istio mTLS + SSO applied automatically. Platform services mapped to SRE equivalents.';
+
+        var html = '';
+        for (var i = 0; i < services.length; i++) {
+          html += renderServiceCard(services[i], i);
+        }
+        document.getElementById('detected-services').innerHTML = html;
+
+        btn.disabled = false;
+        btn.textContent = 'Deploy';
+      } else {
+        document.getElementById('repo-analysis').style.display = 'none';
+        showDeployAlert('error', 'Docker Compose project detected but no services found.');
+        btn.disabled = false;
+        btn.textContent = 'Deploy';
+      }
+      return;
+    }
+
+    // Fallback — show whatever services were returned
+    document.getElementById('repo-analysis').style.display = 'none';
     btn.disabled = false;
-    btn.textContent = 'Analyze & Build';
+    btn.textContent = 'Deploy';
 
   } catch (err) {
     document.getElementById('repo-analysis-loading').style.display = 'none';
     document.getElementById('repo-analysis').style.display = 'none';
+    document.getElementById('detected-type-banner').style.display = 'none';
     btn.disabled = false;
-    btn.textContent = 'Analyze & Build';
-    showDeployAlert('error', 'Failed to analyze repository: ' + err.message);
+    btn.textContent = 'Deploy';
+    showDeployAlert('error', 'Failed to deploy from repository: ' + err.message);
+  }
+}
+
+function showDetectedTypeBanner(detectedType, data) {
+  var banner = document.getElementById('detected-type-banner');
+  var iconEl = document.getElementById('detected-type-icon');
+  var textEl = document.getElementById('detected-type-text');
+
+  var icons = {
+    compose: '&#x1F433;',
+    helm: '&#x2388;',
+    dockerfile: '&#x1F4E6;',
+    kustomize: '&#x2638;',
+    unknown: '&#x2699;'
+  };
+
+  var serviceCount = (data.services && data.services.length) ? data.services.length : 0;
+  var labels = {
+    compose: 'Docker Compose project' + (serviceCount > 0 ? ' \u2014 ' + serviceCount + ' service(s) detected' : ''),
+    helm: 'Helm chart detected \u2014 deploying via GitOps',
+    dockerfile: 'Dockerfile found \u2014 building image',
+    kustomize: 'Kubernetes manifests \u2014 deploying via GitOps',
+    unknown: 'Unknown project type \u2014 deploying as raw manifests via GitOps'
+  };
+
+  iconEl.innerHTML = icons[detectedType] || icons.unknown;
+  textEl.textContent = labels[detectedType] || labels.unknown;
+  banner.style.display = 'block';
+}
+
+function monitorComposeBuildFromGit(data) {
+  var btn = document.getElementById('build-git-btn');
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  var pipelineEl = document.getElementById('compose-pipeline');
+  if (pipelineEl) {
+    pipelineEl.style.display = 'block';
+  }
+
+  // Monitor each build by polling status
+  var builds = data.builds;
+  var completed = 0;
+  var failed = 0;
+
+  function checkBuildStatus(build) {
+    fetch('/api/build/' + encodeURIComponent(build.buildId) + '/status')
+      .then(function(resp) { return resp.json(); })
+      .then(function(status) {
+        if (status.phase === 'succeeded' || status.phase === 'completed') {
+          completed++;
+          if (completed + failed === builds.length) {
+            onAllComposeBuildsDone(failed);
+          }
+        } else if (status.phase === 'failed' || status.phase === 'error') {
+          failed++;
+          if (completed + failed === builds.length) {
+            onAllComposeBuildsDone(failed);
+          }
+        } else {
+          // Still running — poll again
+          setTimeout(function() { checkBuildStatus(build); }, 3000);
+        }
+      })
+      .catch(function() {
+        failed++;
+        if (completed + failed === builds.length) {
+          onAllComposeBuildsDone(failed);
+        }
+      });
+  }
+
+  for (var i = 0; i < builds.length; i++) {
+    checkBuildStatus(builds[i]);
+  }
+
+  function onAllComposeBuildsDone(failCount) {
+    if (failCount > 0) {
+      showDeployAlert('error', failCount + ' of ' + builds.length + ' builds failed.');
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
+      return;
+    }
+
+    // All builds succeeded — check if backend auto-deploys or we need to trigger it
+    if (data.autoDeployed) {
+      showDeployAlert('success', 'All ' + builds.length + ' services built and deployed successfully.');
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
+    } else if (currentAnalysis && currentAnalysis.groupId) {
+      // Trigger deploy for the compose group
+      fetch('/api/deploy/compose-group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: currentAnalysis.groupId, team: currentAnalysis.team }),
+      }).then(function(resp) { return resp.json(); })
+        .then(function(result) {
+          if (result.success) {
+            showDeployAlert('success', 'All ' + builds.length + ' services built and deployed successfully.');
+          } else {
+            showDeployAlert('error', 'Builds succeeded but deployment failed: ' + (result.error || 'Unknown error'));
+          }
+          btn.disabled = false;
+          btn.textContent = 'Deploy';
+        })
+        .catch(function(err) {
+          showDeployAlert('error', 'Builds succeeded but deployment failed: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Deploy';
+        });
+    } else {
+      showDeployAlert('success', 'All ' + builds.length + ' services built and deployed successfully.');
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
+    }
   }
 }
 
@@ -4442,7 +5057,7 @@ function startSingleBuild(url, branch, appName, team, dockerfile, port) {
       appendBuildLog('build-log-output', 'Error: ' + data.error, 'error');
       setBuildStepState('bp', 'clone', 'failed');
       btn.disabled = false;
-      btn.textContent = 'Analyze & Build';
+      btn.textContent = 'Deploy';
       return;
     }
 
@@ -4486,7 +5101,7 @@ function startSingleBuild(url, branch, appName, team, dockerfile, port) {
           document.getElementById('build-status-text').textContent = 'Build failed';
         }
         btn.disabled = false;
-        btn.textContent = 'Analyze & Build';
+        btn.textContent = 'Deploy';
       } else if (msg.type === 'done') {
         evtSource.close();
       }
@@ -4494,12 +5109,12 @@ function startSingleBuild(url, branch, appName, team, dockerfile, port) {
     evtSource.onerror = function() {
       evtSource.close();
       btn.disabled = false;
-      btn.textContent = 'Analyze & Build';
+      btn.textContent = 'Deploy';
     };
   }).catch(function(err) {
     appendBuildLog('build-log-output', 'Request failed: ' + err.message, 'error');
     btn.disabled = false;
-    btn.textContent = 'Analyze & Build';
+    btn.textContent = 'Deploy';
   });
 }
 
@@ -5390,15 +6005,19 @@ async function expandPod(ns, name, rowEl) {
 }
 
 function viewPodLogs(ns, name) {
-  switchClusterPanel('logs', document.querySelector('.cluster-subnav-btn:nth-child(3)'));
-  setTimeout(function() {
+  activeClusterPanel = 'logs';
+  document.querySelectorAll('.cluster-panel').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.cluster-subnav-btn').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById('cluster-logs').classList.add('active');
+  document.querySelector('.cluster-subnav-btn:nth-child(3)').classList.add('active');
+  populateNsFilter('log-ns').then(function() {
     document.getElementById('log-ns').value = ns;
-    populateLogPods().then(function() {
-      document.getElementById('log-pod').value = name;
-      populateLogContainers();
-      loadClusterLogs();
-    });
-  }, 100);
+    return populateLogPods();
+  }).then(function() {
+    document.getElementById('log-pod').value = name;
+    populateLogContainers();
+    loadClusterLogs();
+  });
 }
 
 // ── Logs ──
@@ -5682,81 +6301,112 @@ async function toggleCordon(cordon) {
 
 // ── Command Palette ─────────────────────────────────────────────────────────
 
-var ALL_COMMANDS = [
+function getCommands() {
+  var cmds = [];
+
   // Navigation
-  { label: 'Go to Overview', icon: '\uD83C\uDFE0', action: function() { switchTabByName('overview'); } },
-  { label: 'Go to Services', icon: '\uD83D\uDD17', action: function() { switchTabByName('services'); } },
-  { label: 'Go to My Apps', icon: '\uD83D\uDCE6', action: function() { switchTabByName('apps'); } },
-  { label: 'Go to Deploy', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } },
-  { label: 'Go to Status', icon: '\u2705', action: function() { switchTabByName('status'); } },
-  { label: 'Go to Audit Log', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } },
-  { label: 'Go to Login / Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } },
-  { label: 'Go to Cluster', icon: '\u2699', action: function() { switchTabByName('cluster'); } },
-  { label: 'Cluster: View Nodes', icon: '\uD83D\uDDA5', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('nodes'); }, 100); } },
-  { label: 'Cluster: View Pods', icon: '\uD83D\uDCE6', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('pods'); }, 100); } },
-  { label: 'Cluster: View Logs', icon: '\uD83D\uDCDC', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('logs'); }, 100); } },
-  { label: 'Cluster: View Events', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('events'); }, 100); } },
-  { label: 'Cluster: Namespaces', icon: '\uD83D\uDCC1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('namespaces'); }, 100); } },
-  { label: 'Cluster: Top Resource Consumers', icon: '\uD83D\uDCCA', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('resources'); }, 100); } },
-  { label: 'Cluster: Quick Actions', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('actions'); }, 100); } },
+  cmds.push({ category: 'Navigation', label: 'Go to Home', icon: '\uD83C\uDFE0', action: function() { switchTabByName('portal'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Overview', icon: '\uD83D\uDCCA', action: function() { switchTabByName('overview'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Services', icon: '\uD83D\uDD27', action: function() { switchTabByName('services'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Deploy', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to My Apps', icon: '\uD83D\uDCE6', action: function() { switchTabByName('apps'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Cluster', icon: '\u2699\uFE0F', action: function() { switchTabByName('cluster'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Users', icon: '\uD83D\uDC65', action: function() { switchTabByName('users'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Audit', icon: '\uD83D\uDCDD', action: function() { switchTabByName('audit'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Credentials', icon: '\uD83D\uDD11', action: function() { switchTabByName('credentials'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Status', icon: '\uD83D\uDFE2', action: function() { switchTabByName('status'); } });
 
-  // Open services
-  { label: 'Open Grafana', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com'); } },
-  { label: 'Open Prometheus', icon: '\uD83D\uDD0D', action: function() { openService('https://prometheus.apps.sre.example.com'); } },
-  { label: 'Open AlertManager', icon: '\uD83D\uDD14', action: function() { openService('https://alertmanager.apps.sre.example.com'); } },
-  { label: 'Open Harbor', icon: '\uD83D\uDC33', action: function() { openService('https://harbor.apps.sre.example.com'); } },
-  { label: 'Open Keycloak', icon: '\uD83D\uDD11', action: function() { openService('https://keycloak.apps.sre.example.com'); } },
-  { label: 'Open NeuVector', icon: '\uD83D\uDEE1', action: function() { openService('https://neuvector.apps.sre.example.com'); } },
-  { label: 'Open OpenBao', icon: '\uD83D\uDD10', action: function() { openService('https://openbao.apps.sre.example.com'); } },
-  { label: 'Open Keycloak Admin Console', icon: '\uD83D\uDC64', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/'); } },
+  // Cluster sub-panels
+  cmds.push({ category: 'Navigation', label: 'Cluster: View Nodes', icon: '\uD83D\uDDA5', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('nodes'); }, 100); } });
+  cmds.push({ category: 'Navigation', label: 'Cluster: View Pods', icon: '\uD83D\uDCE6', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('pods'); }, 100); } });
+  cmds.push({ category: 'Navigation', label: 'Cluster: View Logs', icon: '\uD83D\uDCDC', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('logs'); }, 100); } });
+  cmds.push({ category: 'Navigation', label: 'Cluster: View Events', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('events'); }, 100); } });
+  cmds.push({ category: 'Navigation', label: 'Cluster: Namespaces', icon: '\uD83D\uDCC1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('namespaces'); }, 100); } });
+  cmds.push({ category: 'Navigation', label: 'Cluster: Top Resource Consumers', icon: '\uD83D\uDCCA', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('resources'); }, 100); } });
+  cmds.push({ category: 'Navigation', label: 'Cluster: Quick Actions', icon: '\u26A1', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('actions'); }, 100); } });
 
-  // Grafana dashboards (deep links)
-  { label: 'Grafana: Cluster Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } },
-  { label: 'Grafana: Node Exporter (system metrics)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } },
-  { label: 'Grafana: Kubernetes Pods', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } },
-  { label: 'Grafana: Kubernetes Compute Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/efa86fd1d0c121a26444b636'); } },
-  { label: 'Grafana: Namespace Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-namespace-resources'); } },
-  { label: 'Grafana: Istio Mesh Traffic', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-istio-mesh'); } },
-  { label: 'Grafana: Kyverno Compliance', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-kyverno-compliance'); } },
-  { label: 'Grafana: Flux GitOps Status', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-flux-gitops'); } },
-  { label: 'Grafana: Alertmanager Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/alertmanager-overview'); } },
-  { label: 'Grafana: Explore (Loki logs)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/explore'); } },
+  // Quick Actions
+  cmds.push({ category: 'Actions', label: 'Create new user', icon: '\u2795', action: function() { switchTabByName('users'); setTimeout(showCreateUserModal, 300); } });
+  cmds.push({ category: 'Actions', label: 'Create new group', icon: '\u2795', action: function() { switchTabByName('users'); setTimeout(showCreateGroupModal, 300); } });
+  cmds.push({ category: 'Actions', label: 'Deploy app', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } });
+  cmds.push({ category: 'Actions', label: 'Deploy from Git', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); setTimeout(function() { var card = document.querySelector('.deploy-mode-card:nth-child(2)'); if (card) card.click(); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'Deploy: Quick NGINX demo', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); setTimeout(function() { var nameEl = document.getElementById('deploy-name'); if(nameEl) { nameEl.value = 'demo-nginx'; } }, 200); } });
+  cmds.push({ category: 'Actions', label: 'View problem pods', icon: '\u26A0\uFE0F', action: function() { switchTabByName('overview'); setTimeout(toggleProblemPods, 300); } });
+  cmds.push({ category: 'Actions', label: 'View cluster logs', icon: '\uD83D\uDCDC', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('logs'); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'View cluster events', icon: '\uD83D\uDCCB', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('events'); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'Restart a deployment', icon: '\uD83D\uDD04', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('actions'); }, 300); } });
+  cmds.push({ category: 'Actions', label: 'Refresh health data', icon: '\uD83D\uDD04', action: function() { loadHealth(); showToast('Health data refreshed'); } });
+
+  // External Services
+  cmds.push({ category: 'Services', label: 'Open Grafana', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open Prometheus', icon: '\uD83D\uDD0D', action: function() { openService('https://prometheus.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open AlertManager', icon: '\uD83D\uDD14', action: function() { openService('https://alertmanager.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open Harbor Registry', icon: '\uD83D\uDEA2', action: function() { openService('https://harbor.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open Keycloak Admin', icon: '\uD83D\uDD10', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/'); } });
+  cmds.push({ category: 'Services', label: 'Open NeuVector', icon: '\uD83D\uDEE1', action: function() { openService('https://neuvector.apps.sre.example.com'); } });
+  cmds.push({ category: 'Services', label: 'Open OpenBao', icon: '\uD83D\uDD10', action: function() { openService('https://openbao.apps.sre.example.com'); } });
+
+  // Grafana dashboards
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Cluster Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-cluster-overview'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Node Exporter (system metrics)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/node-exporter'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Kubernetes Pods', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/k8s-pods'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Kubernetes Compute Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/efa86fd1d0c121a26444b636'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Namespace Resources', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-namespace-resources'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Istio Mesh Traffic', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-istio-mesh'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Kyverno Compliance', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-kyverno-compliance'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Flux GitOps Status', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/sre-flux-gitops'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Alertmanager Overview', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/d/alertmanager-overview'); } });
+  cmds.push({ category: 'Dashboards', label: 'Grafana: Explore (Loki logs)', icon: '\uD83D\uDCCA', action: function() { openService('https://grafana.apps.sre.example.com/explore'); } });
 
   // Keycloak admin shortcuts
-  { label: 'Keycloak: Manage Users', icon: '\uD83D\uDC64', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users'); } },
-  { label: 'Keycloak: Manage Groups', icon: '\uD83D\uDC65', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/groups'); } },
-  { label: 'Keycloak: OIDC Clients', icon: '\uD83D\uDD17', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/clients'); } },
+  cmds.push({ category: 'Services', label: 'Keycloak: Manage Users', icon: '\uD83D\uDC64', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: Manage Groups', icon: '\uD83D\uDC65', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/groups'); } });
+  cmds.push({ category: 'Services', label: 'Keycloak: OIDC Clients', icon: '\uD83D\uDD17', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/clients'); } });
 
   // Harbor shortcuts
-  { label: 'Harbor: Projects', icon: '\uD83D\uDC33', action: function() { openService('https://harbor.apps.sre.example.com/harbor/projects'); } },
-  { label: 'Harbor: Robot Accounts', icon: '\uD83E\uDD16', action: function() { openService('https://harbor.apps.sre.example.com/harbor/robots'); } },
-  { label: 'Harbor: Registries (replication)', icon: '\uD83D\uDD04', action: function() { openService('https://harbor.apps.sre.example.com/harbor/registries'); } },
+  cmds.push({ category: 'Services', label: 'Harbor: Projects', icon: '\uD83D\uDC33', action: function() { openService('https://harbor.apps.sre.example.com/harbor/projects'); } });
+  cmds.push({ category: 'Services', label: 'Harbor: Robot Accounts', icon: '\uD83E\uDD16', action: function() { openService('https://harbor.apps.sre.example.com/harbor/robots'); } });
+  cmds.push({ category: 'Services', label: 'Harbor: Registries (replication)', icon: '\uD83D\uDD04', action: function() { openService('https://harbor.apps.sre.example.com/harbor/registries'); } });
 
-  // Quick actions
-  { label: 'Copy SSO username (sre-admin)', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('sre-admin'); showToast('Copied: sre-admin'); } },
-  { label: 'Copy SSO password', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('SreAdmin123!'); showToast('Copied password'); } },
-  { label: 'Copy kubectl get pods -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get pods -A'); showToast('Copied to clipboard'); } },
-  { label: 'Copy kubectl get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get helmreleases -A'); showToast('Copied to clipboard'); } },
-  { label: 'Copy kubectl get clusterpolicies', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get clusterpolicies'); showToast('Copied to clipboard'); } },
-  { label: 'Copy flux get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux get helmreleases -A'); showToast('Copied to clipboard'); } },
-  { label: 'Copy flux logs --kind=HelmRelease', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux logs --kind=HelmRelease --all-namespaces'); showToast('Copied to clipboard'); } },
-  { label: 'Copy /etc/hosts entry for all services', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('192.168.2.200 portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com'); showToast('Copied /etc/hosts entry'); } },
+  // Clipboard helpers
+  cmds.push({ category: 'Clipboard', label: 'Copy SSO username (sre-admin)', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('sre-admin'); showToast('Copied: sre-admin'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy SSO password', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('SreAdmin123!'); showToast('Copied password'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get pods -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get pods -A'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get helmreleases -A'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy kubectl get clusterpolicies', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('kubectl get clusterpolicies'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy flux get helmreleases -A', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux get helmreleases -A'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy flux logs --kind=HelmRelease', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('flux logs --kind=HelmRelease --all-namespaces'); showToast('Copied to clipboard'); } });
+  cmds.push({ category: 'Clipboard', label: 'Copy /etc/hosts entry for all services', icon: '\uD83D\uDCCB', action: function() { navigator.clipboard.writeText('192.168.2.200 portal.apps.sre.example.com dashboard.apps.sre.example.com grafana.apps.sre.example.com prometheus.apps.sre.example.com alertmanager.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com oauth2.apps.sre.example.com'); showToast('Copied /etc/hosts entry'); } });
 
-  // Deploy shortcuts
-  { label: 'Deploy: Quick NGINX demo', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); setTimeout(function() { var nameEl = document.getElementById('deploy-name'); if(nameEl) { nameEl.value = 'demo-nginx'; } }, 200); } },
-  { label: 'Deploy: New app from custom image', icon: '\uD83D\uDE80', action: function() { switchTabByName('deploy'); } },
-
-  // Appearance
-  { label: 'Toggle Dark / Light Theme', icon: '\u263E', action: function() { toggleTheme(); } },
-  { label: 'Refresh Dashboard Data', icon: '\uD83D\uDD04', action: function() { location.reload(); } },
+  // System
+  cmds.push({ category: 'System', label: 'Toggle Dark / Light Theme', icon: '\u263E', action: function() { toggleTheme(); } });
+  cmds.push({ category: 'System', label: 'Refresh Dashboard Data', icon: '\uD83D\uDD04', action: function() { location.reload(); } });
+  cmds.push({ category: 'System', label: 'Clear cache (hard reload)', icon: '\uD83D\uDDD1', action: function() { location.reload(true); } });
 
   // Documentation
-  { label: 'Docs: Developer Guide', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/developer-guide.md'); } },
-  { label: 'Docs: Architecture', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/architecture.md'); } },
-  { label: 'Docs: Incident Response Runbooks', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/tree/main/docs/runbooks'); } },
-  { label: 'Docs: User Stories', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/user-stories.md'); } },
-  { label: 'GitHub: SRE Platform Repo', icon: '\uD83D\uDC19', action: function() { openService('https://github.com/morbidsteve/sre-platform'); } },
-];
+  cmds.push({ category: 'Docs', label: 'Docs: Developer Guide', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/developer-guide.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Architecture', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/architecture.md'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: Incident Response Runbooks', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/tree/main/docs/runbooks'); } });
+  cmds.push({ category: 'Docs', label: 'Docs: User Stories', icon: '\uD83D\uDCD6', action: function() { openService('https://github.com/morbidsteve/sre-platform/blob/main/docs/user-stories.md'); } });
+  cmds.push({ category: 'Docs', label: 'GitHub: SRE Platform Repo', icon: '\uD83D\uDC19', action: function() { openService('https://github.com/morbidsteve/sre-platform'); } });
+
+  // Dynamic: Users (from allUsers if loaded)
+  if (allUsers && allUsers.length > 0) {
+    allUsers.forEach(function(u) {
+      cmds.push({ category: 'Users', label: 'Edit user: ' + u.username + (u.firstName ? ' (' + u.firstName + ' ' + (u.lastName || '') + ')' : ''), icon: '\uD83D\uDC64', action: function() { switchTabByName('users'); setTimeout(function() { editUser(u.id); }, 300); } });
+      cmds.push({ category: 'Users', label: 'Edit groups: ' + u.username, icon: '\uD83D\uDC65', action: function() { switchTabByName('users'); setTimeout(function() { editUserGroups(u.id, u.username); }, 300); } });
+    });
+  }
+
+  // Dynamic: Deployed components from healthData
+  if (healthData && healthData.helmReleases) {
+    healthData.helmReleases.forEach(function(hr) {
+      cmds.push({ category: 'Components', label: 'View component: ' + hr.name + ' (' + hr.namespace + ')', icon: '\uD83D\uDCE6', action: function() { switchTabByName('overview'); } });
+    });
+  }
+
+  return cmds;
+}
 
 function switchTabByName(name) {
   var btn = document.querySelector('nav button[data-tab="' + name + '"]');
@@ -5778,37 +6428,90 @@ function closeCommandPalette() {
 }
 
 function filterCommands() {
-  var query = document.getElementById('cmd-input').value.toLowerCase();
-  cmdFilteredItems = ALL_COMMANDS.filter(function(c) {
-    return c.label.toLowerCase().indexOf(query) >= 0;
-  });
-  cmdSelectedIndex = 0;
+  var query = (document.getElementById('cmd-input').value || '').toLowerCase();
+  var cmds = getCommands();
+
+  var filtered;
+  if (!query) {
+    // Show top actions when no query (Navigation + Actions first)
+    filtered = cmds.slice(0, 20);
+  } else {
+    filtered = cmds.filter(function(c) {
+      return c.label.toLowerCase().indexOf(query) >= 0 || c.category.toLowerCase().indexOf(query) >= 0;
+    });
+  }
+
+  cmdFilteredItems = filtered;
+  cmdSelectedIndex = Math.min(cmdSelectedIndex, Math.max(0, filtered.length - 1));
   renderCmdResults();
 }
 
 function renderCmdResults() {
   var container = document.getElementById('cmd-results');
-  container.innerHTML = cmdFilteredItems.map(function(item, i) {
-    return '<div class="cmd-item' + (i === cmdSelectedIndex ? ' selected' : '') + '" ' +
-      'onclick="executeCmdItem(' + i + ')" ' +
-      'onmouseenter="cmdSelectedIndex=' + i + ';renderCmdResults()">' +
-      '<span class="cmd-item-icon">' + item.icon + '</span>' +
-      '<span class="cmd-item-label">' + esc(item.label) + '</span>' +
-      '</div>';
-  }).join('');
+  var filtered = cmdFilteredItems;
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="cmd-empty">No results found</div>';
+    return;
+  }
+
+  // Group by category
+  var groups = {};
+  var groupOrder = [];
+  filtered.forEach(function(c) {
+    if (!groups[c.category]) {
+      groups[c.category] = [];
+      groupOrder.push(c.category);
+    }
+    groups[c.category].push(c);
+  });
+
+  var html = '';
+  var idx = 0;
+  groupOrder.forEach(function(cat) {
+    html += '<div class="cmd-category">' + esc(cat) + '</div>';
+    groups[cat].forEach(function(c) {
+      html += '<div class="cmd-item' + (idx === cmdSelectedIndex ? ' selected' : '') + '" ' +
+        'data-idx="' + idx + '" ' +
+        'onclick="executeCmdItem(' + idx + ')" ' +
+        'onmouseenter="cmdSelectedIndex=' + idx + ';highlightCmd()">' +
+        '<span class="cmd-item-icon">' + c.icon + '</span>' +
+        '<span class="cmd-item-label">' + esc(c.label) + '</span>' +
+        '</div>';
+      idx++;
+    });
+  });
+
+  container.innerHTML = html;
+}
+
+function highlightCmd() {
+  var items = document.querySelectorAll('.cmd-item');
+  items.forEach(function(el, i) {
+    if (i === cmdSelectedIndex) {
+      el.classList.add('selected');
+    } else {
+      el.classList.remove('selected');
+    }
+  });
 }
 
 function handleCmdKey(e) {
+  var items = cmdFilteredItems;
   if (e.key === 'Escape') {
     closeCommandPalette();
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
-    cmdSelectedIndex = Math.min(cmdSelectedIndex + 1, cmdFilteredItems.length - 1);
-    renderCmdResults();
+    cmdSelectedIndex = Math.min(cmdSelectedIndex + 1, items.length - 1);
+    highlightCmd();
+    var el = document.querySelector('.cmd-item[data-idx="' + cmdSelectedIndex + '"]');
+    if (el) el.scrollIntoView({ block: 'nearest' });
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     cmdSelectedIndex = Math.max(cmdSelectedIndex - 1, 0);
-    renderCmdResults();
+    highlightCmd();
+    var el = document.querySelector('.cmd-item[data-idx="' + cmdSelectedIndex + '"]');
+    if (el) el.scrollIntoView({ block: 'nearest' });
   } else if (e.key === 'Enter') {
     e.preventDefault();
     executeCmdItem(cmdSelectedIndex);
@@ -5922,17 +6625,565 @@ function updateTime() {
   document.getElementById('header-time').textContent = new Date().toLocaleTimeString();
 }
 
+// ── App Portal ──────────────────────────────────────────────────────────────
+
+async function loadPortalApps() {
+  try {
+    var resp = await fetch('/api/portal/apps');
+    var data = await resp.json();
+    renderPortalApps(data);
+  } catch (err) {
+    console.error('Failed to load portal apps:', err);
+  }
+}
+
+function renderPortalApps(data) {
+  var grid = document.getElementById('portal-apps-grid');
+  var noApps = document.getElementById('portal-no-apps');
+  var adminBanner = document.getElementById('portal-admin-banner');
+  var userInfo = document.getElementById('portal-user-info');
+
+  // Show user info
+  if (currentUser) {
+    userInfo.textContent = 'Signed in as ' + (currentUser.user !== 'anonymous' ? currentUser.email || currentUser.user : 'Guest');
+  }
+
+  // Show admin banner
+  if (data.isAdmin) {
+    adminBanner.style.display = 'flex';
+  } else {
+    adminBanner.style.display = 'none';
+  }
+
+  if (!data.apps || data.apps.length === 0) {
+    grid.innerHTML = '';
+    noApps.style.display = 'block';
+    return;
+  }
+
+  noApps.style.display = 'none';
+
+  grid.innerHTML = data.apps.map(function(app) {
+    var statusDot = app.status === 'running' ? 'green' : app.status === 'deploying' ? 'yellow' : 'red';
+    var statusText = app.status === 'running' ? 'Running' : app.status === 'deploying' ? 'Deploying' : 'Down';
+
+    return '<div class="service-tile" onclick="window.open(\'' + esc(app.url) + '\', \'_blank\')" style="cursor:pointer;">' +
+      '<div class="service-tile-icon">' + (app.icon ? getPortalIconChar(app.icon) : '\uD83D\uDCE6') + '</div>' +
+      '<div class="service-tile-name"><span class="health-dot ' + statusDot + '"></span> ' + esc(app.displayName || app.name) + '</div>' +
+      '<div class="service-tile-desc">' + esc(app.description || '') + '</div>' +
+      (data.isAdmin ? '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">' + formatAccessBadge(app) + '</div>' : '') +
+      (data.isAdmin ? '<div style="margin-top:4px;"><button class="btn" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();editAppAccess(\'' + esc(app.name) + '\')">Edit Access</button></div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function getPortalIconChar(icon) {
+  var icons = {
+    'package': '\uD83D\uDCE6',
+    'map': '\uD83D\uDDFA',
+    'shield': '\uD83D\uDEE1',
+    'database': '\uD83D\uDDC4',
+    'chart': '\uD83D\uDCCA',
+    'users': '\uD83D\uDC65',
+    'truck': '\uD83D\uDE9A',
+    'globe': '\uD83C\uDF10'
+  };
+  return icons[icon] || '\uD83D\uDCE6';
+}
+
+function formatAccessBadge(app) {
+  var access = app.access || {};
+  var mode = access.mode || 'everyone';
+  if (mode === 'everyone') {
+    return '<span style="background:var(--green);color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">EVERYONE</span>';
+  }
+  if (mode === 'private') {
+    return '<span style="background:var(--red);color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">PRIVATE</span>';
+  }
+  // restricted
+  var parts = [];
+  var gc = (access.groups || []).length;
+  var uc = (access.users || []).length;
+  var ac = (access.attributes || []).length;
+  if (gc > 0) parts.push(gc + ' group' + (gc > 1 ? 's' : ''));
+  if (uc > 0) parts.push(uc + ' user' + (uc > 1 ? 's' : ''));
+  if (ac > 0) parts.push(ac + ' rule' + (ac > 1 ? 's' : ''));
+  return '<span style="background:var(--accent);color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">RESTRICTED</span> ' +
+    '<span style="font-size:10px;color:var(--text-dim);">' + (parts.length > 0 ? parts.join(', ') : 'no rules') + '</span>';
+}
+
+async function editAppAccess(appName) {
+  try {
+    var responses = await Promise.all([
+      fetch('/api/portal/apps/' + encodeURIComponent(appName) + '/access'),
+      fetch('/api/admin/groups'),
+      fetch('/api/admin/users')
+    ]);
+    var access = await responses[0].json();
+    var groups = await responses[1].json();
+    var users = await responses[2].json();
+  } catch (err) {
+    showToast('Failed to load access config', 'error');
+    return;
+  }
+
+  // Normalize groups response — may be array or {groups: [...]}
+  if (groups && !Array.isArray(groups) && Array.isArray(groups.groups)) {
+    groups = groups.groups.map(function(g) { return typeof g === 'string' ? { name: g } : g; });
+  } else if (!Array.isArray(groups)) {
+    groups = [];
+  } else {
+    groups = groups.map(function(g) { return typeof g === 'string' ? { name: g } : g; });
+  }
+
+  // Normalize users response — may be array or {users: [...]}
+  if (users && !Array.isArray(users) && Array.isArray(users.users)) {
+    users = users.users;
+  } else if (!Array.isArray(users)) {
+    users = [];
+  }
+
+  var mode = access.mode || 'everyone';
+  var selectedGroups = access.groups || [];
+  var selectedUsers = access.users || [];
+  var attributes = access.attributes || [];
+
+  var html = '<div style="padding:20px; min-width:450px;">' +
+    '<h3 style="margin-bottom:4px;">App Access Control</h3>' +
+    '<p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">' + esc(appName.toUpperCase()) + '</p>' +
+
+    '<div style="margin-bottom:16px;">' +
+      '<label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Access Mode</label>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;">' +
+        '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;">' +
+          '<input type="radio" name="access-mode" value="everyone" ' + (mode === 'everyone' ? 'checked' : '') + ' onchange="toggleAccessSections()" />' +
+          '<div><strong style="font-size:13px;">Everyone</strong><div style="font-size:11px;color:var(--text-dim);">Any authenticated user can access this app</div></div>' +
+        '</label>' +
+        '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;">' +
+          '<input type="radio" name="access-mode" value="restricted" ' + (mode === 'restricted' ? 'checked' : '') + ' onchange="toggleAccessSections()" />' +
+          '<div><strong style="font-size:13px;">Restricted</strong><div style="font-size:11px;color:var(--text-dim);">Only users matching groups, users, or attributes</div></div>' +
+        '</label>' +
+        '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;">' +
+          '<input type="radio" name="access-mode" value="private" ' + (mode === 'private' ? 'checked' : '') + ' onchange="toggleAccessSections()" />' +
+          '<div><strong style="font-size:13px;">Private</strong><div style="font-size:11px;color:var(--text-dim);">Only the owner and platform admins</div></div>' +
+        '</label>' +
+      '</div>' +
+    '</div>' +
+
+    '<div id="access-restricted-sections" style="' + (mode === 'restricted' ? '' : 'display:none;') + '">' +
+
+    '<div style="margin-bottom:16px;">' +
+      '<label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Groups</label>' +
+      '<div id="access-groups" style="display:flex;flex-wrap:wrap;gap:6px;">' +
+        groups.map(function(g) {
+          var checked = selectedGroups.indexOf(g.name) >= 0 ? 'checked' : '';
+          return '<label style="font-size:12px;display:flex;align-items:center;gap:6px;background:var(--bg);padding:6px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);">' +
+            '<input type="checkbox" class="access-group-cb" value="' + esc(g.name) + '" ' + checked + ' /> ' + esc(g.name) +
+          '</label>';
+        }).join('') +
+      '</div>' +
+    '</div>' +
+
+    '<div style="margin-bottom:16px;">' +
+      '<label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Specific Users</label>' +
+      '<input type="text" id="access-user-search" placeholder="Search and add users..." oninput="filterAccessUsers()" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;margin-bottom:8px;box-sizing:border-box;" />' +
+      '<div id="access-user-results" style="max-height:120px;overflow-y:auto;margin-bottom:8px;"></div>' +
+      '<div id="access-selected-users" style="display:flex;flex-wrap:wrap;gap:4px;">' +
+        selectedUsers.map(function(u) {
+          return '<span class="badge" style="display:flex;align-items:center;gap:4px;padding:4px 8px;">' + esc(u) +
+            ' <span style="cursor:pointer;font-weight:bold;" onclick="removeAccessUser(this, \'' + esc(u) + '\')">&times;</span></span>';
+        }).join('') +
+      '</div>' +
+    '</div>' +
+
+    '<div style="margin-bottom:16px;">' +
+      '<label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Attribute Rules</label>' +
+      '<div id="access-attributes">' +
+        attributes.map(function(a) {
+          return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;" class="attr-rule">' +
+            '<input type="text" placeholder="Key" value="' + esc(a.key) + '" class="attr-key" style="flex:1;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;" />' +
+            '<span style="color:var(--text-dim);">=</span>' +
+            '<input type="text" placeholder="Value" value="' + esc(a.value) + '" class="attr-val" style="flex:1;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;" />' +
+            '<button class="btn" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="this.parentElement.remove()">x</button>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+      '<button class="btn" style="font-size:11px;" onclick="addAttributeRule()">+ Add Rule</button>' +
+    '</div>' +
+
+    '</div>' +
+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">' +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="saveAppAccess(\'' + esc(appName) + '\')">Save Access</button>' +
+    '</div>' +
+  '</div>';
+
+  showModal(html);
+
+  window._accessUsers = users;
+  window._accessSelectedUsers = selectedUsers.slice();
+}
+
+function toggleAccessSections() {
+  var mode = document.querySelector('input[name="access-mode"]:checked').value;
+  document.getElementById('access-restricted-sections').style.display = mode === 'restricted' ? '' : 'none';
+}
+
+function filterAccessUsers() {
+  var q = (document.getElementById('access-user-search').value || '').toLowerCase();
+  var results = document.getElementById('access-user-results');
+  if (!q || q.length < 1) { results.innerHTML = ''; return; }
+
+  var users = (window._accessUsers || []).filter(function(u) {
+    return ((u.username || '') + ' ' + (u.firstName || '') + ' ' + (u.lastName || '') + ' ' + (u.email || '')).toLowerCase().indexOf(q) >= 0;
+  }).slice(0, 5);
+
+  var selected = window._accessSelectedUsers || [];
+
+  results.innerHTML = users.map(function(u) {
+    var already = selected.indexOf(u.username) >= 0;
+    return '<div style="padding:6px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">' +
+      '<span style="font-size:13px;">' + esc(u.username) + (u.firstName ? ' <span style="color:var(--text-dim);">(' + esc(u.firstName + ' ' + (u.lastName || '')) + ')</span>' : '') + '</span>' +
+      (already ? '<span style="font-size:11px;color:var(--green);">Added</span>' : '<button class="btn" style="font-size:10px;padding:2px 6px;" onclick="addAccessUser(\'' + esc(u.username) + '\')">Add</button>') +
+    '</div>';
+  }).join('');
+}
+
+function addAccessUser(username) {
+  var selected = window._accessSelectedUsers || [];
+  if (selected.indexOf(username) < 0) {
+    selected.push(username);
+    window._accessSelectedUsers = selected;
+    var container = document.getElementById('access-selected-users');
+    container.innerHTML += '<span class="badge" style="display:flex;align-items:center;gap:4px;padding:4px 8px;">' + esc(username) +
+      ' <span style="cursor:pointer;font-weight:bold;" onclick="removeAccessUser(this, \'' + esc(username) + '\')">&times;</span></span>';
+    filterAccessUsers();
+  }
+}
+
+function removeAccessUser(el, username) {
+  var selected = window._accessSelectedUsers || [];
+  window._accessSelectedUsers = selected.filter(function(u) { return u !== username; });
+  el.parentElement.remove();
+}
+
+function addAttributeRule() {
+  var container = document.getElementById('access-attributes');
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px;';
+  div.className = 'attr-rule';
+  div.innerHTML = '<input type="text" placeholder="Key" class="attr-key" style="flex:1;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;" />' +
+    '<span style="color:var(--text-dim);">=</span>' +
+    '<input type="text" placeholder="Value" class="attr-val" style="flex:1;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;" />' +
+    '<button class="btn" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="this.parentElement.remove()">x</button>';
+  container.appendChild(div);
+}
+
+async function saveAppAccess(appName) {
+  var mode = document.querySelector('input[name="access-mode"]:checked').value;
+  var groups = Array.from(document.querySelectorAll('.access-group-cb:checked')).map(function(cb) { return cb.value; });
+  var users = window._accessSelectedUsers || [];
+  var attributes = Array.from(document.querySelectorAll('.attr-rule')).map(function(row) {
+    return { key: row.querySelector('.attr-key').value.trim(), value: row.querySelector('.attr-val').value.trim() };
+  }).filter(function(a) { return a.key && a.value; });
+
+  try {
+    var resp = await fetch('/api/portal/apps/' + encodeURIComponent(appName), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access: { mode: mode, groups: groups, users: users, attributes: attributes }
+      }),
+    });
+    if (resp.ok) {
+      showToast('Access control updated for ' + appName);
+      closeModal();
+      loadPortalApps();
+    } else {
+      var d = await resp.json();
+      showToast(d.error || 'Failed to update', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ── User Management ──────────────────────────────────────────────────────────
+
+var allUsers = [];
+var allGroupsList = [];
+
+async function loadUsers() {
+  try {
+    var resp = await fetch('/api/admin/users');
+    if (!resp.ok) throw new Error('Failed to load users');
+    allUsers = await resp.json();
+    var gresp = await fetch('/api/admin/groups');
+    if (!gresp.ok) throw new Error('Failed to load groups');
+    allGroupsList = await gresp.json();
+    renderUsers();
+    renderGroups();
+    populateGroupFilter();
+  } catch (err) {
+    console.error('Failed to load users:', err);
+    document.getElementById('users-table').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);">Failed to load users. Keycloak may be unreachable.</td></tr>';
+  }
+}
+
+function renderUsers() {
+  var search = (document.getElementById('user-search').value || '').toLowerCase();
+  var groupFilter = document.getElementById('group-filter').value;
+
+  var filtered = allUsers.filter(function(u) {
+    if (search && !(u.username + ' ' + (u.firstName || '') + ' ' + (u.lastName || '') + ' ' + (u.email || '')).toLowerCase().includes(search)) return false;
+    if (groupFilter && (!u.groups || !u.groups.includes(groupFilter))) return false;
+    return true;
+  });
+
+  document.getElementById('users-table').innerHTML = filtered.length === 0
+    ? '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);">No users found</td></tr>'
+    : filtered.map(function(u) {
+      var statusBadge = u.enabled ? '<span class="badge green">Active</span>' : '<span class="badge red">Disabled</span>';
+      var name = esc((u.firstName || '') + ' ' + (u.lastName || '')).trim() || '<span style="color:var(--text-dim)">-</span>';
+      var groups = (u.groups || []).map(function(g) { return '<span class="badge" style="font-size:10px;margin:1px;">' + esc(g) + '</span>'; }).join(' ') || '<span style="color:var(--text-dim)">None</span>';
+      var created = u.createdTimestamp ? new Date(u.createdTimestamp).toLocaleDateString() : '-';
+
+      return '<tr>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td><strong>' + esc(u.username) + '</strong></td>' +
+        '<td>' + name + '</td>' +
+        '<td>' + esc(u.email || '-') + '</td>' +
+        '<td>' + groups + '</td>' +
+        '<td style="font-size:12px;">' + created + '</td>' +
+        '<td style="white-space:nowrap;">' +
+          '<button class="btn" style="font-size:11px;padding:3px 8px;margin-right:4px;" onclick="editUser(\'' + esc(u.id) + '\')">Edit</button>' +
+          '<button class="btn" style="font-size:11px;padding:3px 8px;margin-right:4px;" onclick="editUserGroups(\'' + esc(u.id) + '\',\'' + esc(u.username) + '\')">Groups</button>' +
+          '<button class="btn" style="font-size:11px;padding:3px 8px;margin-right:4px;" onclick="resetPassword(\'' + esc(u.id) + '\',\'' + esc(u.username) + '\')">Reset PW</button>' +
+          '<button class="btn" style="font-size:11px;padding:3px 8px;color:var(--red);" onclick="deleteUser(\'' + esc(u.id) + '\',\'' + esc(u.username) + '\')">Delete</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+}
+
+function filterUsers() { renderUsers(); }
+
+function populateGroupFilter() {
+  var sel = document.getElementById('group-filter');
+  var current = sel.value;
+  sel.innerHTML = '<option value="">All Groups</option>' +
+    allGroupsList.map(function(g) { return '<option value="' + esc(g.name) + '">' + esc(g.name) + '</option>'; }).join('');
+  sel.value = current;
+}
+
+function renderGroups() {
+  document.getElementById('groups-list').innerHTML = allGroupsList.length === 0
+    ? '<span style="color:var(--text-dim);font-size:13px;">No groups found</span>'
+    : allGroupsList.map(function(g) {
+      var count = allUsers.filter(function(u) { return (u.groups || []).includes(g.name); }).length;
+      return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;display:flex;align-items:center;gap:8px;">' +
+        '<strong style="font-size:13px;">' + esc(g.name) + '</strong>' +
+        '<span style="font-size:11px;color:var(--text-dim);">' + count + ' user' + (count !== 1 ? 's' : '') + '</span>' +
+        '<button class="btn" style="font-size:10px;padding:2px 6px;color:var(--red);" onclick="deleteGroup(\'' + esc(g.id) + '\',\'' + esc(g.name) + '\')">x</button>' +
+      '</div>';
+    }).join('');
+}
+
+function showModal(html) {
+  var overlay = document.getElementById('admin-modal-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'admin-modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = '<div style="background:var(--card, var(--surface));border:1px solid var(--border);border-radius:12px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">' + html + '</div>';
+  overlay.style.display = 'flex';
+}
+
+function closeModal() {
+  var overlay = document.getElementById('admin-modal-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function showCreateUserModal() {
+  var groupOpts = allGroupsList.map(function(g) { return g.name; });
+  var html = '<div style="padding:20px;">' +
+    '<h3 style="margin-bottom:16px;">Create New User</h3>' +
+    '<div style="display:grid;gap:12px;">' +
+      '<div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Username *</label><input type="text" id="new-username" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">First Name</label><input type="text" id="new-firstname" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div><div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Last Name</label><input type="text" id="new-lastname" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div></div>' +
+      '<div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Email</label><input type="email" id="new-email" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div>' +
+      '<div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Password *</label><input type="password" id="new-password" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div>' +
+      '<div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Groups</label><div id="new-user-groups" style="display:flex;flex-wrap:wrap;gap:4px;">' +
+        groupOpts.map(function(g) { return '<label style="font-size:12px;display:flex;align-items:center;gap:4px;background:var(--surface);padding:4px 8px;border-radius:4px;cursor:pointer;"><input type="checkbox" value="' + esc(g) + '" /> ' + esc(g) + '</label>'; }).join('') +
+      '</div></div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">' +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="submitCreateUser()">Create User</button>' +
+    '</div>' +
+  '</div>';
+  showModal(html);
+}
+
+async function submitCreateUser() {
+  var username = document.getElementById('new-username').value.trim();
+  var password = document.getElementById('new-password').value;
+  var email = document.getElementById('new-email').value.trim();
+  var firstName = document.getElementById('new-firstname').value.trim();
+  var lastName = document.getElementById('new-lastname').value.trim();
+  var groups = Array.from(document.querySelectorAll('#new-user-groups input:checked')).map(function(cb) { return cb.value; });
+
+  if (!username || !password) { showToast('Username and password required', 'error'); return; }
+
+  try {
+    var resp = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: username, password: password, email: email, firstName: firstName, lastName: lastName, groups: groups }),
+    });
+    var data = await resp.json();
+    if (data.success) {
+      showToast('User "' + username + '" created');
+      closeModal();
+      loadUsers();
+    } else {
+      showToast(data.error || 'Failed to create user', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function editUser(userId) {
+  var user = allUsers.find(function(u) { return u.id === userId; });
+  if (!user) return;
+  var html = '<div style="padding:20px;">' +
+    '<h3 style="margin-bottom:16px;">Edit User: ' + esc(user.username) + '</h3>' +
+    '<div style="display:grid;gap:12px;">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">First Name</label><input type="text" id="edit-firstname" value="' + esc(user.firstName || '') + '" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div><div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Last Name</label><input type="text" id="edit-lastname" value="' + esc(user.lastName || '') + '" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div></div>' +
+      '<div><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Email</label><input type="email" id="edit-email" value="' + esc(user.email || '') + '" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" /></div>' +
+      '<div><label style="font-size:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="edit-enabled" ' + (user.enabled ? 'checked' : '') + ' /> Enabled</label></div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">' +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="submitEditUser(\'' + esc(userId) + '\')">Save</button>' +
+    '</div>' +
+  '</div>';
+  showModal(html);
+}
+
+async function submitEditUser(userId) {
+  try {
+    var resp = await fetch('/api/admin/users/' + userId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        firstName: document.getElementById('edit-firstname').value.trim(),
+        lastName: document.getElementById('edit-lastname').value.trim(),
+        email: document.getElementById('edit-email').value.trim(),
+        enabled: document.getElementById('edit-enabled').checked,
+      }),
+    });
+    if (resp.ok) { showToast('User updated'); closeModal(); loadUsers(); }
+    else { var d = await resp.json(); showToast(d.error || 'Failed', 'error'); }
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+}
+
+function editUserGroups(userId, username) {
+  var user = allUsers.find(function(u) { return u.id === userId; });
+  if (!user) return;
+  var html = '<div style="padding:20px;">' +
+    '<h3 style="margin-bottom:16px;">Manage Groups: ' + esc(username) + '</h3>' +
+    '<div id="edit-groups-list" style="display:flex;flex-wrap:wrap;gap:6px;">' +
+      allGroupsList.map(function(g) {
+        var checked = (user.groups || []).includes(g.name) ? 'checked' : '';
+        return '<label style="font-size:13px;display:flex;align-items:center;gap:6px;background:var(--surface);padding:8px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);"><input type="checkbox" value="' + esc(g.name) + '" ' + checked + ' /> ' + esc(g.name) + '</label>';
+      }).join('') +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">' +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="submitUserGroups(\'' + esc(userId) + '\')">Save Groups</button>' +
+    '</div>' +
+  '</div>';
+  showModal(html);
+}
+
+async function submitUserGroups(userId) {
+  var groups = Array.from(document.querySelectorAll('#edit-groups-list input:checked')).map(function(cb) { return cb.value; });
+  try {
+    var resp = await fetch('/api/admin/users/' + userId + '/groups', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groups: groups }),
+    });
+    if (resp.ok) { showToast('Groups updated'); closeModal(); loadUsers(); }
+    else { showToast('Failed to update groups', 'error'); }
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+}
+
+async function resetPassword(userId, username) {
+  var pw = prompt('Enter new password for "' + username + '":');
+  if (!pw) return;
+  try {
+    var resp = await fetch('/api/admin/users/' + userId + '/password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (resp.ok) showToast('Password reset for ' + username);
+    else showToast('Failed to reset password', 'error');
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+}
+
+async function deleteUser(userId, username) {
+  if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+  try {
+    var resp = await fetch('/api/admin/users/' + userId, { method: 'DELETE' });
+    if (resp.ok) { showToast('User "' + username + '" deleted'); loadUsers(); }
+    else showToast('Failed to delete user', 'error');
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+}
+
+function showCreateGroupModal() {
+  var name = prompt('Enter new group name:');
+  if (!name) return;
+  fetch('/api/admin/groups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim() }),
+  }).then(function(resp) {
+    if (resp.ok) { showToast('Group "' + name + '" created'); loadUsers(); }
+    else showToast('Failed to create group', 'error');
+  });
+}
+
+async function deleteGroup(groupId, groupName) {
+  if (!confirm('Delete group "' + groupName + '"? Users will be removed from this group.')) return;
+  try {
+    var resp = await fetch('/api/admin/groups/' + groupId, { method: 'DELETE' });
+    if (resp.ok) { showToast('Group "' + groupName + '" deleted'); loadUsers(); }
+    else showToast('Failed to delete group', 'error');
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 updateThemeBtn();
 loadUser();
 loadHealth();
 loadAlerts();
+loadPortalApps();
 setInterval(loadHealth, 15000);
 alertRefreshTimer = setInterval(function() { alertsDismissed = false; loadAlerts(); }, 30000);
 setInterval(updateTime, 1000);
 updateTime();
 </script>
+
+<!-- Classification Banner (Bottom) -->
+<div class="classification-banner-bottom">UNCLASSIFIED</div>
 
 </body>
 </html>

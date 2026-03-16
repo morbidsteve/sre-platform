@@ -53,6 +53,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must drop ALL

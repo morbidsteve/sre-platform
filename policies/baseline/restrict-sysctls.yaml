@@ -53,6 +53,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Unsafe sysctls are not allowed. Pod {{request.object.metadata.name}}

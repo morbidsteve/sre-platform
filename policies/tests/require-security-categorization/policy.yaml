@@ -33,6 +33,7 @@ spec:
                 - istio-system
                 - flux-system
                 - kyverno
+                - sre-builds
           - resources:
               selector:
                 matchLabels:

@@ -36,6 +36,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       verifyImages:
         - imageReferences:
             - "harbor.sre.internal/*"

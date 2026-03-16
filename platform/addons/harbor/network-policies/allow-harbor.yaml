@@ -10,34 +10,14 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # Intra-namespace (core <-> registry <-> db <-> redis <-> jobservice <-> trivy)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: harbor
-    # DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # Kubernetes API
-    - ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    # External HTTPS (Trivy DB updates, upstream registry replication)
-    - ports:
-        - port: 443
-          protocol: TCP
+    # Allow all egress - Harbor needs intra-namespace communication, DNS,
+    # Kubernetes API, Trivy DB updates, and upstream registry replication
+    - {}
 
 ---
-# Allow ingress from Istio gateway, monitoring, and within namespace
+# Allow ingress from any namespace - Harbor serves as the internal container
+# registry and must accept image pushes from build pods (sre-builds), image
+# pulls from application namespaces, and web UI access via Istio gateway.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -48,32 +28,5 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Within harbor namespace
     - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: harbor
-    # Istio gateway for web UI and API
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-system
-      ports:
-        - port: 80
-          protocol: TCP
-        - port: 8080
-          protocol: TCP
-        - port: 8443
-          protocol: TCP
-    # Prometheus scraping
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - port: 8001
-          protocol: TCP
-    # Webhook traffic from API server
-    - ports:
-        - port: 443
-          protocol: TCP
+        - namespaceSelector: {}

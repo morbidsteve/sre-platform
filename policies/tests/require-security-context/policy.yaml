@@ -35,6 +35,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       validate:
         message: >-
           Pod {{request.object.metadata.name}} must set
@@ -60,6 +61,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must set

@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-REGISTRY="harbor.apps.sre.example.com"
+REGISTRY="harbor.apps.sre.example.com"  # External URL for docker push from dev machine
 PROJECT="platform"
 IMAGE_NAME="sre-dashboard"
 DEPLOYMENT_FILE="$SCRIPT_DIR/k8s/deployment.yaml"

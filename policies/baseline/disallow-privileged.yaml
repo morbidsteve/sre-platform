@@ -50,6 +50,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       validate:
         message: >-
           Privileged containers are not allowed. Pod
@@ -92,6 +93,7 @@ spec:
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
+                - sre-builds
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

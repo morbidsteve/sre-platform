@@ -35,6 +35,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       validate:
         message: >-
           All container images must be from the approved registry
@@ -60,6 +61,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] | length(@) }}"

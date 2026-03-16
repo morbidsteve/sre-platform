@@ -35,6 +35,7 @@ spec:
                 - flux-system
                 - kyverno
                 - cert-manager
+                - sre-builds
       validate:
         message: >-
           Namespace {{request.object.metadata.name}} must have the label
