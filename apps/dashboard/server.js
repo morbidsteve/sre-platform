@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 const yaml = require("js-yaml");
 const db = require("./db");
+const gitops = require("./gitops");
 
 const app = express();
 app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
@@ -443,8 +444,9 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
       ingressHost: ingress || "",
     });
 
-    // Apply the manifest to the cluster
-    await applyManifest(manifest, nsName);
+    // Apply the manifest to the cluster (GitOps if enabled, else direct kubectl)
+    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    await deployViaGitOps(manifest, nsName, safeName, actor);
 
     // Auto-register OAuth2 proxy path for SSO callbacks
     if (ingress) {
@@ -456,7 +458,9 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
 
     res.json({
       success: true,
-      message: `App "${safeName}" deployed to namespace "${nsName}"`,
+      message: gitops.isEnabled()
+        ? `App "${safeName}" committed to Git — Flux will deploy to "${nsName}" shortly`
+        : `App "${safeName}" deployed to namespace "${nsName}"`,
       namespace: nsName,
       manifest,
     });
@@ -470,13 +474,8 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
 app.delete("/api/deploy/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     const { namespace, name } = req.params;
-    await customApi.deleteNamespacedCustomObject(
-      "helm.toolkit.fluxcd.io",
-      "v2",
-      namespace,
-      "helmreleases",
-      name
-    );
+    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    await undeployViaGitOps(namespace, name, actor);
 
     // Clean up VirtualService
     try {
@@ -1144,7 +1143,8 @@ app.post("/api/deploy/compose", mutateLimiter, requireGroups("sre-admins", "deve
         env: env.slice(0, 50),
       });
 
-      await applyManifest(manifest, nsName);
+      const actor = req.headers["x-auth-request-email"] || "dashboard";
+      await deployViaGitOps(manifest, nsName, appName, actor);
 
       // Auto-create DestinationRule for HTTPS backend detection
       await createBackendTLSRule(appName, nsName, `${appName}-${appName}`);
@@ -1238,7 +1238,8 @@ app.post("/api/deploy/multi", mutateLimiter, requireGroups("sre-admins", "develo
         env: svcEnv,
       });
 
-      await applyManifest(manifest, nsName);
+      const actor = req.headers["x-auth-request-email"] || "dashboard";
+      await deployViaGitOps(manifest, nsName, safeName, actor);
 
       // Auto-register OAuth2 proxy path for SSO callbacks
       if (ingressHost) {
@@ -1823,7 +1824,8 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
             port: svc.port || 8080, replicas: 1, ingressHost: "",
             env: svc.environment || [],
           });
-          await applyManifest(manifest, nsName);
+          const actor = req.headers["x-auth-request-email"] || "dashboard";
+          await deployViaGitOps(manifest, nsName, svcAppName, actor);
 
           // Auto-create DestinationRule for HTTPS backend detection
           const composeSvcName = `${svcAppName}-${svcAppName}`;
@@ -1942,7 +1944,8 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
         },
       };
 
-      await applyManifest(helmRelease, nsName);
+      const actor = req.headers["x-auth-request-email"] || "dashboard";
+      await deployViaGitOps(helmRelease, nsName, safeName, actor);
 
       // Auto-create DestinationRule for HTTPS backend detection
       await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
@@ -1956,7 +1959,9 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
         gitRepository: gitRepoName,
         helmRelease: safeName,
         namespace: nsName,
-        message: `Helm chart "${analysis.chart?.name || safeName}" deployed as "${safeName}" in namespace "${nsName}" from ${escapeHtml(url)} (branch: ${escapeHtml(safeBranch)})`,
+        message: gitops.isEnabled()
+          ? `Helm chart "${analysis.chart?.name || safeName}" committed to Git — Flux will deploy to "${nsName}" shortly`
+          : `Helm chart "${analysis.chart?.name || safeName}" deployed as "${safeName}" in namespace "${nsName}" from ${escapeHtml(url)} (branch: ${escapeHtml(safeBranch)})`,
       });
     }
 
@@ -3016,7 +3021,8 @@ app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins",
           env,
         });
 
-        await applyManifest(manifest, nsName);
+        const actor = req.headers["x-auth-request-email"] || "dashboard";
+        await deployViaGitOps(manifest, nsName, svcAppName, actor);
         deployed.push({
           name: svcAppName,
           type: isIngress ? "ingress" : svc.role === "worker" ? "worker" : "internal",
@@ -3049,7 +3055,8 @@ app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins",
           env: Array.isArray(svc.env) ? svc.env : [],
         });
 
-        await applyManifest(manifest, nsName);
+        const actor = req.headers["x-auth-request-email"] || "dashboard";
+        await deployViaGitOps(manifest, nsName, svcAppName, actor);
         deployed.push({ name: svcAppName, type: "internal", port: svc.port, image: svc.image });
       }
     }
@@ -3606,11 +3613,14 @@ app.post("/api/deploy/from-build", mutateLimiter, requireGroups("sre-admins", "d
       ingressHost,
     });
 
-    await applyManifest(manifest, nsName);
+    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    await deployViaGitOps(manifest, nsName, safeName, actor);
 
     res.json({
       success: true,
-      message: `App "${safeName}" deployed from build ${safeBuildId} to namespace "${nsName}"`,
+      message: gitops.isEnabled()
+        ? `App "${safeName}" committed to Git from build ${safeBuildId} — Flux will deploy to "${nsName}" shortly`
+        : `App "${safeName}" deployed from build ${safeBuildId} to namespace "${nsName}"`,
       namespace: nsName,
       image: `${buildMeta.imageRepo}:${buildMeta.imageTag}`,
       ingress: ingressHost,
@@ -3728,14 +3738,17 @@ app.post("/api/deploy/helm-chart", mutateLimiter, requireGroups("sre-admins", "d
       },
     };
 
-    await applyManifest(helmRelease, nsName);
+    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    await deployViaGitOps(helmRelease, nsName, safeName, actor);
 
     // Auto-create DestinationRule for HTTPS backend detection
     await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
 
     res.json({
       success: true,
-      message: `Helm chart "${chartName}" deployed as "${safeName}" in namespace "${nsName}"`,
+      message: gitops.isEnabled()
+        ? `Helm chart "${chartName}" committed to Git — Flux will deploy "${safeName}" to "${nsName}" shortly`
+        : `Helm chart "${chartName}" deployed as "${safeName}" in namespace "${nsName}"`,
       namespace: nsName,
       chart: chartName,
       version: safeVersion || "latest",
@@ -4690,7 +4703,8 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
         });
 
         try {
-          await applyManifest(manifest, nsName);
+          const actor = "build-system";
+          await deployViaGitOps(manifest, nsName, appName, actor);
           console.log(`[deploy-git] Deployed ${appName} in ${nsName} (ingress: ${ingressHost || "none"})`);
           meta.status = "deployed";
 
@@ -4961,13 +4975,52 @@ async function applyManifest(manifest, namespace) {
   }
 }
 
+// ── GitOps Deploy/Undeploy Helpers ───────────────────────────────────────────
+
+async function deployViaGitOps(manifest, nsName, appName, actor) {
+  if (gitops.isEnabled()) {
+    await gitops.ensureTenantInGit(nsName);
+    await gitops.deployApp(nsName, appName, manifest, actor);
+    await gitops.triggerFluxReconcile();
+  } else {
+    await applyManifest(manifest, nsName);
+  }
+}
+
+async function undeployViaGitOps(nsName, appName, actor) {
+  if (gitops.isEnabled()) {
+    try {
+      await gitops.undeployApp(nsName, appName, actor);
+      await gitops.triggerFluxReconcile();
+    } catch (gitErr) {
+      console.warn("[gitops] Git delete failed, falling back to kubectl:", gitErr.message);
+      // Fallback for legacy apps not in Git
+      try {
+        await customApi.deleteNamespacedCustomObject("helm.toolkit.fluxcd.io", "v2", nsName, "helmreleases", appName);
+      } catch (e) {
+        if (e.statusCode !== 404) throw e;
+      }
+    }
+  } else {
+    try {
+      await customApi.deleteNamespacedCustomObject("helm.toolkit.fluxcd.io", "v2", nsName, "helmreleases", appName);
+    } catch (e) {
+      if (e.statusCode !== 404) throw e;
+    }
+  }
+}
+
 // ── Delete App ──────────────────────────────────────────────────────────────
 
 app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     const { namespace, name } = req.params;
 
-    // Step 1: Remove finalizers so the HelmRelease can be deleted even if
+    // Step 1: Remove from Git (if GitOps enabled) and delete the HelmRelease
+    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    await undeployViaGitOps(namespace, name, actor);
+
+    // Step 2: Remove finalizers so the HelmRelease can be deleted even if
     // helm uninstall fails (prevents stuck Terminating state)
     try {
       await customApi.patchNamespacedCustomObject(
@@ -4984,19 +5037,6 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
       );
     } catch (e) {
       // Ignore if already gone
-    }
-
-    // Step 2: Delete the HelmRelease
-    try {
-      await customApi.deleteNamespacedCustomObject(
-        "helm.toolkit.fluxcd.io",
-        "v2",
-        namespace,
-        "helmreleases",
-        name
-      );
-    } catch (e) {
-      if (e.statusCode !== 404) throw e;
     }
 
     // Step 3: Clean up orphaned Helm release secrets
@@ -5063,6 +5103,61 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
   } catch (err) {
     console.error("Error deleting app:", err);
     res.status(err.statusCode || 500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GitOps Migration ────────────────────────────────────────────────────────
+
+app.post("/api/admin/migrate-to-gitops", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  if (!gitops.isEnabled()) {
+    return res.status(400).json({ error: "GitOps not configured: GITHUB_TOKEN not set" });
+  }
+
+  try {
+    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "admin";
+    // Find all team-* namespaces
+    const nsResp = await k8sApi.listNamespace();
+    const teamNamespaces = nsResp.body.items
+      .filter(ns => ns.metadata.name.startsWith("team-"))
+      .map(ns => ns.metadata.name);
+
+    let migrated = 0;
+    let skipped = 0;
+    const results = [];
+
+    for (const ns of teamNamespaces) {
+      try {
+        const hrResp = await customApi.listNamespacedCustomObject(
+          "helm.toolkit.fluxcd.io", "v2", ns, "helmreleases"
+        );
+        const releases = hrResp.body.items || [];
+
+        for (const hr of releases) {
+          const appName = hr.metadata.name;
+          // Check if already in Git
+          const sha = await gitops.getFileSha(`apps/tenants/${ns}/apps/${appName}.yaml`);
+          if (sha) {
+            skipped++;
+            results.push({ namespace: ns, app: appName, status: "already-in-git" });
+            continue;
+          }
+
+          // Write to Git
+          await gitops.ensureTenantInGit(ns);
+          await gitops.deployApp(ns, appName, hr, actor);
+          migrated++;
+          results.push({ namespace: ns, app: appName, status: "migrated" });
+        }
+      } catch (err) {
+        results.push({ namespace: ns, status: "error", error: err.message });
+      }
+    }
+
+    await gitops.triggerFluxReconcile();
+    res.json({ success: true, migrated, skipped, results });
+  } catch (err) {
+    console.error("[migrate] Error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

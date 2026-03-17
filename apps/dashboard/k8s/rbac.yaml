@@ -60,13 +60,14 @@ rules:
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
     verbs: ["get", "list", "create", "patch", "delete"]
-  # Flux GitRepository + Kustomization — for git deploy
+  # Flux GitRepository — for git deploy
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["gitrepositories"]
     verbs: ["get", "create", "patch"]
+  # Flux Kustomization — for git deploy + reconciliation trigger
   - apiGroups: ["kustomize.toolkit.fluxcd.io"]
     resources: ["kustomizations"]
-    verbs: ["get", "create", "patch"]
+    verbs: ["get", "list", "create", "patch"]
   # NetworkPolicies — create (for new tenant namespaces)
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
