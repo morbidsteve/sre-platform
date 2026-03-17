@@ -23,6 +23,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- else }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -30,6 +34,7 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      {{- end }}
       containers:
         - name: {{ .Values.app.name }}
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
@@ -38,6 +43,10 @@ spec:
             - name: http
               containerPort: {{ .Values.app.port }}
               protocol: TCP
+          {{- if .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- else }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -45,6 +54,7 @@ spec:
             capabilities:
               drop:
                 - ALL
+          {{- end }}
           resources:
             requests:
               cpu: {{ .Values.app.resources.requests.cpu }}
