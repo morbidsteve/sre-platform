@@ -1,19 +1,20 @@
+---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
-  name: sre-portal
-  namespace: sre-portal
+  name: dsop-wizard
+  namespace: sre-dsop
   labels:
-    app.kubernetes.io/name: sre-portal
+    app.kubernetes.io/name: dsop-wizard
     app.kubernetes.io/part-of: sre-platform
 spec:
   hosts:
-    - "portal.${SRE_DOMAIN}"
+    - "dsop.${SRE_DOMAIN}"
   gateways:
     - istio-system/main
   http:
     - route:
         - destination:
-            host: sre-portal.sre-portal.svc.cluster.local
+            host: dsop-wizard.sre-dsop.svc.cluster.local
             port:
               number: 8080

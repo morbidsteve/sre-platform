@@ -1,0 +1,88 @@
+---
+# Default deny all traffic in sre-dsop namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: sre-dsop
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dsop-ingress
+  namespace: sre-dsop
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # From Istio gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dsop-egress
+  namespace: sre-dsop
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Istio control plane (sidecar -> istiod for certs and xDS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 15012
+          protocol: TCP
+        - port: 15010
+          protocol: TCP
+    # Dashboard API (wizard proxies /api/ to dashboard)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-dashboard
+      ports:
+        - port: 3001
+          protocol: TCP
+    # OAuth2 Proxy (for /oauth2/userinfo)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: oauth2-proxy
+      ports:
+        - port: 4180
+          protocol: TCP
+    # HTTPS to any (for health checks via Istio gateway)
+    - ports:
+        - port: 443
+          protocol: TCP
