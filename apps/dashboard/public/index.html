@@ -8265,11 +8265,14 @@ function renderGateCircles(gates) {
 function renderPipelineActions(run) {
   var html = '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;" onclick="event.stopPropagation();">';
   var st = run.status || 'pending';
+  var appName = (run.appName || run.app_name || '').replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+  var team = run.team || '';
 
   if (st === 'scanning' || st === 'pending') {
     html += '<span class="pipe-badge scanning" style="font-size:9px;"><span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px;"></span>Scanning...</span>';
+    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="View in DSOP Wizard">Wizard</a>';
   } else if (st === 'review_pending') {
-    html += '<span class="pipe-badge review_pending" style="font-size:9px;">Awaiting Review</span>';
+    html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--cyan);" onclick="event.stopPropagation();switchTabByName(\'issm\');showReviewPanel(\'' + esc(run.id) + '\')" title="Open in ISSM queue">Review</button>';
     html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="Resume in DSOP Wizard">Wizard</a>';
   } else if (st === 'approved') {
     html += '<button class="btn btn-sm btn-success" style="font-weight:600;" onclick="triggerDeployFromTable(\'' + esc(run.id) + '\',this)">Deploy</button>';
@@ -8281,19 +8284,35 @@ function renderPipelineActions(run) {
     if (url) {
       html += '<a href="' + esc(url) + '" target="_blank" class="btn btn-sm btn-success" style="font-size:10px;padding:2px 8px;text-decoration:none;">Open App</a>';
     }
+    if (team) {
+      html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();switchTabByName(\'apps\');filterMyApps(\'' + esc(team) + '\')" title="View in My Apps">Apps</button>';
+    }
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
   } else if (st === 'failed') {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--yellow);" onclick="retryPipelineRun(\'' + esc(run.id) + '\')">Retry</button>';
+    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="View in DSOP Wizard">Wizard</a>';
   } else if (st === 'rejected') {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--yellow);" onclick="resubmitPipelineRun(\'' + esc(run.id) + '\')">Resubmit</button>';
+    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="View in DSOP Wizard">Wizard</a>';
   } else {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
   }
 
   html += '</div>';
   return html;
+}
+
+// Helper: filter My Apps by team (for cross-linking from pipeline history)
+function filterMyApps(team) {
+  // Try to set the namespace filter if it exists on the apps tab
+  var nsFilter = document.getElementById('apps-ns-filter');
+  if (nsFilter) {
+    nsFilter.value = team;
+    // Trigger change event
+    nsFilter.dispatchEvent(new Event('change'));
+  }
 }
 
 async function triggerDeployFromTable(runId, btnEl) {
@@ -8614,6 +8633,15 @@ function renderRunDetail(run, isReview) {
         html += '</tbody></table>';
         html += '</div>';
       }
+
+      // Raw output button for run detail view
+      if (gate.id && run.id) {
+        html += '<div style="margin-top:6px;">';
+        html += '<button class="btn btn-sm" style="font-size:11px;padding:3px 10px;" onclick="event.stopPropagation();toggleRawOutput(\'' + esc(run.id) + '\',' + gate.id + ',\'detail-' + gi + '\')">View Raw Scan Output</button>';
+        html += '<div id="raw-output-detail-' + gi + '" style="display:none;margin-top:8px;"></div>';
+        html += '</div>';
+      }
+
       html += '</div>';
     });
     html += '</div>';
@@ -8738,6 +8766,118 @@ function closeRunDetail() {
 function toggleGateFindings(index) {
   var el = document.getElementById('gate-findings-' + index);
   if (el) el.classList.toggle('open');
+}
+
+async function toggleRawOutput(runId, gateId, suffix) {
+  var container = document.getElementById('raw-output-' + suffix);
+  if (!container) return;
+
+  // Toggle visibility
+  if (container.style.display !== 'none' && container.innerHTML) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+  container.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:12px;"><span class="spinner" style="width:12px;height:12px;border-width:2px;margin-right:6px;display:inline-block;vertical-align:middle;"></span>Loading raw output...</div>';
+
+  try {
+    var resp = await fetch('/api/pipeline/runs/' + encodeURIComponent(runId) + '/gates/' + encodeURIComponent(gateId) + '/output', { credentials: 'include' });
+    if (!resp.ok) throw new Error('Failed to load');
+    var data = await resp.json();
+
+    if (!data.rawOutput) {
+      container.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:12px;">No raw output available for this gate.</div>';
+      return;
+    }
+
+    var html = '';
+    var raw = data.rawOutput;
+    var toolOutput = raw.toolOutput;
+    var shortName = (data.shortName || '').toUpperCase();
+
+    // Render structured tables for known scan types
+    if (shortName === 'SAST' && toolOutput && toolOutput.results) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">Semgrep: ' + (toolOutput.results || []).length + ' result(s), ' + (toolOutput.errors || []).length + ' error(s)</div>';
+      if (toolOutput.results.length > 0) {
+        html += '<table style="font-size:11px;width:100%;"><thead><tr><th>Rule</th><th>Severity</th><th>File</th><th>Line</th><th>Message</th></tr></thead><tbody>';
+        toolOutput.results.slice(0, 50).forEach(function(r) {
+          html += '<tr>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);">' + esc(r.check_id || '--') + '</td>';
+          html += '<td>' + renderSevBadge(r.extra && r.extra.severity || 'info') + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + esc(r.path || '--') + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + (r.start && r.start.line || '--') + '</td>';
+          html += '<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + esc((r.extra && r.extra.message || '').substring(0, 120)) + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        if (toolOutput.results.length > 50) html += '<div style="font-size:10px;color:var(--text-dim);margin-top:4px;">Showing 50 of ' + toolOutput.results.length + ' results</div>';
+      }
+    } else if (shortName === 'SECRETS' && Array.isArray(toolOutput)) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">Gitleaks: ' + toolOutput.length + ' finding(s)</div>';
+      if (toolOutput.length > 0) {
+        html += '<table style="font-size:11px;width:100%;"><thead><tr><th>Rule</th><th>File</th><th>Line</th><th>Match</th></tr></thead><tbody>';
+        toolOutput.slice(0, 50).forEach(function(s) {
+          html += '<tr>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;color:var(--red);">' + esc(s.RuleID || s.Description || '--') + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + esc(s.File || '--') + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + (s.StartLine || '--') + '</td>';
+          html += '<td style="font-size:10px;color:var(--text-dim);">' + esc((s.Match || '').substring(0, 60)) + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+    } else if (shortName === 'CVE' && toolOutput && toolOutput.Results) {
+      var allVulns = [];
+      (toolOutput.Results || []).forEach(function(r) {
+        (r.Vulnerabilities || []).forEach(function(v) {
+          allVulns.push({ target: r.Target, cve: v.VulnerabilityID, pkg: v.PkgName, severity: v.Severity, fixedVersion: v.FixedVersion || '--', title: v.Title || '' });
+        });
+      });
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">Trivy: ' + allVulns.length + ' vulnerabilities across ' + (toolOutput.Results || []).length + ' target(s)</div>';
+      if (allVulns.length > 0) {
+        html += '<table style="font-size:11px;width:100%;"><thead><tr><th>CVE ID</th><th>Package</th><th>Severity</th><th>Fixed In</th><th>Title</th></tr></thead><tbody>';
+        allVulns.slice(0, 50).forEach(function(v) {
+          html += '<tr>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);">' + esc(v.cve || '--') + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + esc(v.pkg || '--') + '</td>';
+          html += '<td>' + renderSevBadge(v.severity) + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + esc(v.fixedVersion) + '</td>';
+          html += '<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + esc((v.title || '').substring(0, 100)) + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        if (allVulns.length > 50) html += '<div style="font-size:10px;color:var(--text-dim);margin-top:4px;">Showing 50 of ' + allVulns.length + ' vulnerabilities</div>';
+      }
+    } else if (shortName === 'SBOM' && toolOutput && toolOutput.packages) {
+      var pkgs = toolOutput.packages || [];
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">SBOM (SPDX): ' + pkgs.length + ' packages identified</div>';
+      if (pkgs.length > 0) {
+        html += '<table style="font-size:11px;width:100%;"><thead><tr><th>Package</th><th>Version</th><th>License</th></tr></thead><tbody>';
+        pkgs.slice(0, 30).forEach(function(p) {
+          var license = '';
+          if (p.licenseConcluded) license = p.licenseConcluded;
+          else if (p.licenseDeclared) license = p.licenseDeclared;
+          html += '<tr>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + esc(p.name || '--') + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:10px;">' + esc(p.versionInfo || '--') + '</td>';
+          html += '<td style="font-size:10px;">' + esc(license || '--') + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        if (pkgs.length > 30) html += '<div style="font-size:10px;color:var(--text-dim);margin-top:4px;">Showing 30 of ' + pkgs.length + ' packages</div>';
+      }
+    }
+
+    // Always show raw JSON in a collapsible code block
+    html += '<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text-dim);cursor:pointer;">Show full JSON</summary>';
+    html += '<pre style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:8px;font-size:10px;font-family:var(--font-mono);color:var(--text-dim);max-height:400px;overflow:auto;white-space:pre-wrap;margin-top:4px;">' + esc(JSON.stringify(raw, null, 2)) + '</pre>';
+    html += '</details>';
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<div style="padding:8px;color:var(--red);font-size:12px;">Failed to load raw output: ' + esc(err.message) + '</div>';
+  }
 }
 
 async function updateFindingDisposition(runId, findingId) {
@@ -8908,6 +9048,15 @@ function renderReviewPanel(run) {
       } else {
         html += '<div style="font-size:13px;color:var(--text-dim);padding:8px 0;">No findings for this gate.</div>';
       }
+
+      // Raw output button
+      if (gate.id && run.id) {
+        html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">';
+        html += '<button class="btn btn-sm" style="font-size:11px;padding:3px 10px;" onclick="event.stopPropagation();toggleRawOutput(\'' + esc(run.id) + '\',' + gate.id + ',\'review-' + gi + '\')">View Raw Scan Output</button>';
+        html += '<div id="raw-output-review-' + gi + '" style="display:none;margin-top:8px;"></div>';
+        html += '</div>';
+      }
+
       html += '</div>';
       html += '</div>';
     });

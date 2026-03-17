@@ -5837,6 +5837,48 @@ app.get("/api/pipeline/runs", requireDb, requireGroups("sre-admins", "developers
     }
 
     const result = await db.listRuns(filters);
+
+    // Enrich runs with gates and findings for display (ISSM queue needs finding counts)
+    if (result.runs && result.runs.length > 0) {
+      const runIds = result.runs.map(r => r.id);
+      const gatesResult = await db.pool.query(
+        "SELECT id, run_id, gate_name AS name, short_name, gate_order, status, progress, summary, tool, completed_at FROM pipeline_gates WHERE run_id = ANY($1) ORDER BY gate_order",
+        [runIds]
+      );
+      const findingsResult = await db.pool.query(
+        "SELECT id, run_id, gate_id, severity, title, location, disposition FROM pipeline_findings WHERE run_id = ANY($1)",
+        [runIds]
+      );
+
+      // Group gates and findings by run_id
+      const gatesByRun = {};
+      const findingsByRun = {};
+      for (const g of gatesResult.rows) {
+        if (!gatesByRun[g.run_id]) gatesByRun[g.run_id] = [];
+        gatesByRun[g.run_id].push(g);
+      }
+      for (const f of findingsResult.rows) {
+        if (!findingsByRun[f.run_id]) findingsByRun[f.run_id] = [];
+        findingsByRun[f.run_id].push(f);
+      }
+
+      // Attach gates with their findings to each run
+      result.runs = result.runs.map(run => {
+        const runGates = gatesByRun[run.id] || [];
+        const runFindings = findingsByRun[run.id] || [];
+        // Attach findings to their parent gate
+        const findingsByGate = {};
+        for (const f of runFindings) {
+          if (!findingsByGate[f.gate_id]) findingsByGate[f.gate_id] = [];
+          findingsByGate[f.gate_id].push(f);
+        }
+        return {
+          ...run,
+          gates: runGates.map(g => ({ ...g, findings: findingsByGate[g.id] || [] })),
+        };
+      });
+    }
+
     res.json(result);
   } catch (err) {
     console.error("[pipeline] List runs error:", err);
@@ -5861,9 +5903,55 @@ app.get("/api/pipeline/runs/:id", requireDb, requireGroups("sre-admins", "develo
       }
     }
 
+    // Strip raw_output from gates by default to keep responses small.
+    // Use ?include_raw=true to include full tool output.
+    const includeRaw = req.query.include_raw === "true";
+    if (!includeRaw && run.gates) {
+      run.gates = run.gates.map(g => {
+        const { raw_output, ...rest } = g;
+        return rest;
+      });
+    }
+
     res.json(run);
   } catch (err) {
     console.error("[pipeline] Get run error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/pipeline/runs/:id/gates/:gateId/output — Raw scan output for a specific gate
+app.get("/api/pipeline/runs/:id/gates/:gateId/output", requireDb, requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const run = await db.getRun(req.params.id);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+
+    // H-4: Team-based data isolation
+    const groupsHeader = req.headers["x-auth-request-groups"] || "";
+    const userGroups = groupsHeader.split(/[,\s]+/).map(g => g.trim().replace(/^\//, "")).filter(Boolean);
+    const isAdmin = userGroups.some(g => ["sre-admins", "issm"].includes(g));
+    if (!isAdmin) {
+      const userTeam = userGroups.find(g => g.startsWith("team-"));
+      if (userTeam && run.team !== userTeam) {
+        return res.status(404).json({ error: "Pipeline run not found" });
+      }
+    }
+
+    const gateId = parseInt(req.params.gateId);
+    const gate = run.gates.find(g => g.id === gateId);
+    if (!gate) return res.status(404).json({ error: "Gate not found" });
+
+    res.json({
+      gateId: gate.id,
+      gateName: gate.gate_name,
+      shortName: gate.short_name,
+      status: gate.status,
+      tool: gate.tool,
+      summary: gate.summary,
+      rawOutput: gate.raw_output || null,
+    });
+  } catch (err) {
+    console.error("[pipeline] Get gate output error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -5919,6 +6007,35 @@ app.get("/api/pipeline/stats", requireDb, requireGroups("sre-admins", "developer
     res.json(stats);
   } catch (err) {
     console.error("[pipeline] Stats error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/pipeline/cleanup — Mark stale scanning runs as failed
+app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+    const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
+    const { rows: staleRuns } = await db.pool.query(
+      "SELECT id FROM pipeline_runs WHERE status IN ('scanning', 'pending') AND updated_at < $1",
+      [cutoff]
+    );
+
+    const cleaned = [];
+    for (const run of staleRuns) {
+      // Mark all pending/running gates as timed out
+      await db.pool.query(
+        "UPDATE pipeline_gates SET status = 'failed', summary = 'Pipeline timed out', completed_at = NOW() WHERE run_id = $1 AND status IN ('pending', 'running')",
+        [run.id]
+      );
+      await db.updateRunStatus(run.id, "failed");
+      await db.auditLog(run.id, "pipeline_cleanup", "system", "Stale pipeline run marked as failed by cleanup");
+      cleaned.push(run.id);
+    }
+
+    res.json({ cleaned: cleaned.length, runIds: cleaned });
+  } catch (err) {
+    console.error("[pipeline] Cleanup error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -6184,12 +6301,26 @@ async function runScanGate(runId, gate, scanFn) {
     const result = await scanFn();
     const gateStatus = result.status === "failed" ? "failed" : result.status === "warning" ? "warning" : "passed";
 
+    // Build raw_output: include the full tool output (JSON from semgrep/gitleaks/syft/trivy)
+    // plus the processed summary for reference
+    const rawOutput = {
+      gate: result.gate,
+      tool: result.tool,
+      status: gateStatus,
+      summary: result.summary,
+      findings: result.findings,
+      toolOutput: result.toolOutput || null,
+      packageCount: result.packageCount || undefined,
+      format: result.format || undefined,
+      scannedAt: new Date().toISOString(),
+    };
+
     await db.updateGate(gate.id, {
       status: gateStatus,
       progress: 100,
       completedAt: new Date().toISOString(),
       summary: result.summary || `${gateStatus}`,
-      rawOutput: result,
+      rawOutput: rawOutput,
     });
 
     // Create findings in DB
@@ -6215,6 +6346,7 @@ async function runScanGate(runId, gate, scanFn) {
       progress: 100,
       completedAt: new Date().toISOString(),
       summary: `Error: ${err.message}`,
+      rawOutput: { gate: gate.short_name, error: err.message, failedAt: new Date().toISOString() },
     });
     await db.auditLog(runId, "gate_failed", null, `Gate ${gate.short_name} failed: ${err.message}`, { gateId: gate.id });
     return "failed";
@@ -6263,6 +6395,7 @@ async function runSASTScan(url, branch) {
     status: critical > 0 ? "failed" : warnings > 0 ? "warning" : "passed",
     findings,
     summary: `${findings.length} findings (${critical} errors, ${warnings} warnings)`,
+    toolOutput: results,
   };
 }
 
@@ -6307,6 +6440,7 @@ async function runSecretsScan(url, branch) {
     status: findings.length > 0 ? "failed" : "passed",
     findings,
     summary: findings.length > 0 ? `${findings.length} secrets detected!` : "0 secrets detected",
+    toolOutput: secrets,
   };
 }
 
@@ -6346,6 +6480,7 @@ async function runSBOMScan(image) {
     packageCount,
     summary: sbom ? `SBOM generated: ${packageCount} packages identified` : "SBOM generation failed",
     sbom,
+    toolOutput: sbom,
   };
 }
 
@@ -6397,6 +6532,7 @@ async function runCVEScan(image) {
     status: critical > 0 ? "failed" : high > 0 ? "warning" : "passed",
     findings,
     summary: `${findings.length} vulnerabilities (${critical} critical, ${high} high)`,
+    toolOutput: report,
   };
 }
 
@@ -6449,16 +6585,27 @@ async function runDASTScan(targetUrl) {
 }
 
 async function orchestratePipelineScan(runId) {
+  const PIPELINE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  const pipelineStartTime = Date.now();
+
   const run = await db.getRun(runId);
   if (!run) return;
 
   await db.updateRunStatus(runId, "scanning");
+
+  // Helper: check if the pipeline has exceeded the timeout
+  function checkPipelineTimeout() {
+    if (Date.now() - pipelineStartTime > PIPELINE_TIMEOUT_MS) {
+      throw new Error("Pipeline scan timed out after 10 minutes");
+    }
+  }
 
   const gateMap = {};
   for (const g of run.gates) {
     gateMap[g.short_name] = g;
   }
 
+  try {
   // Phase 1: Source code scans (SAST, SECRETS) — run in parallel
   const sourceScans = [];
 
@@ -6471,6 +6618,7 @@ async function orchestratePipelineScan(runId) {
   }
 
   await Promise.allSettled(sourceScans);
+  checkPipelineTimeout();
 
   // Phase 2: Build the container image (if git URL, no pre-built image)
   let builtImageRef = run.image_url || null;
@@ -6570,6 +6718,8 @@ async function orchestratePipelineScan(runId) {
     }
   }
 
+  checkPipelineTimeout();
+
   // Phase 3: Image-based scans (SBOM, CVE) against the BUILT image
   if (builtImageRef) {
     const imageScans = [];
@@ -6608,6 +6758,26 @@ async function orchestratePipelineScan(runId) {
       await db.updateGate(gateMap.IMAGE_SIGNING.id, { status: "warning", summary: "Runs automatically after ISSM approval", completedAt: null });
     }
     await db.auditLog(runId, "scan_complete_ready_for_review", null, "All automated scans passed — ready for ISSM review");
+  }
+
+  } catch (timeoutErr) {
+    // Pipeline timeout or unexpected error — mark remaining pending gates as failed
+    console.error(`[pipeline] Pipeline ${runId} error: ${timeoutErr.message}`);
+    const currentRun = await db.getRun(runId);
+    if (currentRun) {
+      for (const gate of currentRun.gates) {
+        if (gate.status === "pending" || gate.status === "running") {
+          await db.updateGate(gate.id, {
+            status: "failed",
+            progress: 100,
+            completedAt: new Date().toISOString(),
+            summary: `Timed out: ${timeoutErr.message}`,
+          });
+        }
+      }
+      await db.updateRunStatus(runId, "failed");
+      await db.auditLog(runId, "pipeline_timeout", null, timeoutErr.message);
+    }
   }
 }
 

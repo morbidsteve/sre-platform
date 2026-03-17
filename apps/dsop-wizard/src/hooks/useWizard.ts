@@ -94,10 +94,13 @@ function mapPipelineGateToSecurityGate(
 ): SecurityGate {
   const gateFindings = findings.filter((f) => f.gate_id === pipelineGate.id);
   // Try to find the matching local gate by order for description/implemented info
-  const localGate = localGates.find((g) => g.id === pipelineGate.gate_order) || localGates[0];
+  // Match by gate_order (1-based) to the initial gate's id (also 1-based in getInitialGates)
+  const localGate = localGates.find((g) => g.id === pipelineGate.gate_order) ||
+    localGates.find((g) => g.shortName === pipelineGate.short_name) ||
+    localGates[0];
 
   return {
-    id: pipelineGate.gate_order,
+    id: pipelineGate.id, // Use DB primary key so API calls (e.g., gate output) work correctly
     name: pipelineGate.gate_name,
     shortName: pipelineGate.short_name,
     description: localGate?.description || pipelineGate.gate_name,
@@ -349,14 +352,12 @@ export function useWizard() {
 
       // If we have a pipeline run, also update the finding disposition via API
       if (prev.pipelineRunId && prev.pipelineRun && updates.disposition) {
-        // Find the API finding ID by matching gate and index
+        // Find the API finding ID by matching gate DB id and index
         const gate = prev.gates.find((g) => g.id === gateId);
         if (gate && prev.pipelineRun.findings) {
+          // gateId is now the DB primary key, so match directly on gate_id
           const gateApiFindings = prev.pipelineRun.findings.filter(
-            (f) => {
-              const pGate = prev.pipelineRun?.gates.find((pg) => pg.gate_order === gateId);
-              return pGate && f.gate_id === pGate.id;
-            }
+            (f) => f.gate_id === gateId
           );
           const apiFinding = gateApiFindings[findingIndex];
           if (apiFinding) {

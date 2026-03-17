@@ -164,6 +164,19 @@ export interface PipelineGate {
   report_url: string | null;
   started_at: string | null;
   completed_at: string | null;
+  raw_output?: RawGateOutput | null;
+}
+
+export interface RawGateOutput {
+  gate?: string;
+  tool?: string;
+  status?: string;
+  summary?: string;
+  findings?: Array<{ severity: string; title: string; description?: string; location?: string }>;
+  toolOutput?: unknown;
+  packageCount?: number;
+  format?: string;
+  scannedAt?: string;
 }
 
 export interface PipelineFinding {

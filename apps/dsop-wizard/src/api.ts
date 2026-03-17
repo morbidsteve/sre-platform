@@ -466,8 +466,33 @@ export async function createPipelineRun(data: {
   });
 }
 
-export async function getPipelineRun(runId: string): Promise<PipelineRun> {
-  return apiFetch(`/pipeline/runs/${runId}`);
+export async function getPipelineRun(runId: string, includeRaw = false): Promise<PipelineRun> {
+  const params = includeRaw ? '?include_raw=true' : '';
+  return apiFetch(`/pipeline/runs/${runId}${params}`);
+}
+
+export interface GateOutputResponse {
+  gateId: number;
+  gateName: string;
+  shortName: string;
+  status: string;
+  tool: string | null;
+  summary: string | null;
+  rawOutput: {
+    gate?: string;
+    tool?: string;
+    status?: string;
+    summary?: string;
+    findings?: Array<{ severity: string; title: string; description?: string; location?: string }>;
+    toolOutput?: unknown;
+    packageCount?: number;
+    format?: string;
+    scannedAt?: string;
+  } | null;
+}
+
+export async function getGateOutput(runId: string, gateId: number): Promise<GateOutputResponse> {
+  return apiFetch(`/pipeline/runs/${runId}/gates/${gateId}/output`);
 }
 
 export async function updateFindingDisposition(

@@ -19,9 +19,12 @@ import {
   RotateCcw,
   Send,
   ChevronDown,
+  Code2,
+  Eye,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { getGateOutput, type GateOutputResponse } from '../../api';
 import type { AppInfo, DetectionResult, SecurityGate, SecurityException, PipelineRun, PipelineRunStatus } from '../../types';
 
 interface Step5Props {
@@ -75,11 +78,255 @@ const gateStatusConfig: Record<string, { color: string; label: string }> = {
   pending: { color: 'text-gray-500', label: 'PENDING' },
 };
 
-function ReviewGateDetail({ gate }: { gate: SecurityGate }) {
+function RawOutputViewer({ runId, gateId, shortName }: { runId: string; gateId: number; shortName: string }) {
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<GateOutputResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showJson, setShowJson] = useState(false);
+
+  const loadOutput = async () => {
+    if (data) return; // Already loaded
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await getGateOutput(runId, gateId);
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOutput();
+  }, [runId, gateId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <Loader2 className="w-3.5 h-3.5 text-gray-500 animate-spin" />
+        <span className="text-xs text-gray-500">Loading scan output...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="text-xs text-red-400 py-1">{error}</p>;
+  }
+
+  if (!data?.rawOutput) {
+    return <p className="text-xs text-gray-600 py-1">No raw output available.</p>;
+  }
+
+  const raw = data.rawOutput;
+  const toolOutput = raw.toolOutput as Record<string, unknown> | unknown[] | null;
+  const sn = shortName.toUpperCase();
+
+  return (
+    <div className="space-y-2 mt-2 pt-2 border-t border-navy-700">
+      {/* SAST / Semgrep table */}
+      {sn === 'SAST' && toolOutput && typeof toolOutput === 'object' && !Array.isArray(toolOutput) && Array.isArray((toolOutput as Record<string, unknown>).results) && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1">
+            Semgrep: {((toolOutput as Record<string, unknown>).results as unknown[]).length} result(s)
+          </p>
+          {((toolOutput as Record<string, unknown>).results as Array<Record<string, unknown>>).length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-navy-700">
+                    <th className="text-left px-2 py-1">Rule</th>
+                    <th className="text-left px-2 py-1">Severity</th>
+                    <th className="text-left px-2 py-1">File</th>
+                    <th className="text-left px-2 py-1">Line</th>
+                    <th className="text-left px-2 py-1">Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {((toolOutput as Record<string, unknown>).results as Array<Record<string, unknown>>).slice(0, 30).map((r, i) => {
+                    const extra = r.extra as Record<string, unknown> | undefined;
+                    const start = r.start as Record<string, number> | undefined;
+                    return (
+                      <tr key={i} className="border-b border-navy-800 hover:bg-navy-800/50">
+                        <td className="px-2 py-1 font-mono text-cyan-400/80 max-w-[150px] truncate">{String(r.check_id || '--')}</td>
+                        <td className="px-2 py-1">
+                          <span className={`text-xs font-bold uppercase ${
+                            String(extra?.severity) === 'ERROR' ? 'text-red-400' :
+                            String(extra?.severity) === 'WARNING' ? 'text-amber-400' : 'text-gray-400'
+                          }`}>{String(extra?.severity || 'info')}</span>
+                        </td>
+                        <td className="px-2 py-1 font-mono text-gray-400 max-w-[120px] truncate">{String(r.path || '--')}</td>
+                        <td className="px-2 py-1 font-mono text-gray-400">{start?.line || '--'}</td>
+                        <td className="px-2 py-1 text-gray-500 max-w-[200px] truncate">{String(extra?.message || '').substring(0, 100)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {((toolOutput as Record<string, unknown>).results as unknown[]).length > 30 && (
+                <p className="text-xs text-gray-600 mt-1">Showing 30 of {((toolOutput as Record<string, unknown>).results as unknown[]).length}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Secrets / Gitleaks table */}
+      {sn === 'SECRETS' && Array.isArray(toolOutput) && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Gitleaks: {toolOutput.length} finding(s)</p>
+          {toolOutput.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-navy-700">
+                    <th className="text-left px-2 py-1">Rule</th>
+                    <th className="text-left px-2 py-1">File</th>
+                    <th className="text-left px-2 py-1">Line</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(toolOutput as Array<Record<string, unknown>>).slice(0, 30).map((s, i) => (
+                    <tr key={i} className="border-b border-navy-800 hover:bg-navy-800/50">
+                      <td className="px-2 py-1 font-mono text-red-400">{String(s.RuleID || s.Description || '--')}</td>
+                      <td className="px-2 py-1 font-mono text-gray-400 max-w-[150px] truncate">{String(s.File || '--')}</td>
+                      <td className="px-2 py-1 font-mono text-gray-400">{String(s.StartLine || '--')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CVE / Trivy table */}
+      {sn === 'CVE' && toolOutput && typeof toolOutput === 'object' && !Array.isArray(toolOutput) && Array.isArray((toolOutput as Record<string, unknown>).Results) && (
+        <div>
+          {(() => {
+            const allVulns: Array<{ cve: string; pkg: string; severity: string; fixedVersion: string; title: string }> = [];
+            ((toolOutput as Record<string, unknown>).Results as Array<Record<string, unknown>>).forEach((r) => {
+              ((r.Vulnerabilities || []) as Array<Record<string, unknown>>).forEach((v) => {
+                allVulns.push({
+                  cve: String(v.VulnerabilityID || '--'),
+                  pkg: String(v.PkgName || '--'),
+                  severity: String(v.Severity || 'unknown'),
+                  fixedVersion: String(v.FixedVersion || '--'),
+                  title: String(v.Title || ''),
+                });
+              });
+            });
+            return (
+              <>
+                <p className="text-xs text-gray-500 mb-1">
+                  Trivy: {allVulns.length} vulnerabilities across {((toolOutput as Record<string, unknown>).Results as unknown[]).length} target(s)
+                </p>
+                {allVulns.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 border-b border-navy-700">
+                          <th className="text-left px-2 py-1">CVE ID</th>
+                          <th className="text-left px-2 py-1">Package</th>
+                          <th className="text-left px-2 py-1">Severity</th>
+                          <th className="text-left px-2 py-1">Fixed In</th>
+                          <th className="text-left px-2 py-1">Title</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allVulns.slice(0, 30).map((v, i) => (
+                          <tr key={i} className="border-b border-navy-800 hover:bg-navy-800/50">
+                            <td className="px-2 py-1 font-mono text-cyan-400/80">{v.cve}</td>
+                            <td className="px-2 py-1 font-mono text-gray-400">{v.pkg}</td>
+                            <td className="px-2 py-1">
+                              <span className={`text-xs font-bold uppercase ${
+                                v.severity.toLowerCase() === 'critical' ? 'text-red-400' :
+                                v.severity.toLowerCase() === 'high' ? 'text-orange-400' :
+                                v.severity.toLowerCase() === 'medium' ? 'text-amber-400' : 'text-gray-400'
+                              }`}>{v.severity}</span>
+                            </td>
+                            <td className="px-2 py-1 font-mono text-gray-500">{v.fixedVersion}</td>
+                            <td className="px-2 py-1 text-gray-500 max-w-[180px] truncate">{v.title.substring(0, 80)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {allVulns.length > 30 && (
+                      <p className="text-xs text-gray-600 mt-1">Showing 30 of {allVulns.length}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* SBOM / Syft table */}
+      {sn === 'SBOM' && toolOutput && typeof toolOutput === 'object' && !Array.isArray(toolOutput) && Array.isArray((toolOutput as Record<string, unknown>).packages) && (
+        <div>
+          {(() => {
+            const pkgs = (toolOutput as Record<string, unknown>).packages as Array<Record<string, unknown>>;
+            return (
+              <>
+                <p className="text-xs text-gray-500 mb-1">SBOM (SPDX): {pkgs.length} packages</p>
+                {pkgs.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 border-b border-navy-700">
+                          <th className="text-left px-2 py-1">Package</th>
+                          <th className="text-left px-2 py-1">Version</th>
+                          <th className="text-left px-2 py-1">License</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pkgs.slice(0, 20).map((p, i) => (
+                          <tr key={i} className="border-b border-navy-800 hover:bg-navy-800/50">
+                            <td className="px-2 py-1 font-mono text-gray-300">{String(p.name || '--')}</td>
+                            <td className="px-2 py-1 font-mono text-gray-400">{String(p.versionInfo || '--')}</td>
+                            <td className="px-2 py-1 text-gray-500">{String(p.licenseConcluded || p.licenseDeclared || '--')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {pkgs.length > 20 && (
+                      <p className="text-xs text-gray-600 mt-1">Showing 20 of {pkgs.length}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Full JSON toggle */}
+      <button
+        type="button"
+        onClick={() => setShowJson(!showJson)}
+        className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-400 transition-colors"
+      >
+        <Code2 className="w-3.5 h-3.5" />
+        {showJson ? 'Hide' : 'Show'} full JSON
+      </button>
+      {showJson && (
+        <pre className="bg-navy-950 border border-navy-700 rounded-lg p-3 text-xs font-mono text-gray-400 max-h-80 overflow-auto whitespace-pre-wrap">
+          {JSON.stringify(raw, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function ReviewGateDetail({ gate, runId }: { gate: SecurityGate; runId?: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [showRawOutput, setShowRawOutput] = useState(false);
   const cfg = gateStatusConfig[gate.status] || gateStatusConfig.pending;
   const hasFindings = gate.findings.length > 0;
   const isDeferred = gate.summary?.startsWith('Deferred');
+  const canShowRaw = gate.status !== 'pending' && gate.status !== 'running' && runId;
 
   return (
     <div className={`border rounded-lg overflow-hidden ${
@@ -166,6 +413,23 @@ function ReviewGateDetail({ gate }: { gate: SecurityGate }) {
               <Globe className="w-3.5 h-3.5" />
               View Full Report
             </a>
+          )}
+
+          {/* Raw Output Viewer */}
+          {canShowRaw && (
+            <div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowRawOutput(!showRawOutput); }}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-cyan-400 transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                {showRawOutput ? 'Hide' : 'View'} Raw Scan Output
+              </button>
+              {showRawOutput && (
+                <RawOutputViewer runId={runId} gateId={gate.id} shortName={gate.shortName} />
+              )}
+            </div>
           )}
         </div>
       )}
@@ -307,7 +571,7 @@ export function Step5_Review({
               {/* Expandable gate details */}
               <div className="space-y-2">
                 {gates.map((gate) => (
-                  <ReviewGateDetail key={gate.id} gate={gate} />
+                  <ReviewGateDetail key={gate.id} gate={gate} runId={pipelineRun?.id} />
                 ))}
               </div>
             </div>
