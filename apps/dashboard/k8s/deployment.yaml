@@ -46,6 +46,11 @@ spec:
                 secretKeyRef:
                   name: keycloak-admin-creds
                   key: password
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pipeline-db-app
+                  key: uri
           ports:
             - containerPort: 3001
               name: http

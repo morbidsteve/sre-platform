@@ -135,6 +135,96 @@ async function getRegisteredApps() {
   return appRegistry.map(function(app) { return Object.assign({}, app); });
 }
 
+// ── Sync app registry with actual cluster state ─────────────────────────────
+
+async function syncAppRegistry() {
+  try {
+    // Build a set of all existing resources across ALL namespaces
+    const allNs = await k8sApi.listNamespace();
+    const existingResources = new Set();
+
+    for (const ns of allNs.body.items) {
+      const nsName = ns.metadata.name;
+      try {
+        // Check HelmReleases
+        const hrResp = await customApi.listNamespacedCustomObject(
+          "helm.toolkit.fluxcd.io", "v2", nsName, "helmreleases"
+        );
+        for (const hr of hrResp.body.items) {
+          existingResources.add(hr.metadata.name);
+        }
+      } catch { /* no HR access in this ns */ }
+      try {
+        // Check Deployments
+        const depResp = await appsApi.listNamespacedDeployment(nsName);
+        for (const dep of depResp.body.items) {
+          existingResources.add(dep.metadata.name);
+          // Also add without common suffixes for matching
+          const name = dep.metadata.name;
+          if (name.includes("-")) existingResources.add(name.split("-")[0]);
+        }
+      } catch { /* no deploy access in this ns */ }
+      try {
+        // Check VirtualServices (apps with ingress)
+        const vsResp = await customApi.listNamespacedCustomObject(
+          "networking.istio.io", "v1", nsName, "virtualservices"
+        );
+        for (const vs of vsResp.body.items) {
+          existingResources.add(vs.metadata.name);
+          // Also match on hostname
+          for (const host of (vs.spec?.hosts || [])) {
+            const appName = host.split(".")[0];
+            existingResources.add(appName);
+          }
+        }
+      } catch { /* no VS access in this ns */ }
+    }
+
+    // Only remove apps that were deployed via pipeline (have deployedVia=pipeline or namespace set)
+    // and whose resources no longer exist. Keep manually registered apps.
+    var removed = [];
+    var keepApps = [];
+    for (var i = 0; i < appRegistry.length; i++) {
+      var app = appRegistry[i];
+      // Check if ANY resource matching this app name exists
+      const nameMatches = existingResources.has(app.name) ||
+        existingResources.has(app.name + "-" + app.name) ||
+        existingResources.has(app.helmReleaseName);
+
+      if (!nameMatches && app.deployedVia === "pipeline") {
+        // Only remove pipeline-deployed apps that have no resources
+        removed.push(app.name);
+      } else {
+        keepApps.push(app);
+      }
+    }
+
+    if (removed.length > 0) {
+      appRegistry = keepApps;
+      await saveAppRegistry();
+      console.log("[portal] syncAppRegistry: removed " + removed.length + " stale entries: " + removed.join(", "));
+
+      // Update pipeline runs for removed apps to "undeployed" status
+      if (dbAvailable && db.pool) {
+        for (var appName of removed) {
+          try {
+            await db.pool.query(
+              "UPDATE pipeline_runs SET status = 'undeployed', updated_at = NOW() WHERE app_name = $1 AND status = 'deployed'",
+              [appName]
+            );
+          } catch (e) {
+            // Non-critical — pipeline DB may not have runs for this app
+          }
+        }
+      }
+    } else {
+      console.log("[portal] syncAppRegistry: all registry entries have matching HelmReleases");
+    }
+  } catch (err) {
+    console.error("[portal] syncAppRegistry error:", err.message);
+  }
+}
+
 // ── Resource parsing helpers ────────────────────────────────────────────────
 
 function parseCpu(s) {
@@ -298,7 +388,7 @@ app.get("/api/ingress", async (req, res) => {
 });
 
 // List tenant namespaces
-app.get("/api/tenants", async (req, res) => {
+app.get("/api/tenants", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
   try {
     const tenants = await getTenants();
     res.json({ tenants });
@@ -309,7 +399,7 @@ app.get("/api/tenants", async (req, res) => {
 });
 
 // List apps in a tenant namespace
-app.get("/api/tenants/:namespace/apps", async (req, res) => {
+app.get("/api/tenants/:namespace/apps", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
   try {
     const apps = await getTenantApps(req.params.namespace);
     res.json({ apps });
@@ -356,6 +446,14 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
     // Apply the manifest to the cluster
     await applyManifest(manifest, nsName);
 
+    // Auto-register OAuth2 proxy path for SSO callbacks
+    if (ingress) {
+      await registerOAuth2ProxyPath(ingress);
+    }
+
+    // Auto-create DestinationRule for HTTPS backend detection
+    await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
+
     res.json({
       success: true,
       message: `App "${safeName}" deployed to namespace "${nsName}"`,
@@ -371,16 +469,43 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
 // Delete an app
 app.delete("/api/deploy/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
+    const { namespace, name } = req.params;
     await customApi.deleteNamespacedCustomObject(
       "helm.toolkit.fluxcd.io",
       "v2",
-      req.params.namespace,
+      namespace,
       "helmreleases",
-      req.params.name
+      name
     );
+
+    // Clean up VirtualService
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "networking.istio.io", "v1", namespace, "virtualservices", name
+      );
+    } catch (e) { /* ignore if not found */ }
+
+    // Remove from app registry
+    const regIdx = appRegistry.findIndex(a => a.name === name);
+    if (regIdx >= 0) {
+      appRegistry.splice(regIdx, 1);
+      await saveAppRegistry();
+      console.log(`[portal] Removed "${name}" from app registry after deletion`);
+    }
+
+    // Mark pipeline runs as undeployed
+    if (dbAvailable && db.pool) {
+      try {
+        await db.pool.query(
+          "UPDATE pipeline_runs SET status = 'undeployed', updated_at = NOW() WHERE app_name = $1 AND status = 'deployed'",
+          [name]
+        );
+      } catch (e) { /* non-critical */ }
+    }
+
     res.json({
       success: true,
-      message: `App "${req.params.name}" deleted from "${req.params.namespace}"`,
+      message: `App "${name}" deleted from "${namespace}"`,
     });
   } catch (err) {
     console.error("Error deleting app:", err);
@@ -413,6 +538,8 @@ app.get("/api/user", (req, res) => {
   let role = "viewer";
   if (isAdmin) {
     role = "admin";
+  } else if (groups.includes("issm")) {
+    role = "issm";
   } else if (groups.includes("developers")) {
     role = "developer";
   } else if (groups.includes("sre-viewers")) {
@@ -425,7 +552,7 @@ app.get("/api/user", (req, res) => {
 });
 
 // GET /api/alerts — Proxy Alertmanager alerts
-app.get("/api/alerts", async (req, res) => {
+app.get("/api/alerts", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -482,7 +609,7 @@ app.get("/api/status", async (req, res) => {
 });
 
 // GET /api/audit — Recent audit events
-app.get("/api/audit", async (req, res) => {
+app.get("/api/audit", requireGroups("sre-admins", "issm"), async (req, res) => {
   try {
     const resp = await k8sApi.listEventForAllNamespaces();
     const significantReasons = ["Created", "Deleted", "Scaled", "Updated", "Killing", "Started", "Pulled", "SuccessfulCreate", "SuccessfulDelete", "ScalingReplicaSet"];
@@ -1019,6 +1146,9 @@ app.post("/api/deploy/compose", mutateLimiter, requireGroups("sre-admins", "deve
 
       await applyManifest(manifest, nsName);
 
+      // Auto-create DestinationRule for HTTPS backend detection
+      await createBackendTLSRule(appName, nsName, `${appName}-${appName}`);
+
       deployed.push({
         name: appName,
         image: `${imageRepo}:${imageTag}`,
@@ -1110,6 +1240,14 @@ app.post("/api/deploy/multi", mutateLimiter, requireGroups("sre-admins", "develo
 
       await applyManifest(manifest, nsName);
 
+      // Auto-register OAuth2 proxy path for SSO callbacks
+      if (ingressHost) {
+        await registerOAuth2ProxyPath(ingressHost);
+      }
+
+      // Auto-create DestinationRule for HTTPS backend detection
+      await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
+
       deployed.push({
         name: safeName,
         image: `${svc.image}:${svc.tag}`,
@@ -1131,7 +1269,7 @@ app.post("/api/deploy/multi", mutateLimiter, requireGroups("sre-admins", "develo
 });
 
 // GET /api/deploy/:namespace/:name/status — Live deploy status
-app.get("/api/deploy/:namespace/:name/status", async (req, res) => {
+app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
   try {
     const { namespace, name } = req.params;
 
@@ -1686,6 +1824,11 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
             env: svc.environment || [],
           });
           await applyManifest(manifest, nsName);
+
+          // Auto-create DestinationRule for HTTPS backend detection
+          const composeSvcName = `${svcAppName}-${svcAppName}`;
+          await createBackendTLSRule(svcAppName, nsName, composeSvcName);
+
           deployedPrebuilt.push({ name: svcAppName, type: "internal", port: svc.port, image: svc.image });
         } else {
           // Catch-all: service has no image, no build context, and no platform role — log and skip
@@ -1800,6 +1943,9 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
       };
 
       await applyManifest(helmRelease, nsName);
+
+      // Auto-create DestinationRule for HTTPS backend detection
+      await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
 
       return res.json({
         success: true,
@@ -3584,6 +3730,9 @@ app.post("/api/deploy/helm-chart", mutateLimiter, requireGroups("sre-admins", "d
 
     await applyManifest(helmRelease, nsName);
 
+    // Auto-create DestinationRule for HTTPS backend detection
+    await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
+
     res.json({
       success: true,
       message: `Helm chart "${chartName}" deployed as "${safeName}" in namespace "${nsName}"`,
@@ -4368,6 +4517,108 @@ async function applyRawService(manifest, namespace) {
 
 // ── Auto-deploy built services when all Kaniko builds in a group complete ──
 
+// ── Auto-deploy helpers: OAuth2 proxy, DestinationRule, Kyverno exclusions ──
+
+async function registerOAuth2ProxyPath(hostname) {
+  try {
+    const vs = await customApi.getNamespacedCustomObject(
+      "networking.istio.io", "v1", "oauth2-proxy", "virtualservices", "oauth2-proxy-paths"
+    );
+    const hosts = vs.body.spec.hosts || [];
+    if (!hosts.includes(hostname)) {
+      hosts.push(hostname);
+      await customApi.patchNamespacedCustomObject(
+        "networking.istio.io", "v1", "oauth2-proxy", "virtualservices", "oauth2-proxy-paths",
+        { spec: { hosts } },
+        undefined, undefined, undefined,
+        { headers: { "Content-Type": "application/merge-patch+json" } }
+      );
+      console.log(`[deploy-git] Registered ${hostname} with OAuth2 proxy`);
+    }
+  } catch (err) {
+    console.log(`[deploy-git] OAuth2 proxy registration skipped: ${err.message}`);
+  }
+}
+
+async function createBackendTLSRule(appName, namespace, serviceName) {
+  const dr = {
+    apiVersion: "networking.istio.io/v1",
+    kind: "DestinationRule",
+    metadata: {
+      name: `${appName}-tls`,
+      namespace: namespace,
+      labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": namespace },
+    },
+    spec: {
+      host: `${serviceName}.${namespace}.svc.cluster.local`,
+      trafficPolicy: {
+        tls: { mode: "SIMPLE", insecureSkipVerify: true },
+      },
+    },
+  };
+  try {
+    await customApi.createNamespacedCustomObject(
+      "networking.istio.io", "v1", namespace, "destinationrules", dr
+    );
+    console.log(`[deploy-git] Created DestinationRule for ${serviceName} in ${namespace}`);
+  } catch (err) {
+    if (err.statusCode === 409) {
+      await customApi.patchNamespacedCustomObject(
+        "networking.istio.io", "v1", namespace, "destinationrules", `${appName}-tls`,
+        dr,
+        undefined, undefined, undefined,
+        { headers: { "Content-Type": "application/merge-patch+json" } }
+      );
+      console.log(`[deploy-git] Updated DestinationRule for ${serviceName} in ${namespace}`);
+    } else {
+      console.log(`[deploy-git] DestinationRule creation skipped: ${err.message}`);
+    }
+  }
+}
+
+async function ensureKyvernoExclusions(namespace) {
+  try {
+    const policies = await customApi.listClusterCustomObject("kyverno.io", "v1", "clusterpolicies");
+    for (const policy of (policies.body.items || [])) {
+      let changed = false;
+      for (const rule of (policy.spec?.rules || [])) {
+        if (rule.exclude?.any) {
+          for (const item of rule.exclude.any) {
+            const nss = item.resources?.namespaces;
+            if (nss && Array.isArray(nss) && nss.includes("kube-system") && !nss.includes(namespace)) {
+              nss.push(namespace);
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) {
+        await customApi.patchClusterCustomObject(
+          "kyverno.io", "v1", "clusterpolicies", policy.metadata.name,
+          { spec: { rules: policy.spec.rules } },
+          undefined, undefined, undefined,
+          { headers: { "Content-Type": "application/merge-patch+json" } }
+        );
+        console.log(`[deploy-git] Added ${namespace} to Kyverno policy ${policy.metadata.name}`);
+      }
+    }
+  } catch (err) {
+    console.log(`[deploy-git] Kyverno exclusion update skipped: ${err.message}`);
+  }
+}
+
+// Check if an app should run privileged by looking at its pipeline run's approved security exceptions
+async function shouldBePrivileged(appName, teamName) {
+  if (!dbAvailable) return false;
+  try {
+    const result = await db.listRuns({ team: teamName.startsWith("team-") ? teamName : `team-${teamName}`, limit: 5 });
+    const run = (result.runs || []).find(r => r.app_name === appName && r.security_exceptions);
+    if (!run) return false;
+    const exceptions = typeof run.security_exceptions === 'string' ? JSON.parse(run.security_exceptions) : (run.security_exceptions || []);
+    return exceptions.some(e => e.type === 'run_as_root' && e.approved);
+  } catch { return false; }
+}
+
 async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, teamName, gitUrl) {
   const maxIterations = 300; // 300 * 2s = 10 minutes max
   const pollInterval = 2000;
@@ -4435,13 +4686,22 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
           replicas: 1,
           ingressHost,
           env: envVars,
-          privileged: true,
+          privileged: await shouldBePrivileged(safeName, teamName),
         });
 
         try {
           await applyManifest(manifest, nsName);
           console.log(`[deploy-git] Deployed ${appName} in ${nsName} (ingress: ${ingressHost || "none"})`);
           meta.status = "deployed";
+
+          // Auto-register OAuth2 proxy path for SSO callbacks
+          if (ingressHost) {
+            await registerOAuth2ProxyPath(ingressHost);
+          }
+
+          // Auto-create DestinationRule for HTTPS backend detection
+          const helmSvcName = `${appName}-${appName}`;
+          await createBackendTLSRule(appName, nsName, helmSvcName);
         } catch (err) {
           console.error(`[deploy-git] Failed to deploy ${appName}: ${err.body?.message || err.message}`);
           meta.status = "deploy-failed";
@@ -4499,6 +4759,8 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
             owner: '',
             deployedAt: new Date().toISOString(),
             status: 'running',
+            deployedVia: 'pipeline',
+            helmReleaseName: safeName,
           };
           const existing = appRegistry.findIndex(a => a.name === safeName);
           if (existing >= 0) appRegistry[existing] = Object.assign({}, appRegistry[existing], appEntry);
@@ -4660,6 +4922,9 @@ async function ensureNamespace(nsName, teamLabel) {
           imagePullSecrets: [{ name: "harbor-pull-creds" }],
         }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
       } catch (e) {}
+
+      // Auto-exclude tenant namespace from Kyverno policies
+      await ensureKyvernoExclusions(nsName);
     } else {
       throw err;
     }
@@ -4763,6 +5028,35 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
       }
     } catch (e) {
       // Non-critical
+    }
+
+    // Step 5: Delete VirtualService if it exists
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "networking.istio.io", "v1", namespace, "virtualservices", name
+      );
+    } catch (e) {
+      // Ignore if not found
+    }
+
+    // Step 6: Remove from app registry
+    const regIdx = appRegistry.findIndex(a => a.name === name);
+    if (regIdx >= 0) {
+      appRegistry.splice(regIdx, 1);
+      await saveAppRegistry();
+      console.log(`[portal] Removed "${name}" from app registry after deletion`);
+    }
+
+    // Step 7: Mark pipeline runs for this app as "undeployed"
+    if (dbAvailable && db.pool) {
+      try {
+        await db.pool.query(
+          "UPDATE pipeline_runs SET status = 'undeployed', updated_at = NOW() WHERE app_name = $1 AND status = 'deployed'",
+          [name]
+        );
+      } catch (e) {
+        // Non-critical
+      }
     }
 
     res.json({ ok: true, message: `Deleted ${name} from ${namespace}` });
@@ -4872,7 +5166,25 @@ async function getCredentials() {
 
 // ── App Portal API ──────────────────────────────────────────────────────────
 
+// Debounced sync — run at most once per 60 seconds
+var lastSyncTime = 0;
+var syncInProgress = false;
+async function triggerSync() {
+  var now = Date.now();
+  if (syncInProgress || (now - lastSyncTime) < 60000) return;
+  syncInProgress = true;
+  lastSyncTime = now;
+  try {
+    await syncAppRegistry();
+  } finally {
+    syncInProgress = false;
+  }
+}
+
 app.get("/api/portal/apps", async (req, res) => {
+  // Trigger a background sync (non-blocking) on portal load
+  triggerSync().catch(function(err) { console.error("[portal] background sync error:", err.message); });
+
   const userGroups = (req.headers["x-auth-request-groups"] || "")
     .split(/[,\s]+/).map(g => g.trim().replace(/^\//, "")).filter(Boolean);
   const userEmail = req.headers["x-auth-request-email"] || "";
@@ -5250,6 +5562,13 @@ loadAppRegistry().then(function() {
     saveAppRegistry();
   }
   console.log(`[portal] App registry loaded: ${appRegistry.length} app(s)`);
+
+  // Sync app registry with cluster state after a short delay (allow K8s API to be ready)
+  setTimeout(function() {
+    syncAppRegistry().catch(function(err) {
+      console.error("[portal] Startup sync error:", err.message);
+    });
+  }, 10000);
 }).catch(function(err) {
   console.error("[portal] Failed to initialize app registry:", err.message);
 });
@@ -5455,7 +5774,7 @@ app.get("/api/pipeline/runs/:id", requireDb, requireGroups("sre-admins", "develo
 });
 
 // PATCH /api/pipeline/runs/:id/findings/:fid — Update finding disposition
-app.patch("/api/pipeline/runs/:id/findings/:fid", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+app.patch("/api/pipeline/runs/:id/findings/:fid", mutateLimiter, requireDb, requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
   try {
     const { disposition, mitigation } = req.body;
     if (!disposition) return res.status(400).json({ error: "disposition is required" });
@@ -5655,6 +5974,60 @@ app.post("/api/pipeline/runs/:id/gates/:gateId/override", mutateLimiter, require
     res.json({ success: true });
   } catch (err) {
     console.error("Gate override error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/pipeline/runs/:id/exceptions — Request or approve security exceptions
+// Body: { exceptions: [{ type: "run_as_root", justification: "App requires root for VNC server" }] }
+// Admin can also set approved: true on each exception
+app.post("/api/pipeline/runs/:id/exceptions", mutateLimiter, requireDb, requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const { exceptions } = req.body;
+    if (!Array.isArray(exceptions)) return res.status(400).json({ error: "exceptions must be an array" });
+
+    const validTypes = ["run_as_root", "writable_filesystem", "host_networking", "privileged_container", "custom_capability"];
+    for (const exc of exceptions) {
+      if (!validTypes.includes(exc.type)) return res.status(400).json({ error: `Invalid exception type: ${exc.type}. Valid: ${validTypes.join(", ")}` });
+      if (!exc.justification || exc.justification.length < 5) return res.status(400).json({ error: "Each exception requires a justification (min 5 chars)" });
+    }
+
+    const run = await db.getRun(req.params.id);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+
+    const actor = getActor(req);
+    const groupsHeader = req.headers["x-auth-request-groups"] || "";
+    const userGroups = groupsHeader.split(/[,\s]+/).map(g => g.trim().replace(/^\//, "")).filter(Boolean);
+    const isAdmin = userGroups.some(g => ["sre-admins", "issm"].includes(g));
+
+    // Merge with existing exceptions
+    const existing = typeof run.security_exceptions === 'string' ? JSON.parse(run.security_exceptions || '[]') : (run.security_exceptions || []);
+    const merged = [...existing];
+
+    for (const exc of exceptions) {
+      const idx = merged.findIndex(e => e.type === exc.type);
+      const entry = {
+        type: exc.type,
+        justification: exc.justification,
+        requestedBy: exc.requestedBy || actor,
+        requestedAt: exc.requestedAt || new Date().toISOString(),
+        approved: isAdmin ? (exc.approved !== undefined ? exc.approved : true) : false,
+        approvedBy: isAdmin && exc.approved !== false ? actor : null,
+        approvedAt: isAdmin && exc.approved !== false ? new Date().toISOString() : null,
+      };
+      if (idx >= 0) merged[idx] = entry;
+      else merged.push(entry);
+    }
+
+    await pool.query("UPDATE pipeline_runs SET security_exceptions = $1, updated_at = NOW() WHERE id = $2", [JSON.stringify(merged), run.id]);
+    await db.auditLog(run.id, "security_exceptions_updated", actor,
+      `Security exceptions updated: ${exceptions.map(e => `${e.type}${isAdmin ? ' (approved)' : ' (requested)'}`).join(", ")}`,
+      { exceptions: merged });
+
+    const updated = await db.getRun(run.id);
+    res.json(updated);
+  } catch (err) {
+    console.error("Security exceptions error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -5991,39 +6364,132 @@ async function orchestratePipelineScan(runId) {
     gateMap[g.short_name] = g;
   }
 
-  // Run all independent gates in parallel
-  const scanPromises = [];
+  // Phase 1: Source code scans (SAST, SECRETS) — run in parallel
+  const sourceScans = [];
 
-  // Git-based scans (SAST, SECRETS) — run in parallel if git URL available
   if (run.git_url) {
-    if (gateMap.SAST) scanPromises.push(runScanGate(runId, gateMap.SAST, () => runSASTScan(run.git_url, run.branch)));
-    if (gateMap.SECRETS) scanPromises.push(runScanGate(runId, gateMap.SECRETS, () => runSecretsScan(run.git_url, run.branch)));
+    if (gateMap.SAST) sourceScans.push(runScanGate(runId, gateMap.SAST, () => runSASTScan(run.git_url, run.branch)));
+    if (gateMap.SECRETS) sourceScans.push(runScanGate(runId, gateMap.SECRETS, () => runSecretsScan(run.git_url, run.branch)));
   } else {
-    if (gateMap.SAST) scanPromises.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
-    if (gateMap.SECRETS) scanPromises.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+    if (gateMap.SAST) sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+    if (gateMap.SECRETS) sourceScans.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
   }
 
-  // Image-based scans (SBOM, CVE) — run in parallel if image URL available
-  const imageForScan = run.image_url || null;
-  if (imageForScan) {
-    if (gateMap.SBOM) scanPromises.push(runScanGate(runId, gateMap.SBOM, () => runSBOMScan(imageForScan)));
-    if (gateMap.CVE) scanPromises.push(runScanGate(runId, gateMap.CVE, () => runCVEScan(imageForScan)));
+  await Promise.allSettled(sourceScans);
+
+  // Phase 2: Build the container image (if git URL, no pre-built image)
+  let builtImageRef = run.image_url || null;
+  if (!builtImageRef && run.git_url) {
+    // Build with Kaniko — reuse existing build job pattern
+    if (gateMap.ARTIFACT_STORE) {
+      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Building container image..." });
+    }
+
+    const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
+    const teamName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
+    const buildId = "pipe-" + crypto.randomBytes(4).toString("hex");
+    const destination = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${buildId}`;
+    const safeBranch = (run.branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
+
+    // Ensure Harbor project exists
+    try { await ensureHarborProject(teamName); } catch (e) { /* best-effort */ }
+
+    // Create Kaniko build job
+    await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+      apiVersion: "batch/v1", kind: "Job",
+      metadata: {
+        name: buildId, namespace: BUILD_NAMESPACE,
+        labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/build-id": buildId, "sre.io/app-name": safeName }
+      },
+      spec: {
+        backoffLimit: 1, ttlSecondsAfterFinished: 3600,
+        template: {
+          metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
+          spec: {
+            restartPolicy: "Never",
+            initContainers: [{
+              name: "git-clone", image: GIT_CLONE_IMAGE,
+              command: ["sh", "-c", `git clone --depth=1 --branch "${safeBranch}" "${run.git_url}" /workspace 2>/dev/null || git clone --depth=1 "${run.git_url}" /workspace`],
+              volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+              resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+              securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+            }],
+            containers: [{
+              name: "kaniko", image: KANIKO_IMAGE,
+              args: ["--dockerfile=Dockerfile", "--context=/workspace", `--destination=${destination}`, "--cache=true", `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`, "--snapshot-mode=redo", "--insecure", "--skip-tls-verify", "--skip-tls-verify-pull"],
+              volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "docker-config", mountPath: "/kaniko/.docker" }],
+              resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+            }],
+            volumes: [
+              { name: "workspace", emptyDir: {} },
+              { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+            ],
+          },
+        },
+      },
+    });
+
+    // Wait for build to complete
+    await db.auditLog(runId, "image_build_started", null, `Building image: ${destination}`, { buildId });
+    const buildStartTime = Date.now();
+    const buildDeadline = buildStartTime + 600000; // 10 min
+    let buildSucceeded = false;
+    while (Date.now() < buildDeadline) {
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const job = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
+        if (job.body.status?.succeeded) { buildSucceeded = true; break; }
+        if (job.body.status?.failed) break;
+      } catch (e) { /* keep polling */ }
+      // Update progress
+      if (gateMap.ARTIFACT_STORE) {
+        const elapsed = Math.min(90, Math.floor((Date.now() - buildStartTime) / 6667));
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { progress: elapsed });
+      }
+    }
+
+    if (buildSucceeded) {
+      builtImageRef = destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
+      // Save the built image URL on the pipeline run
+      await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [builtImageRef, runId]);
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Image built and pushed: ${safeName}:${buildId}` });
+      }
+      await db.auditLog(runId, "image_build_completed", null, `Image built: ${destination}`, { buildId, destination });
+    } else {
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Container image build failed" });
+      }
+      await db.auditLog(runId, "image_build_failed", null, "Container image build failed", { buildId });
+      // Don't proceed with image scans — builtImageRef stays null
+    }
+  } else if (builtImageRef) {
+    // Pre-built image provided — mark ARTIFACT_STORE as passed
+    if (gateMap.ARTIFACT_STORE) {
+      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Using pre-built image: ${builtImageRef}` });
+    }
   } else {
-    if (gateMap.SBOM) scanPromises.push(db.updateGate(gateMap.SBOM.id, { status: "passed", summary: "Deferred — SBOM auto-generated by Harbor on image push", completedAt: new Date().toISOString() }));
-    if (gateMap.CVE) scanPromises.push(db.updateGate(gateMap.CVE.id, { status: "passed", summary: "Deferred — Trivy scan auto-runs on Harbor push", completedAt: new Date().toISOString() }));
+    // No image and no git URL — skip ARTIFACT_STORE
+    if (gateMap.ARTIFACT_STORE) {
+      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "skipped", completedAt: new Date().toISOString(), summary: "No image or git URL provided" });
+    }
   }
 
-  // Wait for all parallel scans to complete
-  await Promise.allSettled(scanPromises);
+  // Phase 3: Image-based scans (SBOM, CVE) against the BUILT image
+  if (builtImageRef) {
+    const imageScans = [];
+    if (gateMap.SBOM) imageScans.push(runScanGate(runId, gateMap.SBOM, () => runSBOMScan(builtImageRef)));
+    if (gateMap.CVE) imageScans.push(runScanGate(runId, gateMap.CVE, () => runCVEScan(builtImageRef)));
+    await Promise.allSettled(imageScans);
+  } else if (!run.image_url) {
+    // No image at all — mark as skipped
+    if (gateMap.SBOM) await db.updateGate(gateMap.SBOM.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
+    if (gateMap.CVE) await db.updateGate(gateMap.CVE.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
+  }
 
-  // DAST — skip unless there is a deployed URL to scan
+  // DAST — deferred, genuinely needs a deployed URL to scan
   if (gateMap.DAST) {
-    await db.updateGate(gateMap.DAST.id, { status: "passed", summary: "Deferred — ZAP baseline scan runs post-deploy", completedAt: new Date().toISOString() });
-  }
-
-  // ARTIFACT_STORE — mark as passed (artifact storage is handled during deploy)
-  if (gateMap.ARTIFACT_STORE) {
-    await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", summary: "Deferred — Harbor registry ready, images stored on deploy", completedAt: new Date().toISOString() });
+    await db.updateGate(gateMap.DAST.id, { status: "passed", summary: "Deferred — ZAP scan runs post-deploy against live URL", completedAt: new Date().toISOString() });
   }
 
   // Determine overall status after automated gates

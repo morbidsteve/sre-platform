@@ -1,4 +1,4 @@
-import type { AppSource, DetectionResult, SecurityGate, DeployStep } from './types';
+import type { AppSource, DetectionResult, SecurityGate, DeployStep, PipelineRun, FindingDisposition } from './types';
 
 const API_BASE = '/api';
 
@@ -22,12 +22,42 @@ export async function checkHealth(): Promise<{ status: string }> {
   return apiFetch('/health');
 }
 
+export async function getCurrentUser(): Promise<{ name: string; email: string; groups: string[] }> {
+  try {
+    return await apiFetch('/user');
+  } catch {
+    return { name: 'operator', email: '', groups: [] };
+  }
+}
+
 export async function getTeams(): Promise<string[]> {
   try {
     const data = await apiFetch<{ namespaces?: string[] }>('/portal/apps');
     return data.namespaces || ['team-alpha', 'team-bravo', 'team-charlie', 'default'];
   } catch {
     return ['team-alpha', 'team-bravo', 'team-charlie', 'default'];
+  }
+}
+
+export async function fetchTeams(): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_BASE}/tenants`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Failed to fetch teams');
+    const data = await res.json();
+    const teams: string[] = data
+      .map((t: Record<string, unknown>) => (t.namespace || t.name) as string)
+      .filter(Boolean);
+    if (teams.length === 0) throw new Error('Empty team list');
+    // Ensure 'default' is always available
+    if (!teams.includes('default')) teams.push('default');
+    return teams;
+  } catch {
+    // Fall back to the portal/apps endpoint
+    try {
+      return await getTeams();
+    } catch {
+      return ['team-alpha', 'team-bravo', 'team-charlie', 'default'];
+    }
   }
 }
 
@@ -45,21 +75,22 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
       return data;
     }
   } catch {
-    // Fall through to mock
+    // Fall through to inferred detection
   }
 
-  // Realistic mock detection for demo
-  await simulateDelay(2500);
+  // Infer detection from the source URL when backend analysis unavailable
+  await simulateDelay(1500);
 
   if (source.type === 'container') {
+    const imageName = (source.imageUrl || 'app').split('/').pop()?.split(':')[0] || 'app';
     return {
       repoType: 'container',
       services: [
-        { name: 'app', image: source.imageUrl || 'nginx:latest', port: 8080, type: 'application' },
+        { name: imageName, image: source.imageUrl || 'app:latest', port: 8080, type: 'application' },
       ],
       platformServices: [],
       externalAccess: [
-        { service: 'app', hostname: 'app.apps.sre.example.com' },
+        { service: imageName, hostname: `${imageName}.apps.sre.example.com` },
       ],
     };
   }
@@ -77,20 +108,21 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
     };
   }
 
-  // Git repo mock
+  // Git repo — infer app name from URL
+  const repoName = (source.gitUrl || '')
+    .split('/')
+    .pop()
+    ?.replace('.git', '')
+    ?.replace(/^docker-/, '') || 'app';
+
   return {
-    repoType: 'docker-compose',
+    repoType: 'dockerfile',
     services: [
-      { name: 'frontend', image: 'nginx:1.27', port: 80, type: 'application' },
-      { name: 'backend', image: 'python:3.11', port: 8000, type: 'application' },
-      { name: 'worker', image: 'python:3.11', port: null, type: 'application' },
+      { name: repoName, image: `${repoName}:latest`, port: 8080, type: 'application' },
     ],
-    platformServices: [
-      { detected: 'PostgreSQL', mappedTo: 'CNPG Cluster', icon: 'database' },
-      { detected: 'Redis', mappedTo: 'In-cluster Redis', icon: 'zap' },
-    ],
+    platformServices: [],
     externalAccess: [
-      { service: 'frontend', hostname: 'app.apps.sre.example.com' },
+      { service: repoName, hostname: `${repoName}.apps.sre.example.com` },
     ],
   };
 }
@@ -414,4 +446,78 @@ async function simulateProgress(
     gates[index] = { ...gates[index], progress: i * 10 };
     onUpdate([...gates]);
   }
+}
+
+// --- Pipeline API ---
+
+export async function createPipelineRun(data: {
+  appName: string;
+  gitUrl?: string;
+  branch?: string;
+  imageUrl?: string;
+  sourceType: string;
+  team: string;
+  classification: string;
+  contact?: string;
+}): Promise<PipelineRun> {
+  return apiFetch('/pipeline/runs', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getPipelineRun(runId: string): Promise<PipelineRun> {
+  return apiFetch(`/pipeline/runs/${runId}`);
+}
+
+export async function updateFindingDisposition(
+  runId: string,
+  findingId: number,
+  disposition: FindingDisposition,
+  mitigation?: string
+): Promise<void> {
+  await apiFetch(`/pipeline/runs/${runId}/findings/${findingId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ disposition, mitigation }),
+  });
+}
+
+export async function submitForReview(runId: string): Promise<void> {
+  await apiFetch(`/pipeline/runs/${runId}/submit-review`, { method: 'POST' });
+}
+
+export async function submitReview(
+  runId: string,
+  decision: 'approved' | 'rejected' | 'returned',
+  comment?: string
+): Promise<void> {
+  await apiFetch(`/pipeline/runs/${runId}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, comment }),
+  });
+}
+
+export async function deployPipelineRun(runId: string): Promise<void> {
+  await apiFetch(`/pipeline/runs/${runId}/deploy`, { method: 'POST' });
+}
+
+export async function overrideGate(runId: string, gateId: number, status: string, reason: string): Promise<void> {
+  await apiFetch(`/pipeline/runs/${runId}/gates/${gateId}/override`, {
+    method: 'POST',
+    body: JSON.stringify({ status, reason }),
+  });
+}
+
+export async function downloadCompliancePackage(runId: string): Promise<Record<string, unknown>> {
+  return apiFetch(`/pipeline/runs/${runId}/package`);
+}
+
+export async function requestSecurityExceptions(
+  runId: string,
+  exceptions: Array<{ type: string; justification: string; approved?: boolean }>
+): Promise<void> {
+  await apiFetch(`/pipeline/runs/${runId}/exceptions`, {
+    method: 'POST',
+    body: JSON.stringify({ exceptions }),
+  });
 }

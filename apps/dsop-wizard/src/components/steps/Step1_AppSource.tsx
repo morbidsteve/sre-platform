@@ -107,7 +107,7 @@ export function Step1_AppSource({ source, onUpdate, onNext }: Step1Props) {
         {source.type === 'container' && (
           <Input
             label="Container Image URL"
-            placeholder="registry.example.com/org/app:latest"
+            placeholder="registry.example.com/org/app:v1.2.3"
             value={source.imageUrl || ''}
             onChange={(e) => onUpdate({ imageUrl: e.target.value })}
           />

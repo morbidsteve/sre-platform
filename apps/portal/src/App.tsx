@@ -59,7 +59,7 @@ export function App() {
                   {totalApps} {totalApps === 1 ? 'application' : 'applications'} &middot; {totalPlatform} platform services
                 </p>
               </div>
-              <QuickActions isAdmin={isAdmin} />
+              <QuickActions isAdmin={isAdmin} userGroups={user?.groups ?? []} />
             </div>
           )}
 

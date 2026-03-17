@@ -7,6 +7,7 @@ import {
   Download,
   RefreshCw,
   ArrowLeft,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { SecurityGate } from '../../types';
@@ -17,6 +18,8 @@ interface Step7Props {
   classification?: string;
   gates?: SecurityGate[];
   onReset: () => void;
+  pipelineRunId?: string | null;
+  onDownloadPackage?: () => Promise<Record<string, unknown> | null>;
 }
 
 function downloadCompliancePackage(
@@ -122,7 +125,23 @@ export function Step7_Complete({
   classification = 'UNCLASSIFIED',
   gates = [],
   onReset,
+  pipelineRunId,
+  onDownloadPackage,
 }: Step7Props) {
+  const handleDownload = () => {
+    // If we have a pipeline API download function, try it first
+    if (pipelineRunId && onDownloadPackage) {
+      onDownloadPackage().then((result) => {
+        // If API download failed (returned null), fall back to local
+        if (!result) {
+          downloadCompliancePackage(appName, classification, gates);
+        }
+      });
+    } else {
+      // Fallback to local compliance package generation
+      downloadCompliancePackage(appName, classification, gates);
+    }
+  };
   return (
     <div className="space-y-8">
       {/* Success Header */}
@@ -181,12 +200,22 @@ export function Step7_Complete({
         </button>
       </div>
 
+      {/* Pipeline Run ID */}
+      {pipelineRunId && (
+        <div className="max-w-2xl mx-auto bg-navy-800 border border-navy-600 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">Pipeline Run ID:</span>
+            <span className="text-gray-300 font-mono text-xs select-all">
+              {pipelineRunId}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Compliance Package */}
       <div className="max-w-2xl mx-auto">
         <button
-          onClick={() =>
-            downloadCompliancePackage(appName, classification, gates)
-          }
+          onClick={handleDownload}
           className="w-full flex items-center justify-center gap-3 p-5 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group cursor-pointer"
         >
           <Download className="w-6 h-6 text-gray-400 group-hover:text-cyan-400 transition-colors" />
@@ -213,7 +242,15 @@ export function Step7_Complete({
         </Button>
         <Button
           variant="secondary"
-          onClick={() => window.open('https://dashboard.apps.sre.example.com', '_blank')}
+          onClick={() => window.location.href = 'https://dashboard.apps.sre.example.com'}
+          icon={<LayoutDashboard className="w-4 h-4" />}
+          size="lg"
+        >
+          Back to Dashboard
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => window.open('https://dashboard.apps.sre.example.com/#services', '_blank')}
           icon={<ArrowLeft className="w-4 h-4" />}
           size="lg"
         >

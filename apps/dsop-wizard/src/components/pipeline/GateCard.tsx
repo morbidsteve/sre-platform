@@ -13,6 +13,7 @@ import {
   Square,
   Check,
   Save,
+  Shield,
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import type { SecurityGate, GateFinding, FindingDisposition } from '../../types';
@@ -21,6 +22,8 @@ interface GateCardProps {
   gate: SecurityGate;
   onAcknowledge?: (gateId: number) => void;
   onUpdateFinding?: (gateId: number, findingIndex: number, updates: Partial<GateFinding>) => void;
+  onOverrideGate?: (gateId: number, status: 'passed' | 'skipped', reason: string) => void;
+  isAdmin?: boolean;
   username?: string;
 }
 
@@ -30,7 +33,7 @@ const statusConfig = {
   passed: { icon: CheckCircle2, color: 'text-emerald-400', bg: 'border-emerald-500/40', label: 'PASSED' },
   failed: { icon: XCircle, color: 'text-red-400', bg: 'border-red-500/40', label: 'FAILED' },
   warning: { icon: AlertTriangle, color: 'text-amber-400', bg: 'border-amber-500/40', label: 'WARNING' },
-  skipped: { icon: SkipForward, color: 'text-gray-400', bg: 'border-gray-500/30', label: 'MANUAL' },
+  skipped: { icon: SkipForward, color: 'text-gray-400', bg: 'border-gray-500/30', label: 'SKIPPED' },
 };
 
 const severityColors = {
@@ -167,7 +170,74 @@ function FindingCommentForm({ finding, gateId, findingIndex, onSave, username }:
   );
 }
 
-export function GateCard({ gate, onAcknowledge, onUpdateFinding, username = 'operator' }: GateCardProps) {
+interface AdminOverrideProps {
+  gate: SecurityGate;
+  onOverride: (gateId: number, status: 'passed' | 'skipped', reason: string) => void;
+}
+
+function AdminOverride({ gate, onOverride }: AdminOverrideProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const handleOverride = (status: 'passed' | 'skipped') => {
+    if (reason.trim().length < 3) return;
+    onOverride(gate.id, status, reason.trim());
+    setReason('');
+    setExpanded(false);
+  };
+
+  return (
+    <div className="mt-4 pt-4 border-t border-navy-600/50" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-amber-400 transition-colors"
+      >
+        <Shield className="w-3.5 h-3.5" />
+        Admin Override
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      </button>
+      {expanded && (
+        <div className="mt-3 space-y-3 animate-fade-in">
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Override reason (required, min 3 characters)..."
+            className="w-full bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleOverride('passed')}
+              disabled={reason.trim().length < 3}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                reason.trim().length < 3
+                  ? 'bg-navy-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/40'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Mark as Passed
+            </button>
+            <button
+              onClick={() => handleOverride('skipped')}
+              disabled={reason.trim().length < 3}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                reason.trim().length < 3
+                  ? 'bg-navy-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30 border border-gray-500/40'
+              }`}
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+              Skip Gate
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function GateCard({ gate, onAcknowledge, onUpdateFinding, onOverrideGate, isAdmin, username = 'operator' }: GateCardProps) {
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[gate.status];
   const StatusIcon = config.icon;
@@ -253,6 +323,9 @@ export function GateCard({ gate, onAcknowledge, onUpdateFinding, username = 'ope
         >
           {config.label}
         </Badge>
+        {gate.status === 'passed' && gate.summary?.startsWith('Deferred') && (
+          <span className="text-xs text-gray-400 ml-1">(auto)</span>
+        )}
 
         {/* Expand Arrow */}
         {hasDetails && (
@@ -362,6 +435,11 @@ export function GateCard({ gate, onAcknowledge, onUpdateFinding, username = 'ope
               <ExternalLink className="w-3.5 h-3.5" />
               View Report
             </a>
+          )}
+
+          {/* Admin Override */}
+          {isAdmin && onOverrideGate && gate.status !== 'passed' && (
+            <AdminOverride gate={gate} onOverride={onOverrideGate} />
           )}
         </div>
       )}

@@ -1,7 +1,18 @@
-import { Rocket, BarChart3, Users } from 'lucide-react';
+import { Rocket, BarChart3, Users, ShieldCheck } from 'lucide-react';
+
+type UserRole = 'admin' | 'issm' | 'developer' | 'viewer';
 
 interface QuickActionsProps {
   isAdmin: boolean;
+  userGroups: string[];
+}
+
+function resolveRole(isAdmin: boolean, groups: string[]): UserRole {
+  if (isAdmin) return 'admin';
+  const normalized = groups.map((g) => g.replace(/^\//, ''));
+  if (normalized.includes('issm')) return 'issm';
+  if (normalized.includes('developers')) return 'developer';
+  return 'viewer';
 }
 
 const actions = [
@@ -11,6 +22,15 @@ const actions = [
     href: 'https://dashboard.apps.sre.example.com/deploy',
     color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
     hoverColor: 'hover:bg-cyan-500/20 hover:border-cyan-500/30',
+    roles: ['admin', 'developer'] as UserRole[],
+  },
+  {
+    label: 'Review Queue',
+    icon: ShieldCheck,
+    href: 'https://dashboard.apps.sre.example.com',
+    color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+    hoverColor: 'hover:bg-emerald-500/20 hover:border-emerald-500/30',
+    roles: ['issm'] as UserRole[],
   },
   {
     label: 'View Metrics',
@@ -18,6 +38,7 @@ const actions = [
     href: 'https://grafana.apps.sre.example.com',
     color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
     hoverColor: 'hover:bg-indigo-500/20 hover:border-indigo-500/30',
+    roles: ['admin', 'issm', 'developer', 'viewer'] as UserRole[],
   },
   {
     label: 'Manage Users',
@@ -25,12 +46,13 @@ const actions = [
     href: 'https://keycloak.apps.sre.example.com',
     color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
     hoverColor: 'hover:bg-amber-500/20 hover:border-amber-500/30',
-    adminOnly: true,
+    roles: ['admin'] as UserRole[],
   },
 ];
 
-export function QuickActions({ isAdmin }: QuickActionsProps) {
-  const visibleActions = actions.filter((a) => !a.adminOnly || isAdmin);
+export function QuickActions({ isAdmin, userGroups }: QuickActionsProps) {
+  const role = resolveRole(isAdmin, userGroups);
+  const visibleActions = actions.filter((a) => a.roles.includes(role));
 
   return (
     <div className="flex flex-wrap gap-3">

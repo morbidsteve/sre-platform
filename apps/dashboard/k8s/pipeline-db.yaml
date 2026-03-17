@@ -1,0 +1,26 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pipeline-db
+  namespace: sre-dashboard
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: platform
+    sre.io/resource-type: database
+spec:
+  instances: 1
+  inheritedMetadata:
+    annotations:
+      sidecar.istio.io/inject: "false"
+  storage:
+    size: 2Gi
+  monitoring:
+    enablePodMonitor: true
+  postgresql:
+    parameters:
+      log_statement: "mod"
+      log_min_duration_statement: "1000"
+  bootstrap:
+    initdb:
+      database: pipeline_db
+      owner: pipeline_db

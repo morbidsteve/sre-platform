@@ -1,12 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
   WizardState,
   AppSource,
   AppInfo,
+  SecurityException,
   SecurityGate,
   GateFinding,
   DeployStep,
   DetectionResult,
+  PipelineRun,
+  PipelineGate,
+  PipelineFinding,
+  FindingDisposition,
 } from '../types';
 import {
   analyzeSource,
@@ -14,6 +19,16 @@ import {
   runSecurityPipeline,
   getInitialDeploySteps,
   runDeploy,
+  createPipelineRun,
+  getPipelineRun,
+  submitForReview as apiSubmitForReview,
+  submitReview as apiSubmitReview,
+  updateFindingDisposition as apiUpdateFindingDisposition,
+  overrideGate as apiOverrideGate,
+  deployPipelineRun,
+  downloadCompliancePackage as apiDownloadCompliancePackage,
+  requestSecurityExceptions as apiRequestSecurityExceptions,
+  getCurrentUser,
 } from '../api';
 
 const initialSource: AppSource = {
@@ -43,10 +58,124 @@ const initialState: WizardState = {
   isPipelineRunning: false,
   isDeploying: false,
   error: null,
+  pipelineRunId: null,
+  pipelineRun: null,
+  securityExceptions: [],
 };
 
+const SESSION_KEY = 'dsop-wizard-state';
+
+function saveSession(state: WizardState) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      currentStep: state.currentStep,
+      source: state.source,
+      appInfo: state.appInfo,
+      securityExceptions: state.securityExceptions,
+      pipelineRunId: state.pipelineRunId,
+      deployedUrl: state.deployedUrl,
+    }));
+  } catch { /* ignore */ }
+}
+
+function loadSession(): Partial<WizardState> | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+/** Map PipelineGate objects from the API to SecurityGate objects for the UI */
+function mapPipelineGateToSecurityGate(
+  pipelineGate: PipelineGate,
+  findings: PipelineFinding[],
+  localGates: SecurityGate[]
+): SecurityGate {
+  const gateFindings = findings.filter((f) => f.gate_id === pipelineGate.id);
+  // Try to find the matching local gate by order for description/implemented info
+  const localGate = localGates.find((g) => g.id === pipelineGate.gate_order) || localGates[0];
+
+  return {
+    id: pipelineGate.gate_order,
+    name: pipelineGate.gate_name,
+    shortName: pipelineGate.short_name,
+    description: localGate?.description || pipelineGate.gate_name,
+    status: pipelineGate.status,
+    progress: pipelineGate.progress,
+    findings: gateFindings.map((f) => ({
+      severity: (f.severity?.toLowerCase() || 'info') as GateFinding['severity'],
+      title: f.title,
+      description: f.description || '',
+      location: f.location || undefined,
+      disposition: f.disposition || undefined,
+      mitigation: f.mitigation || undefined,
+      mitigatedBy: f.mitigated_by || undefined,
+      mitigatedAt: f.mitigated_at || undefined,
+    })),
+    summary: pipelineGate.summary || undefined,
+    implemented: pipelineGate.completed_at !== null || pipelineGate.status !== 'pending',
+    reportUrl: pipelineGate.report_url || undefined,
+  };
+}
+
+/** Check if all automated gates are done (not running/pending, excluding ISSM REVIEW and IMAGE SIGNING) */
+function areAutomatedGatesDone(gates: PipelineGate[]): boolean {
+  return gates.every((g) => {
+    const isManual = g.short_name === 'ISSM REVIEW' || g.short_name === 'IMAGE SIGNING';
+    if (isManual) return true;
+    return g.status !== 'running' && g.status !== 'pending';
+  });
+}
+
 export function useWizard() {
-  const [state, setState] = useState<WizardState>(initialState);
+  const [state, setState] = useState<WizardState>(() => {
+    const saved = loadSession();
+    if (saved) {
+      return { ...initialState, ...saved, gates: getInitialGates(), deploySteps: getInitialDeploySteps() };
+    }
+    return initialState;
+  });
+  const [user, setUser] = useState<{ name: string; email: string; groups: string[] } | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch user info on mount
+  useEffect(() => {
+    getCurrentUser().then(setUser);
+  }, []);
+
+  // Persist wizard state to sessionStorage on changes
+  useEffect(() => {
+    saveSession(state);
+  }, [state.currentStep, state.source, state.appInfo, state.pipelineRunId, state.deployedUrl]);
+
+  // On mount, if we have a pipelineRunId, refetch it to restore gate state
+  useEffect(() => {
+    if (state.pipelineRunId) {
+      getPipelineRun(state.pipelineRunId).then((run) => {
+        const mappedGates = run.gates.map((g) =>
+          mapPipelineGateToSecurityGate(g, run.findings, getInitialGates())
+        );
+        setState((prev) => ({
+          ...prev,
+          pipelineRun: run,
+          gates: mappedGates,
+        }));
+      }).catch(() => { /* run may have been deleted */ });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isAdmin = user
+    ? user.groups.some((g) => g === 'sre-admins' || g === 'issm')
+    : false;
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
 
   const setStep = useCallback((step: number) => {
     setState((prev) => ({ ...prev, currentStep: step, error: null }));
@@ -66,6 +195,10 @@ export function useWizard() {
 
   const updateAppInfo = useCallback((info: Partial<AppInfo>) => {
     setState((prev) => ({ ...prev, appInfo: { ...prev.appInfo, ...info } }));
+  }, []);
+
+  const updateSecurityExceptions = useCallback((exceptions: SecurityException[]) => {
+    setState((prev) => ({ ...prev, securityExceptions: exceptions }));
   }, []);
 
   const analyze = useCallback(async () => {
@@ -98,8 +231,80 @@ export function useWizard() {
       gates: getInitialGates(),
       error: null,
       currentStep: 4,
+      pipelineRunId: null,
+      pipelineRun: null,
     }));
 
+    // Try the Pipeline API first
+    try {
+      const run = await createPipelineRun({
+        appName: state.appInfo.name || 'my-app',
+        gitUrl: state.source.gitUrl,
+        branch: state.source.branch || 'main',
+        imageUrl: state.source.imageUrl,
+        sourceType: state.source.type,
+        team: state.appInfo.team || 'team-alpha',
+        classification: state.appInfo.classification,
+        contact: state.appInfo.contact,
+      });
+
+      const localGates = getInitialGates();
+
+      setState((prev) => ({
+        ...prev,
+        pipelineRunId: run.id,
+        pipelineRun: run,
+      }));
+
+      // Submit security exceptions if any are enabled
+      const enabledExceptions = state.securityExceptions.filter((e) => e.enabled);
+      if (enabledExceptions.length > 0) {
+        apiRequestSecurityExceptions(
+          run.id,
+          enabledExceptions.map((e) => ({ type: e.type, justification: e.justification }))
+        ).catch(() => {
+          // Silently fail -- pipeline run still created
+        });
+      }
+
+      // Update gates from initial response
+      if (run.gates && run.gates.length > 0) {
+        const mappedGates = run.gates.map((g) =>
+          mapPipelineGateToSecurityGate(g, run.findings || [], localGates)
+        );
+        setState((prev) => ({ ...prev, gates: mappedGates }));
+      }
+
+      // Poll for updates every 3 seconds
+      pollingRef.current = setInterval(async () => {
+        try {
+          const updatedRun = await getPipelineRun(run.id);
+
+          setState((prev) => ({ ...prev, pipelineRun: updatedRun }));
+
+          if (updatedRun.gates && updatedRun.gates.length > 0) {
+            const mappedGates = updatedRun.gates.map((g) =>
+              mapPipelineGateToSecurityGate(g, updatedRun.findings || [], localGates)
+            );
+            setState((prev) => ({ ...prev, gates: mappedGates }));
+          }
+
+          // Stop polling when all automated gates are done
+          if (areAutomatedGatesDone(updatedRun.gates)) {
+            stopPolling();
+            setState((prev) => ({ ...prev, isPipelineRunning: false }));
+          }
+        } catch {
+          // Polling error -- keep trying silently
+        }
+      }, 3000);
+
+      return;
+    } catch {
+      // Pipeline API unavailable -- fall back to direct mode
+    }
+
+    // Fallback: use the existing runSecurityPipeline flow
     try {
       const finalGates = await runSecurityPipeline(
         getInitialGates(),
@@ -121,7 +326,7 @@ export function useWizard() {
         error: err instanceof Error ? err.message : 'Pipeline failed',
       }));
     }
-  }, []);
+  }, [state.appInfo, state.source, state.securityExceptions, stopPolling]);
 
   const updateGate = useCallback((gateId: number, updates: Partial<SecurityGate>) => {
     setState((prev) => ({
@@ -131,16 +336,83 @@ export function useWizard() {
   }, []);
 
   const updateFinding = useCallback((gateId: number, findingIndex: number, updates: Partial<GateFinding>) => {
+    setState((prev) => {
+      const newState = {
+        ...prev,
+        gates: prev.gates.map((g) => {
+          if (g.id !== gateId) return g;
+          const findings = [...g.findings];
+          findings[findingIndex] = { ...findings[findingIndex], ...updates };
+          return { ...g, findings };
+        }),
+      };
+
+      // If we have a pipeline run, also update the finding disposition via API
+      if (prev.pipelineRunId && prev.pipelineRun && updates.disposition) {
+        // Find the API finding ID by matching gate and index
+        const gate = prev.gates.find((g) => g.id === gateId);
+        if (gate && prev.pipelineRun.findings) {
+          const gateApiFindings = prev.pipelineRun.findings.filter(
+            (f) => {
+              const pGate = prev.pipelineRun?.gates.find((pg) => pg.gate_order === gateId);
+              return pGate && f.gate_id === pGate.id;
+            }
+          );
+          const apiFinding = gateApiFindings[findingIndex];
+          if (apiFinding) {
+            apiUpdateFindingDisposition(
+              prev.pipelineRunId,
+              apiFinding.id,
+              updates.disposition as FindingDisposition,
+              updates.mitigation
+            ).catch(() => {
+              // Silently fail -- local state already updated
+            });
+          }
+        }
+      }
+
+      return newState;
+    });
+  }, []);
+
+  const overrideGate = useCallback((gateId: number, status: 'passed' | 'skipped', reason: string) => {
     setState((prev) => ({
       ...prev,
-      gates: prev.gates.map((g) => {
-        if (g.id !== gateId) return g;
-        const findings = [...g.findings];
-        findings[findingIndex] = { ...findings[findingIndex], ...updates };
-        return { ...g, findings };
-      }),
+      gates: prev.gates.map((g) =>
+        g.id === gateId
+          ? { ...g, status, summary: `Admin override: ${reason}` }
+          : g
+      ),
     }));
-  }, []);
+
+    // If we have a pipeline run, also update on the backend
+    const { pipelineRunId } = state;
+    if (pipelineRunId) {
+      apiOverrideGate(pipelineRunId, gateId, status, reason).catch(() => {
+        // Silently fail -- local state already updated
+      });
+    }
+  }, [state.pipelineRunId]);
+
+  const submitForReviewCb = useCallback(async () => {
+    if (!state.pipelineRunId) return;
+    try {
+      await apiSubmitForReview(state.pipelineRunId);
+      // Update local state to reflect review_pending
+      setState((prev) => ({
+        ...prev,
+        pipelineRun: prev.pipelineRun
+          ? { ...prev.pipelineRun, status: 'review_pending' }
+          : null,
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : 'Failed to submit for review',
+      }));
+    }
+  }, [state.pipelineRunId]);
 
   const deploy = useCallback(async () => {
     setState((prev) => ({
@@ -151,6 +423,55 @@ export function useWizard() {
       currentStep: 6,
     }));
 
+    // If we have a pipeline run, use the pipeline deploy endpoint
+    if (state.pipelineRunId) {
+      try {
+        await deployPipelineRun(state.pipelineRunId);
+
+        // Poll for deployment completion
+        const deployPoll = setInterval(async () => {
+          try {
+            const updatedRun = await getPipelineRun(state.pipelineRunId!);
+            setState((prev) => ({ ...prev, pipelineRun: updatedRun }));
+
+            if (updatedRun.status === 'deployed') {
+              clearInterval(deployPoll);
+              // Mark all deploy steps as completed
+              const completedSteps = getInitialDeploySteps().map((s) => ({
+                ...s,
+                status: 'completed' as const,
+              }));
+              setState((prev) => ({
+                ...prev,
+                deploySteps: completedSteps,
+                deployedUrl: updatedRun.deployed_url || `https://${state.appInfo.name || 'my-app'}.apps.sre.example.com`,
+                isDeploying: false,
+                currentStep: 7,
+              }));
+            } else if (updatedRun.status === 'failed') {
+              clearInterval(deployPoll);
+              setState((prev) => ({
+                ...prev,
+                isDeploying: false,
+                error: 'Pipeline deployment failed',
+              }));
+            }
+          } catch {
+            // Keep polling
+          }
+        }, 3000);
+
+        return;
+      } catch (err) {
+        // Fall through to legacy deploy
+        setState((prev) => ({
+          ...prev,
+          error: err instanceof Error ? err.message : 'Pipeline deploy failed, trying legacy deploy...',
+        }));
+      }
+    }
+
+    // Fallback: use the existing runDeploy flow
     try {
       const result = await runDeploy(
         state.appInfo.name || 'my-app',
@@ -176,11 +497,73 @@ export function useWizard() {
         error: err instanceof Error ? err.message : 'Deployment failed',
       }));
     }
-  }, [state.appInfo.name, state.source.gitUrl, state.source.branch, state.appInfo.team]);
+  }, [state.appInfo.name, state.source.gitUrl, state.source.branch, state.appInfo.team, state.pipelineRunId]);
+
+  const downloadPackage = useCallback(async () => {
+    if (!state.pipelineRunId) {
+      // Fall back to local compliance package generation (no-op, handled by Step7)
+      return null;
+    }
+    try {
+      const pkg = await apiDownloadCompliancePackage(state.pipelineRunId);
+      // Trigger file download
+      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${state.appInfo.name || 'app'}-compliance-package-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return pkg;
+    } catch {
+      return null;
+    }
+  }, [state.pipelineRunId, state.appInfo.name]);
+
+  const reviewPipelineRun = useCallback(async (
+    decision: 'approved' | 'rejected' | 'returned',
+    comment: string
+  ) => {
+    if (!state.pipelineRunId) return;
+    try {
+      await apiSubmitReview(state.pipelineRunId, decision, comment || undefined);
+      // Update local state to reflect the review decision
+      const newStatus = decision === 'returned' ? 'review_pending' : decision;
+      setState((prev) => ({
+        ...prev,
+        pipelineRun: prev.pipelineRun
+          ? {
+              ...prev.pipelineRun,
+              status: newStatus as PipelineRun['status'],
+              reviews: [
+                ...(prev.pipelineRun.reviews || []),
+                {
+                  id: Date.now(),
+                  reviewer: user?.name || 'operator',
+                  decision,
+                  comment: comment || null,
+                  reviewed_at: new Date().toISOString(),
+                },
+              ],
+            }
+          : null,
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : 'Failed to submit review',
+      }));
+      throw err;
+    }
+  }, [state.pipelineRunId, user]);
 
   const reset = useCallback(() => {
+    stopPolling();
     setState(initialState);
-  }, []);
+    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+  }, [stopPolling]);
 
   return {
     state,
@@ -189,12 +572,19 @@ export function useWizard() {
     prevStep,
     updateSource,
     updateAppInfo,
+    updateSecurityExceptions,
     analyze,
     setDetection,
     runPipeline,
     updateGate,
     updateFinding,
+    submitForReview: submitForReviewCb,
+    reviewPipelineRun,
+    overrideGate,
+    isAdmin,
+    user,
     deploy,
+    downloadPackage,
     reset,
   };
 }

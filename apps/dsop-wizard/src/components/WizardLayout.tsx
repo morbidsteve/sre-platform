@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield } from 'lucide-react';
+import { Shield, ArrowLeft } from 'lucide-react';
 import { ClassificationBanner, ClassificationBannerBottom } from './ClassificationBanner';
 import { StepIndicator } from './StepIndicator';
 import type { Classification } from '../types';
@@ -29,17 +29,27 @@ export function WizardLayout({ currentStep, classification, onStepClick, childre
       {/* Header */}
       <header className="border-b border-navy-700 bg-navy-800/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-cyan-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-gray-100">
-                DSOP Guided Deployment
-              </h1>
-              <p className="text-xs text-gray-400 font-mono">
-                RAISE-Compliant Software Delivery Pipeline
-              </p>
+          <div className="flex items-center gap-4">
+            <a
+              href="https://dashboard.apps.sre.example.com"
+              className="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Dashboard
+            </a>
+            <div className="w-px h-8 bg-navy-600" />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-100">
+                  DSOP Guided Deployment
+                </h1>
+                <p className="text-xs text-gray-400 font-mono">
+                  RAISE-Compliant Software Delivery Pipeline
+                </p>
+              </div>
             </div>
           </div>
           <div className="hidden md:flex items-center gap-4 text-xs text-gray-500">

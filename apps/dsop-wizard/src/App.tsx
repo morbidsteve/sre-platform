@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { WizardLayout } from './components/WizardLayout';
 import { Step1_AppSource } from './components/steps/Step1_AppSource';
 import { Step2_AppInfo } from './components/steps/Step2_AppInfo';
@@ -15,6 +15,69 @@ export default function App() {
   const { user, loading: userLoading } = useUser();
   const wizard = useWizard();
   const { state } = wizard;
+
+  // ── Enter key advances to next step ──────────────────────────────
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+
+      // Don't trigger in textareas (multi-line input)
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'TEXTAREA') return;
+
+      // Don't trigger if a modal/overlay is open or a dropdown is focused
+      if ((e.target as HTMLElement)?.closest?.('[role="dialog"], [role="listbox"], .review-form')) return;
+
+      // Don't trigger while async operations are running
+      if (state.isAnalyzing || state.isPipelineRunning || state.isDeploying) return;
+
+      e.preventDefault();
+
+      switch (state.currentStep) {
+        case 1: {
+          const valid =
+            (state.source.type === 'git' && state.source.gitUrl?.trim()) ||
+            (state.source.type === 'container' && state.source.imageUrl?.trim()) ||
+            (state.source.type === 'helm' && state.source.chartRepo && state.source.chartName);
+          if (valid) wizard.nextStep();
+          break;
+        }
+        case 2: {
+          const nameValid = state.appInfo.name?.trim();
+          if (nameValid) wizard.analyze();
+          break;
+        }
+        case 3: {
+          if (state.detection) wizard.runPipeline();
+          break;
+        }
+        case 4: {
+          const autoGates = state.gates.filter(
+            (g) => !['ISSM REVIEW', 'ISSM_REVIEW', 'IMAGE SIGNING', 'IMAGE_SIGNING'].includes(g.shortName)
+          );
+          const done = autoGates.every((g) => g.status !== 'pending' && g.status !== 'running');
+          const noFail = !autoGates.some((g) => g.status === 'failed');
+          if (done && noFail) wizard.setStep(5);
+          break;
+        }
+        case 5: {
+          const status = state.pipelineRun?.status;
+          if (status === 'approved' || wizard.isAdmin) wizard.deploy();
+          break;
+        }
+        case 7: {
+          wizard.reset();
+          break;
+        }
+      }
+    },
+    [state, wizard]
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   if (userLoading) {
     return (
@@ -49,6 +112,8 @@ export default function App() {
             onBack={wizard.prevStep}
             onNext={() => wizard.analyze()}
             isAnalyzing={state.isAnalyzing}
+            securityExceptions={state.securityExceptions}
+            onUpdateSecurityExceptions={wizard.updateSecurityExceptions}
           />
         );
 
@@ -78,9 +143,14 @@ export default function App() {
             isPipelineRunning={state.isPipelineRunning}
             onUpdateGate={wizard.updateGate}
             onUpdateFinding={wizard.updateFinding}
+            onOverrideGate={wizard.overrideGate}
+            isAdmin={wizard.isAdmin}
             username={user?.name || 'operator'}
             onBack={() => wizard.setStep(3)}
             onNext={() => wizard.setStep(5)}
+            pipelineRunId={state.pipelineRunId}
+            pipelineRunStatus={state.pipelineRun?.status}
+            onSubmitForReview={wizard.submitForReview}
           />
         );
 
@@ -93,6 +163,13 @@ export default function App() {
             gates={state.gates}
             onBack={() => wizard.setStep(4)}
             onDeploy={wizard.deploy}
+            pipelineRun={state.pipelineRun}
+            pipelineRunStatus={state.pipelineRun?.status}
+            onSubmitForReview={wizard.submitForReview}
+            onDownloadPackage={wizard.downloadPackage}
+            isAdmin={wizard.isAdmin}
+            onReviewPipelineRun={wizard.reviewPipelineRun}
+            securityExceptions={state.securityExceptions}
           />
         );
 
@@ -116,6 +193,8 @@ export default function App() {
             classification={state.appInfo.classification}
             gates={state.gates}
             onReset={wizard.reset}
+            pipelineRunId={state.pipelineRunId}
+            onDownloadPackage={wizard.downloadPackage}
           />
         );
 
