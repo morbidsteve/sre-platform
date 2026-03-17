@@ -4564,7 +4564,7 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
             ? { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "2", memory: "2Gi" } }
             : { requests: { cpu: "50m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } },
           probes: privileged
-            ? { liveness: { path: "/", initialDelaySeconds: 30, periodSeconds: 15 }, readiness: { path: "/", initialDelaySeconds: 15, periodSeconds: 10 } }
+            ? { liveness: { type: "tcp", path: "/", initialDelaySeconds: 30, periodSeconds: 15, failureThreshold: 10 }, readiness: { type: "tcp", path: "/", initialDelaySeconds: 15, periodSeconds: 10, failureThreshold: 10 } }
             : { liveness: { path: "/", initialDelaySeconds: 10, periodSeconds: 10 }, readiness: { path: "/", initialDelaySeconds: 5, periodSeconds: 5 } },
           env: safeEnv,
         },

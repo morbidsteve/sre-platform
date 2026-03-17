@@ -63,16 +63,26 @@ spec:
               cpu: {{ .Values.app.resources.limits.cpu }}
               memory: {{ .Values.app.resources.limits.memory }}
           livenessProbe:
+            {{- if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.app.probes.liveness.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.app.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.liveness.periodSeconds }}
             failureThreshold: {{ .Values.app.probes.liveness.failureThreshold | default 3 }}
           readinessProbe:
+            {{- if eq (.Values.app.probes.readiness.type | default "http") "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.app.probes.readiness.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.app.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
             failureThreshold: {{ .Values.app.probes.readiness.failureThreshold | default 3 }}
