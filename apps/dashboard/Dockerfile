@@ -7,6 +7,7 @@ RUN npm install --production
 
 COPY server.js ./
 COPY db.js ./
+COPY gitops.js ./
 COPY public/ ./public/
 
 USER node
