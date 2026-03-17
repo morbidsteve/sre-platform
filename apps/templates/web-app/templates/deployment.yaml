@@ -19,6 +19,10 @@ spec:
     spec:
       serviceAccountName: {{ include "sre-web-app.serviceAccountName" . }}
       automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
