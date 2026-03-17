@@ -166,6 +166,7 @@ export default function App() {
             pipelineRun={state.pipelineRun}
             pipelineRunStatus={state.pipelineRun?.status}
             onSubmitForReview={wizard.submitForReview}
+            onRefreshPipelineRun={wizard.refreshPipelineRun}
             onDownloadPackage={wizard.downloadPackage}
             isAdmin={wizard.isAdmin}
             onReviewPipelineRun={wizard.reviewPipelineRun}

@@ -273,11 +273,11 @@ export function GateCard({ gate, onAcknowledge, onUpdateFinding, onOverrideGate,
         {/* Gate Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-gray-400">
-              GATE {gate.id}:
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-navy-700 text-xs font-mono text-gray-400 flex-shrink-0">
+              {gate.shortName}
             </span>
             <span className="text-sm font-medium text-gray-200 truncate">
-              {gate.shortName}
+              {gate.name}
             </span>
             {/* Review Badge */}
             {totalFindings > 0 && (
@@ -323,9 +323,6 @@ export function GateCard({ gate, onAcknowledge, onUpdateFinding, onOverrideGate,
         >
           {config.label}
         </Badge>
-        {gate.status === 'passed' && gate.summary?.startsWith('Deferred') && (
-          <span className="text-xs text-gray-400 ml-1">(auto)</span>
-        )}
 
         {/* Expand Arrow */}
         {hasDetails && (

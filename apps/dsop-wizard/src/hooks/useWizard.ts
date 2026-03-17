@@ -303,11 +303,19 @@ export function useWizard() {
       }, 3000);
 
       return;
-    } catch {
-      // Pipeline API unavailable -- fall back to direct mode
+    } catch (pipelineErr) {
+      // Pipeline API unavailable -- fall back to direct scan mode (degraded)
+      console.warn(
+        'Pipeline API unavailable, falling back to direct scan mode:',
+        pipelineErr instanceof Error ? pipelineErr.message : pipelineErr
+      );
+      setState((prev) => ({
+        ...prev,
+        error: 'Pipeline API unavailable — running in degraded mode (direct scans). Auth headers may not be forwarded.',
+      }));
     }
 
-    // Fallback: use the existing runSecurityPipeline flow
+    // Fallback: use the existing runSecurityPipeline flow (direct scan endpoints)
     try {
       const finalGates = await runSecurityPipeline(
         getInitialGates(),
@@ -523,6 +531,24 @@ export function useWizard() {
     }
   }, [state.pipelineRunId, state.appInfo.name]);
 
+  const refreshPipelineRun = useCallback(async () => {
+    if (!state.pipelineRunId) return;
+    try {
+      const updatedRun = await getPipelineRun(state.pipelineRunId);
+      const localGates = getInitialGates();
+      const mappedGates = updatedRun.gates.map((g) =>
+        mapPipelineGateToSecurityGate(g, updatedRun.findings || [], localGates)
+      );
+      setState((prev) => ({
+        ...prev,
+        pipelineRun: updatedRun,
+        gates: mappedGates,
+      }));
+    } catch {
+      // Silently fail -- pipeline run may have been deleted
+    }
+  }, [state.pipelineRunId]);
+
   const reviewPipelineRun = useCallback(async (
     decision: 'approved' | 'rejected' | 'returned',
     comment: string
@@ -580,6 +606,7 @@ export function useWizard() {
     updateGate,
     updateFinding,
     submitForReview: submitForReviewCb,
+    refreshPipelineRun,
     reviewPipelineRun,
     overrideGate,
     isAdmin,
