@@ -68,12 +68,14 @@ spec:
               port: http
             initialDelaySeconds: {{ .Values.app.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.app.probes.liveness.failureThreshold | default 3 }}
           readinessProbe:
             httpGet:
               path: {{ .Values.app.probes.readiness.path }}
               port: http
             initialDelaySeconds: {{ .Values.app.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.app.probes.readiness.failureThreshold | default 3 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
