@@ -1,8 +1,6 @@
 import type { AppSource, DetectionResult, SecurityGate, DeployStep, PipelineRun, FindingDisposition } from './types';
 
-// Call the dashboard API directly — the wizard is a static nginx site with no backend.
-// The dashboard is behind the same OAuth2 Proxy, so cookies are shared on *.apps.sre.example.com.
-const API_BASE = 'https://dashboard.apps.sre.example.com/api';
+const API_BASE = '/api';
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

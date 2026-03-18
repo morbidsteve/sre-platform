@@ -41,6 +41,8 @@ spec:
         app.kubernetes.io/name: dsop-wizard
         app.kubernetes.io/part-of: sre-platform
         sre.io/team: platform
+      annotations:
+        traffic.sidecar.istio.io/excludeOutboundPorts: "3001,4180"
     spec:
       serviceAccountName: dsop-wizard
       automountServiceAccountToken: false
@@ -55,7 +57,7 @@ spec:
           # NOTE: Uses nginx:1.27-alpine which runs as root.
           # To run as non-root (runAsUser: 101), switch Dockerfile base
           # image to nginxinc/nginx-unprivileged:1.27-alpine (like portal).
-          image: ${SRE_REGISTRY}/platform/dsop-wizard:v2.7.0
+          image: ${SRE_REGISTRY}/platform/dsop-wizard:v2.7.1
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
