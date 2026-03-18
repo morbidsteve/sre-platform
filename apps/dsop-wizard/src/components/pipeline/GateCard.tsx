@@ -295,12 +295,17 @@ export function GateCard({ gate, onAcknowledge, onUpdateFinding, onOverrideGate,
             )}
           </div>
           {gate.status === 'running' && (
-            <div className="mt-2 progress-bar">
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${gate.progress}%` }}
-              />
-            </div>
+            <>
+              <p className="text-xs text-cyan-400/70 mt-1 font-mono animate-pulse">
+                {gate.summary || gate.description?.split('. Runs')[0] || 'Processing...'}
+              </p>
+              <div className="mt-2 progress-bar">
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${gate.progress}%` }}
+                />
+              </div>
+            </>
           )}
           {gate.summary && gate.status !== 'running' && (
             <p className="text-xs text-gray-400 mt-1 font-mono">{gate.summary}</p>

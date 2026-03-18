@@ -5766,11 +5766,11 @@ function getActor(req) {
 function getDefaultGates() {
   return [
     { gateName: "Static Application Security Testing", shortName: "SAST", gateOrder: 1, tool: "Semgrep" },
-    { gateName: "Software Bill of Materials", shortName: "SBOM", gateOrder: 2, tool: "Syft" },
-    { gateName: "Secrets Detection", shortName: "SECRETS", gateOrder: 3, tool: "Gitleaks" },
-    { gateName: "Container Vulnerability Scan", shortName: "CVE", gateOrder: 4, tool: "Trivy" },
-    { gateName: "Dynamic Application Security Testing", shortName: "DAST", gateOrder: 5, tool: "OWASP ZAP" },
-    { gateName: "Artifact Storage & Signing", shortName: "ARTIFACT_STORE", gateOrder: 6, tool: "Cosign" },
+    { gateName: "Secrets Detection", shortName: "SECRETS", gateOrder: 2, tool: "Gitleaks" },
+    { gateName: "Container Image Build", shortName: "ARTIFACT_STORE", gateOrder: 3, tool: "Kaniko" },
+    { gateName: "Software Bill of Materials", shortName: "SBOM", gateOrder: 4, tool: "Syft" },
+    { gateName: "Container Vulnerability Scan", shortName: "CVE", gateOrder: 5, tool: "Trivy" },
+    { gateName: "Dynamic Application Security Testing", shortName: "DAST", gateOrder: 6, tool: "OWASP ZAP" },
     { gateName: "ISSM Security Review", shortName: "ISSM_REVIEW", gateOrder: 7, tool: null },
     { gateName: "Image Signing & Attestation", shortName: "IMAGE_SIGNING", gateOrder: 8, tool: "Cosign" },
   ];
@@ -6610,8 +6610,14 @@ async function orchestratePipelineScan(runId) {
   const sourceScans = [];
 
   if (run.git_url) {
-    if (gateMap.SAST) sourceScans.push(runScanGate(runId, gateMap.SAST, () => runSASTScan(run.git_url, run.branch)));
-    if (gateMap.SECRETS) sourceScans.push(runScanGate(runId, gateMap.SECRETS, () => runSecretsScan(run.git_url, run.branch)));
+    if (gateMap.SAST) {
+      await db.updateGate(gateMap.SAST.id, { status: "running", summary: "Cloning repo and running Semgrep scan...", startedAt: new Date().toISOString(), progress: 10 });
+      sourceScans.push(runScanGate(runId, gateMap.SAST, () => runSASTScan(run.git_url, run.branch)));
+    }
+    if (gateMap.SECRETS) {
+      await db.updateGate(gateMap.SECRETS.id, { status: "running", summary: "Cloning repo and running Gitleaks scan...", startedAt: new Date().toISOString(), progress: 10 });
+      sourceScans.push(runScanGate(runId, gateMap.SECRETS, () => runSecretsScan(run.git_url, run.branch)));
+    }
   } else {
     if (gateMap.SAST) sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
     if (gateMap.SECRETS) sourceScans.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
@@ -6625,7 +6631,7 @@ async function orchestratePipelineScan(runId) {
   if (!builtImageRef && run.git_url) {
     // Build with Kaniko — reuse existing build job pattern
     if (gateMap.ARTIFACT_STORE) {
-      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Building container image..." });
+      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
     }
 
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
@@ -6684,10 +6690,15 @@ async function orchestratePipelineScan(runId) {
         if (job.body.status?.succeeded) { buildSucceeded = true; break; }
         if (job.body.status?.failed) break;
       } catch (e) { /* keep polling */ }
-      // Update progress
+      // Update progress with descriptive messages
       if (gateMap.ARTIFACT_STORE) {
+        const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
         const elapsed = Math.min(90, Math.floor((Date.now() - buildStartTime) / 6667));
-        await db.updateGate(gateMap.ARTIFACT_STORE.id, { progress: elapsed });
+        const msg = elapsedSec < 15 ? "Kaniko: Cloning repository..."
+          : elapsedSec < 60 ? "Kaniko: Building image layers..."
+          : elapsedSec < 180 ? `Kaniko: Building image (${elapsedSec}s elapsed)...`
+          : `Kaniko: Pushing to Harbor (${elapsedSec}s elapsed)...`;
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { progress: elapsed, summary: msg });
       }
     }
 
@@ -6723,8 +6734,14 @@ async function orchestratePipelineScan(runId) {
   // Phase 3: Image-based scans (SBOM, CVE) against the BUILT image
   if (builtImageRef) {
     const imageScans = [];
-    if (gateMap.SBOM) imageScans.push(runScanGate(runId, gateMap.SBOM, () => runSBOMScan(builtImageRef)));
-    if (gateMap.CVE) imageScans.push(runScanGate(runId, gateMap.CVE, () => runCVEScan(builtImageRef)));
+    if (gateMap.SBOM) {
+      await db.updateGate(gateMap.SBOM.id, { status: "running", summary: "Syft: Generating SPDX SBOM from container image...", startedAt: new Date().toISOString(), progress: 10 });
+      imageScans.push(runScanGate(runId, gateMap.SBOM, () => runSBOMScan(builtImageRef)));
+    }
+    if (gateMap.CVE) {
+      await db.updateGate(gateMap.CVE.id, { status: "running", summary: "Trivy: Scanning container image for CVEs...", startedAt: new Date().toISOString(), progress: 10 });
+      imageScans.push(runScanGate(runId, gateMap.CVE, () => runCVEScan(builtImageRef)));
+    }
     await Promise.allSettled(imageScans);
   } else if (!run.image_url) {
     // No image at all — mark as skipped

@@ -92,7 +92,7 @@ export interface SecurityGate {
   progress: number;
   findings: GateFinding[];
   summary?: string;
-  implemented: boolean;
+  implemented?: boolean;
   manualAck?: boolean;
   reportUrl?: string;
 }
