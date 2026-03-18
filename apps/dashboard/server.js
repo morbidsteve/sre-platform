@@ -6365,7 +6365,7 @@ async function runSASTScan(url, branch) {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
       template: { spec: {
         restartPolicy: "Never",
-        containers: [{ name: "semgrep", image: "docker.io/semgrep/semgrep:latest",
+        containers: [{ name: "semgrep", image: "docker.io/semgrep/semgrep:1.102.0",
           env: [
             { name: "GIT_URL", value: url },
             { name: "GIT_BRANCH", value: safeBranch },
@@ -6411,7 +6411,7 @@ async function runSecretsScan(url, branch) {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
       template: { spec: {
         restartPolicy: "Never",
-        containers: [{ name: "gitleaks", image: "docker.io/zricethezav/gitleaks:latest",
+        containers: [{ name: "gitleaks", image: "docker.io/zricethezav/gitleaks:v8.22.1",
           env: [
             { name: "GIT_URL", value: url },
             { name: "GIT_BRANCH", value: safeBranch },
@@ -6455,13 +6455,11 @@ async function runSBOMScan(image) {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
       template: { spec: {
         restartPolicy: "Never",
-        containers: [{ name: "syft", image: "docker.io/anchore/syft:latest",
-          env: [
-            { name: "SCAN_IMAGE", value: image },
-          ],
-          command: ["sh", "-c", 'syft "$SCAN_IMAGE" -o spdx-json 2>/dev/null'],
+        containers: [{ name: "syft", image: "docker.io/anchore/syft:v1.18.1",
+          command: ["syft", image, "-o", "spdx-json"],
           resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
+          securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
         }],
         volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true } }],
       }},
@@ -6495,11 +6493,8 @@ async function runCVEScan(image) {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
       template: { spec: {
         restartPolicy: "Never",
-        containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:latest",
-          env: [
-            { name: "SCAN_IMAGE", value: image },
-          ],
-          command: ["sh", "-c", 'trivy image --format json --severity CRITICAL,HIGH,MEDIUM,LOW "$SCAN_IMAGE" 2>/dev/null || echo \'{"Results":[]}\''],
+        containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:0.58.2",
+          command: ["trivy", "image", "--format", "json", "--severity", "CRITICAL,HIGH,MEDIUM,LOW", image],
           resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
         }],
@@ -6977,7 +6972,7 @@ app.post("/api/security/sast", mutateLimiter, requireGroups("sre-admins", "devel
             restartPolicy: "Never",
             containers: [{
               name: "semgrep",
-              image: "docker.io/semgrep/semgrep:latest",
+              image: "docker.io/semgrep/semgrep:1.102.0",
               env: [
                 { name: "GIT_URL", value: url },
                 { name: "GIT_BRANCH", value: safeBranch },
@@ -7044,7 +7039,7 @@ app.post("/api/security/secrets", mutateLimiter, requireGroups("sre-admins", "de
             restartPolicy: "Never",
             containers: [{
               name: "gitleaks",
-              image: "docker.io/zricethezav/gitleaks:latest",
+              image: "docker.io/zricethezav/gitleaks:v8.22.1",
               env: [
                 { name: "GIT_URL", value: url },
                 { name: "GIT_BRANCH", value: safeBranch },
