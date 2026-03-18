@@ -6465,7 +6465,7 @@ async function runSBOMScan(image) {
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
           securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
         }],
-        volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true } }],
+        volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
       }},
     },
   });
@@ -6502,7 +6502,7 @@ async function runCVEScan(image) {
           resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
         }],
-        volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true } }],
+        volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
       }},
     },
   });
