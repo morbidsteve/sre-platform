@@ -6459,7 +6459,9 @@ async function runSBOMScan(image) {
           args: ["registry:" + image, "-o", "spdx-json"],
           env: [
             { name: "SYFT_REGISTRY_INSECURE_SKIP_TLS_VERIFY", value: "true" },
-            { name: "SYFT_REGISTRY_AUTH_AUTHORITY", value: image.split("/")[0] },
+            { name: "SYFT_REGISTRY_AUTH_USERNAME", value: "admin" },
+            { name: "SYFT_REGISTRY_AUTH_PASSWORD", value: "Harbor12345" },
+            { name: "DOCKER_CONFIG", value: "/root/.docker" },
           ],
           resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
