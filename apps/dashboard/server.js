@@ -6363,7 +6363,7 @@ async function runSASTScan(url, branch) {
     metadata: { name: jobName, namespace: BUILD_NAMESPACE },
     spec: {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
-      template: { spec: {
+      template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "semgrep", image: "docker.io/semgrep/semgrep:1.102.0",
           env: [
@@ -6409,7 +6409,7 @@ async function runSecretsScan(url, branch) {
     metadata: { name: jobName, namespace: BUILD_NAMESPACE },
     spec: {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
-      template: { spec: {
+      template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "gitleaks", image: "docker.io/zricethezav/gitleaks:v8.22.1",
           env: [
@@ -6453,7 +6453,7 @@ async function runSBOMScan(image) {
     metadata: { name: jobName, namespace: BUILD_NAMESPACE },
     spec: {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
-      template: { spec: {
+      template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "syft", image: "docker.io/anchore/syft:v1.18.1",
           args: ["registry:" + image, "-o", "spdx-json"],
@@ -6472,7 +6472,7 @@ async function runSBOMScan(image) {
     },
   });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "syft", 120);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "syft", 300);
   let sbom;
   try { sbom = JSON.parse(logs); } catch { sbom = null; }
   const packageCount = sbom?.packages?.length || 0;
@@ -6497,7 +6497,7 @@ async function runCVEScan(image) {
     metadata: { name: jobName, namespace: BUILD_NAMESPACE },
     spec: {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
-      template: { spec: {
+      template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:0.58.2",
           command: ["trivy", "image", "--format", "json", "--severity", "CRITICAL,HIGH,MEDIUM,LOW", "--insecure", image],
