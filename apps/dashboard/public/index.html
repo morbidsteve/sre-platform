@@ -8543,6 +8543,11 @@ function renderRunDetail(run, isReview) {
       html += '<a href="' + esc(url) + '" target="_blank" class="btn btn-success" style="text-decoration:none;">Open Deployed App</a>';
     }
     html += '<span style="font-size:12px;color:var(--green);">Successfully deployed</span>';
+    // Show "Run DAST" button if DAST gate was skipped
+    var dastGate = (run.gates || []).find(function(g) { return (g.short_name || g.shortName) === 'DAST'; });
+    if (dastGate && dastGate.status === 'skipped') {
+      html += '<button class="btn btn-sm" style="color:var(--cyan);" onclick="triggerDAST(\'' + esc(run.id) + '\',this)">Run DAST Scan</button>';
+    }
   }
   if (run.status === 'rejected') {
     html += '<span style="font-size:13px;color:var(--red);">Rejected' + (run.reviewComment || run.review_comment ? ': ' + esc(run.reviewComment || run.review_comment) : '') + '</span>';
@@ -8592,7 +8597,9 @@ function renderRunDetail(run, isReview) {
       html += '<div class="gate-item">';
       html += '<div class="gate-item-dot ' + esc(dotCls) + '"></div>';
       html += '<div class="gate-item-header" onclick="toggleGateFindings(' + gi + ')">';
-      html += '<span class="gate-item-name">' + esc(gate.name || 'Gate ' + (gi + 1)) + ' ' + renderPipeBadge(gateStatus) + '</span>';
+      var gateName = gate.gate_name || gate.name || gate.gateName || ('Gate ' + (gi + 1));
+      var gateShort = gate.short_name || gate.shortName || '';
+      html += '<span class="gate-item-name">' + (gateShort ? '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-right:6px;background:var(--surface);padding:1px 5px;border-radius:3px;">' + esc(gateShort) + '</span>' : '') + esc(gateName) + ' ' + renderPipeBadge(gateStatus) + '</span>';
       html += '<span class="gate-item-meta">';
       if (gate.completedAt || gate.completed_at) html += pipelineTimeAgo(gate.completedAt || gate.completed_at);
       var fc = (gate.findings || []).length;
@@ -9014,7 +9021,9 @@ function renderReviewPanel(run) {
       html += '<div class="gate-evidence-header" onclick="toggleReviewGate(' + gi + ')">';
       html += '<div class="gate-ev-left">';
       html += '<span class="gate-item-dot ' + esc(gateStatus === 'pending' ? 'pending-gate' : gateStatus) + '" style="position:static;width:10px;height:10px;flex-shrink:0;"></span>';
-      html += '<strong style="font-size:14px;">' + esc(gate.name || 'Gate ' + (gi + 1)) + '</strong>';
+      var gateName = gate.gate_name || gate.name || gate.gateName || ('Gate ' + (gi + 1));
+      var gateShort = gate.short_name || gate.shortName || '';
+      html += (gateShort ? '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-right:6px;background:var(--surface);padding:1px 5px;border-radius:3px;">' + esc(gateShort) + '</span>' : '') + '<strong style="font-size:14px;">' + esc(gateName) + '</strong>';
       if (gate.tool) html += '<span class="gate-ev-tool">' + esc(gate.tool) + '</span>';
       html += '</div>';
       html += '<div class="gate-ev-right">';
@@ -9191,6 +9200,30 @@ async function deployFromReview(runId) {
     }
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function triggerDAST(runId, btn) {
+  if (!confirm('Run DAST (ZAP) scan against the deployed application?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting...'; }
+  try {
+    var resp = await fetch('/api/pipeline/runs/' + encodeURIComponent(runId) + '/run-dast', {
+      method: 'POST',
+      credentials: 'include'
+    });
+    if (resp.ok) {
+      showToast('DAST scan started — refresh to see results');
+      if (btn) { btn.textContent = 'Scanning...'; }
+      // Re-fetch the run detail after a short delay
+      setTimeout(function() { showRunDetail(runId); }, 3000);
+    } else {
+      var data = await resp.json().catch(function() { return {}; });
+      showToast(data.error || 'Failed to start DAST scan', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Run DAST Scan'; }
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Run DAST Scan'; }
   }
 }
 

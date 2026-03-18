@@ -307,7 +307,10 @@ export function GateCard({ gate, onAcknowledge, onUpdateFinding, onOverrideGate,
               </div>
             </>
           )}
-          {gate.summary && gate.status !== 'running' && (
+          {gate.summary && gate.status === 'failed' && (
+            <p className="text-xs text-red-400 mt-1 font-mono font-medium">{gate.summary}</p>
+          )}
+          {gate.summary && gate.status !== 'running' && gate.status !== 'failed' && (
             <p className="text-xs text-gray-400 mt-1 font-mono">{gate.summary}</p>
           )}
         </div>

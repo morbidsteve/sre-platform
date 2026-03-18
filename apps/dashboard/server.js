@@ -413,7 +413,7 @@ app.get("/api/tenants/:namespace/apps", requireGroups("sre-admins", "developers"
 // Deploy a new app
 app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { name, team, image, tag, port, replicas, ingress } = req.body;
+    const { name, team, image, tag, port, replicas, ingress, privileged } = req.body;
 
     if (!name || !team || !image || !tag) {
       return res.status(400).json({
@@ -442,6 +442,7 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
       port: port || 8080,
       replicas: replicas || 2,
       ingressHost: ingress || "",
+      privileged: !!privileged,
     });
 
     // Apply the manifest to the cluster (GitOps if enabled, else direct kubectl)
@@ -4849,7 +4850,7 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
           host: ingressHost || "",
         },
         ...(privileged ? {
-          podSecurityContext: { runAsNonRoot: false, runAsUser: 0, fsGroup: 0, seccompProfile: { type: "RuntimeDefault" } },
+          podSecurityContext: { runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: "RuntimeDefault" } },
           containerSecurityContext: { allowPrivilegeEscalation: true, readOnlyRootFilesystem: false, runAsNonRoot: false, runAsUser: 0 },
         } : {}),
         autoscaling: { enabled: false },
@@ -6341,22 +6342,81 @@ async function runScanGate(runId, gate, scanFn) {
 
     return gateStatus;
   } catch (err) {
+    // Attempt to get detailed failure reason from the pod status
+    let failureReason = err.message;
+    let isOOM = false;
+    const jobNameMatch = gate.short_name ? gate.short_name.toLowerCase() : "";
+    try {
+      const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name`);
+      // Find a pod matching this gate's scan job (best effort — match by short_name prefix)
+      for (const pod of (pods.body.items || [])) {
+        const jn = pod.metadata?.labels?.["job-name"] || "";
+        if (jn.startsWith(jobNameMatch) || jn.startsWith(jobNameMatch.replace(/_/g, ""))) {
+          const cs = pod.status?.containerStatuses?.[0];
+          if (cs?.state?.terminated?.reason === "OOMKilled") {
+            failureReason = "Out of memory — image too large for scan resources";
+            isOOM = true;
+          } else if (cs?.state?.terminated?.reason === "StartError") {
+            failureReason = `Container start error: ${(cs.state.terminated.message || "").substring(0, 200)}`;
+          } else if (cs?.state?.terminated?.exitCode && cs.state.terminated.exitCode !== 0) {
+            failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`;
+          }
+          break;
+        }
+      }
+    } catch (e) { /* best effort pod status check */ }
+
+    // Auto-retry once with 2x memory if OOMKilled
+    if (isOOM && !gate._oomRetried) {
+      console.log(`[pipeline] Gate ${gate.short_name} OOMKilled — retrying with 2x memory`);
+      gate._oomRetried = true;
+      await db.updateGate(gate.id, {
+        status: "running",
+        progress: 15,
+        summary: "Retrying with more memory after OOM...",
+      });
+      await db.auditLog(runId, "gate_oom_retry", null, `Gate ${gate.short_name} OOMKilled, retrying with 2x memory`, { gateId: gate.id });
+      try {
+        const retryResult = await scanFn(2); // pass memoryMultiplier=2
+        const retryStatus = retryResult.status === "failed" ? "failed" : retryResult.status === "warning" ? "warning" : "passed";
+        const retryRawOutput = {
+          gate: retryResult.gate, tool: retryResult.tool, status: retryStatus,
+          summary: retryResult.summary, findings: retryResult.findings,
+          toolOutput: retryResult.toolOutput || null, packageCount: retryResult.packageCount || undefined,
+          format: retryResult.format || undefined, scannedAt: new Date().toISOString(), oomRetry: true,
+        };
+        await db.updateGate(gate.id, { status: retryStatus, progress: 100, completedAt: new Date().toISOString(), summary: `(OOM retry) ${retryResult.summary || retryStatus}`, rawOutput: retryRawOutput });
+        if (retryResult.findings && retryResult.findings.length > 0) {
+          for (const finding of retryResult.findings) {
+            await db.createFinding({ runId, gateId: gate.id, severity: finding.severity === "ERROR" ? "critical" : finding.severity === "WARNING" ? "high" : (finding.severity || "info").toLowerCase(), title: finding.title, description: finding.description, location: finding.location });
+          }
+        }
+        await db.auditLog(runId, "gate_completed", null, `Gate ${gate.short_name} completed on OOM retry: ${retryStatus}`, { gateId: gate.id, status: retryStatus });
+        return retryStatus;
+      } catch (retryErr) {
+        failureReason = `OOM retry also failed: ${retryErr.message}`;
+      }
+    }
+
     await db.updateGate(gate.id, {
       status: "failed",
       progress: 100,
       completedAt: new Date().toISOString(),
-      summary: `Error: ${err.message}`,
-      rawOutput: { gate: gate.short_name, error: err.message, failedAt: new Date().toISOString() },
+      summary: failureReason,
+      rawOutput: { gate: gate.short_name, error: failureReason, failedAt: new Date().toISOString() },
     });
-    await db.auditLog(runId, "gate_failed", null, `Gate ${gate.short_name} failed: ${err.message}`, { gateId: gate.id });
+    await db.auditLog(runId, "gate_failed", null, `Gate ${gate.short_name} failed: ${failureReason}`, { gateId: gate.id });
     return "failed";
   }
 }
 
-async function runSASTScan(url, branch) {
+async function runSASTScan(url, branch, memoryMultiplier) {
   if (!validateGitUrl(url)) throw new Error("Invalid git URL");
   const jobName = "sast-" + crypto.randomBytes(4).toString("hex");
   const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
+  const mult = memoryMultiplier || 1;
+  const memReq = `${256 * mult}Mi`;
+  const memLim = `${1 * mult}Gi`;
 
   await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
     apiVersion: "batch/v1", kind: "Job",
@@ -6371,7 +6431,7 @@ async function runSASTScan(url, branch) {
             { name: "GIT_BRANCH", value: safeBranch },
           ],
           command: ["sh", "-c", 'git clone --depth 1 --branch "$GIT_BRANCH" "$GIT_URL" /src 2>/dev/null && cd /src && semgrep scan --config auto --json --quiet 2>/dev/null || echo \'{"results":[],"errors":[]}\''],
-          resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+          resources: { requests: { cpu: "100m", memory: memReq }, limits: { cpu: "1", memory: memLim } },
         }],
       }},
     },
@@ -6399,10 +6459,13 @@ async function runSASTScan(url, branch) {
   };
 }
 
-async function runSecretsScan(url, branch) {
+async function runSecretsScan(url, branch, memoryMultiplier) {
   if (!validateGitUrl(url)) throw new Error("Invalid git URL");
   const jobName = "secrets-" + crypto.randomBytes(4).toString("hex");
   const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
+  const mult = memoryMultiplier || 1;
+  const memReq = `${128 * mult}Mi`;
+  const memLim = `${512 * mult}Mi`;
 
   await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
     apiVersion: "batch/v1", kind: "Job",
@@ -6417,7 +6480,7 @@ async function runSecretsScan(url, branch) {
             { name: "GIT_BRANCH", value: safeBranch },
           ],
           command: ["sh", "-c", 'git clone --depth 5 --branch "$GIT_BRANCH" "$GIT_URL" /src 2>/dev/null && gitleaks detect --source /src --report-format json --report-path /dev/stdout --no-banner 2>/dev/null || echo \'[]\''],
-          resources: { requests: { cpu: "50m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+          resources: { requests: { cpu: "50m", memory: memReq }, limits: { cpu: "500m", memory: memLim } },
         }],
       }},
     },
@@ -6444,9 +6507,12 @@ async function runSecretsScan(url, branch) {
   };
 }
 
-async function runSBOMScan(image) {
+async function runSBOMScan(image, memoryMultiplier) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "sbom-" + crypto.randomBytes(4).toString("hex");
+  const mult = memoryMultiplier || 1;
+  const memReq = `${512 * mult}Mi`;
+  const memLim = `${4 * mult}Gi`;
 
   // Use Trivy for SBOM generation — it already handles Harbor auth and TLS correctly
   await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
@@ -6458,7 +6524,7 @@ async function runSBOMScan(image) {
         restartPolicy: "Never",
         containers: [{ name: "trivy-sbom", image: "docker.io/aquasec/trivy:0.58.2",
           command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "none", image],
-          resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+          resources: { requests: { cpu: "200m", memory: memReq }, limits: { cpu: "2", memory: memLim } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
         }],
         volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
@@ -6482,9 +6548,12 @@ async function runSBOMScan(image) {
   };
 }
 
-async function runCVEScan(image) {
+async function runCVEScan(image, memoryMultiplier) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "cve-" + crypto.randomBytes(4).toString("hex");
+  const mult = memoryMultiplier || 1;
+  const memReq = `${256 * mult}Mi`;
+  const memLim = `${1 * mult}Gi`;
 
   await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
     apiVersion: "batch/v1", kind: "Job",
@@ -6495,7 +6564,7 @@ async function runCVEScan(image) {
         restartPolicy: "Never",
         containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:0.58.2",
           command: ["trivy", "image", "--format", "json", "--severity", "CRITICAL,HIGH,MEDIUM,LOW", "--insecure", image],
-          resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+          resources: { requests: { cpu: "100m", memory: memReq }, limits: { cpu: "1", memory: memLim } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
         }],
         volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
@@ -6607,11 +6676,11 @@ async function orchestratePipelineScan(runId) {
   if (run.git_url) {
     if (gateMap.SAST) {
       await db.updateGate(gateMap.SAST.id, { status: "running", summary: "Cloning repo and running Semgrep scan...", startedAt: new Date().toISOString(), progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SAST, () => runSASTScan(run.git_url, run.branch)));
+      sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult)));
     }
     if (gateMap.SECRETS) {
       await db.updateGate(gateMap.SECRETS.id, { status: "running", summary: "Cloning repo and running Gitleaks scan...", startedAt: new Date().toISOString(), progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SECRETS, () => runSecretsScan(run.git_url, run.branch)));
+      sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult)));
     }
   } else {
     if (gateMap.SAST) sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
@@ -6731,12 +6800,12 @@ async function orchestratePipelineScan(runId) {
   if (builtImageRef) {
     const imageScans = [];
     if (gateMap.SBOM) {
-      await db.updateGate(gateMap.SBOM.id, { status: "running", summary: "Syft: Generating SPDX SBOM from container image...", startedAt: new Date().toISOString(), progress: 10 });
-      imageScans.push(runScanGate(runId, gateMap.SBOM, () => runSBOMScan(builtImageRef)));
+      await db.updateGate(gateMap.SBOM.id, { status: "running", summary: "Trivy: Generating SPDX SBOM from container image...", startedAt: new Date().toISOString(), progress: 10 });
+      imageScans.push(runScanGate(runId, gateMap.SBOM, (mult) => runSBOMScan(builtImageRef, mult)));
     }
     if (gateMap.CVE) {
       await db.updateGate(gateMap.CVE.id, { status: "running", summary: "Trivy: Scanning container image for CVEs...", startedAt: new Date().toISOString(), progress: 10 });
-      imageScans.push(runScanGate(runId, gateMap.CVE, () => runCVEScan(builtImageRef)));
+      imageScans.push(runScanGate(runId, gateMap.CVE, (mult) => runCVEScan(builtImageRef, mult)));
     }
     await Promise.allSettled(imageScans);
   } else if (!run.image_url) {
@@ -6745,9 +6814,9 @@ async function orchestratePipelineScan(runId) {
     if (gateMap.CVE) await db.updateGate(gateMap.CVE.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
   }
 
-  // DAST — deferred, genuinely needs a deployed URL to scan
+  // DAST — skipped during pipeline, runs post-deployment via manual trigger
   if (gateMap.DAST) {
-    await db.updateGate(gateMap.DAST.id, { status: "passed", summary: "Deferred — ZAP scan runs post-deploy against live URL", completedAt: new Date().toISOString() });
+    await db.updateGate(gateMap.DAST.id, { status: "skipped", summary: "DAST runs post-deployment — trigger from pipeline history after app is live", completedAt: new Date().toISOString() });
   }
 
   // Determine overall status after automated gates
@@ -6804,16 +6873,30 @@ async function executePipelineDeploy(run, actor) {
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
     const domain = process.env.SRE_DOMAIN || "apps.sre.example.com";
 
+    // Check if run has security exceptions requiring privileged mode
+    let needsPrivileged = false;
+    try {
+      const exceptions = typeof run.security_exceptions === "string" ? JSON.parse(run.security_exceptions || "[]") : (run.security_exceptions || []);
+      const privilegedTypes = ["run_as_root", "writable_filesystem", "privileged_container", "host_networking"];
+      needsPrivileged = exceptions.some(e => privilegedTypes.includes(e.type));
+      if (needsPrivileged) {
+        console.log(`[pipeline] Run ${run.id} has security exceptions requiring privileged mode: ${exceptions.map(e => e.type).join(", ")}`);
+        await db.auditLog(run.id, "privileged_deploy", actor, `Deploying with privileged security context due to approved exceptions: ${exceptions.map(e => e.type).join(", ")}`);
+      }
+    } catch (e) { /* best effort */ }
+
     if (run.git_url) {
       // Call the real deploy-from-git endpoint internally via localhost
       const http = require("http");
+      const deployPayload = {
+        url: run.git_url,
+        branch: run.branch || "main",
+        team: run.team,
+        name: safeName,
+      };
+      if (needsPrivileged) deployPayload.privileged = true;
       const deployResult = await new Promise((resolve, reject) => {
-        const postData = JSON.stringify({
-          url: run.git_url,
-          branch: run.branch || "main",
-          team: run.team,
-          name: safeName,
-        });
+        const postData = JSON.stringify(deployPayload);
         const req = http.request({
           hostname: "127.0.0.1",
           port: PORT,
@@ -6837,12 +6920,13 @@ async function executePipelineDeploy(run, actor) {
             } catch { reject(new Error(`Deploy response parse error (HTTP ${res.statusCode})`)); }
           });
         });
-        req.on("error", reject);
+        req.on("error", (e) => { console.error(`[pipeline] Deploy HTTP error: ${e.message}`); reject(e); });
         req.setTimeout(300000, () => { req.destroy(); reject(new Error("Deploy timed out (5 min)")); });
         req.write(postData);
         req.end();
       });
 
+      console.log(`[pipeline] Deploy API responded for ${run.id}:`, JSON.stringify(deployResult).substring(0, 200));
       const deployedUrl = deployResult.url || `https://${safeName}.${domain}`;
 
       // If a build was started, wait for it to complete and HelmRelease to be created
@@ -6884,45 +6968,35 @@ async function executePipelineDeploy(run, actor) {
         `Deployed ${run.app_name} to ${deployedUrl}`,
         { deployedUrl, result: deployResult });
     } else if (run.image_url) {
-      // Image-only deploy via the regular deploy endpoint
-      const http = require("http");
-      const postData = JSON.stringify({
-        appName: safeName,
-        image: run.image_url,
-        team: run.team,
-      });
-      await new Promise((resolve, reject) => {
-        const req = http.request({
-          hostname: "127.0.0.1",
-          port: PORT,
-          path: "/api/deploy",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(postData),
-            "X-Auth-Request-User": actor,
-            "X-Auth-Request-Email": actor,
-            "X-Auth-Request-Groups": "sre-admins",
-          },
-        }, (res) => {
-          let data = "";
-          res.on("data", (chunk) => { data += chunk; });
-          res.on("end", () => {
-            if (res.statusCode >= 400) reject(new Error(data));
-            else resolve(JSON.parse(data));
-          });
-        });
-        req.on("error", reject);
-        req.setTimeout(300000, () => { req.destroy(); reject(new Error("Deploy timed out")); });
-        req.write(postData);
-        req.end();
+      // Image-only deploy — call generateHelmRelease + deployViaGitOps directly
+      // instead of going through HTTP to avoid auth header issues
+      const nsName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
+      const imageRef = run.image_url;
+      const imageParts = imageRef.split(":");
+      const imageRepo = imageParts.slice(0, -1).join(":") || imageRef;
+      const imageTag = imageParts.length > 1 ? imageParts[imageParts.length - 1] : "latest";
+      const ingressHost = `${safeName}.${domain}`;
+
+      await ensureNamespace(nsName, run.team);
+
+      const manifest = generateHelmRelease({
+        name: safeName,
+        team: nsName,
+        image: imageRepo,
+        tag: imageTag,
+        port: run.port || 8080,
+        replicas: 2,
+        ingressHost: ingressHost,
+        privileged: needsPrivileged,
       });
 
-      const deployedUrl = `https://${safeName}.${domain}`;
+      await deployViaGitOps(manifest, nsName, safeName, actor);
+
+      const deployedUrl = `https://${ingressHost}`;
       await db.updateRunStatus(run.id, "deployed", { deployedUrl });
       await db.auditLog(run.id, "deploy_completed", actor,
         `Deployed ${run.app_name} from image ${run.image_url}`,
-        { deployedUrl });
+        { deployedUrl, privileged: needsPrivileged });
     } else {
       throw new Error("No git URL or image URL available for deployment");
     }
@@ -7079,7 +7153,7 @@ app.post("/api/security/secrets", mutateLimiter, requireGroups("sre-admins", "de
   }
 });
 
-// POST /api/security/sbom — Generate SBOM with Syft via K8s Job
+// POST /api/security/sbom — Generate SBOM with Trivy via K8s Job
 app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   const { image } = req.body;
   if (!image) return res.status(400).json({ error: "image is required" });
@@ -7096,28 +7170,26 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
         ttlSecondsAfterFinished: 300,
         backoffLimit: 0,
         template: {
+          metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
           spec: {
             restartPolicy: "Never",
             containers: [{
-              name: "syft",
-              image: "docker.io/anchore/syft:latest",
-              env: [
-                { name: "SCAN_IMAGE", value: image },
-              ],
-              command: ["sh", "-c", 'syft "$SCAN_IMAGE" -o spdx-json 2>/dev/null'],
-              resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+              name: "trivy-sbom",
+              image: "docker.io/aquasec/trivy:0.58.2",
+              command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "none", image],
+              resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
               volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
             }],
             volumes: [{
               name: "docker-config",
-              secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true },
+              secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] },
             }],
           },
         },
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "syft", 120);
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
 
     let sbom;
     try { sbom = JSON.parse(logs); } catch { sbom = null; }
@@ -7126,7 +7198,7 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
 
     res.json({
       gate: "SBOM",
-      tool: "Syft",
+      tool: "Trivy",
       status: sbom ? "passed" : "failed",
       format: "SPDX 2.3",
       packageCount,
@@ -7200,6 +7272,62 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
     });
   } catch (err) {
     console.error("DAST scan error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/pipeline/runs/:id/run-dast — Trigger post-deploy DAST scan
+app.post("/api/pipeline/runs/:id/run-dast", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const run = await db.getRun(req.params.id);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+
+    if (run.status !== "deployed") {
+      return res.status(400).json({ error: `DAST scan requires a deployed app (current status: ${run.status})` });
+    }
+
+    const deployedUrl = run.deployed_url;
+    if (!deployedUrl || !validateUrl(deployedUrl)) {
+      return res.status(400).json({ error: "No valid deployed URL found for this run" });
+    }
+
+    const dastGate = run.gates.find(g => g.short_name === "DAST");
+    if (!dastGate) {
+      return res.status(400).json({ error: "No DAST gate found for this run" });
+    }
+
+    const actor = getActor(req);
+    await db.updateGate(dastGate.id, { status: "running", summary: "Running ZAP baseline scan against deployed URL...", startedAt: new Date().toISOString(), progress: 10 });
+    await db.auditLog(run.id, "dast_scan_started", actor, `DAST scan started against ${deployedUrl}`);
+
+    // Run DAST in background
+    (async () => {
+      try {
+        const result = await runDASTScan(deployedUrl);
+        const gateStatus = result.status === "failed" ? "failed" : result.status === "warning" ? "warning" : "passed";
+        await db.updateGate(dastGate.id, {
+          status: gateStatus,
+          progress: 100,
+          completedAt: new Date().toISOString(),
+          summary: result.summary || gateStatus,
+          rawOutput: { gate: "DAST", tool: "OWASP ZAP", status: gateStatus, summary: result.summary, findings: result.findings, scannedAt: new Date().toISOString() },
+        });
+        if (result.findings && result.findings.length > 0) {
+          for (const finding of result.findings) {
+            await db.createFinding({ runId: run.id, gateId: dastGate.id, severity: (finding.severity || "info").toLowerCase(), title: finding.title, description: finding.description, location: finding.location });
+          }
+        }
+        await db.auditLog(run.id, "dast_scan_completed", actor, `DAST scan completed: ${gateStatus} — ${result.summary}`, { status: gateStatus, findingCount: (result.findings || []).length });
+      } catch (err) {
+        await db.updateGate(dastGate.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: `DAST scan failed: ${err.message}` });
+        await db.auditLog(run.id, "dast_scan_failed", actor, `DAST scan failed: ${err.message}`);
+        console.error(`[pipeline] DAST scan failed for run ${run.id}: ${err.message}`);
+      }
+    })();
+
+    res.json({ message: "DAST scan started", runId: run.id, targetUrl: deployedUrl });
+  } catch (err) {
+    console.error("[pipeline] DAST trigger error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
