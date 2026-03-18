@@ -6448,6 +6448,7 @@ async function runSBOMScan(image) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "sbom-" + crypto.randomBytes(4).toString("hex");
 
+  // Use Trivy for SBOM generation — it already handles Harbor auth and TLS correctly
   await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
     apiVersion: "batch/v1", kind: "Job",
     metadata: { name: jobName, namespace: BUILD_NAMESPACE },
@@ -6455,30 +6456,23 @@ async function runSBOMScan(image) {
       ttlSecondsAfterFinished: 300, backoffLimit: 0,
       template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
-        containers: [{ name: "syft", image: "docker.io/anchore/syft:v1.18.1",
-          args: ["registry:" + image, "-o", "spdx-json"],
-          env: [
-            { name: "SYFT_REGISTRY_INSECURE_SKIP_TLS_VERIFY", value: "true" },
-            { name: "SYFT_REGISTRY_AUTH_USERNAME", value: "admin" },
-            { name: "SYFT_REGISTRY_AUTH_PASSWORD", value: "Harbor12345" },
-            { name: "DOCKER_CONFIG", value: "/root/.docker" },
-          ],
+        containers: [{ name: "trivy-sbom", image: "docker.io/aquasec/trivy:0.58.2",
+          command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "none", image],
           resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
-          securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
         }],
         volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
       }},
     },
   });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "syft", 300);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
   let sbom;
   try { sbom = JSON.parse(logs); } catch { sbom = null; }
   const packageCount = sbom?.packages?.length || 0;
 
   return {
-    gate: "SBOM", tool: "Syft", format: "SPDX 2.3",
+    gate: "SBOM", tool: "Trivy (SPDX)", format: "SPDX 2.3",
     status: sbom ? "passed" : "failed",
     findings: [],
     packageCount,
