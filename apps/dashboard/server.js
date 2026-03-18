@@ -6463,7 +6463,7 @@ async function runSBOMScan(image) {
             { name: "SYFT_REGISTRY_AUTH_PASSWORD", value: "Harbor12345" },
             { name: "DOCKER_CONFIG", value: "/root/.docker" },
           ],
-          resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+          resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
           securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
         }],
