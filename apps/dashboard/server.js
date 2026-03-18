@@ -6456,7 +6456,11 @@ async function runSBOMScan(image) {
       template: { spec: {
         restartPolicy: "Never",
         containers: [{ name: "syft", image: "docker.io/anchore/syft:v1.18.1",
-          command: ["syft", image, "-o", "spdx-json"],
+          args: ["registry:" + image, "-o", "spdx-json"],
+          env: [
+            { name: "SYFT_REGISTRY_INSECURE_SKIP_TLS_VERIFY", value: "true" },
+            { name: "SYFT_REGISTRY_AUTH_AUTHORITY", value: image.split("/")[0] },
+          ],
           resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
           securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
@@ -6494,7 +6498,7 @@ async function runCVEScan(image) {
       template: { spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:0.58.2",
-          command: ["trivy", "image", "--format", "json", "--severity", "CRITICAL,HIGH,MEDIUM,LOW", image],
+          command: ["trivy", "image", "--format", "json", "--severity", "CRITICAL,HIGH,MEDIUM,LOW", "--insecure", image],
           resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
         }],
