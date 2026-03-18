@@ -6702,9 +6702,10 @@ async function orchestratePipelineScan(runId) {
     }
 
     if (buildSucceeded) {
-      builtImageRef = destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
-      // Save the built image URL on the pipeline run
-      await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [builtImageRef, runId]);
+      builtImageRef = destination; // Keep internal hostname for scanning
+      const externalImageRef = destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
+      // Save the external image URL on the pipeline run (for nodes to pull)
+      await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
       if (gateMap.ARTIFACT_STORE) {
         await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Image built and pushed: ${safeName}:${buildId}` });
       }
