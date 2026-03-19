@@ -1,0 +1,61 @@
+---
+# CronJob: auto-clean stale pipeline runs and orphaned K8s Jobs every 5 minutes
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pipeline-cleanup
+  namespace: sre-dashboard
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: pipeline-cleanup
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 1
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "false"
+          labels:
+            app.kubernetes.io/name: pipeline-cleanup
+            app.kubernetes.io/part-of: sre-platform
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cleanup
+              image: curlimages/curl:8.5.0
+              command:
+                - sh
+                - -c
+                - |
+                  curl -sf -X POST \
+                    -H "Content-Type: application/json" \
+                    -H "X-Auth-Request-User: system-cleanup" \
+                    -H "X-Auth-Request-Groups: sre-admins" \
+                    http://sre-dashboard.sre-dashboard.svc.cluster.local:3001/api/pipeline/cleanup \
+                    -o /dev/null -w "HTTP %{http_code}\n" || echo "Cleanup call failed"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 100
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 50m
+                  memory: 32Mi

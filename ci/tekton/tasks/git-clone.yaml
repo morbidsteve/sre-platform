@@ -1,0 +1,102 @@
+---
+# Tekton Task: Clone a Git repository
+# Clones a repository at a specified revision into the shared workspace.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  description: >-
+    Clone a Git repository at a specific revision into the output workspace.
+    Supports both HTTPS and SSH authentication.
+  params:
+    - name: url
+      type: string
+      description: "Git repository URL to clone"
+    - name: revision
+      type: string
+      description: "Git revision to checkout (branch, tag, or SHA)"
+      default: "main"
+    - name: subdirectory
+      type: string
+      description: "Subdirectory within the workspace to clone into"
+      default: "source"
+    - name: depth
+      type: string
+      description: "Git clone depth (0 for full history)"
+      default: "1"
+  workspaces:
+    - name: source
+      description: "Workspace where the git repository will be cloned"
+    - name: git-credentials
+      description: "Workspace containing git credentials (optional)"
+      optional: true
+  results:
+    - name: commit-sha
+      description: "The precise commit SHA that was checked out"
+    - name: commit-timestamp
+      description: "Timestamp of the checked-out commit"
+  steps:
+    - name: clone
+      image: alpine/git:2.43.0
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      env:
+        - name: WORKSPACE_SOURCE_PATH
+          value: "$(workspaces.source.path)"
+        - name: PARAM_URL
+          value: "$(params.url)"
+        - name: PARAM_REVISION
+          value: "$(params.revision)"
+        - name: PARAM_SUBDIRECTORY
+          value: "$(params.subdirectory)"
+        - name: PARAM_DEPTH
+          value: "$(params.depth)"
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        CHECKOUT_DIR="${WORKSPACE_SOURCE_PATH}/${PARAM_SUBDIRECTORY}"
+
+        # Clean existing content if present
+        rm -rf "${CHECKOUT_DIR}"
+        mkdir -p "${CHECKOUT_DIR}"
+
+        # Configure git credentials if provided
+        if [ -d "$(workspaces.git-credentials.path)" ] 2>/dev/null; then
+          if [ -f "$(workspaces.git-credentials.path)/.gitconfig" ]; then
+            cp "$(workspaces.git-credentials.path)/.gitconfig" "${HOME}/.gitconfig"
+          fi
+          if [ -f "$(workspaces.git-credentials.path)/.git-credentials" ]; then
+            cp "$(workspaces.git-credentials.path)/.git-credentials" "${HOME}/.git-credentials"
+          fi
+        fi
+
+        # Clone the repository
+        DEPTH_FLAG=""
+        if [ "${PARAM_DEPTH}" != "0" ]; then
+          DEPTH_FLAG="--depth ${PARAM_DEPTH}"
+        fi
+
+        echo "[git-clone] Cloning ${PARAM_URL} (revision: ${PARAM_REVISION}) into ${CHECKOUT_DIR}"
+        git clone ${DEPTH_FLAG} --branch "${PARAM_REVISION}" --single-branch \
+          "${PARAM_URL}" "${CHECKOUT_DIR}"
+
+        cd "${CHECKOUT_DIR}"
+
+        # Write results
+        COMMIT_SHA=$(git rev-parse HEAD)
+        COMMIT_TS=$(git log -1 --format=%ct)
+        printf "%s" "${COMMIT_SHA}" > "$(results.commit-sha.path)"
+        printf "%s" "${COMMIT_TS}" > "$(results.commit-timestamp.path)"
+
+        echo "[git-clone] Checked out ${COMMIT_SHA}"

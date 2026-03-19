@@ -1,0 +1,367 @@
+---
+# Tekton Triggers: GitLab Push Webhook
+# Receives GitLab push events and creates PipelineRuns for affected apps.
+#
+# Setup:
+#   1. In GitLab project, go to Settings > Webhooks
+#   2. URL: https://tekton-triggers.apps.sre.example.com/gitlab
+#   3. Secret token: (value from gitlab-webhook-secret Secret)
+#   4. Trigger: Push events
+#   5. Enable SSL verification
+
+# -------------------------------------------------------------------
+# TriggerBinding: Extract fields from the GitLab push payload
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: gitlab-push-binding
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+      value: "$(body.project.git_http_url)"
+    - name: git-revision
+      value: "$(body.ref)"
+    - name: git-commit-sha
+      value: "$(body.after)"
+    - name: git-commit-message
+      value: "$(body.commits[0].message)"
+    - name: git-repo-name
+      value: "$(body.project.name)"
+    - name: git-sender
+      value: "$(body.user_username)"
+---
+# -------------------------------------------------------------------
+# TriggerTemplate: Dashboard (GitLab)
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: gitlab-dashboard-build-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-commit-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: gl-dashboard-build-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+          tekton.dev/pipeline: build-deploy
+          sre.io/app: sre-dashboard
+          sre.io/source: gitlab
+      spec:
+        pipelineRef:
+          name: build-deploy
+        params:
+          - name: git-url
+            value: "$(tt.params.git-url)"
+          - name: git-revision
+            value: "main"
+          - name: app-name
+            value: "sre-dashboard"
+          - name: image-name
+            value: "sre-dashboard"
+          - name: image-tag
+            value: "git-$(tt.params.git-commit-sha)"
+          - name: dockerfile-path
+            value: "Dockerfile"
+          - name: build-context
+            value: "apps/dashboard"
+          - name: deployment-file
+            value: "apps/dashboard/k8s/deployment.yaml"
+          - name: working-dir
+            value: "apps/dashboard"
+          - name: validation-type
+            value: "node"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: harbor-push-creds
+          - name: git-credentials
+            secret:
+              secretName: gitlab-token
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+---
+# -------------------------------------------------------------------
+# TriggerTemplate: Portal (GitLab)
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: gitlab-portal-build-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-commit-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: gl-portal-build-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+          tekton.dev/pipeline: build-deploy
+          sre.io/app: sre-portal
+          sre.io/source: gitlab
+      spec:
+        pipelineRef:
+          name: build-deploy
+        params:
+          - name: git-url
+            value: "$(tt.params.git-url)"
+          - name: git-revision
+            value: "main"
+          - name: app-name
+            value: "sre-portal"
+          - name: image-name
+            value: "sre-portal"
+          - name: image-tag
+            value: "git-$(tt.params.git-commit-sha)"
+          - name: dockerfile-path
+            value: "Dockerfile"
+          - name: build-context
+            value: "apps/portal"
+          - name: deployment-file
+            value: "apps/portal/k8s/deployment.yaml"
+          - name: working-dir
+            value: "apps/portal"
+          - name: validation-type
+            value: "typescript"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: harbor-push-creds
+          - name: git-credentials
+            secret:
+              secretName: gitlab-token
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+---
+# -------------------------------------------------------------------
+# TriggerTemplate: DSOP Wizard (GitLab)
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: gitlab-wizard-build-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-commit-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: gl-wizard-build-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+          tekton.dev/pipeline: build-deploy
+          sre.io/app: dsop-wizard
+          sre.io/source: gitlab
+      spec:
+        pipelineRef:
+          name: build-deploy
+        params:
+          - name: git-url
+            value: "$(tt.params.git-url)"
+          - name: git-revision
+            value: "main"
+          - name: app-name
+            value: "dsop-wizard"
+          - name: image-name
+            value: "dsop-wizard"
+          - name: image-tag
+            value: "git-$(tt.params.git-commit-sha)"
+          - name: dockerfile-path
+            value: "Dockerfile"
+          - name: build-context
+            value: "apps/dsop-wizard"
+          - name: deployment-file
+            value: "apps/dsop-wizard/k8s/deployment.yaml"
+          - name: working-dir
+            value: "apps/dsop-wizard"
+          - name: validation-type
+            value: "typescript"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: harbor-push-creds
+          - name: git-credentials
+            secret:
+              secretName: gitlab-token
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+---
+# -------------------------------------------------------------------
+# EventListener: Receive GitLab push webhooks and route to apps
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: gitlab-push-listener
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    # ----- Dashboard trigger (apps/dashboard/** changed) -----
+    - name: dashboard-trigger
+      interceptors:
+        - ref:
+            name: "gitlab"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: gitlab-webhook-secret
+                secretKey: secret
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.commits[0].message.contains('[skip ci]') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('apps/dashboard/')) || c.added.exists(f, f.startsWith('apps/dashboard/')))
+      bindings:
+        - ref: gitlab-push-binding
+      template:
+        ref: gitlab-dashboard-build-template
+
+    # ----- Portal trigger (apps/portal/** changed) -----
+    - name: portal-trigger
+      interceptors:
+        - ref:
+            name: "gitlab"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: gitlab-webhook-secret
+                secretKey: secret
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.commits[0].message.contains('[skip ci]') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('apps/portal/')) || c.added.exists(f, f.startsWith('apps/portal/')))
+      bindings:
+        - ref: gitlab-push-binding
+      template:
+        ref: gitlab-portal-build-template
+
+    # ----- DSOP Wizard trigger (apps/dsop-wizard/** changed) -----
+    - name: wizard-trigger
+      interceptors:
+        - ref:
+            name: "gitlab"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: gitlab-webhook-secret
+                secretKey: secret
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.commits[0].message.contains('[skip ci]') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('apps/dsop-wizard/')) || c.added.exists(f, f.startsWith('apps/dsop-wizard/')))
+      bindings:
+        - ref: gitlab-push-binding
+      template:
+        ref: gitlab-wizard-build-template
+  resources:
+    kubernetesResource:
+      spec:
+        template:
+          spec:
+            serviceAccountName: tekton-triggers-sa
+            containers: []
+---
+# -------------------------------------------------------------------
+# Secret: GitLab webhook secret (placeholder — replace before use)
+# -------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-webhook-secret
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+type: Opaque
+stringData:
+  secret: "REPLACE_ME_WITH_GITLAB_WEBHOOK_SECRET"
+---
+# -------------------------------------------------------------------
+# Secret: GitLab token for git push (placeholder — replace before use)
+# -------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-token
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+type: Opaque
+stringData:
+  token: "REPLACE_ME_WITH_GITLAB_TOKEN"

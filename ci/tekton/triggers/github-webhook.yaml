@@ -1,0 +1,431 @@
+---
+# Tekton Triggers: GitHub Push Webhook
+# Receives GitHub push events and creates PipelineRuns for affected apps.
+#
+# Setup:
+#   1. Configure GitHub webhook to POST to:
+#      https://tekton-triggers.apps.sre.example.com/github
+#   2. Set content type: application/json
+#   3. Set secret: (value from github-webhook-secret Secret)
+#   4. Events: Just the push event
+
+# -------------------------------------------------------------------
+# TriggerBinding: Extract fields from the GitHub push payload
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-push-binding
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+      value: "$(body.repository.clone_url)"
+    - name: git-revision
+      value: "$(body.ref)"
+    - name: git-commit-sha
+      value: "$(body.after)"
+    - name: git-commit-message
+      value: "$(body.head_commit.message)"
+    - name: git-repo-name
+      value: "$(body.repository.name)"
+    - name: git-sender
+      value: "$(body.sender.login)"
+---
+# -------------------------------------------------------------------
+# TriggerTemplate: Dashboard — Create PipelineRun for dashboard builds
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: dashboard-build-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-commit-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: dashboard-build-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+          tekton.dev/pipeline: build-deploy
+          sre.io/app: sre-dashboard
+      spec:
+        pipelineRef:
+          name: build-deploy
+        params:
+          - name: git-url
+            value: "$(tt.params.git-url)"
+          - name: git-revision
+            value: "main"
+          - name: app-name
+            value: "sre-dashboard"
+          - name: image-name
+            value: "sre-dashboard"
+          - name: image-tag
+            value: "git-$(tt.params.git-commit-sha)"
+          - name: dockerfile-path
+            value: "Dockerfile"
+          - name: build-context
+            value: "apps/dashboard"
+          - name: deployment-file
+            value: "apps/dashboard/k8s/deployment.yaml"
+          - name: working-dir
+            value: "apps/dashboard"
+          - name: validation-type
+            value: "node"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: harbor-push-creds
+          - name: git-credentials
+            secret:
+              secretName: github-token
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+---
+# -------------------------------------------------------------------
+# TriggerTemplate: Portal — Create PipelineRun for portal builds
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: portal-build-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-commit-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: portal-build-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+          tekton.dev/pipeline: build-deploy
+          sre.io/app: sre-portal
+      spec:
+        pipelineRef:
+          name: build-deploy
+        params:
+          - name: git-url
+            value: "$(tt.params.git-url)"
+          - name: git-revision
+            value: "main"
+          - name: app-name
+            value: "sre-portal"
+          - name: image-name
+            value: "sre-portal"
+          - name: image-tag
+            value: "git-$(tt.params.git-commit-sha)"
+          - name: dockerfile-path
+            value: "Dockerfile"
+          - name: build-context
+            value: "apps/portal"
+          - name: deployment-file
+            value: "apps/portal/k8s/deployment.yaml"
+          - name: working-dir
+            value: "apps/portal"
+          - name: validation-type
+            value: "typescript"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: harbor-push-creds
+          - name: git-credentials
+            secret:
+              secretName: github-token
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+---
+# -------------------------------------------------------------------
+# TriggerTemplate: DSOP Wizard — Create PipelineRun for wizard builds
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: wizard-build-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-commit-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: wizard-build-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: sre-platform
+          tekton.dev/pipeline: build-deploy
+          sre.io/app: dsop-wizard
+      spec:
+        pipelineRef:
+          name: build-deploy
+        params:
+          - name: git-url
+            value: "$(tt.params.git-url)"
+          - name: git-revision
+            value: "main"
+          - name: app-name
+            value: "dsop-wizard"
+          - name: image-name
+            value: "dsop-wizard"
+          - name: image-tag
+            value: "git-$(tt.params.git-commit-sha)"
+          - name: dockerfile-path
+            value: "Dockerfile"
+          - name: build-context
+            value: "apps/dsop-wizard"
+          - name: deployment-file
+            value: "apps/dsop-wizard/k8s/deployment.yaml"
+          - name: working-dir
+            value: "apps/dsop-wizard"
+          - name: validation-type
+            value: "typescript"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: harbor-push-creds
+          - name: git-credentials
+            secret:
+              secretName: github-token
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+---
+# -------------------------------------------------------------------
+# EventListener: Receive GitHub push webhooks and route to apps
+# -------------------------------------------------------------------
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-push-listener
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    # ----- Dashboard trigger (apps/dashboard/** changed) -----
+    - name: dashboard-trigger
+      interceptors:
+        # Verify GitHub webhook signature
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secret
+        # Filter: only push events to main
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.head_commit.message.contains('[skip ci]') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('apps/dashboard/')) || c.added.exists(f, f.startsWith('apps/dashboard/')))
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: dashboard-build-template
+
+    # ----- Portal trigger (apps/portal/** changed) -----
+    - name: portal-trigger
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secret
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.head_commit.message.contains('[skip ci]') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('apps/portal/')) || c.added.exists(f, f.startsWith('apps/portal/')))
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: portal-build-template
+
+    # ----- DSOP Wizard trigger (apps/dsop-wizard/** changed) -----
+    - name: wizard-trigger
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secret
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.head_commit.message.contains('[skip ci]') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('apps/dsop-wizard/')) || c.added.exists(f, f.startsWith('apps/dsop-wizard/')))
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: wizard-build-template
+  resources:
+    kubernetesResource:
+      spec:
+        template:
+          spec:
+            serviceAccountName: tekton-triggers-sa
+            containers: []
+---
+# -------------------------------------------------------------------
+# Service for the EventListener (exposed via Istio VirtualService)
+# -------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: el-github-push-listener
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  selector:
+    eventlistener: github-push-listener
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+---
+# -------------------------------------------------------------------
+# ServiceAccount for Tekton Triggers
+# -------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-triggers-sa
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+---
+# -------------------------------------------------------------------
+# RBAC: Allow Triggers SA to create PipelineRuns
+# -------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tekton-triggers-role
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["eventlisteners", "triggerbindings", "triggertemplates", "triggers", "interceptors"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "taskruns"]
+    verbs: ["create", "get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-triggers-binding
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: tekton-pipelines
+roleRef:
+  kind: ClusterRole
+  name: tekton-triggers-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# -------------------------------------------------------------------
+# Secret: GitHub webhook secret (placeholder — replace before use)
+# -------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-webhook-secret
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+type: Opaque
+stringData:
+  secret: "REPLACE_ME_WITH_GITHUB_WEBHOOK_SECRET"
+---
+# -------------------------------------------------------------------
+# Secret: GitHub token for git push (placeholder — replace before use)
+# -------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-token
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+type: Opaque
+stringData:
+  token: "REPLACE_ME_WITH_GITHUB_TOKEN"

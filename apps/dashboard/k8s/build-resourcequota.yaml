@@ -1,0 +1,38 @@
+---
+# ResourceQuota for sre-builds namespace — prevents unbounded job spawning
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: build-quota
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  hard:
+    pods: "12"
+    limits.cpu: "12"
+    limits.memory: "24Gi"
+---
+# LimitRange for sre-builds namespace — enforces per-pod resource boundaries
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: build-limits
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "1"
+        memory: "1Gi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"

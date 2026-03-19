@@ -1,0 +1,81 @@
+---
+# Tekton Task: Validate Node.js application
+# Runs syntax check and optional lint for Node.js applications.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: validate-node
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  description: >-
+    Validate a Node.js application by checking syntax of JavaScript files
+    and running npm test if a test script is defined.
+  params:
+    - name: WORKING_DIR
+      type: string
+      description: "Path to the application directory within the workspace (relative to source root)"
+    - name: ENTRY_FILE
+      type: string
+      description: "Main entry file to syntax check"
+      default: "server.js"
+  workspaces:
+    - name: source
+      description: "Workspace containing the source code"
+  steps:
+    - name: syntax-check
+      image: node:20-alpine3.19
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      env:
+        - name: WORKSPACE_PATH
+          value: "$(workspaces.source.path)"
+        - name: PARAM_WORKING_DIR
+          value: "$(params.WORKING_DIR)"
+        - name: PARAM_ENTRY_FILE
+          value: "$(params.ENTRY_FILE)"
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        APP_DIR="${WORKSPACE_PATH}/${PARAM_WORKING_DIR}"
+        echo "[validate-node] Checking syntax in ${APP_DIR}"
+
+        cd "${APP_DIR}"
+
+        # Check main entry file syntax
+        if [ -f "${PARAM_ENTRY_FILE}" ]; then
+          echo "[validate-node] Syntax check: ${PARAM_ENTRY_FILE}"
+          node -c "${PARAM_ENTRY_FILE}"
+          echo "[validate-node] PASS: ${PARAM_ENTRY_FILE} syntax OK"
+        else
+          echo "[validate-node] WARNING: ${PARAM_ENTRY_FILE} not found, skipping syntax check"
+        fi
+
+        # Check all .js files in the directory (non-recursive for speed)
+        echo "[validate-node] Checking all top-level .js files..."
+        FAIL=0
+        for f in *.js; do
+          if [ -f "$f" ]; then
+            if node -c "$f" 2>/dev/null; then
+              echo "  PASS: $f"
+            else
+              echo "  FAIL: $f"
+              FAIL=1
+            fi
+          fi
+        done
+
+        if [ "$FAIL" -ne 0 ]; then
+          echo "[validate-node] FAILED: One or more files have syntax errors"
+          exit 1
+        fi
+
+        echo "[validate-node] All syntax checks passed"

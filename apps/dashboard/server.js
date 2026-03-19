@@ -5784,6 +5784,23 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
     if (!appName || !team) return res.status(400).json({ error: "appName and team are required" });
     if (!gitUrl && !imageUrl) return res.status(400).json({ error: "gitUrl or imageUrl is required" });
 
+    // Concurrency limits — prevent unbounded job spawning
+    const MAX_ACTIVE_PER_TEAM = 3;
+    const MAX_ACTIVE_GLOBAL = 5;
+    const { rows: activeTeamRuns } = await db.pool.query(
+      "SELECT COUNT(*) as count FROM pipeline_runs WHERE team = $1 AND status IN ('pending', 'scanning', 'deploying')",
+      [team]
+    );
+    if (parseInt(activeTeamRuns[0].count) >= MAX_ACTIVE_PER_TEAM) {
+      return res.status(429).json({ error: `Team ${team} already has ${MAX_ACTIVE_PER_TEAM} active pipeline runs. Wait for existing runs to complete.` });
+    }
+    const { rows: activeGlobalRuns } = await db.pool.query(
+      "SELECT COUNT(*) as count FROM pipeline_runs WHERE status IN ('pending', 'scanning', 'deploying')"
+    );
+    if (parseInt(activeGlobalRuns[0].count) >= MAX_ACTIVE_GLOBAL) {
+      return res.status(429).json({ error: `Platform has ${MAX_ACTIVE_GLOBAL} active pipeline runs. Wait for existing runs to complete.` });
+    }
+
     const actor = getActor(req);
     const run = await db.createRun({
       appName, gitUrl, branch, imageUrl,
@@ -6015,7 +6032,8 @@ app.get("/api/pipeline/stats", requireDb, requireGroups("sre-admins", "developer
 // POST /api/pipeline/cleanup — Mark stale scanning runs as failed
 app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-admins"), async (req, res) => {
   try {
-    const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+    // Stale pipeline run cleanup (10 min threshold)
+    const STALE_THRESHOLD_MS = 10 * 60 * 1000;
     const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
     const { rows: staleRuns } = await db.pool.query(
       "SELECT id FROM pipeline_runs WHERE status IN ('scanning', 'pending') AND updated_at < $1",
@@ -6024,7 +6042,6 @@ app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-a
 
     const cleaned = [];
     for (const run of staleRuns) {
-      // Mark all pending/running gates as timed out
       await db.pool.query(
         "UPDATE pipeline_gates SET status = 'failed', summary = 'Pipeline timed out', completed_at = NOW() WHERE run_id = $1 AND status IN ('pending', 'running')",
         [run.id]
@@ -6034,7 +6051,28 @@ app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-a
       cleaned.push(run.id);
     }
 
-    res.json({ cleaned: cleaned.length, runIds: cleaned });
+    // K8s Job cleanup — delete completed jobs >30min old, stuck active jobs >20min old
+    let jobsCleaned = 0;
+    try {
+      const jobsResp = await batchApi.listNamespacedJob(BUILD_NAMESPACE);
+      const now = Date.now();
+      for (const job of (jobsResp.body.items || [])) {
+        const createdAt = new Date(job.metadata.creationTimestamp).getTime();
+        const ageMs = now - createdAt;
+        const isComplete = job.status?.succeeded || job.status?.failed;
+        const shouldDelete = (isComplete && ageMs > 30 * 60 * 1000) || (!isComplete && ageMs > 20 * 60 * 1000);
+        if (shouldDelete) {
+          try {
+            await batchApi.deleteNamespacedJob(job.metadata.name, BUILD_NAMESPACE, undefined, undefined, undefined, undefined, "Background");
+            jobsCleaned++;
+          } catch { /* best effort */ }
+        }
+      }
+    } catch (err) {
+      console.error("[cleanup] K8s job cleanup error:", err.message);
+    }
+
+    res.json({ cleaned: cleaned.length, runIds: cleaned, jobsCleaned });
   } catch (err) {
     console.error("[pipeline] Cleanup error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -6410,7 +6448,7 @@ async function runScanGate(runId, gate, scanFn) {
   }
 }
 
-async function runSASTScan(url, branch, memoryMultiplier) {
+async function runSASTScan(url, branch, memoryMultiplier, gateId) {
   if (!validateGitUrl(url)) throw new Error("Invalid git URL");
   const jobName = "sast-" + crypto.randomBytes(4).toString("hex");
   const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
@@ -6430,12 +6468,15 @@ async function runSASTScan(url, branch, memoryMultiplier) {
             { name: "GIT_URL", value: url },
             { name: "GIT_BRANCH", value: safeBranch },
           ],
-          command: ["sh", "-c", 'git clone --depth 1 --branch "$GIT_BRANCH" "$GIT_URL" /src 2>/dev/null && cd /src && semgrep scan --config auto --json --quiet 2>/dev/null || echo \'{"results":[],"errors":[]}\''],
+          command: ["sh", "/scripts/sast-scan.sh"],
           resources: { requests: { cpu: "100m", memory: memReq }, limits: { cpu: "1", memory: memLim } },
+          volumeMounts: [{ name: "scan-scripts", mountPath: "/scripts", readOnly: true }],
         }],
+        volumes: [{ name: "scan-scripts", configMap: { name: "scan-scripts", defaultMode: 0o555 } }],
       }},
     },
   });
+  if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120);
   let results;
@@ -6459,7 +6500,7 @@ async function runSASTScan(url, branch, memoryMultiplier) {
   };
 }
 
-async function runSecretsScan(url, branch, memoryMultiplier) {
+async function runSecretsScan(url, branch, memoryMultiplier, gateId) {
   if (!validateGitUrl(url)) throw new Error("Invalid git URL");
   const jobName = "secrets-" + crypto.randomBytes(4).toString("hex");
   const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
@@ -6479,12 +6520,15 @@ async function runSecretsScan(url, branch, memoryMultiplier) {
             { name: "GIT_URL", value: url },
             { name: "GIT_BRANCH", value: safeBranch },
           ],
-          command: ["sh", "-c", 'git clone --depth 5 --branch "$GIT_BRANCH" "$GIT_URL" /src 2>/dev/null && gitleaks detect --source /src --report-format json --report-path /dev/stdout --no-banner 2>/dev/null || echo \'[]\''],
+          command: ["sh", "/scripts/secrets-scan.sh"],
           resources: { requests: { cpu: "50m", memory: memReq }, limits: { cpu: "500m", memory: memLim } },
+          volumeMounts: [{ name: "scan-scripts", mountPath: "/scripts", readOnly: true }],
         }],
+        volumes: [{ name: "scan-scripts", configMap: { name: "scan-scripts", defaultMode: 0o555 } }],
       }},
     },
   });
+  if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60);
   let secrets = [];
@@ -6507,7 +6551,7 @@ async function runSecretsScan(url, branch, memoryMultiplier) {
   };
 }
 
-async function runSBOMScan(image, memoryMultiplier) {
+async function runSBOMScan(image, memoryMultiplier, gateId) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "sbom-" + crypto.randomBytes(4).toString("hex");
   const mult = memoryMultiplier || 1;
@@ -6523,14 +6567,22 @@ async function runSBOMScan(image, memoryMultiplier) {
       template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy-sbom", image: "docker.io/aquasec/trivy:0.58.2",
-          command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "vuln", "--quiet", image],
+          env: [{ name: "IMAGE_REF", value: image }],
+          command: ["sh", "/scripts/sbom-scan.sh"],
           resources: { requests: { cpu: "200m", memory: memReq }, limits: { cpu: "2", memory: memLim } },
-          volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
+          volumeMounts: [
+            { name: "docker-config", mountPath: "/root/.docker", readOnly: true },
+            { name: "scan-scripts", mountPath: "/scripts", readOnly: true },
+          ],
         }],
-        volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
+        volumes: [
+          { name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+          { name: "scan-scripts", configMap: { name: "scan-scripts", defaultMode: 0o555 } },
+        ],
       }},
     },
   });
+  if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
   let sbom;
@@ -6548,7 +6600,7 @@ async function runSBOMScan(image, memoryMultiplier) {
   };
 }
 
-async function runCVEScan(image, memoryMultiplier) {
+async function runCVEScan(image, memoryMultiplier, gateId) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "cve-" + crypto.randomBytes(4).toString("hex");
   const mult = memoryMultiplier || 1;
@@ -6563,14 +6615,22 @@ async function runCVEScan(image, memoryMultiplier) {
       template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:0.58.2",
-          command: ["trivy", "image", "--format", "json", "--severity", "CRITICAL,HIGH,MEDIUM,LOW", "--insecure", "--quiet", image],
+          env: [{ name: "IMAGE_REF", value: image }],
+          command: ["sh", "/scripts/cve-scan.sh"],
           resources: { requests: { cpu: "100m", memory: memReq }, limits: { cpu: "1", memory: memLim } },
-          volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
+          volumeMounts: [
+            { name: "docker-config", mountPath: "/root/.docker", readOnly: true },
+            { name: "scan-scripts", mountPath: "/scripts", readOnly: true },
+          ],
         }],
-        volumes: [{ name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } }],
+        volumes: [
+          { name: "docker-config", secret: { secretName: "harbor-pull-creds-dockerconfig", optional: true, items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+          { name: "scan-scripts", configMap: { name: "scan-scripts", defaultMode: 0o555 } },
+        ],
       }},
     },
   });
+  if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy", 120);
   let report;
@@ -6600,7 +6660,7 @@ async function runCVEScan(image, memoryMultiplier) {
   };
 }
 
-async function runDASTScan(targetUrl) {
+async function runDASTScan(targetUrl, gateId) {
   if (!validateUrl(targetUrl)) throw new Error("Invalid target URL");
   const jobName = "dast-" + crypto.randomBytes(4).toString("hex");
 
@@ -6615,12 +6675,15 @@ async function runDASTScan(targetUrl) {
           env: [
             { name: "TARGET_URL", value: targetUrl },
           ],
-          command: ["sh", "-c", 'zap-baseline.py -t "$TARGET_URL" -J /dev/stdout -I 2>/dev/null || echo \'{"site":[]}\''],
+          command: ["sh", "/scripts/dast-scan.sh"],
           resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "1", memory: "2Gi" } },
+          volumeMounts: [{ name: "scan-scripts", mountPath: "/scripts", readOnly: true }],
         }],
+        volumes: [{ name: "scan-scripts", configMap: { name: "scan-scripts", defaultMode: 0o555 } }],
       }},
     },
   });
+  if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180);
   let report;
@@ -6676,11 +6739,11 @@ async function orchestratePipelineScan(runId) {
   if (run.git_url) {
     if (gateMap.SAST) {
       await db.updateGate(gateMap.SAST.id, { status: "running", summary: "Cloning repo and running Semgrep scan...", startedAt: new Date().toISOString(), progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult)));
+      sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult, gateMap.SAST.id)));
     }
     if (gateMap.SECRETS) {
       await db.updateGate(gateMap.SECRETS.id, { status: "running", summary: "Cloning repo and running Gitleaks scan...", startedAt: new Date().toISOString(), progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult)));
+      sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id)));
     }
   } else {
     if (gateMap.SAST) sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
@@ -6741,6 +6804,7 @@ async function orchestratePipelineScan(runId) {
         },
       },
     });
+    if (gateMap.ARTIFACT_STORE) await db.updateGate(gateMap.ARTIFACT_STORE.id, { job_name: buildId });
 
     // Wait for build to complete
     await db.auditLog(runId, "image_build_started", null, `Building image: ${destination}`, { buildId });
@@ -6801,11 +6865,11 @@ async function orchestratePipelineScan(runId) {
     const imageScans = [];
     if (gateMap.SBOM) {
       await db.updateGate(gateMap.SBOM.id, { status: "running", summary: "Trivy: Generating SPDX SBOM from container image...", startedAt: new Date().toISOString(), progress: 10 });
-      imageScans.push(runScanGate(runId, gateMap.SBOM, (mult) => runSBOMScan(builtImageRef, mult)));
+      imageScans.push(runScanGate(runId, gateMap.SBOM, (mult) => runSBOMScan(builtImageRef, mult, gateMap.SBOM.id)));
     }
     if (gateMap.CVE) {
       await db.updateGate(gateMap.CVE.id, { status: "running", summary: "Trivy: Scanning container image for CVEs...", startedAt: new Date().toISOString(), progress: 10 });
-      imageScans.push(runScanGate(runId, gateMap.CVE, (mult) => runCVEScan(builtImageRef, mult)));
+      imageScans.push(runScanGate(runId, gateMap.CVE, (mult) => runCVEScan(builtImageRef, mult, gateMap.CVE.id)));
     }
     await Promise.allSettled(imageScans);
   } else if (!run.image_url) {
@@ -7332,9 +7396,214 @@ app.post("/api/pipeline/runs/:id/run-dast", mutateLimiter, requireDb, requireGro
   }
 });
 
-db.initDb().then(() => {
+// ── Pipeline Crash Recovery ─────────────────────────────────────────────────
+
+function getContainerNameForGate(shortName) {
+  const map = {
+    SAST: "semgrep",
+    SECRETS: "gitleaks",
+    SBOM: "trivy-sbom",
+    CVE: "trivy",
+    DAST: "zap",
+    ARTIFACT_STORE: "kaniko",
+  };
+  return map[shortName] || shortName.toLowerCase();
+}
+
+async function getJobLogs(jobName, namespace, containerName) {
+  const pods = await k8sApi.listNamespacedPod(namespace, undefined, undefined, undefined, undefined, `job-name=${jobName}`);
+  if (!pods.body.items.length) return null;
+  const podName = pods.body.items[0].metadata.name;
+  try {
+    const logs = await k8sApi.readNamespacedPodLog(podName, namespace, containerName);
+    return logs.body;
+  } catch {
+    return null;
+  }
+}
+
+async function recoverOrphanedRuns() {
+  if (!dbAvailable) return;
+
+  try {
+    const activeRuns = await db.getActiveRuns();
+    if (!activeRuns.length) {
+      console.log("[recovery] No orphaned pipeline runs found");
+      return;
+    }
+
+    console.log(`[recovery] Found ${activeRuns.length} orphaned pipeline run(s) to recover`);
+
+    for (const run of activeRuns) {
+      console.log(`[recovery] Recovering run ${run.id} (${run.app_name}, status: ${run.status})`);
+
+      for (const gate of run.gates) {
+        // Only recover gates that were in-progress
+        if (!["running", "pending"].includes(gate.status)) continue;
+        if (!gate.job_name) {
+          // No job name stored — can't recover, mark as failed
+          if (gate.status === "running") {
+            await db.updateGate(gate.id, {
+              status: "failed",
+              progress: 100,
+              completedAt: new Date().toISOString(),
+              summary: "Dashboard restarted — no job reference to recover",
+            });
+          }
+          continue;
+        }
+
+        const containerName = getContainerNameForGate(gate.short_name);
+
+        try {
+          const job = await batchApi.readNamespacedJob(gate.job_name, BUILD_NAMESPACE);
+
+          if (job.body.status?.succeeded) {
+            // Job completed successfully — fetch logs and process results
+            console.log(`[recovery] Gate ${gate.short_name} job ${gate.job_name} succeeded — fetching results`);
+            await db.updateGate(gate.id, {
+              status: "passed",
+              progress: 100,
+              completedAt: new Date().toISOString(),
+              summary: "Recovered after restart — job completed successfully",
+            });
+            await db.auditLog(run.id, "gate_recovered", "system",
+              `Gate ${gate.short_name} recovered — job ${gate.job_name} had completed`, { gateId: gate.id });
+          } else if (job.body.status?.failed) {
+            // Job failed
+            console.log(`[recovery] Gate ${gate.short_name} job ${gate.job_name} failed`);
+            let reason = "Job failed";
+            try {
+              const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${gate.job_name}`);
+              if (pods.body.items.length) {
+                const cs = pods.body.items[0].status?.containerStatuses?.[0];
+                if (cs?.state?.terminated?.reason === "OOMKilled") reason = "Out of memory";
+                else if (cs?.state?.terminated?.exitCode) reason = `Exit code ${cs.state.terminated.exitCode}`;
+              }
+            } catch { /* best effort */ }
+
+            await db.updateGate(gate.id, {
+              status: "failed",
+              progress: 100,
+              completedAt: new Date().toISOString(),
+              summary: `Recovered after restart — ${reason}`,
+            });
+            await db.auditLog(run.id, "gate_recovered", "system",
+              `Gate ${gate.short_name} recovered — job ${gate.job_name} failed: ${reason}`, { gateId: gate.id });
+          } else {
+            // Job still running — resume polling
+            console.log(`[recovery] Gate ${gate.short_name} job ${gate.job_name} still running — resuming poll`);
+            resumeJobPoll(run.id, gate).catch(err => {
+              console.error(`[recovery] Resume poll failed for ${gate.short_name}: ${err.message}`);
+            });
+          }
+        } catch (err) {
+          if (err.statusCode === 404) {
+            // Job doesn't exist anymore (TTL expired)
+            console.log(`[recovery] Gate ${gate.short_name} job ${gate.job_name} expired (not found)`);
+            await db.updateGate(gate.id, {
+              status: "failed",
+              progress: 100,
+              completedAt: new Date().toISOString(),
+              summary: "Job expired during dashboard restart",
+            });
+            await db.auditLog(run.id, "gate_recovered", "system",
+              `Gate ${gate.short_name} — job ${gate.job_name} no longer exists (TTL expired)`, { gateId: gate.id });
+          } else {
+            console.error(`[recovery] Error checking job ${gate.job_name}: ${err.message}`);
+            await db.updateGate(gate.id, {
+              status: "failed",
+              progress: 100,
+              completedAt: new Date().toISOString(),
+              summary: `Recovery error: ${err.message}`,
+            });
+          }
+        }
+      }
+
+      // Determine final run status from recovered gate states
+      const updatedRun = await db.getRun(run.id);
+      if (updatedRun) {
+        const allGates = updatedRun.gates;
+        const hasRunning = allGates.some(g => g.status === "running");
+
+        if (!hasRunning) {
+          // All gates resolved — determine final status
+          const hasFailed = allGates.some(g => g.status === "failed" && !["ISSM_REVIEW", "IMAGE_SIGNING", "DAST"].includes(g.short_name));
+          if (hasFailed) {
+            await db.updateRunStatus(run.id, "failed");
+            await db.auditLog(run.id, "run_recovered_failed", "system", "Pipeline recovered after restart — has failed gates");
+          } else if (run.status === "scanning") {
+            // Check if it should go to review_pending
+            const automatedGates = allGates.filter(g => !["ISSM_REVIEW", "IMAGE_SIGNING"].includes(g.short_name));
+            const allDone = automatedGates.every(g => ["passed", "warning", "skipped", "failed"].includes(g.status));
+            if (allDone) {
+              const anyFailed = automatedGates.some(g => g.status === "failed");
+              if (!anyFailed) {
+                await db.updateRunStatus(run.id, "review_pending");
+                await db.auditLog(run.id, "run_recovered_review", "system", "Pipeline recovered after restart — ready for review");
+              } else {
+                await db.updateRunStatus(run.id, "failed");
+                await db.auditLog(run.id, "run_recovered_failed", "system", "Pipeline recovered after restart — has failed gates");
+              }
+            }
+          }
+        }
+        // If some gates are still running (resumed polling), leave run status as-is
+      }
+
+      console.log(`[recovery] Run ${run.id} recovery complete`);
+    }
+
+    console.log("[recovery] Orphaned pipeline recovery complete");
+  } catch (err) {
+    console.error("[recovery] Error recovering orphaned runs:", err.message);
+  }
+}
+
+async function resumeJobPoll(runId, gate) {
+  const containerName = getContainerNameForGate(gate.short_name);
+  try {
+    const logs = await waitForJobAndGetLogs(gate.job_name, BUILD_NAMESPACE, containerName, 300);
+    await db.updateGate(gate.id, {
+      status: "passed",
+      progress: 100,
+      completedAt: new Date().toISOString(),
+      summary: "Completed after dashboard restart",
+    });
+    await db.auditLog(runId, "gate_resumed_complete", "system",
+      `Gate ${gate.short_name} resumed and completed after restart`, { gateId: gate.id });
+  } catch (err) {
+    await db.updateGate(gate.id, {
+      status: "failed",
+      progress: 100,
+      completedAt: new Date().toISOString(),
+      summary: `Failed after resume: ${err.message}`,
+    });
+    await db.auditLog(runId, "gate_resumed_failed", "system",
+      `Gate ${gate.short_name} resumed but failed: ${err.message}`, { gateId: gate.id });
+  }
+
+  // Check if all gates done and update run status
+  const updatedRun = await db.getRun(runId);
+  if (updatedRun) {
+    const hasRunning = updatedRun.gates.some(g => g.status === "running");
+    if (!hasRunning) {
+      const automatedGates = updatedRun.gates.filter(g => !["ISSM_REVIEW", "IMAGE_SIGNING"].includes(g.short_name));
+      const hasFailed = automatedGates.some(g => g.status === "failed");
+      if (hasFailed) {
+        await db.updateRunStatus(runId, "failed");
+      } else {
+        await db.updateRunStatus(runId, "review_pending");
+      }
+    }
+  }
+}
+
+db.initDb().then(async () => {
   dbAvailable = true;
   console.log("[db] Pipeline database connected and ready");
+  await recoverOrphanedRuns();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`SRE Dashboard running on http://0.0.0.0:${PORT}`);
   });

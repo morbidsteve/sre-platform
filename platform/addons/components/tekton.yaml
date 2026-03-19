@@ -1,0 +1,28 @@
+---
+# Flux Kustomization for Tekton Pipelines
+# Depends on: monitoring (for ServiceMonitor integration)
+#
+# NOTE: Tekton Pipelines and Triggers must be installed as a prerequisite.
+# See platform/addons/tekton/README.md for bootstrap instructions.
+# This Kustomization manages the namespace and SRE-specific Tekton resources
+# (Tasks, Pipelines, Triggers) — not the Tekton operator itself.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sre-tekton
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./platform/addons/tekton
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sre-monitoring
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: tekton-pipelines-controller
+      namespace: tekton-pipelines
+  timeout: 5m
