@@ -6079,6 +6079,55 @@ app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-a
   }
 });
 
+// POST /api/pipeline/runs/:id/retry — Restart a failed/stale pipeline run
+app.post("/api/pipeline/runs/:id/retry", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const oldRun = await db.getRun(req.params.id);
+    if (!oldRun) return res.status(404).json({ error: "Pipeline run not found" });
+
+    if (!["failed", "scanning", "pending"].includes(oldRun.status)) {
+      return res.status(400).json({ error: `Cannot retry a run with status '${oldRun.status}'. Only failed, scanning, or pending runs can be retried.` });
+    }
+
+    const actor = getActor(req);
+
+    // Create a new run with the same parameters
+    const newRun = await db.createRun({
+      appName: oldRun.app_name,
+      gitUrl: oldRun.git_url,
+      branch: oldRun.branch,
+      imageUrl: oldRun.image_url,
+      sourceType: oldRun.source_type,
+      team: oldRun.team,
+      classification: oldRun.classification,
+      contact: oldRun.contact,
+      createdBy: actor,
+    });
+
+    // Create all gates
+    const gates = [];
+    for (const gateSpec of getDefaultGates()) {
+      const gate = await db.createGate(newRun.id, gateSpec);
+      gates.push(gate);
+    }
+
+    // Mark old run as superseded
+    await db.updateRunStatus(oldRun.id, "failed");
+    await db.auditLog(oldRun.id, "run_retried", actor, `Superseded by new run ${newRun.id}`);
+    await db.auditLog(newRun.id, "run_created", actor, `Retry of ${oldRun.id} for ${oldRun.app_name}`, { retriedFrom: oldRun.id, team: newRun.team });
+
+    // Kick off scan orchestration
+    orchestratePipelineScan(newRun.id).catch(err => {
+      console.error(`[pipeline] Retry orchestration error for ${newRun.id}: ${err.message}`);
+    });
+
+    res.status(201).json({ ...newRun, gates, retriedFrom: oldRun.id });
+  } catch (err) {
+    console.error("[pipeline] Retry error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // POST /api/pipeline/runs/:id/submit-review — Developer submits for ISSM review
 app.post("/api/pipeline/runs/:id/submit-review", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
@@ -6383,13 +6432,13 @@ async function runScanGate(runId, gate, scanFn) {
     // Attempt to get detailed failure reason from the pod status
     let failureReason = err.message;
     let isOOM = false;
-    const jobNameMatch = gate.short_name ? gate.short_name.toLowerCase() : "";
+    const jobNameMatch = gate.job_name || (gate.short_name ? gate.short_name.toLowerCase() : "");
     try {
-      const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name`);
-      // Find a pod matching this gate's scan job (best effort — match by short_name prefix)
+      const labelSelector = gate.job_name ? `job-name=${gate.job_name}` : `job-name`;
+      const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, labelSelector);
       for (const pod of (pods.body.items || [])) {
         const jn = pod.metadata?.labels?.["job-name"] || "";
-        if (jn.startsWith(jobNameMatch) || jn.startsWith(jobNameMatch.replace(/_/g, ""))) {
+        if (gate.job_name ? jn === gate.job_name : (jn.startsWith(jobNameMatch) || jn.startsWith(jobNameMatch.replace(/_/g, "")))) {
           const cs = pod.status?.containerStatuses?.[0];
           if (cs?.state?.terminated?.reason === "OOMKilled") {
             failureReason = "Out of memory — image too large for scan resources";
@@ -6397,7 +6446,20 @@ async function runScanGate(runId, gate, scanFn) {
           } else if (cs?.state?.terminated?.reason === "StartError") {
             failureReason = `Container start error: ${(cs.state.terminated.message || "").substring(0, 200)}`;
           } else if (cs?.state?.terminated?.exitCode && cs.state.terminated.exitCode !== 0) {
-            failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`;
+            // Fetch actual logs to surface the real error message
+            try {
+              const podName = pod.metadata.name;
+              const containerName = pod.spec?.containers?.[0]?.name || "unknown";
+              const logResp = await k8sApi.readNamespacedPodLog(podName, BUILD_NAMESPACE, containerName, false, undefined, undefined, undefined, undefined, undefined, 20);
+              const logLines = (logResp.body || "").trim();
+              if (logLines) {
+                // Try to extract an error message from the logs
+                const errorLine = logLines.split("\n").find(l => /error|fail|fatal|denied|not found/i.test(l)) || logLines.split("\n").pop();
+                failureReason = errorLine.substring(0, 200);
+              } else {
+                failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`;
+              }
+            } catch { failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`; }
           }
           break;
         }
@@ -6585,18 +6647,37 @@ async function runSBOMScan(image, memoryMultiplier, gateId) {
   if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
-  let sbom;
-  try { sbom = JSON.parse(logs); } catch { sbom = null; }
-  const packageCount = sbom?.packages?.length || 0;
+
+  // SBOM output can be very large (1MB+) — don't try to parse the entire thing.
+  // Check for valid SPDX header and count packages via regex instead.
+  const isSpdx = logs && logs.includes('"spdxVersion"');
+  const packageMatches = logs ? logs.match(/"SPDXID"\s*:\s*"SPDXRef-Package-/g) : null;
+  const packageCount = packageMatches ? packageMatches.length : 0;
+
+  // Try to parse a small summary, but don't store the full SBOM in the DB
+  let sbomMeta = null;
+  try {
+    const parsed = JSON.parse(logs);
+    sbomMeta = {
+      spdxVersion: parsed.spdxVersion,
+      name: parsed.name,
+      documentNamespace: parsed.documentNamespace,
+      packageCount: parsed.packages?.length || packageCount,
+    };
+  } catch {
+    // JSON too large or truncated — that's OK, we already have packageCount from regex
+    if (isSpdx) {
+      sbomMeta = { spdxVersion: "SPDX-2.3", packageCount };
+    }
+  }
 
   return {
     gate: "SBOM", tool: "Trivy (SPDX)", format: "SPDX 2.3",
-    status: sbom ? "passed" : "failed",
+    status: isSpdx ? "passed" : "failed",
     findings: [],
-    packageCount,
-    summary: sbom ? `SBOM generated: ${packageCount} packages identified` : "SBOM generation failed",
-    sbom,
-    toolOutput: sbom,
+    packageCount: sbomMeta?.packageCount || packageCount,
+    summary: isSpdx ? `SBOM generated: ${sbomMeta?.packageCount || packageCount} packages identified` : "SBOM generation failed",
+    toolOutput: sbomMeta,
   };
 }
 
@@ -7086,7 +7167,10 @@ async function waitForJobAndGetLogs(jobName, namespace, containerName, timeoutSe
   if (!pods.body.items.length) throw new Error("No pods found for job");
   const podName = pods.body.items[0].metadata.name;
   const logs = await k8sApi.readNamespacedPodLog(podName, namespace, containerName);
-  return logs.body;
+  const body = logs.body;
+  if (typeof body === 'string') return body;
+  if (Buffer.isBuffer(body)) return body.toString('utf8');
+  return String(body || '');
 }
 
 // POST /api/security/sast — Run Semgrep SAST scan via K8s Job
