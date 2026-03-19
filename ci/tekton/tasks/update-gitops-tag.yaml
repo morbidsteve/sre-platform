@@ -1,0 +1,123 @@
+---
+# Tekton Task: Update image tag in GitOps deployment manifest
+# Clones the GitOps repo, updates the image tag in the deployment YAML,
+# commits, and pushes the change so Flux can reconcile.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: update-gitops-tag
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  description: >-
+    Update the container image tag in a Kubernetes deployment manifest,
+    commit the change, and push to the GitOps repo so Flux picks it up.
+  params:
+    - name: IMAGE_TAG
+      type: string
+      description: "New image tag to set (e.g., v5.0.3)"
+    - name: IMAGE_NAME
+      type: string
+      description: "Image name to match in the deployment file (e.g., sre-dashboard)"
+    - name: DEPLOYMENT_FILE
+      type: string
+      description: "Path to the deployment YAML file relative to repo root (e.g., apps/dashboard/k8s/deployment.yaml)"
+    - name: GIT_REPO
+      type: string
+      description: "Git repository URL"
+      default: "https://github.com/morbidsteve/sre-platform.git"
+    - name: GIT_BRANCH
+      type: string
+      description: "Git branch to push to"
+      default: "main"
+    - name: COMMIT_MESSAGE
+      type: string
+      description: "Git commit message"
+      default: ""
+  workspaces:
+    - name: source
+      description: "Workspace for cloning the repo"
+  steps:
+    - name: update-and-push
+      image: alpine/git:2.43.0
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      env:
+        - name: WORKSPACE_PATH
+          value: "$(workspaces.source.path)"
+        - name: PARAM_IMAGE_TAG
+          value: "$(params.IMAGE_TAG)"
+        - name: PARAM_IMAGE_NAME
+          value: "$(params.IMAGE_NAME)"
+        - name: PARAM_DEPLOYMENT_FILE
+          value: "$(params.DEPLOYMENT_FILE)"
+        - name: PARAM_GIT_REPO
+          value: "$(params.GIT_REPO)"
+        - name: PARAM_GIT_BRANCH
+          value: "$(params.GIT_BRANCH)"
+        - name: PARAM_COMMIT_MESSAGE
+          value: "$(params.COMMIT_MESSAGE)"
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-token
+              key: token
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        GITOPS_DIR="${WORKSPACE_PATH}/gitops"
+
+        # Configure git
+        git config --global user.name "tekton-pipeline"
+        git config --global user.email "tekton@sre-platform.local"
+
+        # Configure HTTPS auth using GitHub token
+        REPO_URL=$(echo "${PARAM_GIT_REPO}" | sed "s|https://|https://tekton:${GITHUB_TOKEN}@|")
+
+        # Clone the repo
+        echo "[update-gitops] Cloning ${PARAM_GIT_REPO} (branch: ${PARAM_GIT_BRANCH})"
+        rm -rf "${GITOPS_DIR}"
+        git clone --depth 1 --branch "${PARAM_GIT_BRANCH}" "${REPO_URL}" "${GITOPS_DIR}"
+
+        cd "${GITOPS_DIR}"
+
+        # Update the image tag
+        DEPLOY_FILE="${GITOPS_DIR}/${PARAM_DEPLOYMENT_FILE}"
+        if [ ! -f "${DEPLOY_FILE}" ]; then
+          echo "[update-gitops] ERROR: Deployment file not found: ${PARAM_DEPLOYMENT_FILE}"
+          exit 1
+        fi
+
+        echo "[update-gitops] Updating ${PARAM_IMAGE_NAME} tag to ${PARAM_IMAGE_TAG} in ${PARAM_DEPLOYMENT_FILE}"
+        sed -i "s|image: .*${PARAM_IMAGE_NAME}:.*|image: \${SRE_REGISTRY}/platform/${PARAM_IMAGE_NAME}:${PARAM_IMAGE_TAG}|" "${DEPLOY_FILE}"
+
+        # Check if there are changes
+        if git diff --quiet; then
+          echo "[update-gitops] No changes detected — image tag may already be current"
+          exit 0
+        fi
+
+        # Determine commit message
+        if [ -n "${PARAM_COMMIT_MESSAGE}" ]; then
+          MSG="${PARAM_COMMIT_MESSAGE}"
+        else
+          MSG="feat(${PARAM_IMAGE_NAME}): release ${PARAM_IMAGE_TAG}
+
+        Update ${PARAM_IMAGE_NAME} image to ${PARAM_IMAGE_TAG}
+        Triggered by Tekton pipeline"
+        fi
+
+        # Commit and push
+        git add "${PARAM_DEPLOYMENT_FILE}"
+        git commit -m "${MSG}"
+        git push origin "${PARAM_GIT_BRANCH}"
+
+        echo "[update-gitops] Pushed tag update. Flux will reconcile automatically."

@@ -1,0 +1,197 @@
+---
+# Tekton Pipeline: Build and Deploy Platform Apps
+# Full CI/CD pipeline: clone -> validate -> build -> push -> update GitOps tag
+#
+# This pipeline handles both Node.js (dashboard) and TypeScript/React (portal, wizard)
+# applications. The validation-type parameter selects the appropriate validation task.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-deploy
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  description: >-
+    Clone a Git repository, validate the application code, build a container
+    image with Kaniko, push to Harbor, and update the GitOps deployment manifest
+    so Flux auto-deploys the new version.
+  params:
+    - name: git-url
+      type: string
+      description: "Git repository URL"
+      default: "https://github.com/morbidsteve/sre-platform.git"
+    - name: git-revision
+      type: string
+      description: "Git branch or tag to build"
+      default: "main"
+    - name: app-name
+      type: string
+      description: "Application name (used for commit messages and image naming)"
+    - name: image-name
+      type: string
+      description: "Container image name (without registry prefix)"
+    - name: image-tag
+      type: string
+      description: "Image tag to build (e.g., v5.0.3)"
+    - name: dockerfile-path
+      type: string
+      description: "Path to Dockerfile relative to the app directory in the workspace"
+      default: "Dockerfile"
+    - name: build-context
+      type: string
+      description: "Docker build context path relative to the workspace source root"
+    - name: deployment-file
+      type: string
+      description: "Path to the deployment YAML relative to repo root"
+    - name: working-dir
+      type: string
+      description: "Application working directory relative to source root"
+    - name: validation-type
+      type: string
+      description: "Type of validation to run: 'node' or 'typescript'"
+      default: "node"
+  workspaces:
+    - name: shared-workspace
+      description: "Shared PVC workspace for all tasks"
+    - name: docker-credentials
+      description: "Docker config for Harbor authentication"
+      optional: true
+    - name: git-credentials
+      description: "Git credentials for cloning and pushing"
+      optional: true
+  tasks:
+    # ----------------------------------------------------------------
+    # Step 1: Clone the repository
+    # ----------------------------------------------------------------
+    - name: clone
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: git-credentials
+          workspace: git-credentials
+      params:
+        - name: url
+          value: "$(params.git-url)"
+        - name: revision
+          value: "$(params.git-revision)"
+        - name: subdirectory
+          value: "source"
+
+    # ----------------------------------------------------------------
+    # Step 2a: Validate Node.js application (if validation-type=node)
+    # ----------------------------------------------------------------
+    - name: validate-node
+      when:
+        - input: "$(params.validation-type)"
+          operator: in
+          values: ["node"]
+      taskRef:
+        name: validate-node
+      runAfter:
+        - clone
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: WORKING_DIR
+          value: "source/$(params.working-dir)"
+
+    # ----------------------------------------------------------------
+    # Step 2b: Validate TypeScript application (if validation-type=typescript)
+    # ----------------------------------------------------------------
+    - name: validate-typescript
+      when:
+        - input: "$(params.validation-type)"
+          operator: in
+          values: ["typescript"]
+      taskRef:
+        name: validate-typescript
+      runAfter:
+        - clone
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: WORKING_DIR
+          value: "source/$(params.working-dir)"
+
+    # ----------------------------------------------------------------
+    # Step 3: Build and push container image
+    # ----------------------------------------------------------------
+    - name: build-push
+      taskRef:
+        name: docker-build-push
+      runAfter:
+        - validate-node
+        - validate-typescript
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: docker-credentials
+          workspace: docker-credentials
+      params:
+        - name: IMAGE
+          value: "harbor.harbor.svc.cluster.local/platform/$(params.image-name):$(params.image-tag)"
+        - name: DOCKERFILE
+          value: "$(params.dockerfile-path)"
+        - name: CONTEXT
+          value: "source/$(params.build-context)"
+
+    # ----------------------------------------------------------------
+    # Step 4: Update GitOps deployment tag
+    # ----------------------------------------------------------------
+    - name: update-gitops
+      taskRef:
+        name: update-gitops-tag
+      runAfter:
+        - build-push
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: IMAGE_TAG
+          value: "$(params.image-tag)"
+        - name: IMAGE_NAME
+          value: "$(params.image-name)"
+        - name: DEPLOYMENT_FILE
+          value: "$(params.deployment-file)"
+        - name: GIT_REPO
+          value: "$(params.git-url)"
+        - name: GIT_BRANCH
+          value: "$(params.git-revision)"
+
+  finally:
+    # ----------------------------------------------------------------
+    # Cleanup: Always report pipeline status
+    # ----------------------------------------------------------------
+    - name: report-status
+      taskSpec:
+        steps:
+          - name: report
+            image: alpine:3.19.1
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65532
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+            script: |
+              #!/usr/bin/env sh
+              echo "=========================================="
+              echo " Pipeline: build-deploy"
+              echo " App:      $(params.app-name)"
+              echo " Image:    $(params.image-name):$(params.image-tag)"
+              echo " Status:   $(context.pipelineRun.status)"
+              echo "=========================================="
+      params:
+        - name: app-name
+          value: "$(params.app-name)"
+        - name: image-name
+          value: "$(params.image-name)"
+        - name: image-tag
+          value: "$(params.image-tag)"

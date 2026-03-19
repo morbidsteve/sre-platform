@@ -100,3 +100,11 @@ spec:
     - ports:
         - port: 3001
           protocol: TCP
+    # Cleanup CronJob (pipeline-cleanup) within same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pipeline-cleanup
+      ports:
+        - port: 3001
+          protocol: TCP

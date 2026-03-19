@@ -1,0 +1,69 @@
+---
+# Tekton Task: Build and push a container image using Kaniko
+# Kaniko builds images inside a container without requiring a Docker daemon,
+# making it safe for multi-tenant Kubernetes clusters.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: docker-build-push
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  description: >-
+    Build a container image from a Dockerfile using Kaniko and push it
+    to Harbor. Uses insecure registry settings for internal Harbor access.
+  params:
+    - name: IMAGE
+      type: string
+      description: "Full image reference including tag (e.g., harbor.harbor.svc.cluster.local/platform/app:v1.0.0)"
+    - name: DOCKERFILE
+      type: string
+      description: "Path to the Dockerfile relative to the build context"
+      default: "Dockerfile"
+    - name: CONTEXT
+      type: string
+      description: "Path to the Docker build context within the workspace"
+      default: "source"
+    - name: EXTRA_ARGS
+      type: string
+      description: "Additional arguments to pass to Kaniko"
+      default: ""
+  workspaces:
+    - name: source
+      description: "Workspace containing the source code and Dockerfile"
+    - name: docker-credentials
+      description: "Workspace containing Docker config.json for registry auth"
+  results:
+    - name: image-digest
+      description: "SHA256 digest of the built image"
+    - name: image-url
+      description: "Full image URL with digest"
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      env:
+        - name: DOCKER_CONFIG
+          value: "/kaniko/.docker"
+      args:
+        - "--dockerfile=$(params.DOCKERFILE)"
+        - "--context=$(workspaces.source.path)/$(params.CONTEXT)"
+        - "--destination=$(params.IMAGE)"
+        - "--cache=true"
+        - "--insecure"
+        - "--skip-tls-verify"
+        - "--skip-tls-verify-pull"
+        - "--digest-file=$(results.image-digest.path)"
+        - "$(params.EXTRA_ARGS)"
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: harbor-push-creds
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+  sidecars: []

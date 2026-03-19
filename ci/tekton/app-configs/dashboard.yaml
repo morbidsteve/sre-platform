@@ -1,0 +1,61 @@
+---
+# Manual PipelineRun: SRE Dashboard
+# Use this to manually trigger a dashboard build without a webhook.
+#
+# Usage:
+#   kubectl create -f ci/tekton/app-configs/dashboard.yaml
+#
+# Before running, update the image-tag parameter to the desired version.
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: dashboard-manual-
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    tekton.dev/pipeline: build-deploy
+    sre.io/app: sre-dashboard
+    sre.io/trigger: manual
+spec:
+  pipelineRef:
+    name: build-deploy
+  params:
+    - name: git-url
+      value: "https://github.com/morbidsteve/sre-platform.git"
+    - name: git-revision
+      value: "main"
+    - name: app-name
+      value: "sre-dashboard"
+    - name: image-name
+      value: "sre-dashboard"
+    - name: image-tag
+      value: "v5.0.3"
+    - name: dockerfile-path
+      value: "Dockerfile"
+    - name: build-context
+      value: "apps/dashboard"
+    - name: deployment-file
+      value: "apps/dashboard/k8s/deployment.yaml"
+    - name: working-dir
+      value: "apps/dashboard"
+    - name: validation-type
+      value: "node"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+    - name: docker-credentials
+      secret:
+        secretName: harbor-push-creds
+    - name: git-credentials
+      secret:
+        secretName: github-token
+  taskRunTemplate:
+    podTemplate:
+      securityContext:
+        fsGroup: 65532

@@ -1,0 +1,62 @@
+---
+# Tekton Task: Validate TypeScript application
+# Runs npm ci and TypeScript build check for React/Vite applications.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: validate-typescript
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  description: >-
+    Validate a TypeScript application by installing dependencies and
+    running the TypeScript compiler in build mode.
+  params:
+    - name: WORKING_DIR
+      type: string
+      description: "Path to the application directory within the workspace (relative to source root)"
+  workspaces:
+    - name: source
+      description: "Workspace containing the source code"
+  steps:
+    - name: install-and-check
+      image: node:20-alpine3.19
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      env:
+        - name: WORKSPACE_PATH
+          value: "$(workspaces.source.path)"
+        - name: PARAM_WORKING_DIR
+          value: "$(params.WORKING_DIR)"
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        APP_DIR="${WORKSPACE_PATH}/${PARAM_WORKING_DIR}"
+        echo "[validate-ts] Checking TypeScript build in ${APP_DIR}"
+
+        cd "${APP_DIR}"
+
+        # Install dependencies
+        echo "[validate-ts] Installing dependencies..."
+        npm ci --prefer-offline --no-audit 2>&1
+
+        # Run TypeScript compiler in build mode
+        echo "[validate-ts] Running TypeScript compiler..."
+        npx tsc -b 2>&1
+
+        echo "[validate-ts] TypeScript build check passed"

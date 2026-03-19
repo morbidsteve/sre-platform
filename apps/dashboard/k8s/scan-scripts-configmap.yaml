@@ -1,0 +1,124 @@
+---
+# Scan tool wrapper scripts — mounted into scan K8s Jobs as /scripts
+# Replaces brittle inline shell commands with tested, reusable scripts
+# Exit codes: 0 = clean, 1 = findings found, 2 = tool error
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scan-scripts
+  namespace: sre-builds
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+data:
+  sast-scan.sh: |
+    #!/bin/sh
+    set -e
+    # Clone repo
+    if ! git clone --depth 1 --branch "$GIT_BRANCH" "$GIT_URL" /src 2>/tmp/git-err.log; then
+      echo '{"results":[],"errors":[{"message":"Git clone failed"}]}' >&2
+      cat /tmp/git-err.log >&2
+      exit 2
+    fi
+    cd /src
+    # Run Semgrep — only JSON on stdout
+    if semgrep scan --config auto --json --quiet 2>/tmp/semgrep-err.log; then
+      exit 0
+    else
+      rc=$?
+      # Semgrep exit 1 = findings found (not an error)
+      if [ $rc -eq 1 ]; then
+        exit 1
+      fi
+      # Other exit codes = tool error, emit fallback JSON
+      echo '{"results":[],"errors":[{"message":"Semgrep error"}]}' 2>/dev/null
+      cat /tmp/semgrep-err.log >&2
+      exit 2
+    fi
+
+  secrets-scan.sh: |
+    #!/bin/sh
+    set -e
+    # Clone repo
+    if ! git clone --depth 5 --branch "$GIT_BRANCH" "$GIT_URL" /src 2>/tmp/git-err.log; then
+      echo '[]'
+      exit 2
+    fi
+    # Run Gitleaks — exit 1 means findings found (not an error)
+    gitleaks detect --source /src --report-format json --report-path /dev/stdout --no-banner 2>/tmp/gitleaks-err.log
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      exit 0
+    elif [ $rc -eq 1 ]; then
+      # Findings found — gitleaks already wrote JSON to stdout
+      exit 1
+    else
+      echo '[]'
+      cat /tmp/gitleaks-err.log >&2
+      exit 2
+    fi
+
+  sbom-scan.sh: |
+    #!/bin/sh
+    set -e
+    # Verify image ref is set
+    if [ -z "$IMAGE_REF" ]; then
+      echo '{"error":"IMAGE_REF not set"}' >&2
+      exit 2
+    fi
+    # Run Trivy SBOM generation — only SPDX JSON on stdout
+    trivy image \
+      --format spdx-json \
+      --insecure \
+      --scanners vuln \
+      --quiet \
+      "$IMAGE_REF" 2>/tmp/trivy-err.log
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      cat /tmp/trivy-err.log >&2
+      exit 2
+    fi
+    exit 0
+
+  cve-scan.sh: |
+    #!/bin/sh
+    set -e
+    # Verify image ref is set
+    if [ -z "$IMAGE_REF" ]; then
+      echo '{"Results":[]}' >&2
+      exit 2
+    fi
+    # Run Trivy CVE scan — only JSON on stdout
+    trivy image \
+      --format json \
+      --severity CRITICAL,HIGH,MEDIUM,LOW \
+      --insecure \
+      --quiet \
+      "$IMAGE_REF" 2>/tmp/trivy-err.log
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      cat /tmp/trivy-err.log >&2
+      exit 2
+    fi
+    exit 0
+
+  dast-scan.sh: |
+    #!/bin/sh
+    set -e
+    # Verify target URL is set
+    if [ -z "$TARGET_URL" ]; then
+      echo '{"site":[]}' >&2
+      exit 2
+    fi
+    # Run ZAP baseline — only JSON on stdout
+    zap-baseline.py -t "$TARGET_URL" -J /dev/stdout -I 2>/tmp/zap-err.log
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      exit 0
+    elif [ $rc -eq 1 ] || [ $rc -eq 2 ]; then
+      # ZAP exit 1 = warnings, exit 2 = alerts found
+      exit 1
+    else
+      echo '{"site":[]}' 2>/dev/null
+      cat /tmp/zap-err.log >&2
+      exit 2
+    fi

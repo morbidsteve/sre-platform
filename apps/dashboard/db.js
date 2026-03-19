@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS pipeline_gates (
   report_url TEXT,
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
-  raw_output JSONB
+  raw_output JSONB,
+  job_name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_findings (
@@ -108,6 +109,12 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON pipeline_audit_log(created_at DE
 -- Migration: add security_exceptions column if missing
 DO $$ BEGIN
   ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS security_exceptions JSONB DEFAULT '[]'::jsonb;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+
+-- Migration: add job_name column to pipeline_gates if missing
+DO $$ BEGIN
+  ALTER TABLE pipeline_gates ADD COLUMN IF NOT EXISTS job_name TEXT;
 EXCEPTION WHEN others THEN NULL;
 END $$;
 `;
@@ -264,7 +271,7 @@ async function updateGate(gateId, updates) {
   const params = [gateId];
   let paramIdx = 2;
 
-  const allowedFields = ["status", "progress", "summary", "tool", "report_url", "started_at", "completed_at", "raw_output"];
+  const allowedFields = ["status", "progress", "summary", "tool", "report_url", "started_at", "completed_at", "raw_output", "job_name"];
 
   for (const [key, value] of Object.entries(updates)) {
     const snakeKey = key.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
@@ -462,6 +469,23 @@ async function getRunPackage(id) {
   };
 }
 
+// ── Active Runs (for crash recovery) ──────────────────────────────────────
+
+async function getActiveRuns() {
+  if (!pool) return [];
+  const { rows: runs } = await query(
+    "SELECT * FROM pipeline_runs WHERE status IN ('scanning', 'deploying', 'pending') ORDER BY created_at"
+  );
+  for (const run of runs) {
+    const { rows: gates } = await query(
+      "SELECT * FROM pipeline_gates WHERE run_id = $1 ORDER BY gate_order",
+      [run.id]
+    );
+    run.gates = gates;
+  }
+  return runs;
+}
+
 module.exports = {
   initDb,
   createRun,
@@ -476,5 +500,6 @@ module.exports = {
   auditLog,
   getStats,
   getRunPackage,
+  getActiveRuns,
   pool,
 };
