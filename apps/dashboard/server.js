@@ -6523,7 +6523,7 @@ async function runSBOMScan(image, memoryMultiplier) {
       template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy-sbom", image: "docker.io/aquasec/trivy:0.58.2",
-          command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "none", image],
+          command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "vuln", image],
           resources: { requests: { cpu: "200m", memory: memReq }, limits: { cpu: "2", memory: memLim } },
           volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
         }],
@@ -7176,7 +7176,7 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
             containers: [{
               name: "trivy-sbom",
               image: "docker.io/aquasec/trivy:0.58.2",
-              command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "none", image],
+              command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "vuln", image],
               resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
               volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
             }],
