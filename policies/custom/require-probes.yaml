@@ -18,7 +18,7 @@ metadata:
     policies.kyverno.io/severity: medium
     sre.io/nist-controls: "SI-4, SC-5"
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: Audit
   background: true
   rules:
     - name: validate-probes

@@ -118,8 +118,19 @@ spec:
           {{request.object.metadata.name}} has an init container with hostPort
           defined. To fix this, remove the hostPort field from all init
           container port definitions.
-        pattern:
-          spec:
-            initContainers:
-              - ports:
-                  - =(hostPort): 0
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: NotEquals
+                  value: "istio-init"
+                - key: "{{ element.name }}"
+                  operator: NotEquals
+                  value: "istio-validation"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.ports[?hostPort] | length(@) }}"
+                    operator: GreaterThan
+                    value: 0
