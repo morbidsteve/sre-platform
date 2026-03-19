@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: ${SRE_REGISTRY}/platform/sre-dashboard:v5.0.8
+          image: ${SRE_REGISTRY}/platform/sre-dashboard:v5.0.9
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
