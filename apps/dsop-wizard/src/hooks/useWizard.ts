@@ -28,6 +28,7 @@ import {
   deployPipelineRun,
   downloadCompliancePackage as apiDownloadCompliancePackage,
   requestSecurityExceptions as apiRequestSecurityExceptions,
+  retryPipelineRun as apiRetryPipelineRun,
   getCurrentUser,
 } from '../api';
 
@@ -408,12 +409,15 @@ export function useWizard() {
     if (!state.pipelineRunId) return;
     try {
       await apiSubmitForReview(state.pipelineRunId);
-      // Update local state to reflect review_pending
+      // Refetch the full run to get updated gate states
+      const updatedRun = await getPipelineRun(state.pipelineRunId);
+      const mappedGates = updatedRun.gates.map((g: PipelineGate) =>
+        mapPipelineGateToSecurityGate(g, updatedRun.findings || [], getInitialGates())
+      );
       setState((prev) => ({
         ...prev,
-        pipelineRun: prev.pipelineRun
-          ? { ...prev.pipelineRun, status: 'review_pending' }
-          : null,
+        pipelineRun: updatedRun,
+        gates: mappedGates,
       }));
     } catch (err) {
       setState((prev) => ({
@@ -437,16 +441,37 @@ export function useWizard() {
       try {
         await deployPipelineRun(state.pipelineRunId);
 
+        // Mark first step as running immediately
+        setState((prev) => ({
+          ...prev,
+          deploySteps: prev.deploySteps.map((s, i) =>
+            i === 0 ? { ...s, status: 'running' as const } : s
+          ),
+        }));
+
         // Poll for deployment completion
+        let pollCount = 0;
         const deployPoll = setInterval(async () => {
           try {
+            pollCount++;
             const updatedRun = await getPipelineRun(state.pipelineRunId!);
             setState((prev) => ({ ...prev, pipelineRun: updatedRun }));
 
+            // Update deploy steps based on elapsed time to show progress
+            const steps = getInitialDeploySteps();
+            const stepCount = steps.length;
+            const completedIdx = updatedRun.status === 'deployed'
+              ? stepCount
+              : Math.min(Math.floor(pollCount / 3), stepCount - 1);
+            const updatedSteps = steps.map((s, i) => ({
+              ...s,
+              status: (i < completedIdx ? 'completed' : i === completedIdx ? 'running' : 'pending') as DeployStep['status'],
+            }));
+            setState((prev) => ({ ...prev, deploySteps: updatedSteps }));
+
             if (updatedRun.status === 'deployed') {
               clearInterval(deployPoll);
-              // Mark all deploy steps as completed
-              const completedSteps = getInitialDeploySteps().map((s) => ({
+              const completedSteps = steps.map((s) => ({
                 ...s,
                 status: 'completed' as const,
               }));
@@ -459,10 +484,14 @@ export function useWizard() {
               }));
             } else if (updatedRun.status === 'failed') {
               clearInterval(deployPoll);
+              const failedSteps = updatedSteps.map((s) =>
+                s.status === 'running' ? { ...s, status: 'failed' as const } : s
+              );
               setState((prev) => ({
                 ...prev,
+                deploySteps: failedSteps,
                 isDeploying: false,
-                error: 'Pipeline deployment failed',
+                error: 'Deployment failed — check pipeline history for details',
               }));
             }
           } catch {
@@ -556,26 +585,15 @@ export function useWizard() {
     if (!state.pipelineRunId) return;
     try {
       await apiSubmitReview(state.pipelineRunId, decision, comment || undefined);
-      // Update local state to reflect the review decision
-      const newStatus = decision === 'returned' ? 'review_pending' : decision;
+      // Refetch the full run to get updated gate states (ISSM_REVIEW, IMAGE_SIGNING)
+      const updatedRun = await getPipelineRun(state.pipelineRunId);
+      const mappedGates = updatedRun.gates.map((g: PipelineGate) =>
+        mapPipelineGateToSecurityGate(g, updatedRun.findings || [], getInitialGates())
+      );
       setState((prev) => ({
         ...prev,
-        pipelineRun: prev.pipelineRun
-          ? {
-              ...prev.pipelineRun,
-              status: newStatus as PipelineRun['status'],
-              reviews: [
-                ...(prev.pipelineRun.reviews || []),
-                {
-                  id: Date.now(),
-                  reviewer: user?.name || 'operator',
-                  decision,
-                  comment: comment || null,
-                  reviewed_at: new Date().toISOString(),
-                },
-              ],
-            }
-          : null,
+        pipelineRun: updatedRun,
+        gates: mappedGates,
       }));
     } catch (err) {
       setState((prev) => ({
@@ -585,6 +603,56 @@ export function useWizard() {
       throw err;
     }
   }, [state.pipelineRunId, user]);
+
+  const retryPipeline = useCallback(async () => {
+    if (!state.pipelineRunId) return;
+    stopPolling();
+    try {
+      const newRun = await apiRetryPipelineRun(state.pipelineRunId);
+      const localGates = getInitialGates();
+      setState((prev) => ({
+        ...prev,
+        pipelineRunId: newRun.id,
+        pipelineRun: newRun,
+        isPipelineRunning: true,
+        gates: localGates,
+        error: null,
+      }));
+
+      // Map initial gates from response
+      if (newRun.gates && newRun.gates.length > 0) {
+        const mappedGates = newRun.gates.map((g: PipelineGate) =>
+          mapPipelineGateToSecurityGate(g, newRun.findings || [], localGates)
+        );
+        setState((prev) => ({ ...prev, gates: mappedGates }));
+      }
+
+      // Start polling for updates (same as runPipeline)
+      pollingRef.current = setInterval(async () => {
+        try {
+          const updatedRun = await getPipelineRun(newRun.id);
+          setState((prev) => ({ ...prev, pipelineRun: updatedRun }));
+          if (updatedRun.gates && updatedRun.gates.length > 0) {
+            const mappedGates = updatedRun.gates.map((g: PipelineGate) =>
+              mapPipelineGateToSecurityGate(g, updatedRun.findings || [], localGates)
+            );
+            setState((prev) => ({ ...prev, gates: mappedGates }));
+          }
+          if (areAutomatedGatesDone(updatedRun.gates)) {
+            stopPolling();
+            setState((prev) => ({ ...prev, isPipelineRunning: false }));
+          }
+        } catch {
+          // Keep polling silently
+        }
+      }, 3000);
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : 'Failed to retry pipeline',
+      }));
+    }
+  }, [state.pipelineRunId, stopPolling]);
 
   const reset = useCallback(() => {
     stopPolling();
@@ -603,6 +671,7 @@ export function useWizard() {
     analyze,
     setDetection,
     runPipeline,
+    retryPipeline,
     updateGate,
     updateFinding,
     submitForReview: submitForReviewCb,

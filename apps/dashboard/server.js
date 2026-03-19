@@ -6650,7 +6650,8 @@ async function runSBOMScan(image, memoryMultiplier, gateId) {
 
   // SBOM output can be very large (1MB+) — don't try to parse the entire thing.
   // Check for valid SPDX header and count packages via regex instead.
-  const isSpdx = logs && logs.includes('"spdxVersion"');
+  console.log(`[sbom] Job ${jobName}: logs type=${typeof logs}, length=${logs?.length || 0}, first50=${String(logs).substring(0, 50)}`);
+  const isSpdx = logs && typeof logs === 'string' && logs.includes('"spdxVersion"');
   const packageMatches = logs ? logs.match(/"SPDXID"\s*:\s*"SPDXRef-Package-/g) : null;
   const packageCount = packageMatches ? packageMatches.length : 0;
 
@@ -7170,6 +7171,17 @@ async function waitForJobAndGetLogs(jobName, namespace, containerName, timeoutSe
   const body = logs.body;
   if (typeof body === 'string') return body;
   if (Buffer.isBuffer(body)) return body.toString('utf8');
+  // K8s client may return a Readable stream or object for large responses
+  if (body && typeof body.read === 'function') {
+    const chunks = [];
+    for await (const chunk of body) { chunks.push(chunk); }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+  if (body && typeof body === 'object') {
+    // Response object — try .text or JSON.stringify
+    if (typeof body.text === 'function') return await body.text();
+    try { return JSON.stringify(body); } catch { /* fall through */ }
+  }
   return String(body || '');
 }
 

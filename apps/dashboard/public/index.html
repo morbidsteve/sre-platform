@@ -8552,6 +8552,9 @@ function renderRunDetail(run, isReview) {
   if (run.status === 'rejected') {
     html += '<span style="font-size:13px;color:var(--red);">Rejected' + (run.reviewComment || run.review_comment ? ': ' + esc(run.reviewComment || run.review_comment) : '') + '</span>';
   }
+  if (run.status === 'failed' || run.status === 'scanning') {
+    html += '<button class="btn btn-sm" style="color:var(--yellow);" onclick="retryPipelineRun(\'' + esc(run.id) + '\')">Restart Pipeline</button>';
+  }
   html += '<button class="btn btn-sm" onclick="downloadCompliancePackage(\'' + esc(run.id) + '\')">Download Package</button>';
   html += '</div>';
   html += '</div>';

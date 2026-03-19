@@ -536,3 +536,7 @@ export async function requestSecurityExceptions(
     body: JSON.stringify({ exceptions }),
   });
 }
+
+export async function retryPipelineRun(runId: string): Promise<PipelineRun> {
+  return apiFetch(`/pipeline/runs/${runId}/retry`, { method: 'POST' });
+}

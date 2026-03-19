@@ -151,15 +151,16 @@ export default function App() {
             pipelineRunId={state.pipelineRunId}
             pipelineRunStatus={state.pipelineRun?.status}
             onSubmitForReview={wizard.submitForReview}
+            onRetryPipeline={wizard.retryPipeline}
           />
         );
 
       case 5:
-        if (!state.detection) return null;
+        if (!state.detection && !state.pipelineRunId) return null;
         return (
           <Step5_Review
             appInfo={state.appInfo}
-            detection={state.detection}
+            detection={state.detection || { repoType: 'container' as const, services: [], platformServices: [], externalAccess: [] }}
             gates={state.gates}
             onBack={() => wizard.setStep(4)}
             onDeploy={wizard.deploy}

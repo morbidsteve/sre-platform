@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, ShieldAlert, FileCheck, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ShieldAlert, FileCheck, Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { PipelineProgress } from '../pipeline/PipelineProgress';
 import { GateCard } from '../pipeline/GateCard';
@@ -18,6 +18,7 @@ interface Step4Props {
   pipelineRunId?: string | null;
   pipelineRunStatus?: PipelineRunStatus | null;
   onSubmitForReview?: () => void;
+  onRetryPipeline?: () => Promise<void>;
 }
 
 export function Step4_SecurityPipeline({
@@ -33,8 +34,10 @@ export function Step4_SecurityPipeline({
   pipelineRunId,
   pipelineRunStatus,
   onSubmitForReview,
+  onRetryPipeline,
 }: Step4Props) {
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   // Automated gates = everything except ISSM_REVIEW and IMAGE_SIGNING
   const automatedGates = gates.filter(
@@ -104,11 +107,24 @@ export function Step4_SecurityPipeline({
 
       {/* Status Messages */}
       {hasCriticalFailure && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center space-y-3">
           <p className="text-sm text-red-400">
             One or more security gates failed. Please resolve the issues before
             deploying.
           </p>
+          {onRetryPipeline && pipelineRunId && (
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                setRetrying(true);
+                try { await onRetryPipeline(); } finally { setRetrying(false); }
+              }}
+              disabled={retrying}
+              icon={retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            >
+              {retrying ? 'Restarting...' : 'Restart Pipeline'}
+            </Button>
+          )}
         </div>
       )}
 
