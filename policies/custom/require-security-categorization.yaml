@@ -51,6 +51,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
           - resources:
               selector:
                 matchLabels:

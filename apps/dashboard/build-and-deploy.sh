@@ -46,9 +46,9 @@ docker build -t "${FULL_IMAGE}" .
 echo "==> Pushing to Harbor..."
 docker push "${FULL_IMAGE}"
 
-# Step 3: Update deployment.yaml with new image tag
-echo "==> Updating deployment.yaml to ${FULL_IMAGE}..."
-sed -i "s|image: .*sre-dashboard:.*|image: ${FULL_IMAGE}|" "$DEPLOYMENT_FILE"
+# Step 3: Update deployment.yaml with new image tag (preserve ${SRE_REGISTRY} Flux variable)
+echo "==> Updating deployment.yaml tag to ${IMAGE_TAG}..."
+sed -i "s|sre-dashboard:v[0-9.]*|sre-dashboard:${IMAGE_TAG}|" "$DEPLOYMENT_FILE"
 
 # Step 4: Update package.json version
 SEMVER="${IMAGE_TAG#v}"

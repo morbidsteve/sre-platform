@@ -51,6 +51,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       validate:
         message: >-
           Host namespaces are not allowed. Pod {{request.object.metadata.name}}

@@ -37,6 +37,8 @@ spec:
                 - kyverno
                 - cert-manager
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       verifyImages:
         - imageReferences:
             - "harbor.sre.internal/*"

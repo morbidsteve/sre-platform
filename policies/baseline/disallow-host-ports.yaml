@@ -53,6 +53,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
                 # Tenant namespaces — Istio sidecar init containers use hostPort 15020
                 - team-keystone
       validate:
@@ -99,6 +101,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
                 # Tenant namespaces — Istio sidecar init containers use hostPort 15020
                 - team-keystone
       preconditions:

@@ -54,6 +54,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       validate:
         message: >-
           Unsafe sysctls are not allowed. Pod {{request.object.metadata.name}}

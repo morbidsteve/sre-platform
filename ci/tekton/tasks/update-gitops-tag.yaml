@@ -109,7 +109,7 @@ spec:
         if [ -n "${PARAM_COMMIT_MESSAGE}" ]; then
           MSG="${PARAM_COMMIT_MESSAGE}"
         else
-          MSG="feat(${PARAM_IMAGE_NAME}): release ${PARAM_IMAGE_TAG}
+          MSG="feat(${PARAM_IMAGE_NAME}): release ${PARAM_IMAGE_TAG} [skip ci]
 
         Update ${PARAM_IMAGE_NAME} image to ${PARAM_IMAGE_TAG}
         Triggered by Tekton pipeline"

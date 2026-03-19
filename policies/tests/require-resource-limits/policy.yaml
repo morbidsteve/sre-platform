@@ -51,6 +51,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       validate:
         message: >-
           All containers in Pod {{request.object.metadata.name}} must specify
@@ -104,6 +106,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

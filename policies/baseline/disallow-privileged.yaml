@@ -51,6 +51,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       validate:
         message: >-
           Privileged containers are not allowed. Pod
@@ -94,6 +96,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

@@ -54,6 +54,8 @@ spec:
                 - local-path-storage
                 - metallb-system
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       preconditions:
         all:
           - key: "{{ request.object.spec.volumes[] || `[]` | length(@) }}"

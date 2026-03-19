@@ -1,0 +1,363 @@
+---
+# Git Poller CronJob — checks for new commits every 2 minutes and triggers Tekton builds
+# This replaces GitHub webhooks for homelab/private network setups where GitHub can't
+# reach the cluster. When a public IP or tunnel is available, switch to the webhook
+# EventListener in ci/tekton/triggers/github-webhook.yaml instead.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-poller-state
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+data:
+  last-commit: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-poller-script
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+data:
+  poll.sh: |
+    #!/bin/sh
+    set -eu
+
+    REPO="morbidsteve/sre-platform"
+    BRANCH="main"
+    API_URL="https://api.github.com/repos/${REPO}/commits?sha=${BRANCH}&per_page=1"
+
+    # Get last known commit from ConfigMap
+    LAST=$(kubectl get configmap git-poller-state -n tekton-pipelines -o jsonpath='{.data.last-commit}' 2>/dev/null || echo "")
+
+    # Fetch latest commit from GitHub
+    LATEST=$(curl -sf -H "Authorization: token ${GITHUB_TOKEN}" "$API_URL" | grep -m1 '"sha"' | sed 's/.*"sha": "//;s/".*//')
+
+    if [ -z "$LATEST" ]; then
+      echo "[poller] Failed to fetch latest commit"
+      exit 0
+    fi
+
+    if [ "$LATEST" = "$LAST" ]; then
+      echo "[poller] No new commits (still at ${LATEST:0:8})"
+      exit 0
+    fi
+
+    echo "[poller] New commit detected: ${LATEST:0:8} (was: ${LAST:0:8})"
+
+    # Fetch commit details to check which files changed
+    COMMIT_URL="https://api.github.com/repos/${REPO}/commits/${LATEST}"
+    COMMIT_DATA=$(curl -sf -H "Authorization: token ${GITHUB_TOKEN}" "$COMMIT_URL")
+    COMMIT_MSG=$(echo "$COMMIT_DATA" | grep -m1 '"message"' | sed 's/.*"message": "//;s/".*//')
+
+    # Skip if commit message contains [skip ci]
+    if echo "$COMMIT_MSG" | grep -q '\[skip ci\]'; then
+      echo "[poller] Commit contains [skip ci] — skipping"
+      kubectl patch configmap git-poller-state -n tekton-pipelines --type=merge -p "{\"data\":{\"last-commit\":\"${LATEST}\"}}"
+      exit 0
+    fi
+
+    # Get changed files
+    FILES=$(echo "$COMMIT_DATA" | grep '"filename"' | sed 's/.*"filename": "//;s/".*//')
+
+    # Check which apps were modified
+    DASHBOARD_CHANGED=false
+    PORTAL_CHANGED=false
+    WIZARD_CHANGED=false
+
+    for f in $FILES; do
+      case "$f" in
+        apps/dashboard/*) DASHBOARD_CHANGED=true ;;
+        apps/portal/*) PORTAL_CHANGED=true ;;
+        apps/dsop-wizard/*) WIZARD_CHANGED=true ;;
+      esac
+    done
+
+    # Trigger PipelineRuns for changed apps
+    if [ "$DASHBOARD_CHANGED" = "true" ]; then
+      echo "[poller] Dashboard changed — triggering build"
+      kubectl create -f /config/pipelinerun-dashboard.yaml 2>&1 || echo "Failed to create dashboard PipelineRun"
+    fi
+
+    if [ "$PORTAL_CHANGED" = "true" ]; then
+      echo "[poller] Portal changed — triggering build"
+      kubectl create -f /config/pipelinerun-portal.yaml 2>&1 || echo "Failed to create portal PipelineRun"
+    fi
+
+    if [ "$WIZARD_CHANGED" = "true" ]; then
+      echo "[poller] Wizard changed — triggering build"
+      kubectl create -f /config/pipelinerun-wizard.yaml 2>&1 || echo "Failed to create wizard PipelineRun"
+    fi
+
+    if [ "$DASHBOARD_CHANGED" = "false" ] && [ "$PORTAL_CHANGED" = "false" ] && [ "$WIZARD_CHANGED" = "false" ]; then
+      echo "[poller] No app code changed — skipping build"
+    fi
+
+    # Update last known commit
+    kubectl patch configmap git-poller-state -n tekton-pipelines --type=merge -p "{\"data\":{\"last-commit\":\"${LATEST}\"}}"
+    echo "[poller] Updated state to ${LATEST:0:8}"
+
+  pipelinerun-dashboard.yaml: |
+    apiVersion: tekton.dev/v1
+    kind: PipelineRun
+    metadata:
+      generateName: poll-dashboard-
+      namespace: tekton-pipelines
+      labels:
+        app.kubernetes.io/part-of: sre-platform
+        tekton.dev/pipeline: build-deploy
+        sre.io/app: sre-dashboard
+        sre.io/trigger: git-poller
+    spec:
+      pipelineRef:
+        name: build-deploy
+      params:
+        - name: git-url
+          value: "https://github.com/morbidsteve/sre-platform.git"
+        - name: git-revision
+          value: "main"
+        - name: app-name
+          value: "sre-dashboard"
+        - name: image-name
+          value: "sre-dashboard"
+        - name: image-tag
+          value: "auto"
+        - name: dockerfile-path
+          value: "Dockerfile"
+        - name: build-context
+          value: "apps/dashboard"
+        - name: deployment-file
+          value: "apps/dashboard/k8s/deployment.yaml"
+        - name: working-dir
+          value: "apps/dashboard"
+        - name: validation-type
+          value: "node"
+      workspaces:
+        - name: shared-workspace
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 1Gi
+        - name: docker-credentials
+          secret:
+            secretName: harbor-push-creds
+        - name: git-credentials
+          secret:
+            secretName: github-token
+      taskRunTemplate:
+        podTemplate:
+          securityContext:
+            fsGroup: 65532
+
+  pipelinerun-portal.yaml: |
+    apiVersion: tekton.dev/v1
+    kind: PipelineRun
+    metadata:
+      generateName: poll-portal-
+      namespace: tekton-pipelines
+      labels:
+        app.kubernetes.io/part-of: sre-platform
+        tekton.dev/pipeline: build-deploy
+        sre.io/app: sre-portal
+        sre.io/trigger: git-poller
+    spec:
+      pipelineRef:
+        name: build-deploy
+      params:
+        - name: git-url
+          value: "https://github.com/morbidsteve/sre-platform.git"
+        - name: git-revision
+          value: "main"
+        - name: app-name
+          value: "sre-portal"
+        - name: image-name
+          value: "sre-portal"
+        - name: image-tag
+          value: "auto"
+        - name: dockerfile-path
+          value: "Dockerfile"
+        - name: build-context
+          value: "apps/portal"
+        - name: deployment-file
+          value: "apps/portal/k8s/deployment.yaml"
+        - name: working-dir
+          value: "apps/portal"
+        - name: validation-type
+          value: "typescript"
+      workspaces:
+        - name: shared-workspace
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 1Gi
+        - name: docker-credentials
+          secret:
+            secretName: harbor-push-creds
+        - name: git-credentials
+          secret:
+            secretName: github-token
+      taskRunTemplate:
+        podTemplate:
+          securityContext:
+            fsGroup: 65532
+
+  pipelinerun-wizard.yaml: |
+    apiVersion: tekton.dev/v1
+    kind: PipelineRun
+    metadata:
+      generateName: poll-wizard-
+      namespace: tekton-pipelines
+      labels:
+        app.kubernetes.io/part-of: sre-platform
+        tekton.dev/pipeline: build-deploy
+        sre.io/app: dsop-wizard
+        sre.io/trigger: git-poller
+    spec:
+      pipelineRef:
+        name: build-deploy
+      params:
+        - name: git-url
+          value: "https://github.com/morbidsteve/sre-platform.git"
+        - name: git-revision
+          value: "main"
+        - name: app-name
+          value: "dsop-wizard"
+        - name: image-name
+          value: "dsop-wizard"
+        - name: image-tag
+          value: "auto"
+        - name: dockerfile-path
+          value: "Dockerfile"
+        - name: build-context
+          value: "apps/dsop-wizard"
+        - name: deployment-file
+          value: "apps/dsop-wizard/k8s/deployment.yaml"
+        - name: working-dir
+          value: "apps/dsop-wizard"
+        - name: validation-type
+          value: "typescript"
+      workspaces:
+        - name: shared-workspace
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 1Gi
+        - name: docker-credentials
+          secret:
+            secretName: harbor-push-creds
+        - name: git-credentials
+          secret:
+            secretName: github-token
+      taskRunTemplate:
+        podTemplate:
+          securityContext:
+            fsGroup: 65532
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: git-poller-sa
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: git-poller-role
+  namespace: tekton-pipelines
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: git-poller-binding
+  namespace: tekton-pipelines
+subjects:
+  - kind: ServiceAccount
+    name: git-poller-sa
+    namespace: tekton-pipelines
+roleRef:
+  kind: Role
+  name: git-poller-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: git-poller
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    app.kubernetes.io/component: ci
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 120
+      backoffLimit: 0
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "false"
+          labels:
+            app.kubernetes.io/name: git-poller
+            app.kubernetes.io/part-of: sre-platform
+        spec:
+          serviceAccountName: git-poller-sa
+          restartPolicy: Never
+          automountServiceAccountToken: true
+          containers:
+            - name: poller
+              image: bitnami/kubectl:1.29.2
+              command: ["sh", "/scripts/poll.sh"]
+              env:
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: github-token
+                      key: token
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: git-poller-script
+                items:
+                  - key: poll.sh
+                    path: poll.sh
+            - name: config
+              configMap:
+                name: git-poller-script
+                items:
+                  - key: pipelinerun-dashboard.yaml
+                    path: pipelinerun-dashboard.yaml
+                  - key: pipelinerun-portal.yaml
+                    path: pipelinerun-portal.yaml
+                  - key: pipelinerun-wizard.yaml
+                    path: pipelinerun-wizard.yaml

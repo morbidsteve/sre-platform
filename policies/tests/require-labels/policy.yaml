@@ -36,6 +36,8 @@ spec:
                 - kyverno
                 - cert-manager
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       validate:
         message: >-
           Pod {{request.object.metadata.name}} is missing required labels.

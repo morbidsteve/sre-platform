@@ -36,6 +36,8 @@ spec:
                 - kyverno
                 - cert-manager
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       validate:
         message: >-
           All container images must be from the approved registry
@@ -62,6 +64,8 @@ spec:
                 - kyverno
                 - cert-manager
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] | length(@) }}"

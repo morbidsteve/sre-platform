@@ -35,6 +35,8 @@ spec:
                 - flux-system
                 - kyverno
                 - sre-builds
+                - tekton-pipelines
+                - tekton-pipelines-resolvers
           - resources:
               selector:
                 matchLabels:
