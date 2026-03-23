@@ -23,7 +23,12 @@ source "$SCRIPT_DIR/lib/colors.sh"
 # ── Arguments ─────────────────────────────────────────────────────────────────
 
 APP_DIR="${1:?Usage: $0 <app-dir> [image-name] [version-tag]}"
-APP_DIR="$(cd "$REPO_ROOT/$APP_DIR" 2>/dev/null && pwd)" || { error "Directory not found: $1"; exit 1; }
+# Support both absolute paths (from wrapper scripts) and relative paths
+if [[ "$APP_DIR" = /* ]]; then
+    APP_DIR="$(cd "$APP_DIR" 2>/dev/null && pwd)" || { error "Directory not found: $1"; exit 1; }
+else
+    APP_DIR="$(cd "$REPO_ROOT/$APP_DIR" 2>/dev/null && pwd)" || { error "Directory not found: $1"; exit 1; }
+fi
 IMAGE_NAME="${2:-$(basename "$APP_DIR")}"
 EXPLICIT_TAG="${3:-}"
 

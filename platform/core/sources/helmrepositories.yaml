@@ -225,6 +225,19 @@ spec:
   url: https://metallb.github.io/metallb
 
 ---
+# ── ArgoCD ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: argocd
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://argoproj.github.io/argo-helm
+
+---
 # ── Backstage ──
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository

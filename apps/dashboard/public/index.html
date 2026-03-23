@@ -365,6 +365,69 @@
       max-width: 1200px;
       margin: 0 auto;
       padding: 24px;
+      position: relative;
+    }
+
+    /* ── App Frame (inline iframe) ─────────────────────────── */
+    #app-frame-container {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 200;
+      background: var(--bg);
+    }
+
+    #app-frame-bar {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      height: 45px;
+    }
+
+    #app-frame-bar .btn {
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    #app-frame-title {
+      color: var(--text-dim);
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #app-frame {
+      width: 100%;
+      height: calc(100% - 45px);
+      border: none;
+      background: var(--bg);
+    }
+
+    #app-frame-spinner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-dim);
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    #app-frame-spinner .spinner {
+      width: 28px;
+      height: 28px;
+      border-width: 3px;
     }
 
     .tab-content { display: none; }
@@ -2553,6 +2616,10 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.6; }
     }
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
 
     /* Classification badges */
     .cls-badge {
@@ -3103,6 +3170,7 @@
   <button data-tab="pipeline" onclick="switchTab('pipeline', this)">Pipeline</button>
   <button data-tab="audit" onclick="switchTab('audit', this)">Audit</button>
   <button data-tab="admin" onclick="switchTab('admin', this)" id="btn-admin-tab">Admin</button>
+  <button id="btn-active-pipeline" onclick="openAppFrame('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline')" style="display:none; background:linear-gradient(135deg,#3b82f6,#6366f1); color:#fff; animation:pulse-slow 2s ease-in-out infinite;">&#x25B6; Active Pipeline</button>
 </nav>
 
 <main>
@@ -3250,7 +3318,7 @@
         <h2 style="margin-bottom: 4px;">Applications</h2>
         <p style="color: var(--text-dim); font-size: 13px;">Manage and deploy applications on the SRE Platform.</p>
       </div>
-      <button class="btn btn-primary" onclick="toggleDeployPanel()" id="deploy-toggle-btn" style="font-size: 13px; padding: 10px 20px;">Deploy New App</button>
+      <button class="btn btn-primary" onclick="openAppFrame('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline')" id="deploy-toggle-btn" style="font-size: 13px; padding: 10px 20px;">Deploy New App</button>
     </div>
 
     <!-- App Gallery (from My Apps) -->
@@ -3278,7 +3346,7 @@
         <h3 style="font-size: 18px; margin-bottom: 6px; color: var(--text);">DSOP Deployment Wizard</h3>
         <p style="color: var(--text-dim); font-size: 13px; margin: 0; max-width: 520px;">Full guided deployment with security pipeline compliance, image scanning, SBOM generation, and ISSM review gates.</p>
       </div>
-      <a href="https://dsop.apps.sre.example.com" target="_blank"
+      <a href="#" onclick="openAppFrame('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline'); return false;"
          class="btn btn-primary" style="font-size: 15px; padding: 12px 28px; display: inline-block; text-decoration: none; white-space: nowrap;">
         Open DSOP Wizard
       </a>
@@ -4175,6 +4243,21 @@ services:
   </div>
 </main>
 
+<!-- App Frame: inline iframe for DSOP Wizard / Portal -->
+<div id="app-frame-container">
+  <div id="app-frame-bar">
+    <button onclick="closeAppFrame()" class="btn btn-sm">&#8592; Back to Dashboard</button>
+    <span id="app-frame-title"></span>
+  </div>
+  <div style="position:relative;height:calc(100% - 45px);">
+    <div id="app-frame-spinner">
+      <span class="spinner"></span>
+      <span>Loading...</span>
+    </div>
+    <iframe id="app-frame" onload="document.getElementById('app-frame-spinner').style.display='none';"></iframe>
+  </div>
+</div>
+
 <!-- Command Palette -->
 <div class="cmd-overlay" id="cmd-overlay" onclick="if(event.target===this)closeCommandPalette()">
   <div class="cmd-palette">
@@ -4303,6 +4386,9 @@ function switchTab(tab, btn) {
     btn = document.querySelector('nav button[data-tab="' + tab + '"]');
   }
 
+  // Hide inline app frame when switching tabs (preserve iframe state)
+  document.getElementById('app-frame-container').style.display = 'none';
+
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('nav button').forEach(function(el) { el.classList.remove('active'); });
   var tabEl = document.getElementById('tab-' + tab);
@@ -4352,6 +4438,30 @@ function switchTab(tab, btn) {
 
 function toggleMobileNav() {
   document.getElementById('main-nav').classList.toggle('open');
+}
+
+// ── Inline App Frame (DSOP Wizard, Portal) ───────────────────────────────────
+
+function openAppFrame(url, title) {
+  var frame = document.getElementById('app-frame');
+  var container = document.getElementById('app-frame-container');
+  var spinner = document.getElementById('app-frame-spinner');
+  document.getElementById('app-frame-title').textContent = title || '';
+  if (frame.getAttribute('data-url') !== url) {
+    frame.src = url;
+    frame.setAttribute('data-url', url);
+    if (spinner) spinner.style.display = 'flex';
+  }
+  container.style.display = 'block';
+  // Show "Active Pipeline" nav button when DSOP wizard is opened
+  if (url.indexOf('dsop') !== -1) {
+    var btn = document.getElementById('btn-active-pipeline');
+    if (btn) btn.style.display = 'block';
+  }
+}
+
+function closeAppFrame() {
+  document.getElementById('app-frame-container').style.display = 'none';
 }
 
 // ── Deploy Panel Toggle (Applications tab) ──────────────────────────────────
@@ -4853,6 +4963,15 @@ function renderOneTile(s, isFav) {
 }
 
 function openService(url) {
+  // Intercept DSOP wizard and Portal URLs to open inline
+  if (url && url.indexOf('dsop.apps.sre.example.com') !== -1) {
+    openAppFrame(url, 'DSOP Security Pipeline');
+    return;
+  }
+  if (url && url.indexOf('portal.apps.sre.example.com') !== -1) {
+    openAppFrame(url, 'App Portal');
+    return;
+  }
   window.open(url, '_blank', 'noopener');
 }
 
@@ -4939,7 +5058,7 @@ function renderAppGallery(apps) {
       '<div class="app-gallery-empty">' +
         '<h3>No apps deployed yet</h3>' +
         '<p>Deploy your first app using the DSOP Wizard.</p>' +
-        '<a href="https://dsop.apps.sre.example.com" target="_blank" class="btn btn-primary" style="text-decoration:none;">Open DSOP Deploy Wizard</a>' +
+        '<a href="#" onclick="openAppFrame(\'https://dsop.apps.sre.example.com\', \'DSOP Security Pipeline\'); return false;" class="btn btn-primary" style="text-decoration:none;">Open DSOP Deploy Wizard</a>' +
       '</div>';
     return;
   }
@@ -4952,7 +5071,7 @@ function renderAppGallery(apps) {
     var imageStr = a.image ? (esc(a.image) + ':' + esc(a.tag)) : 'unknown';
     var hasUrl = a.url && a.host;
     var tileClick = hasUrl
-      ? 'onclick="window.open(\'' + esc(a.url) + '\', \'_blank\', \'noopener\')"'
+      ? 'onclick="openService(\'' + esc(a.url) + '\')"'
       : '';
     var cursorStyle = hasUrl ? '' : 'cursor:default;';
 
@@ -7462,6 +7581,8 @@ function getCommands() {
   cmds.push({ category: 'Actions', label: 'Create new user', desc: 'Add a user to the platform via Keycloak', icon: '\u2795', keys: '', action: function() { switchTabByName('admin'); setTimeout(showCreateUserModal, 300); } });
   cmds.push({ category: 'Actions', label: 'Create new group', desc: 'Create a Keycloak RBAC group', icon: '\u2795', keys: '', action: function() { switchTabByName('admin'); setTimeout(showCreateGroupModal, 300); } });
   cmds.push({ category: 'Actions', label: 'Deploy app', desc: 'Open the deployment panel', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('applications'); setTimeout(function() { var s = document.getElementById('deploy-section'); if (s) s.style.display = 'block'; }, 200); } });
+  cmds.push({ category: 'Actions', label: 'Open DSOP Wizard', desc: 'Launch the DSOP security pipeline wizard inline', icon: '\uD83D\uDEE1', keys: '', action: function() { openAppFrame('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline'); } });
+  cmds.push({ category: 'Actions', label: 'Open App Portal', desc: 'Launch the App Portal inline', icon: '\uD83D\uDCE6', keys: '', action: function() { openAppFrame('https://portal.apps.sre.example.com', 'App Portal'); } });
   cmds.push({ category: 'Actions', label: 'Deploy from Git', desc: 'Auto-detect and deploy from a Git repository', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('applications'); setTimeout(function() { var s = document.getElementById('deploy-section'); if (s) s.style.display = 'block'; }, 200); } });
   cmds.push({ category: 'Actions', label: 'Deploy: Quick NGINX demo', desc: 'Pre-fill a demo NGINX deployment', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('applications'); setTimeout(function() { var s = document.getElementById('deploy-section'); if (s) s.style.display = 'block'; }, 200); } });
   cmds.push({ category: 'Actions', label: 'View problem pods', desc: 'Show pods in CrashLoopBackOff, Error, Pending', icon: '\u26A0\uFE0F', keys: '', action: function() { switchTabByName('dashboard'); setTimeout(toggleProblemPods, 300); } });
@@ -7938,7 +8059,7 @@ function renderPortalApps(data) {
     var statusDot = app.status === 'running' ? 'green' : app.status === 'deploying' ? 'yellow' : 'red';
     var statusText = app.status === 'running' ? 'Running' : app.status === 'deploying' ? 'Deploying' : 'Down';
 
-    return '<div class="service-tile" onclick="window.open(\'' + esc(app.url) + '\', \'_blank\')" style="cursor:pointer;">' +
+    return '<div class="service-tile" onclick="openService(\'' + esc(app.url) + '\')" style="cursor:pointer;">' +
       '<div class="service-tile-icon">' + (app.icon ? getPortalIconChar(app.icon) : '\uD83D\uDCE6') + '</div>' +
       '<div class="service-tile-name"><span class="health-dot ' + statusDot + '"></span> ' + esc(app.displayName || app.name) + '</div>' +
       '<div class="service-tile-desc">' + esc(app.description || '') + '</div>' +
@@ -8495,13 +8616,13 @@ function renderPipelineActions(run) {
 
   if (st === 'scanning' || st === 'pending') {
     html += '<span class="pipe-badge scanning" style="font-size:9px;"><span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px;"></span>Scanning...</span>';
-    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="View in DSOP Wizard">Wizard</a>';
+    html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();openAppFrame(\'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '\', \'DSOP Security Pipeline\')" title="View in DSOP Wizard">Wizard</button>';
   } else if (st === 'review_pending') {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--cyan);" onclick="event.stopPropagation();switchTabByName(\'issm\');showReviewPanel(\'' + esc(run.id) + '\')" title="Open in ISSM queue">Review</button>';
-    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="Resume in DSOP Wizard">Wizard</a>';
+    html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();openAppFrame(\'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '\', \'DSOP Security Pipeline\')" title="Resume in DSOP Wizard">Wizard</button>';
   } else if (st === 'approved') {
     html += '<button class="btn btn-sm btn-success" style="font-weight:600;" onclick="triggerDeployFromTable(\'' + esc(run.id) + '\',this)">Deploy</button>';
-    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="Resume in DSOP Wizard">Wizard</a>';
+    html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();openAppFrame(\'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '\', \'DSOP Security Pipeline\')" title="Resume in DSOP Wizard">Wizard</button>';
   } else if (st === 'deploying') {
     html += '<span class="pipe-badge deploying" style="font-size:9px;"><span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px;"></span>Deploying...</span>';
   } else if (st === 'deployed') {
@@ -8516,11 +8637,11 @@ function renderPipelineActions(run) {
   } else if (st === 'failed') {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--yellow);" onclick="retryPipelineRun(\'' + esc(run.id) + '\')">Retry</button>';
-    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="View in DSOP Wizard">Wizard</a>';
+    html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();openAppFrame(\'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '\', \'DSOP Security Pipeline\')" title="View in DSOP Wizard">Wizard</button>';
   } else if (st === 'rejected') {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--yellow);" onclick="resubmitPipelineRun(\'' + esc(run.id) + '\')">Resubmit</button>';
-    html += '<a href="https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '" target="_blank" class="btn btn-sm" style="font-size:10px;padding:2px 6px;text-decoration:none;" title="View in DSOP Wizard">Wizard</a>';
+    html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();openAppFrame(\'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '\', \'DSOP Security Pipeline\')" title="View in DSOP Wizard">Wizard</button>';
   } else {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showRunDetail(\'' + esc(run.id) + '\')">View</button>';
   }

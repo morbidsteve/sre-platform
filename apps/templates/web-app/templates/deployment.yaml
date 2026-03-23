@@ -23,18 +23,8 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.podSecurityContext }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- else }}
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      {{- end }}
+        {{- include "sre-lib.podSecurityContext" . | nindent 8 }}
       containers:
         - name: {{ .Values.app.name }}
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
@@ -43,25 +33,10 @@ spec:
             - name: http
               containerPort: {{ .Values.app.port }}
               protocol: TCP
-          {{- if .Values.containerSecurityContext }}
           securityContext:
-            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- else }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            capabilities:
-              drop:
-                - ALL
-          {{- end }}
+            {{- include "sre-lib.containerSecurityContext" . | nindent 12 }}
           resources:
-            requests:
-              cpu: {{ .Values.app.resources.requests.cpu }}
-              memory: {{ .Values.app.resources.requests.memory }}
-            limits:
-              cpu: {{ .Values.app.resources.limits.cpu }}
-              memory: {{ .Values.app.resources.limits.memory }}
+            {{- include "sre-lib.resources" . | nindent 12 }}
           livenessProbe:
             {{- if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
             tcpSocket:
@@ -92,19 +67,7 @@ spec:
             - name: cache
               mountPath: /var/cache
           env:
-            {{- range .Values.app.env }}
-            {{- if .value }}
-            - name: {{ .name }}
-              value: {{ .value | quote }}
-            {{- end }}
-            {{- if .secretRef }}
-            - name: {{ .name }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .secretRef }}
-                  key: value
-            {{- end }}
-            {{- end }}
+            {{- include "sre-lib.env" . | nindent 12 }}
       volumes:
         - name: tmp
           emptyDir: {}

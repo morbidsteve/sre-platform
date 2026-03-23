@@ -14,20 +14,8 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Allow traffic from same namespace (other services in the team)
-    - from:
-        - podSelector: {}
-      ports:
-        - port: {{ .Values.app.port }}
-          protocol: TCP
-    # Allow Prometheus scraping from monitoring namespace
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - port: {{ .Values.app.port }}
-          protocol: TCP
+    {{- include "sre-lib.networkpolicy-ingress-same-namespace" .Values.app.port | nindent 4 }}
+    {{- include "sre-lib.networkpolicy-ingress-monitoring" .Values.app.port | nindent 4 }}
     {{- if .Values.authorizationPolicy.enabled }}
     # Allow traffic from namespaces listed in authorizationPolicy.allowedNamespaces
     {{- range .Values.authorizationPolicy.allowedNamespaces }}
@@ -54,27 +42,5 @@ spec:
     {{- toYaml . | nindent 4 }}
     {{- end }}
   egress:
-    # DNS resolution
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # Allow traffic to same namespace
-    - to:
-        - podSelector: {}
-    # Allow HTTPS egress (for external APIs)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - port: 443
-          protocol: TCP
-    {{- with .Values.networkPolicy.additionalEgress }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- include "sre-lib.networkpolicy-egress" . | nindent 4 }}
 {{- end }}

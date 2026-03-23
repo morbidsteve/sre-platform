@@ -7,6 +7,7 @@ const rateLimit = require("express-rate-limit");
 const yaml = require("js-yaml");
 const db = require("./db");
 const gitops = require("./gitops");
+const logger = require("./logger");
 
 const app = express();
 app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
@@ -14,10 +15,10 @@ app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
 // ── Security Headers ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '0');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-src 'self' https://*.apps.sre.example.com; frame-ancestors 'self' https://*.apps.sre.example.com");
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
@@ -67,7 +68,8 @@ function requireGroups(...requiredGroups) {
 const kc = new k8s.KubeConfig();
 try {
   kc.loadFromCluster();
-} catch {
+} catch (err) {
+  console.debug('[k8s] Not running in-cluster, loading default kubeconfig:', err.message);
   kc.loadFromDefault();
 }
 
@@ -154,7 +156,9 @@ async function syncAppRegistry() {
         for (const hr of hrResp.body.items) {
           existingResources.add(hr.metadata.name);
         }
-      } catch { /* no HR access in this ns */ }
+      } catch (err) {
+        console.debug(`[portal] No HelmRelease access in namespace ${nsName}:`, err.message);
+      }
       try {
         // Check Deployments
         const depResp = await appsApi.listNamespacedDeployment(nsName);
@@ -164,7 +168,9 @@ async function syncAppRegistry() {
           const name = dep.metadata.name;
           if (name.includes("-")) existingResources.add(name.split("-")[0]);
         }
-      } catch { /* no deploy access in this ns */ }
+      } catch (err) {
+        console.debug(`[portal] No Deployment access in namespace ${nsName}:`, err.message);
+      }
       try {
         // Check VirtualServices (apps with ingress)
         const vsResp = await customApi.listNamespacedCustomObject(
@@ -178,7 +184,9 @@ async function syncAppRegistry() {
             existingResources.add(appName);
           }
         }
-      } catch { /* no VS access in this ns */ }
+      } catch (err) {
+        console.debug(`[portal] No VirtualService access in namespace ${nsName}:`, err.message);
+      }
     }
 
     // Only remove apps that were deployed via pipeline (have deployedVia=pipeline or namespace set)
@@ -193,6 +201,12 @@ async function syncAppRegistry() {
         existingResources.has(app.helmReleaseName);
 
       if (!nameMatches && app.deployedVia === "pipeline") {
+        // Don't prune apps registered less than 5 minutes ago (Flux needs time to reconcile)
+        const registeredAt = app.registeredAt || app.deployedAt;
+        if (registeredAt && (Date.now() - new Date(registeredAt).getTime()) < 300000) {
+          keepApps.push(app);
+          continue; // Skip, too new to prune
+        }
         // Only remove pipeline-deployed apps that have no resources
         removed.push(app.name);
       } else {
@@ -214,7 +228,7 @@ async function syncAppRegistry() {
               [appName]
             );
           } catch (e) {
-            // Non-critical — pipeline DB may not have runs for this app
+            console.debug('[portal] Pipeline DB update non-critical error:', e.message);
           }
         }
       }
@@ -483,7 +497,9 @@ app.delete("/api/deploy/:namespace/:name", mutateLimiter, requireGroups("sre-adm
       await customApi.deleteNamespacedCustomObject(
         "networking.istio.io", "v1", namespace, "virtualservices", name
       );
-    } catch (e) { /* ignore if not found */ }
+    } catch (e) {
+      console.debug('[portal] VirtualService not found during delete:', e.message);
+    }
 
     // Remove from app registry
     const regIdx = appRegistry.findIndex(a => a.name === name);
@@ -500,7 +516,9 @@ app.delete("/api/deploy/:namespace/:name", mutateLimiter, requireGroups("sre-adm
           "UPDATE pipeline_runs SET status = 'undeployed', updated_at = NOW() WHERE app_name = $1 AND status = 'deployed'",
           [name]
         );
-      } catch (e) { /* non-critical */ }
+      } catch (e) {
+        console.debug('[portal] Pipeline DB undeployed-update non-critical error:', e.message);
+      }
     }
 
     res.json({
@@ -588,7 +606,8 @@ app.get("/api/status", async (req, res) => {
           const ep = await k8sApi.readNamespacedEndpoints(svc.serviceName, svc.namespace);
           const subsets = ep.body.subsets || [];
           healthy = subsets.some((s) => (s.addresses || []).length > 0);
-        } catch {
+        } catch (err) {
+          console.debug(`[health] Endpoint check failed for ${svc.serviceName}:`, err.message);
           healthy = false;
         }
         return {
@@ -801,8 +820,8 @@ app.get("/api/apps", async (req, res) => {
             created: hr.metadata.creationTimestamp || "",
           });
         }
-      } catch {
-        // Skip namespaces where we can't read HelmReleases
+      } catch (err) {
+        console.debug(`[apps] Skipping namespace — cannot read HelmReleases:`, err.message);
       }
     }
 
@@ -829,8 +848,8 @@ app.get("/api/apps", async (req, res) => {
           }
         }
       }
-    } catch {
-      // VirtualService lookup is best-effort
+    } catch (err) {
+      console.debug('[apps] VirtualService lookup best-effort failed:', err.message);
     }
 
     res.json({ apps, count: apps.length });
@@ -1052,8 +1071,9 @@ function isValidGitUrl(url) {
   try {
     const parsed = new URL(url);
     if (isInternalUrl(parsed.hostname)) return false;
-  } catch {
+  } catch (err) {
     // git@ URLs won't parse as URL — allow them (no HTTP SSRF risk)
+    console.debug('[validation] URL parse expected error for git@ URL:', err.message);
     if (!/^git@.+:.+/.test(url)) return false;
   }
   return true;
@@ -1401,8 +1421,8 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
           phase = "failed";
         }
       }
-    } catch {
-      // Pod lookup is best-effort
+    } catch (err) {
+      console.debug('[apps] Pod lookup best-effort failed:', err.message);
     }
 
     // Step 3: List events for this app in the namespace
@@ -1425,8 +1445,8 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
           message: e.message || "",
           type: e.type || "Normal",
         }));
-    } catch {
-      // Event lookup is best-effort
+    } catch (err) {
+      console.debug('[apps] Event lookup best-effort failed:', err.message);
     }
 
     res.json({
@@ -1569,7 +1589,8 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
             `--destination=${destination}`,
             "--cache=true",
             `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
-            "--snapshot-mode=redo",
+            "--snapshot-mode=time",
+            "--compressed-caching=false",
             "--insecure",
             "--skip-tls-verify",
             "--skip-tls-verify-pull",
@@ -1615,7 +1636,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
                       { name: "workspace", mountPath: "/workspace" },
                       { name: "docker-config", mountPath: "/kaniko/.docker" },
                     ],
-                    resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+                    resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
                   }],
                   volumes: [
                     { name: "workspace", emptyDir: {} },
@@ -2022,7 +2043,8 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
                   `--destination=${destination}`,
                   "--cache=true",
                   `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
-                  "--snapshot-mode=redo",
+                  "--snapshot-mode=time",
+                  "--compressed-caching=false",
                   "--insecure",
                   "--skip-tls-verify",
                   "--skip-tls-verify-pull",
@@ -2031,7 +2053,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
                   { name: "workspace", mountPath: "/workspace" },
                   { name: "docker-config", mountPath: "/kaniko/.docker" },
                 ],
-                resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+                resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
               }],
               volumes: [
                 { name: "workspace", emptyDir: {} },
@@ -2520,6 +2542,28 @@ function parseComposeBuildContext(yamlText) {
   }
 }
 
+// Parse a compose file and return simplified service definitions
+// Used for multi-container detection and metadata extraction
+function parseComposeServices(composeContent) {
+  try {
+    const compose = yaml.load(composeContent);
+    const services = [];
+    for (const [name, svc] of Object.entries(compose.services || {})) {
+      services.push({
+        name,
+        build: svc.build || null,
+        image: svc.image || null,
+        ports: svc.ports || [],
+        environment: svc.environment || {},
+      });
+    }
+    return services;
+  } catch (err) {
+    logger.warn('deploy', 'Failed to parse compose services', { error: err.message });
+    return [];
+  }
+}
+
 // ── Repo Analysis Helpers ───────────────────────────────────────────────────
 
 // Parse structured log output from the repo analysis Job into a result object
@@ -2532,7 +2576,8 @@ function parseRepoAnalysisLogs(logs) {
   const valuesMatch = logs.split("===SRE_VALUES_CONTENT===")[1]?.split("===SRE_DONE===")[0];
 
   const files = (fileListMatch || "").trim().split("\n").filter(Boolean);
-  const hasCompose = files.some((f) => f.startsWith("docker-compose") || f.includes("/docker-compose"));
+  const composeFileNames = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
+  const hasCompose = files.some((f) => composeFileNames.includes(f) || composeFileNames.some(cf => f.endsWith("/" + cf)));
   const hasDockerfile = files.some((f) => f === "Dockerfile" || f.match(/^Dockerfile\./) || f.match(/\/Dockerfile(\..*)?$/));
   const hasChart = files.some((f) => f === "Chart.yaml" || f.match(/\/Chart\.yaml$/));
   const hasKustomize = files.some((f) => f === "kustomization.yaml" || f === "kustomize.yaml" || f.match(/\/(kustomization|kustomize)\.yaml$/));
@@ -2768,7 +2813,9 @@ async function runAnalyzeJob(analyzeId) {
       if (jr.body.status?.failed) {
         return { error: "Failed to clone repository. Check the URL and branch." };
       }
-    } catch { /* retry */ }
+    } catch (err) {
+      console.debug('[deploy-git] Analyze job poll retry:', err.message);
+    }
   }
   return null; // timeout
 }
@@ -2854,7 +2901,8 @@ app.post("/api/build/compose", mutateLimiter, requireGroups("sre-admins", "devel
         `--destination=${destination}`,
         "--cache=true",
         `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
-        "--snapshot-mode=redo",
+        "--snapshot-mode=time",
+        "--compressed-caching=false",
         "--insecure",
         "--skip-tls-verify",
         "--skip-tls-verify-pull",
@@ -2900,7 +2948,7 @@ app.post("/api/build/compose", mutateLimiter, requireGroups("sre-admins", "devel
                   { name: "workspace", mountPath: "/workspace" },
                   { name: "docker-config", mountPath: "/kaniko/.docker" },
                 ],
-                resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+                resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
               }],
               volumes: [
                 { name: "workspace", emptyDir: {} },
@@ -3208,7 +3256,8 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
                     `--destination=${destination}`,
                     "--cache=true",
                     `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
-                    "--snapshot-mode=redo",
+                    "--snapshot-mode=time",
+                    "--compressed-caching=false",
                     "--insecure",
                     "--skip-tls-verify",
                     "--skip-tls-verify-pull",
@@ -3218,8 +3267,8 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
                     { name: "docker-config", mountPath: "/kaniko/.docker" },
                   ],
                   resources: {
-                    requests: { cpu: "250m", memory: "512Mi" },
-                    limits: { cpu: "2", memory: "2Gi" },
+                    requests: { cpu: "500m", memory: "1Gi" },
+                    limits: { cpu: "4", memory: "8Gi" },
                   },
                 },
               ],
@@ -3289,8 +3338,8 @@ app.post("/api/build", mutateLimiter, requireGroups("sre-admins", "developers"),
                     { name: "docker-config", mountPath: "/kaniko/.docker" },
                   ],
                   resources: {
-                    requests: { cpu: "250m", memory: "512Mi" },
-                    limits: { cpu: "2", memory: "2Gi" },
+                    requests: { cpu: "500m", memory: "1Gi" },
+                    limits: { cpu: "4", memory: "8Gi" },
                   },
                 },
               ],
@@ -3381,7 +3430,9 @@ app.get("/api/build/:id/status", async (req, res) => {
               message = "Git clone failed: " + (initFailed.state.terminated.reason || "error");
             }
           }
-        } catch { /* best effort */ }
+        } catch (err) {
+          console.debug('[build] Failed pod status check for failed build:', err.message);
+        }
       } else if (job.status?.active) {
         status = "building";
         // Check which phase — init container (clone) or main (build)
@@ -3397,7 +3448,9 @@ app.get("/api/build/:id/status", async (req, res) => {
               message = "Building image...";
             }
           }
-        } catch { /* best effort */ }
+        } catch (err) {
+          console.debug('[build] Failed pod phase check for active build:', err.message);
+        }
       } else {
         status = "pending";
         message = "Build job pending";
@@ -3457,7 +3510,9 @@ app.get("/api/build/:id/logs", async (req, res) => {
           pod = pods.body.items[0];
           break;
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.debug('[build] Waiting for build pod to appear:', err.message);
+      }
       sendEvent({ type: "status", message: "Waiting for build pod..." });
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -3490,7 +3545,9 @@ app.get("/api/build/:id/logs", async (req, res) => {
         for (const line of lines) {
           if (line.trim()) sendEvent({ type: "log", container: init.name, line });
         }
-      } catch { /* init logs may not be available */ }
+      } catch (err) {
+        console.debug('[build] Init container logs not yet available:', err.message);
+      }
     }
 
     // Wait for main container to start
@@ -3533,7 +3590,9 @@ app.get("/api/build/:id/logs", async (req, res) => {
             for (const line of lines) {
               if (line.trim()) sendEvent({ type: "log", container: "kaniko", line });
             }
-          } catch { /* best effort */ }
+          } catch (err) {
+            console.debug('[build] Kaniko log streaming best-effort error:', err.message);
+          }
           if (jr.body.status?.succeeded) {
             sendEvent({ type: "phase", phase: "push", message: "Image pushed to Harbor" });
             sendEvent({ type: "complete", status: "succeeded" });
@@ -3545,7 +3604,8 @@ app.get("/api/build/:id/logs", async (req, res) => {
           }
         }
       }
-    } catch {
+    } catch (err) {
+      console.debug('[build] Failed to check build status:', err.message);
       sendEvent({ type: "error", message: "Failed to check build status" });
     }
   } catch (err) {
@@ -3728,7 +3788,8 @@ app.post("/api/deploy/helm-chart", mutateLimiter, requireGroups("sre-admins", "d
       if (typeof values === "string") {
         try {
           userValues = yaml.load(values) || {};
-        } catch {
+        } catch (err) {
+          console.debug('[deploy] Invalid YAML in values field:', err.message);
           return res.status(400).json({ error: "Invalid YAML in values field" });
         }
       } else if (typeof values === "object") {
@@ -3912,7 +3973,9 @@ app.get("/api/databases", async (req, res) => {
             connectionSecret: `${cluster.metadata.name}-app`,
           });
         }
-      } catch { /* CNPG may not exist in this namespace */ }
+      } catch (err) {
+        console.debug(`[databases] CNPG not available in namespace:`, err.message);
+      }
     }
 
     res.json({ databases });
@@ -4444,7 +4507,8 @@ async function getIngressRoutes() {
       hosts: vs.spec?.hosts || [],
       gateways: vs.spec?.gateways || [],
     }));
-  } catch {
+  } catch (err) {
+    console.debug('[networking] VirtualService list failed:', err.message);
     return [];
   }
 }
@@ -4471,7 +4535,8 @@ async function getGatewayPort() {
     // Fallback to NodePort if no LoadBalancer
     const httpsPort = resp.body.spec.ports.find((p) => p.name === "https");
     return httpsPort?.nodePort || 443;
-  } catch {
+  } catch (err) {
+    console.debug('[networking] Istio gateway port lookup failed:', err.message);
     return 443;
   }
 }
@@ -4512,7 +4577,8 @@ async function getTenantApps(namespace) {
         replicas: hr.spec?.values?.app?.replicas || 2,
       };
     });
-  } catch {
+  } catch (err) {
+    console.debug('[apps] HelmRelease list for namespace failed:', err.message);
     return [];
   }
 }
@@ -4664,7 +4730,10 @@ async function shouldBePrivileged(appName, teamName) {
     if (!run) return false;
     const exceptions = typeof run.security_exceptions === 'string' ? JSON.parse(run.security_exceptions) : (run.security_exceptions || []);
     return exceptions.some(e => e.type === 'run_as_root' && e.approved);
-  } catch { return false; }
+  } catch (err) {
+    console.debug('[pipeline] Security exception check failed:', err.message);
+    return false;
+  }
 }
 
 async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, teamName, gitUrl) {
@@ -4807,6 +4876,7 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
             access: { mode: 'restricted', groups: [teamName, 'sre-admins'], users: [], attributes: [] },
             owner: '',
             deployedAt: new Date().toISOString(),
+            registeredAt: new Date().toISOString(),
             status: 'running',
             deployedVia: 'pipeline',
             helmReleaseName: safeName,
@@ -4970,7 +5040,9 @@ async function ensureNamespace(nsName, teamLabel) {
         await k8sApi.patchNamespacedServiceAccount("default", nsName, {
           imagePullSecrets: [{ name: "harbor-pull-creds" }],
         }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
-      } catch (e) {}
+      } catch (e) {
+        console.debug(`[ensureNamespace] Could not patch default SA in ${nsName}:`, e.message);
+      }
 
       // Auto-exclude tenant namespace from Kyverno policies
       await ensureKyvernoExclusions(nsName);
@@ -5070,7 +5142,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
         { headers: { "Content-Type": "application/merge-patch+json" } }
       );
     } catch (e) {
-      // Ignore if already gone
+      console.debug(`[delete] HelmRelease finalizer patch — already gone:`, e.message);
     }
     try {
       await customApi.deleteNamespacedCustomObject(
@@ -5098,7 +5170,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
         }
       }
     } catch (e) {
-      // Non-critical — just orphaned secrets
+      console.debug('[delete] Orphaned Helm secrets cleanup non-critical:', e.message);
     }
 
     // Step 4: Clean up any pods/deployments left behind
@@ -5110,7 +5182,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
         }
       }
     } catch (e) {
-      // Non-critical
+      console.debug('[delete] Orphaned deployments cleanup non-critical:', e.message);
     }
 
     // Step 4b: Clean up orphaned Services
@@ -5122,7 +5194,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
         }
       }
     } catch (e) {
-      // Non-critical
+      console.debug('[delete] Orphaned services cleanup non-critical:', e.message);
     }
 
     // Step 5: Delete VirtualService if it exists
@@ -5131,7 +5203,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
         "networking.istio.io", "v1", namespace, "virtualservices", name
       );
     } catch (e) {
-      // Ignore if not found
+      console.debug('[delete] VirtualService not found during cleanup:', e.message);
     }
 
     // Step 6: Remove from app registry
@@ -5150,7 +5222,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
           [name]
         );
       } catch (e) {
-        // Non-critical
+        console.debug('[delete] Pipeline run undeployed-update non-critical:', e.message);
       }
     }
 
@@ -5239,7 +5311,8 @@ async function getCredentials() {
       ).toString(),
       note: "Keycloak admin console — manage realms, clients, users",
     };
-  } catch {
+  } catch (err) {
+    console.debug('[credentials] Keycloak admin secret not found:', err.message);
     result.breakglass["keycloak-admin"] = { username: "admin", password: "(not found)" };
   }
 
@@ -5257,7 +5330,8 @@ async function getCredentials() {
         "base64"
       ).toString(),
     };
-  } catch {
+  } catch (err) {
+    console.debug('[credentials] Grafana admin credentials secret not found, trying fallback:', err.message);
     try {
       let secret = await k8sApi.readNamespacedSecret(
         "kube-prometheus-stack-grafana",
@@ -5270,7 +5344,8 @@ async function getCredentials() {
           "base64"
         ).toString(),
       };
-    } catch {
+    } catch (err2) {
+      console.debug('[credentials] Grafana fallback secret also not found:', err2.message);
       result.breakglass.grafana = { username: "admin", password: "(not found)" };
     }
   }
@@ -5290,7 +5365,8 @@ async function getCredentials() {
     result.breakglass.openbao = {
       token: Buffer.from(secret.body.data["root-token"], "base64").toString(),
     };
-  } catch {
+  } catch (err) {
+    console.debug('[credentials] OpenBao init secret not found:', err.message);
     result.breakglass.openbao = { token: "(not initialized)" };
   }
 
@@ -5307,7 +5383,8 @@ async function getCredentials() {
         "base64"
       ).toString(),
     };
-  } catch {
+  } catch (err) {
+    console.debug('[credentials] Harbor admin secret not found, using default:', err.message);
     result.breakglass.harbor = { username: "admin", password: "Harbor12345" };
   }
 
@@ -5401,6 +5478,7 @@ app.post("/api/portal/apps", mutateLimiter, requireGroups("sre-admins"), async (
       access: appAccess,
       owner: req.headers["x-auth-request-email"] || "",
       deployedAt: new Date().toISOString(),
+      registeredAt: new Date().toISOString(),
       status: "running",
     };
     appRegistry.push(entry);
@@ -5870,7 +5948,7 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
 
     // Kick off scan orchestration in background (non-blocking)
     orchestratePipelineScan(run.id).catch(err => {
-      console.error(`[pipeline] Orchestration error for ${run.id}: ${err.message}`);
+      logger.error('pipeline', `Orchestration error for run ${run.id}`, { runId: run.id, error: err.message });
     });
 
     res.status(201).json({ ...run, gates });
@@ -6115,7 +6193,9 @@ app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-a
           try {
             await batchApi.deleteNamespacedJob(job.metadata.name, BUILD_NAMESPACE, undefined, undefined, undefined, undefined, "Background");
             jobsCleaned++;
-          } catch { /* best effort */ }
+          } catch (err) {
+            console.debug('[pipeline] Build job cleanup best-effort error:', err.message);
+          }
         }
       }
     } catch (err) {
@@ -6168,7 +6248,7 @@ app.post("/api/pipeline/runs/:id/retry", mutateLimiter, requireDb, requireGroups
 
     // Kick off scan orchestration
     orchestratePipelineScan(newRun.id).catch(err => {
-      console.error(`[pipeline] Retry orchestration error for ${newRun.id}: ${err.message}`);
+      logger.error('pipeline', `Retry orchestration error for run ${newRun.id}`, { runId: newRun.id, error: err.message });
     });
 
     res.status(201).json({ ...newRun, gates, retriedFrom: oldRun.id });
@@ -6278,6 +6358,20 @@ app.post("/api/pipeline/runs/:id/review", mutateLimiter, requireDb, requireGroup
       }
       await db.updateRunStatus(run.id, "approved");
       await db.auditLog(run.id, "review_approved", actor, comment || "Approved by ISSM");
+
+      // Auto-deploy after approval if auto_deploy flag was set on the run
+      try {
+        const approvedRun = await db.getRun(run.id);
+        if (approvedRun && approvedRun.auto_deploy) {
+          await db.updateRunStatus(run.id, "deploying");
+          await db.auditLog(run.id, "auto_deploy_triggered", actor, "Auto-deploying after ISSM approval");
+          executePipelineDeploy(approvedRun, actor).catch(err => {
+            console.error(`[pipeline] Auto-deploy error for ${run.id}: ${err.message}`);
+          });
+        }
+      } catch (autoDeployErr) {
+        console.error(`[pipeline] Auto-deploy check error: ${autoDeployErr.message}`);
+      }
     } else if (decision === "rejected") {
       if (issmGate) {
         await db.updateGate(issmGate.id, { status: "failed", completedAt: new Date().toISOString(), summary: `Rejected by ${actor}: ${comment || "No reason given"}` });
@@ -6401,6 +6495,48 @@ app.post("/api/pipeline/runs/:id/exceptions", mutateLimiter, requireDb, requireG
   } catch (err) {
     console.error("Security exceptions error:", err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/pipeline/runs/:id/request-exception — Request a security exception for a pipeline run
+app.post("/api/pipeline/runs/:id/request-exception", mutateLimiter, requireDb, requireGroups("sre-admins", "developers", "platform-admins"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { exceptionType, justification } = req.body;
+    const actor = getActor(req);
+
+    if (!exceptionType || !justification) {
+      return res.status(400).json({ error: "Missing exceptionType or justification" });
+    }
+
+    const validTypes = ["run_as_root", "writable_filesystem", "host_networking", "privileged_container", "custom_capability"];
+    if (!validTypes.includes(exceptionType)) {
+      return res.status(400).json({ error: `Invalid exceptionType: ${exceptionType}. Valid: ${validTypes.join(", ")}` });
+    }
+
+    const run = await db.getRun(id);
+    if (!run) return res.status(404).json({ error: "Run not found" });
+
+    // Store the exception request in run metadata
+    const metadata = run.metadata || {};
+    metadata.exception_requests = metadata.exception_requests || [];
+    metadata.exception_requests.push({
+      type: exceptionType,
+      justification,
+      requestedBy: actor,
+      requestedAt: new Date().toISOString(),
+      status: "pending"
+    });
+
+    await db.pool.query("UPDATE pipeline_runs SET metadata = $1, updated_at = NOW() WHERE id = $2", [JSON.stringify(metadata), id]);
+    await db.auditLog(id, "exception_requested", actor, `Security exception requested: ${exceptionType}`, { exceptionType, justification });
+
+    logger.info("pipeline", "Security exception requested, pending ISSM review", { runId: id, exceptionType, actor });
+
+    res.json({ success: true, message: "Security exception requested, pending ISSM review" });
+  } catch (err) {
+    logger.error("pipeline", "Exception request error", { error: err.message });
+    res.status(500).json({ error: "Failed to request exception" });
   }
 });
 
@@ -6531,16 +6667,21 @@ async function runScanGate(runId, gate, scanFn) {
               } else {
                 failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`;
               }
-            } catch { failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`; }
+            } catch (err) {
+              console.debug('[pipeline] Could not read scan pod logs for failure reason:', err.message);
+              failureReason = `Scan exited with code ${cs.state.terminated.exitCode}`;
+            }
           }
           break;
         }
       }
-    } catch (e) { /* best effort pod status check */ }
+    } catch (e) {
+      console.debug('[pipeline] Best-effort pod status check failed:', e.message);
+    }
 
     // Auto-retry once with 2x memory if OOMKilled
     if (isOOM && !gate._oomRetried) {
-      console.log(`[pipeline] Gate ${gate.short_name} OOMKilled — retrying with 2x memory`);
+      logger.info('pipeline', `Gate ${gate.short_name} OOMKilled — retrying with 2x memory`, { gate: gate.short_name });
       gate._oomRetried = true;
       await db.updateGate(gate.id, {
         status: "running",
@@ -6614,7 +6755,10 @@ async function runSASTScan(url, branch, memoryMultiplier, gateId) {
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120);
   let results;
-  try { results = JSON.parse(logs); } catch { results = { results: [], errors: [{ message: "Failed to parse output" }] }; }
+  try { results = JSON.parse(logs); } catch (err) {
+    console.debug('[pipeline] Semgrep output parse failed:', err.message);
+    results = { results: [], errors: [{ message: "Failed to parse output" }] };
+  }
 
   const findings = (results.results || []).map(r => ({
     severity: r.extra?.severity || "info",
@@ -6666,7 +6810,10 @@ async function runSecretsScan(url, branch, memoryMultiplier, gateId) {
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60);
   let secrets = [];
-  try { secrets = JSON.parse(logs); } catch { secrets = []; }
+  try { secrets = JSON.parse(logs); } catch (err) {
+    console.debug('[pipeline] Gitleaks output parse failed:', err.message);
+    secrets = [];
+  }
   if (!Array.isArray(secrets)) secrets = [];
 
   const findings = secrets.map(s => ({
@@ -6701,7 +6848,11 @@ async function runSBOMScan(image, memoryMultiplier, gateId) {
       template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy-sbom", image: "docker.io/aquasec/trivy:0.58.2",
-          env: [{ name: "IMAGE_REF", value: image }],
+          env: [
+            { name: "IMAGE_REF", value: image },
+            { name: "TRIVY_CACHE_DIR", value: "/tmp/trivy-cache" },
+            { name: "TRIVY_NO_PROGRESS", value: "true" },
+          ],
           command: ["sh", "/scripts/sbom-scan.sh"],
           resources: { requests: { cpu: "200m", memory: memReq }, limits: { cpu: "2", memory: memLim } },
           volumeMounts: [
@@ -6737,7 +6888,8 @@ async function runSBOMScan(image, memoryMultiplier, gateId) {
       documentNamespace: parsed.documentNamespace,
       packageCount: parsed.packages?.length || packageCount,
     };
-  } catch {
+  } catch (err) {
+    console.debug('[pipeline] SBOM JSON parse failed (large or truncated):', err.message);
     // JSON too large or truncated — that's OK, we already have packageCount from regex
     if (isSpdx) {
       sbomMeta = { spdxVersion: "SPDX-2.3", packageCount };
@@ -6758,8 +6910,8 @@ async function runCVEScan(image, memoryMultiplier, gateId) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "cve-" + crypto.randomBytes(4).toString("hex");
   const mult = memoryMultiplier || 1;
-  const memReq = `${256 * mult}Mi`;
-  const memLim = `${1 * mult}Gi`;
+  const memReq = `${512 * mult}Mi`;
+  const memLim = `${2 * mult}Gi`;
 
   await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
     apiVersion: "batch/v1", kind: "Job",
@@ -6769,9 +6921,13 @@ async function runCVEScan(image, memoryMultiplier, gateId) {
       template: { metadata: { annotations: { "sidecar.istio.io/inject": "false" } }, spec: {
         restartPolicy: "Never",
         containers: [{ name: "trivy", image: "docker.io/aquasec/trivy:0.58.2",
-          env: [{ name: "IMAGE_REF", value: image }],
+          env: [
+            { name: "IMAGE_REF", value: image },
+            { name: "TRIVY_CACHE_DIR", value: "/tmp/trivy-cache" },
+            { name: "TRIVY_NO_PROGRESS", value: "true" },
+          ],
           command: ["sh", "/scripts/cve-scan.sh"],
-          resources: { requests: { cpu: "100m", memory: memReq }, limits: { cpu: "1", memory: memLim } },
+          resources: { requests: { cpu: "200m", memory: memReq }, limits: { cpu: "2", memory: memLim } },
           volumeMounts: [
             { name: "docker-config", mountPath: "/root/.docker", readOnly: true },
             { name: "scan-scripts", mountPath: "/scripts", readOnly: true },
@@ -6788,7 +6944,10 @@ async function runCVEScan(image, memoryMultiplier, gateId) {
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy", 120);
   let report;
-  try { report = JSON.parse(logs); } catch { report = { Results: [] }; }
+  try { report = JSON.parse(logs); } catch (err) {
+    console.debug('[pipeline] Trivy CVE report parse failed:', err.message);
+    report = { Results: [] };
+  }
 
   const findings = [];
   for (const result of (report.Results || [])) {
@@ -6841,7 +7000,10 @@ async function runDASTScan(targetUrl, gateId) {
 
   const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180);
   let report;
-  try { report = JSON.parse(logs); } catch { report = { site: [] }; }
+  try { report = JSON.parse(logs); } catch (err) {
+    console.debug('[pipeline] ZAP DAST report parse failed:', err.message);
+    report = { site: [] };
+  }
 
   const findings = [];
   for (const site of (report.site || [])) {
@@ -6865,8 +7027,47 @@ async function runDASTScan(targetUrl, gateId) {
   };
 }
 
+// ── Security Exception Detection ────────────────────────────────────────────
+// After build/scan completes, detect if the image requires root/privileged access
+async function detectSecurityExceptions(runId, image) {
+  const exceptions = [];
+  try {
+    const run = await db.getRun(runId);
+    const findings = run.findings || [];
+
+    // Check for root user findings in CVE/SBOM scan output
+    const rootFindings = findings.filter(f =>
+      f.description && (f.description.toLowerCase().includes('runs as root') ||
+       f.description.toLowerCase().includes('user 0') ||
+       f.description.toLowerCase().includes('privileged'))
+    );
+
+    if (rootFindings.length > 0) {
+      exceptions.push({ type: 'run_as_root', reason: 'Image runs as root user', autoDetected: true });
+    }
+
+    // Check metadata from the build (Kaniko logs may indicate root USER directive)
+    const metadata = run.metadata || {};
+    if (metadata.dockerfile_uses_root) {
+      exceptions.push({ type: 'run_as_root', reason: 'Dockerfile contains USER root or no USER directive', autoDetected: true });
+    }
+
+    // Store detected exceptions on the run
+    if (exceptions.length > 0) {
+      await db.pool.query(
+        "UPDATE pipeline_runs SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{detected_exceptions}', $1::jsonb) WHERE id = $2",
+        [JSON.stringify(exceptions), runId]
+      );
+      logger.info('pipeline', `Detected ${exceptions.length} security exception(s) for run ${runId}`, { runId, exceptions });
+    }
+  } catch (err) {
+    logger.error('pipeline', 'Failed to detect security exceptions', { runId, error: err.message });
+  }
+  return exceptions;
+}
+
 async function orchestratePipelineScan(runId) {
-  const PIPELINE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
   const pipelineStartTime = Date.now();
 
   const run = await db.getRun(runId);
@@ -6877,7 +7078,7 @@ async function orchestratePipelineScan(runId) {
   // Helper: check if the pipeline has exceeded the timeout
   function checkPipelineTimeout() {
     if (Date.now() - pipelineStartTime > PIPELINE_TIMEOUT_MS) {
-      throw new Error("Pipeline scan timed out after 10 minutes");
+      throw new Error("Pipeline scan timed out after 20 minutes");
     }
   }
 
@@ -6922,7 +7123,9 @@ async function orchestratePipelineScan(runId) {
     const safeBranch = (run.branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
 
     // Ensure Harbor project exists
-    try { await ensureHarborProject(teamName); } catch (e) { /* best-effort */ }
+    try { await ensureHarborProject(teamName); } catch (e) {
+      console.debug('[pipeline] Harbor project ensure best-effort error:', e.message);
+    }
 
     // Create Kaniko build job
     await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
@@ -6946,9 +7149,9 @@ async function orchestratePipelineScan(runId) {
             }],
             containers: [{
               name: "kaniko", image: KANIKO_IMAGE,
-              args: ["--dockerfile=Dockerfile", "--context=/workspace", `--destination=${destination}`, "--cache=true", `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`, "--snapshot-mode=redo", "--insecure", "--skip-tls-verify", "--skip-tls-verify-pull"],
+              args: ["--dockerfile=Dockerfile", "--context=/workspace", `--destination=${destination}`, "--cache=true", `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`, "--snapshot-mode=time", "--compressed-caching=false", "--insecure", "--skip-tls-verify", "--skip-tls-verify-pull"],
               volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "docker-config", mountPath: "/kaniko/.docker" }],
-              resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+              resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
             }],
             volumes: [
               { name: "workspace", emptyDir: {} },
@@ -6963,7 +7166,7 @@ async function orchestratePipelineScan(runId) {
     // Wait for build to complete
     await db.auditLog(runId, "image_build_started", null, `Building image: ${destination}`, { buildId });
     const buildStartTime = Date.now();
-    const buildDeadline = buildStartTime + 600000; // 10 min
+    const buildDeadline = buildStartTime + 1200000; // 20 min
     let buildSucceeded = false;
     while (Date.now() < buildDeadline) {
       await new Promise(r => setTimeout(r, 5000));
@@ -6971,7 +7174,9 @@ async function orchestratePipelineScan(runId) {
         const job = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
         if (job.body.status?.succeeded) { buildSucceeded = true; break; }
         if (job.body.status?.failed) break;
-      } catch (e) { /* keep polling */ }
+      } catch (e) {
+        console.debug('[pipeline] Build job poll error, will retry:', e.message);
+      }
       // Update progress with descriptive messages
       if (gateMap.ARTIFACT_STORE) {
         const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
@@ -7032,14 +7237,19 @@ async function orchestratePipelineScan(runId) {
     if (gateMap.CVE) await db.updateGate(gateMap.CVE.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
   }
 
-  // DAST — skipped during pipeline, runs post-deployment via manual trigger
-  if (gateMap.DAST) {
-    await db.updateGate(gateMap.DAST.id, { status: "skipped", summary: "DAST runs post-deployment — trigger from pipeline history after app is live", completedAt: new Date().toISOString() });
+  // Phase 3b: Detect security exceptions (root user, privileged requirements)
+  if (builtImageRef) {
+    await detectSecurityExceptions(runId, builtImageRef);
   }
 
-  // Determine overall status after automated gates
+  // DAST — deferred until post-deployment, will run automatically after deploy completes
+  if (gateMap.DAST) {
+    await db.updateGate(gateMap.DAST.id, { status: "skipped", summary: "DAST runs automatically after deployment — manual ZAP scan also available from pipeline history", completedAt: new Date().toISOString() });
+  }
+
+  // Determine overall status after automated gates (exclude DAST since it runs post-deployment)
   const updatedRun = await db.getRun(runId);
-  const automatedGates = updatedRun.gates.filter(g => !["ISSM_REVIEW", "IMAGE_SIGNING"].includes(g.short_name));
+  const automatedGates = updatedRun.gates.filter(g => !["ISSM_REVIEW", "IMAGE_SIGNING", "DAST"].includes(g.short_name));
   const hasCriticalFindings = updatedRun.findings.some(f => f.severity === "critical" && !f.disposition);
   const hasFailedGate = automatedGates.some(g => g.status === "failed");
 
@@ -7062,7 +7272,7 @@ async function orchestratePipelineScan(runId) {
 
   } catch (timeoutErr) {
     // Pipeline timeout or unexpected error — mark remaining pending gates as failed
-    console.error(`[pipeline] Pipeline ${runId} error: ${timeoutErr.message}`);
+    logger.error('pipeline', `Pipeline ${runId} error: ${timeoutErr.message}`, { runId });
     const currentRun = await db.getRun(runId);
     if (currentRun) {
       for (const gate of currentRun.gates) {
@@ -7098,10 +7308,12 @@ async function executePipelineDeploy(run, actor) {
       const privilegedTypes = ["run_as_root", "writable_filesystem", "privileged_container", "host_networking"];
       needsPrivileged = exceptions.some(e => privilegedTypes.includes(e.type));
       if (needsPrivileged) {
-        console.log(`[pipeline] Run ${run.id} has security exceptions requiring privileged mode: ${exceptions.map(e => e.type).join(", ")}`);
+        logger.info('pipeline', `Run ${run.id} has security exceptions requiring privileged mode`, { runId: run.id, exceptions: exceptions.map(e => e.type) });
         await db.auditLog(run.id, "privileged_deploy", actor, `Deploying with privileged security context due to approved exceptions: ${exceptions.map(e => e.type).join(", ")}`);
       }
-    } catch (e) { /* best effort */ }
+    } catch (e) {
+      console.debug('[pipeline] Security exception check for deploy best-effort:', e.message);
+    }
 
     if (run.git_url) {
       // Call the real deploy-from-git endpoint internally via localhost
@@ -7135,7 +7347,10 @@ async function executePipelineDeploy(run, actor) {
               const parsed = JSON.parse(data);
               if (res.statusCode >= 400) reject(new Error(parsed.error || `HTTP ${res.statusCode}`));
               else resolve(parsed);
-            } catch { reject(new Error(`Deploy response parse error (HTTP ${res.statusCode})`)); }
+            } catch (err) {
+              console.debug('[pipeline] Deploy response parse error:', err.message);
+              reject(new Error(`Deploy response parse error (HTTP ${res.statusCode})`));
+            }
           });
         });
         req.on("error", (e) => { console.error(`[pipeline] Deploy HTTP error: ${e.message}`); reject(e); });
@@ -7144,7 +7359,7 @@ async function executePipelineDeploy(run, actor) {
         req.end();
       });
 
-      console.log(`[pipeline] Deploy API responded for ${run.id}:`, JSON.stringify(deployResult).substring(0, 200));
+      logger.info('pipeline', `Deploy API responded for run ${run.id}`, { runId: run.id, result: JSON.stringify(deployResult).substring(0, 200) });
       const deployedUrl = deployResult.url || `https://${safeName}.${domain}`;
 
       // If a build was started, wait for it to complete and HelmRelease to be created
@@ -7161,11 +7376,13 @@ async function executePipelineDeploy(run, actor) {
             const hrList = hrs.body.items || [];
             const hrExists = hrList.some(hr => hr.metadata.name === safeName || hr.metadata.name.includes(safeName));
             if (hrExists) {
-              console.log(`[pipeline] HelmRelease found for ${safeName} in ${nsName}`);
+              logger.info('pipeline', `HelmRelease found for ${safeName} in ${nsName}`, { app: safeName, namespace: nsName });
               deployed = true;
               break;
             }
-          } catch { /* keep waiting */ }
+          } catch (err) {
+            console.debug('[pipeline] Waiting for HelmRelease creation:', err.message);
+          }
           // Also check if build job failed
           try {
             const job = await batchApi.readNamespacedJob(deployResult.buildId, BUILD_NAMESPACE);
@@ -7218,10 +7435,44 @@ async function executePipelineDeploy(run, actor) {
     } else {
       throw new Error("No git URL or image URL available for deployment");
     }
+
+    // After deployment succeeds, trigger DAST scan automatically (non-blocking)
+    try {
+      const deployedRun = await db.getRun(run.id);
+      const dastGate = deployedRun.gates.find(g => g.short_name === "DAST");
+      const deployedUrl = deployedRun.deployed_url;
+      if (dastGate && deployedUrl && validateUrl(deployedUrl)) {
+        await db.updateGate(dastGate.id, { status: "running", summary: "Running DAST scan against deployed application...", startedAt: new Date().toISOString(), progress: 10 });
+        await db.auditLog(run.id, "dast_auto_scan_started", actor, `Auto-DAST scan started against ${deployedUrl}`);
+        try {
+          const dastResult = await runDASTScan(deployedUrl, dastGate.id);
+          const dastStatus = dastResult.status === "failed" ? "warning" : dastResult.status === "warning" ? "warning" : "passed";
+          await db.updateGate(dastGate.id, {
+            status: dastStatus,
+            progress: 100,
+            completedAt: new Date().toISOString(),
+            summary: dastResult.summary || dastStatus,
+            rawOutput: { gate: "DAST", tool: "OWASP ZAP", status: dastStatus, summary: dastResult.summary, findings: dastResult.findings, scannedAt: new Date().toISOString() },
+          });
+          if (dastResult.findings && dastResult.findings.length > 0) {
+            for (const finding of dastResult.findings) {
+              await db.createFinding({ runId: run.id, gateId: dastGate.id, severity: (finding.severity || "info").toLowerCase(), title: finding.title, description: finding.description, location: finding.location });
+            }
+          }
+          await db.auditLog(run.id, "dast_auto_scan_completed", actor, `Auto-DAST scan completed: ${dastStatus} — ${dastResult.summary}`);
+        } catch (dastErr) {
+          await db.updateGate(dastGate.id, { status: "warning", progress: 100, completedAt: new Date().toISOString(), summary: `DAST scan failed: ${dastErr.message} — manual ZAP scan available from pipeline history` });
+          await db.auditLog(run.id, "dast_auto_scan_failed", actor, `Auto-DAST scan failed: ${dastErr.message}`);
+          console.error(`[pipeline] Auto-DAST scan failed for run ${run.id}: ${dastErr.message}`);
+        }
+      }
+    } catch (dastSetupErr) {
+      console.error(`[pipeline] DAST setup error for run ${run.id}: ${dastSetupErr.message}`);
+    }
   } catch (err) {
     await db.updateRunStatus(run.id, "failed");
     await db.auditLog(run.id, "deploy_failed", actor, `Deploy failed: ${err.message}`);
-    console.error(`[pipeline] Deploy failed for ${run.id}:`, err.message);
+    logger.error('pipeline', `Deploy failed for run ${run.id}`, { runId: run.id, error: err.message });
   }
 }
 
@@ -7252,7 +7503,9 @@ async function waitForJobAndGetLogs(jobName, namespace, containerName, timeoutSe
   if (body && typeof body === 'object') {
     // Response object — try .text or JSON.stringify
     if (typeof body.text === 'function') return await body.text();
-    try { return JSON.stringify(body); } catch { /* fall through */ }
+    try { return JSON.stringify(body); } catch (err) {
+      console.debug('[k8s] Response body JSON.stringify failed, falling through:', err.message);
+    }
   }
   return String(body || '');
 }
@@ -7297,7 +7550,8 @@ app.post("/api/security/sast", mutateLimiter, requireGroups("sre-admins", "devel
     let results;
     try {
       results = JSON.parse(logs);
-    } catch {
+    } catch (err) {
+      console.debug('[security] Standalone Semgrep output parse failed:', err.message);
       results = { results: [], errors: [{ message: "Failed to parse output" }] };
     }
 
@@ -7362,7 +7616,10 @@ app.post("/api/security/secrets", mutateLimiter, requireGroups("sre-admins", "de
     const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60);
 
     let secrets = [];
-    try { secrets = JSON.parse(logs); } catch { secrets = []; }
+    try { secrets = JSON.parse(logs); } catch (err) {
+      console.debug('[security] Standalone Gitleaks output parse failed:', err.message);
+      secrets = [];
+    }
     if (!Array.isArray(secrets)) secrets = [];
 
     const findings = secrets.map(s => ({
@@ -7409,7 +7666,7 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
               name: "trivy-sbom",
               image: "docker.io/aquasec/trivy:0.58.2",
               command: ["trivy", "image", "--format", "spdx-json", "--insecure", "--scanners", "vuln", "--quiet", image],
-              resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "2", memory: "4Gi" } },
+              resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
               volumeMounts: [{ name: "docker-config", mountPath: "/root/.docker", readOnly: true }],
             }],
             volumes: [{
@@ -7424,7 +7681,10 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
     const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
 
     let sbom;
-    try { sbom = JSON.parse(logs); } catch { sbom = null; }
+    try { sbom = JSON.parse(logs); } catch (err) {
+      console.debug('[security] Standalone SBOM parse failed:', err.message);
+      sbom = null;
+    }
 
     const packageCount = sbom?.packages?.length || 0;
 
@@ -7479,7 +7739,10 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
     const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180);
 
     let report;
-    try { report = JSON.parse(logs); } catch { report = { site: [] }; }
+    try { report = JSON.parse(logs); } catch (err) {
+      console.debug('[security] Standalone ZAP report parse failed:', err.message);
+      report = { site: [] };
+    }
 
     const alerts = [];
     for (const site of (report.site || [])) {
@@ -7585,7 +7848,8 @@ async function getJobLogs(jobName, namespace, containerName) {
   try {
     const logs = await k8sApi.readNamespacedPodLog(podName, namespace, containerName);
     return logs.body;
-  } catch {
+  } catch (err) {
+    console.debug(`[pipeline] getJobLogs failed for ${jobName}/${containerName}:`, err.message);
     return null;
   }
 }
@@ -7648,7 +7912,9 @@ async function recoverOrphanedRuns() {
                 if (cs?.state?.terminated?.reason === "OOMKilled") reason = "Out of memory";
                 else if (cs?.state?.terminated?.exitCode) reason = `Exit code ${cs.state.terminated.exitCode}`;
               }
-            } catch { /* best effort */ }
+            } catch (err) {
+              console.debug('[recovery] Pod status lookup best-effort failed:', err.message);
+            }
 
             await db.updateGate(gate.id, {
               status: "failed",

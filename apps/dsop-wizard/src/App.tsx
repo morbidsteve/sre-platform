@@ -150,8 +150,14 @@ export default function App() {
             onNext={() => wizard.setStep(5)}
             pipelineRunId={state.pipelineRunId}
             pipelineRunStatus={state.pipelineRun?.status}
+            pipelineRun={state.pipelineRun}
             onSubmitForReview={wizard.submitForReview}
             onRetryPipeline={wizard.retryPipeline}
+            exceptionJustification={wizard.exceptionJustification}
+            onExceptionJustificationChange={wizard.setExceptionJustification}
+            onRequestException={wizard.requestException}
+            exceptionRequested={wizard.exceptionRequested}
+            requestingException={wizard.requestingException}
           />
         );
 

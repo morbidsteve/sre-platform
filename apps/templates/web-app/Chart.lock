@@ -1,0 +1,6 @@
+dependencies:
+- name: sre-lib
+  repository: file://../sre-lib
+  version: 0.1.0
+digest: sha256:a68e8e688f6ce91e9e6f5e3535c7943bc42436a406d265d5971ddb5396f3bfe4
+generated: "2026-03-23T23:00:51.726650345Z"

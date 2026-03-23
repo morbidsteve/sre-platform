@@ -9,13 +9,10 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Colors and helpers
 # ---------------------------------------------------------------------------
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-YELLOW='\033[0;33m'
-RED='\033[0;31m'
-BOLD='\033[1m'
-RESET='\033[0m'
+source "$(dirname "${BASH_SOURCE[0]}")/lib/colors.sh"
+RESET="$NC"  # This script uses RESET instead of NC
 
+# Override with script-specific log functions
 info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
 success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()    { echo -e "${YELLOW}[SKIP]${RESET}  $*"; }
