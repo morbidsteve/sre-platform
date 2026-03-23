@@ -24,8 +24,8 @@
             "repository": {
               "type": "string",
               "minLength": 1,
-              "pattern": "^harbor\\.sre\\.internal/",
-              "description": "Container image repository. Must be from internal Harbor registry (harbor.sre.internal/...)"
+              "pattern": "^harbor\\.",
+              "description": "Container image repository. Must be from internal Harbor registry"
             },
             "tag": {
               "type": "string",
