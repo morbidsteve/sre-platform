@@ -1582,6 +1582,93 @@
       color: var(--red);
     }
 
+    /* ── Confirm Modal ─────────────────────────────────────── */
+
+    .confirm-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--overlay-bg);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+
+    .confirm-overlay.show { display: flex; }
+
+    .confirm-modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 440px;
+      width: 90%;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      animation: confirm-in 0.2s ease;
+    }
+
+    @keyframes confirm-in {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .confirm-modal-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(239,68,68,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      font-size: 22px;
+    }
+
+    .confirm-modal h3 {
+      font-size: 18px;
+      color: var(--text-bright);
+      margin-bottom: 8px;
+    }
+
+    .confirm-modal p {
+      font-size: 14px;
+      color: var(--text-dim);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .confirm-modal p strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .confirm-modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .confirm-modal-actions .btn { min-height: 38px; padding: 8px 20px; }
+
+    .btn-delete {
+      background: var(--red);
+      border: 1px solid var(--red);
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 8px 20px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all var(--transition);
+      min-height: 38px;
+    }
+
+    .btn-delete:hover { background: #e03131; border-color: #e03131; }
+
     /* ── Onboarding Modal ────────────────────────────────────── */
 
     .onboard-overlay {
@@ -3009,23 +3096,18 @@
 </div>
 
 <nav id="main-nav">
-  <button class="active" data-tab="portal" onclick="switchTab('portal', this)">Home</button>
-  <button data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
-  <button data-tab="services" onclick="switchTab('services', this)">Services</button>
-  <button data-tab="apps" onclick="switchTab('apps', this)">My Apps</button>
-  <button data-tab="deploy" onclick="switchTab('deploy', this)">Deploy App</button>
-  <button data-tab="status" onclick="switchTab('status', this)">Status</button>
+  <button class="active" data-tab="dashboard" onclick="switchTab('dashboard', this)">Dashboard</button>
+  <button data-tab="applications" onclick="switchTab('applications', this)">Applications</button>
+  <button data-tab="platform" onclick="switchTab('platform', this)">Platform</button>
   <button data-tab="cluster" onclick="switchTab('cluster', this)">Cluster</button>
-  <button data-tab="pipeline" onclick="switchTab('pipeline', this)">Pipeline History</button>
-  <button data-tab="issm" onclick="switchTab('issm', this)" id="btn-issm-tab">ISSM Queue</button>
+  <button data-tab="pipeline" onclick="switchTab('pipeline', this)">Pipeline</button>
   <button data-tab="audit" onclick="switchTab('audit', this)">Audit</button>
-  <button data-tab="credentials" onclick="switchTab('credentials', this)">Credentials</button>
-  <button data-tab="users" onclick="switchTab('users', this)">Users</button>
+  <button data-tab="admin" onclick="switchTab('admin', this)" id="btn-admin-tab">Admin</button>
 </nav>
 
 <main>
-  <!-- Portal Tab -->
-  <div id="tab-portal" class="tab-content active">
+  <!-- Dashboard Tab (merged Home + Overview) -->
+  <div id="tab-dashboard" class="tab-content active">
     <div id="portal-header" style="margin-bottom: 24px;">
       <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 4px;">Welcome to SRE Platform</h1>
       <p id="portal-user-info" style="color: var(--text-dim); font-size: 14px;"></p>
@@ -3033,7 +3115,7 @@
 
     <div id="portal-admin-banner" style="display:none; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; justify-content: space-between; align-items: center;">
       <span style="font-size: 13px; color: var(--accent);">You have administrator access</span>
-      <button class="btn" style="font-size: 12px;" onclick="switchTab('overview', document.querySelector('[data-tab=overview]'))">Open Admin Dashboard</button>
+      <button class="btn" style="font-size: 12px;" onclick="switchTab('admin', document.querySelector('[data-tab=admin]'))">Manage Users &amp; Credentials</button>
     </div>
 
     <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);">Your Applications</h2>
@@ -3042,104 +3124,114 @@
       <div class="loading"><span class="spinner"></span></div>
     </div>
 
-    <div id="portal-no-apps" style="display:none; text-align: center; padding: 60px 20px; color: var(--text-dim);">
+    <div id="portal-no-apps" style="display:none; text-align: center; padding: 40px 20px; color: var(--text-dim);">
       <h3 style="font-size: 18px; color: var(--text); margin-bottom: 8px;">No applications available</h3>
       <p style="font-size: 14px;">Contact your administrator to get access to applications.</p>
     </div>
+
+    <!-- Overview section (merged from Overview tab) -->
+    <div style="margin-top: 32px; border-top: 1px solid var(--border); padding-top: 24px;">
+      <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);">Platform Overview</h2>
+
+      <div class="grid" id="summary-cards">
+        <div class="card">
+          <h3>Components</h3>
+          <div class="big-number" id="hr-count">--</div>
+        </div>
+        <div class="card">
+          <h3>Nodes</h3>
+          <div class="big-number" id="node-count">--</div>
+        </div>
+        <div class="card" style="cursor:pointer;" onclick="toggleProblemPods()">
+          <h3>Problem Pods</h3>
+          <div class="big-number" id="pod-count">--</div>
+          <div id="pod-card-hint" style="font-size:11px;color:var(--text-dim);margin-top:4px;display:none;">Click for details</div>
+        </div>
+      </div>
+
+      <div id="problem-pods-panel" class="table-card" style="display:none;">
+        <div class="table-header">
+          <h2>Problem Pods</h2>
+          <span id="problem-pods-summary" style="font-size:13px;color:var(--text-dim);"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Pod</th>
+                <th>Namespace</th>
+                <th>Reason</th>
+                <th>Restarts</th>
+                <th>Age</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="problem-pods-table"></tbody>
+          </table>
+        </div>
+        <div id="problem-pod-detail" style="padding:0 16px 16px;"></div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <h2>Platform Components</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Component</th>
+                <th>Namespace</th>
+                <th>Chart</th>
+                <th>Version</th>
+              </tr>
+            </thead>
+            <tbody id="hr-table">
+              <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <h2>Nodes</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>IP</th>
+                <th>Version</th>
+              </tr>
+            </thead>
+            <tbody id="nodes-table">
+              <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- Overview Tab -->
-  <div id="tab-overview" class="tab-content">
-    <div class="grid" id="summary-cards">
-      <div class="card">
-        <h3>Components</h3>
-        <div class="big-number" id="hr-count">--</div>
-      </div>
-      <div class="card">
-        <h3>Nodes</h3>
-        <div class="big-number" id="node-count">--</div>
-      </div>
-      <div class="card" style="cursor:pointer;" onclick="toggleProblemPods()">
-        <h3>Problem Pods</h3>
-        <div class="big-number" id="pod-count">--</div>
-        <div id="pod-card-hint" style="font-size:11px;color:var(--text-dim);margin-top:4px;display:none;">Click for details</div>
-      </div>
-    </div>
-
-    <div id="problem-pods-panel" class="table-card" style="display:none;">
-      <div class="table-header">
-        <h2>Problem Pods</h2>
-        <span id="problem-pods-summary" style="font-size:13px;color:var(--text-dim);"></span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Pod</th>
-              <th>Namespace</th>
-              <th>Reason</th>
-              <th>Restarts</th>
-              <th>Age</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="problem-pods-table"></tbody>
-        </table>
-      </div>
-      <div id="problem-pod-detail" style="padding:0 16px 16px;"></div>
-    </div>
-
-    <div class="table-card">
-      <div class="table-header">
-        <h2>Platform Components</h2>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Component</th>
-              <th>Namespace</th>
-              <th>Chart</th>
-              <th>Version</th>
-            </tr>
-          </thead>
-          <tbody id="hr-table">
-            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="table-card">
-      <div class="table-header">
-        <h2>Nodes</h2>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Name</th>
-              <th>Role</th>
-              <th>IP</th>
-              <th>Version</th>
-            </tr>
-          </thead>
-          <tbody id="nodes-table">
-            <tr><td colspan="5" class="loading"><span class="spinner"></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- Services Tab (NEW - tile-based landing page) -->
-  <div id="tab-services" class="tab-content">
+  <!-- Platform Tab (merged Services + Status) -->
+  <div id="tab-platform" class="tab-content">
     <h2 style="margin-bottom: 16px;">Platform Services</h2>
     <div class="services-grid" id="services-tiles-grid">
       <div class="loading"><span class="spinner"></span></div>
+    </div>
+
+    <div style="margin-top: 24px;">
+      <h2 style="margin-bottom: 12px; font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);">Service Health Status</h2>
+      <div class="grid" id="status-grid">
+        <div class="loading"><span class="spinner"></span></div>
+      </div>
+      <div class="last-checked" id="status-last-checked"></div>
     </div>
 
     <div style="margin-top: 24px;">
@@ -3151,11 +3243,34 @@
     </div>
   </div>
 
-  <!-- Deploy Tab -->
-  <div id="tab-deploy" class="tab-content">
+  <!-- Applications Tab (merged My Apps + Deploy) -->
+  <div id="tab-applications" class="tab-content">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2 style="margin-bottom: 4px;">Applications</h2>
+        <p style="color: var(--text-dim); font-size: 13px;">Manage and deploy applications on the SRE Platform.</p>
+      </div>
+      <button class="btn btn-primary" onclick="toggleDeployPanel()" id="deploy-toggle-btn" style="font-size: 13px; padding: 10px 20px;">Deploy New App</button>
+    </div>
 
-    <h2 style="margin-bottom: 16px;">Deploy to SRE Platform</h2>
-    <p style="color: var(--text-dim); margin-bottom: 20px;">Launch the DSOP-compliant deployment wizard to securely build and deploy your application, or use Quick Deploy for pre-built images.</p>
+    <!-- App Gallery (from My Apps) -->
+    <div class="app-gallery-filters">
+      <input type="text" id="app-search" placeholder="Search apps by name, team, or image..." oninput="filterAppGallery()" />
+      <span class="app-gallery-count" id="app-gallery-count"></span>
+      <button class="btn btn-sm" onclick="loadAppGallery()" style="padding:6px 12px;font-size:12px;">Refresh</button>
+    </div>
+
+    <div id="app-gallery" class="app-gallery-grid">
+      <div class="loading"><span class="spinner"></span></div>
+    </div>
+
+    <!-- Deploy Section (expandable, hidden by default) -->
+    <div id="deploy-section" style="display:none;margin-top:24px;border-top:1px solid var(--border);padding-top:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2 style="margin-bottom: 0;">Deploy to SRE Platform</h2>
+        <button class="btn btn-sm" onclick="toggleDeployPanel()" style="font-size:11px;">Close</button>
+      </div>
+      <p style="color: var(--text-dim); margin-bottom: 20px;">Launch the DSOP-compliant deployment wizard to securely build and deploy your application, or use Quick Deploy for pre-built images.</p>
 
     <!-- DSOP Wizard Card -->
     <div style="background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
@@ -3666,32 +3781,8 @@ services:
         </table>
       </div>
     </div>
-  </div>
-
-  <!-- My Apps Tab -->
-  <div id="tab-apps" class="tab-content">
-    <h2 style="margin-bottom: 4px;">Deployed Applications</h2>
-    <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 16px;">Click any app tile to open it. Deploy new apps using the <a href="https://dsop.apps.sre.example.com" target="_blank" style="color:var(--primary);">DSOP Deploy Wizard</a>.</p>
-
-    <div class="app-gallery-filters">
-      <input type="text" id="app-search" placeholder="Search apps by name, team, or image..." oninput="filterAppGallery()" />
-      <span class="app-gallery-count" id="app-gallery-count"></span>
-      <button class="btn btn-sm" onclick="loadAppGallery()" style="padding:6px 12px;font-size:12px;">Refresh</button>
-    </div>
-
-    <div id="app-gallery" class="app-gallery-grid">
-      <div class="loading"><span class="spinner"></span></div>
-    </div>
-  </div>
-
-  <!-- Status Tab (NEW) -->
-  <div id="tab-status" class="tab-content">
-    <h2 style="margin-bottom: 16px;">Service Health Status</h2>
-    <div class="grid" id="status-grid">
-      <div class="loading"><span class="spinner"></span></div>
-    </div>
-    <div class="last-checked" id="status-last-checked"></div>
-  </div>
+    </div><!-- /deploy-section -->
+  </div><!-- /tab-applications -->
 
   <!-- Audit Tab -->
   <div id="tab-audit" class="tab-content">
@@ -3932,21 +4023,7 @@ services:
     </div>
   </div>
 
-  <!-- Credentials Tab -->
-  <div id="tab-credentials" class="tab-content">
-    <h2 style="margin-bottom: 16px;">Platform Login</h2>
-    <p style="color: var(--text-dim); margin-bottom: 16px;">All services use Keycloak SSO. Log in once and you're authenticated everywhere.</p>
-    <div id="sso-creds" style="margin-bottom: 24px;"></div>
-    <details style="margin-top: 8px;">
-      <summary style="cursor: pointer; color: var(--text-dim); font-size: 13px; user-select: none;">Break-glass credentials (emergency use only)</summary>
-      <p style="color: var(--text-dim); font-size: 12px; margin: 8px 0;">These local admin accounts bypass SSO. Use only when Keycloak is down or for initial setup.</p>
-      <div class="grid" id="creds-grid" style="margin-top: 12px;">
-        <div class="loading"><span class="spinner"></span></div>
-      </div>
-    </details>
-  </div>
-
-  <!-- Pipeline History Tab -->
+  <!-- Pipeline Tab (merged Pipeline History + ISSM Queue) -->
   <div id="tab-pipeline" class="tab-content">
     <div class="pipeline-stats" id="pipeline-stats">
       <div class="pipeline-stat-card">
@@ -3965,6 +4042,14 @@ services:
         <h3>Avg Time to Approval</h3>
         <div class="stat-value accent" id="pipe-stat-avg-time">--</div>
       </div>
+    </div>
+
+    <!-- Quick filter bar (includes ISSM filter) -->
+    <div class="pipeline-quick-filters" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="cluster-subnav-btn active" onclick="setPipelineQuickFilter('', this)">All Runs</button>
+      <button class="cluster-subnav-btn" onclick="setPipelineQuickFilter('review_pending', this)">Pending Review (ISSM)</button>
+      <button class="cluster-subnav-btn" onclick="setPipelineQuickFilter('approved', this)">Approved</button>
+      <button class="cluster-subnav-btn" onclick="setPipelineQuickFilter('failed', this)">Failed</button>
     </div>
 
     <div class="pipeline-filters">
@@ -4013,36 +4098,6 @@ services:
     <div class="pipeline-pagination" id="pipe-pagination"></div>
   </div>
 
-  <!-- ISSM Queue Tab -->
-  <div id="tab-issm" class="tab-content">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <h2>ISSM Review Queue</h2>
-      <span id="issm-queue-count" style="font-size:13px;color:var(--text-dim);"></span>
-    </div>
-
-    <div class="table-card">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>App Name</th>
-              <th>Team</th>
-              <th>Submitted By</th>
-              <th>Classification</th>
-              <th>Submitted At</th>
-              <th>Critical</th>
-              <th>High</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="issm-queue-table">
-            <tr><td colspan="8" class="loading"><span class="spinner"></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
   <!-- Run Detail Slide Panel -->
   <div class="run-detail-overlay" id="run-detail-overlay" onclick="if(event.target===this)closeRunDetail()">
     <div class="run-detail-panel" id="run-detail-panel">
@@ -4050,47 +4105,72 @@ services:
     </div>
   </div>
 
-  <!-- Users Tab -->
-  <div id="tab-users" class="tab-content">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h2>User Management</h2>
-      <div style="display:flex; gap:8px;">
-        <button class="btn btn-primary" onclick="showCreateUserModal()">Create User</button>
-        <button class="btn" onclick="showCreateGroupModal()">Create Group</button>
+  <!-- Admin Tab (merged Credentials + Users) -->
+  <div id="tab-admin" class="tab-content">
+    <h2 style="margin-bottom: 16px;">Administration</h2>
+
+    <!-- Admin sub-navigation -->
+    <div class="cluster-subnav" style="margin-bottom:20px;">
+      <button class="cluster-subnav-btn active" onclick="switchAdminPanel('admin-users', this)">Users</button>
+      <button class="cluster-subnav-btn" onclick="switchAdminPanel('admin-credentials', this)">Credentials</button>
+    </div>
+
+    <!-- Users sub-panel -->
+    <div id="admin-users" class="cluster-panel active">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="font-size:15px; font-weight:600;">User Management</h3>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="showCreateUserModal()">Create User</button>
+          <button class="btn" onclick="showCreateGroupModal()">Create Group</button>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-bottom:16px;">
+        <input type="text" id="user-search" placeholder="Search users..." oninput="filterUsers()" style="flex:1; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px;" />
+        <select id="group-filter" onchange="filterUsers()" style="padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px;">
+          <option value="">All Groups</option>
+        </select>
+      </div>
+
+      <div class="table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Groups</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table">
+              <tr><td colspan="7" class="loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top:24px;">
+        <h3 style="font-size:15px; font-weight:600; margin-bottom:12px;">Groups</h3>
+        <div id="groups-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
       </div>
     </div>
 
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
-      <input type="text" id="user-search" placeholder="Search users..." oninput="filterUsers()" style="flex:1; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px;" />
-      <select id="group-filter" onchange="filterUsers()" style="padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px;">
-        <option value="">All Groups</option>
-      </select>
-    </div>
-
-    <div class="table-card">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Username</th>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Groups</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="users-table">
-            <tr><td colspan="7" class="loading"><span class="spinner"></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div style="margin-top:24px;">
-      <h3 style="font-size:15px; font-weight:600; margin-bottom:12px;">Groups</h3>
-      <div id="groups-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+    <!-- Credentials sub-panel -->
+    <div id="admin-credentials" class="cluster-panel">
+      <h3 style="font-size:15px; font-weight:600; margin-bottom:12px;">Platform Login</h3>
+      <p style="color: var(--text-dim); margin-bottom: 16px;">All services use Keycloak SSO. Log in once and you're authenticated everywhere.</p>
+      <div id="sso-creds" style="margin-bottom: 24px;"></div>
+      <details style="margin-top: 8px;">
+        <summary style="cursor: pointer; color: var(--text-dim); font-size: 13px; user-select: none;">Break-glass credentials (emergency use only)</summary>
+        <p style="color: var(--text-dim); font-size: 12px; margin: 8px 0;">These local admin accounts bypass SSO. Use only when Keycloak is down or for initial setup.</p>
+        <div class="grid" id="creds-grid" style="margin-top: 12px;">
+          <div class="loading"><span class="spinner"></span></div>
+        </div>
+      </details>
     </div>
   </div>
 </main>
@@ -4119,6 +4199,19 @@ services:
 <!-- Onboarding Modal -->
 <div class="onboard-overlay" id="onboard-overlay">
   <div class="onboard-modal" id="onboard-modal"></div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="confirm-overlay" id="confirm-overlay" onclick="if(event.target===this)closeConfirm()">
+  <div class="confirm-modal">
+    <div class="confirm-modal-icon" id="confirm-icon">&#x26A0;&#xFE0F;</div>
+    <h3 id="confirm-title">Confirm Action</h3>
+    <p id="confirm-message"></p>
+    <div class="confirm-modal-actions">
+      <button class="btn" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-delete" id="confirm-action-btn" onclick="">Delete</button>
+    </div>
+  </div>
 </div>
 
 <!-- Toast Container -->
@@ -4193,9 +4286,27 @@ function updateThemeBtn() {
 // ── Tab switching ────────────────────────────────────────────────────────────
 
 function switchTab(tab, btn) {
+  // Backward compatibility: redirect old tab names to new ones
+  var tabRedirects = {
+    'portal': 'dashboard',
+    'overview': 'dashboard',
+    'services': 'platform',
+    'status': 'platform',
+    'apps': 'applications',
+    'deploy': 'applications',
+    'credentials': 'admin',
+    'users': 'admin',
+    'issm': 'pipeline'
+  };
+  if (tabRedirects[tab]) {
+    tab = tabRedirects[tab];
+    btn = document.querySelector('nav button[data-tab="' + tab + '"]');
+  }
+
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('nav button').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById('tab-' + tab).classList.add('active');
+  var tabEl = document.getElementById('tab-' + tab);
+  if (tabEl) tabEl.classList.add('active');
   if (btn) btn.classList.add('active');
 
   // Close mobile nav
@@ -4208,12 +4319,15 @@ function switchTab(tab, btn) {
   clearInterval(pipelineRefreshTimer);
   clearInterval(issmRefreshTimer);
 
-  if (tab === 'portal') { loadPortalApps(); }
-  if (tab === 'deploy') { loadTenants(); }
-  if (tab === 'apps') { loadAppGallery(); }
-  if (tab === 'services') { loadServiceTiles(); }
-  if (tab === 'credentials') { loadCredentials(); }
-  if (tab === 'status') {
+  if (tab === 'dashboard') {
+    loadPortalApps();
+  }
+  if (tab === 'applications') {
+    loadAppGallery();
+    loadTenants();
+  }
+  if (tab === 'platform') {
+    loadServiceTiles();
     loadStatus();
     statusRefreshTimer = setInterval(loadStatus, 30000);
   }
@@ -4225,15 +4339,14 @@ function switchTab(tab, btn) {
     initClusterTab();
     clusterRefreshTimer = setInterval(refreshActiveClusterPanel, 30000);
   }
-  if (tab === 'users') { loadUsers(); }
+  if (tab === 'admin') {
+    loadUsers();
+    loadCredentials();
+  }
   if (tab === 'pipeline') {
     loadPipelineStats();
     loadPipelineRuns();
     pipelineRefreshTimer = setInterval(function() { loadPipelineStats(); loadPipelineRuns(); }, 10000);
-  }
-  if (tab === 'issm') {
-    loadIssmQueue();
-    issmRefreshTimer = setInterval(loadIssmQueue, 10000);
   }
 }
 
@@ -4241,23 +4354,60 @@ function toggleMobileNav() {
   document.getElementById('main-nav').classList.toggle('open');
 }
 
+// ── Deploy Panel Toggle (Applications tab) ──────────────────────────────────
+
+function toggleDeployPanel() {
+  var section = document.getElementById('deploy-section');
+  if (!section) return;
+  if (section.style.display === 'none' || !section.style.display) {
+    section.style.display = 'block';
+    loadTenants();
+  } else {
+    section.style.display = 'none';
+  }
+}
+
+// ── Admin Sub-Panel Switch ──────────────────────────────────────────────────
+
+function switchAdminPanel(panelId, btn) {
+  document.querySelectorAll('#tab-admin .cluster-panel').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('#tab-admin .cluster-subnav-btn').forEach(function(el) { el.classList.remove('active'); });
+  var panel = document.getElementById(panelId);
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (panelId === 'admin-users') loadUsers();
+  if (panelId === 'admin-credentials') loadCredentials();
+}
+
+// ── Pipeline Quick Filter (replaces ISSM Queue tab) ─────────────────────────
+
+function setPipelineQuickFilter(status, btn) {
+  // Update quick filter buttons
+  document.querySelectorAll('.pipeline-quick-filters .cluster-subnav-btn').forEach(function(el) {
+    el.classList.remove('active');
+  });
+  if (btn) btn.classList.add('active');
+
+  // Set the status dropdown to match
+  var select = document.getElementById('pipe-filter-status');
+  if (select) select.value = status;
+
+  // Reload pipeline runs with the new filter
+  loadPipelineRuns();
+}
+
 // ── RBAC Visibility ─────────────────────────────────────────────────────────
 
 function applyRBAC() {
   var role = currentUser.role;
   var tabs = {
-    portal: true,
-    overview: true,
-    services: true,
-    apps: true,
-    deploy: role === 'admin' || role === 'developer' || role === 'issm',
-    pipeline: true,
-    issm: role === 'admin' || role === 'issm',
+    dashboard: true,
+    applications: true,
+    platform: true,
     cluster: role === 'admin' || role === 'developer',
-    status: true,
+    pipeline: true,
     audit: role === 'admin' || role === 'issm',
-    credentials: role === 'admin',
-    users: role === 'admin'
+    admin: role === 'admin'
   };
 
   document.querySelectorAll('nav button[data-tab]').forEach(function(btn) {
@@ -4269,6 +4419,12 @@ function applyRBAC() {
   document.querySelectorAll('.admin-only-action').forEach(function(el) {
     el.style.display = role === 'admin' ? '' : 'none';
   });
+
+  // Hide deploy button for viewers
+  var deployBtn = document.getElementById('deploy-toggle-btn');
+  if (deployBtn) {
+    deployBtn.style.display = (role === 'admin' || role === 'developer' || role === 'issm') ? '' : 'none';
+  }
 }
 
 // ── User / SSO ──────────────────────────────────────────────────────────────
@@ -4358,6 +4514,29 @@ function showToast(message, type, onClick) {
     }, 5000);
   }
   container.appendChild(toast);
+}
+
+// ── Confirm Dialog ──────────────────────────────────────────────────────────
+
+var confirmCallback = null;
+
+function showConfirm(title, message, actionLabel, onConfirm) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').innerHTML = message;
+  var actionBtn = document.getElementById('confirm-action-btn');
+  actionBtn.textContent = actionLabel || 'Delete';
+  confirmCallback = onConfirm;
+  actionBtn.onclick = function() {
+    var cb = confirmCallback;
+    closeConfirm();
+    if (cb) cb();
+  };
+  document.getElementById('confirm-overlay').classList.add('show');
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.remove('show');
+  confirmCallback = null;
 }
 
 // ── Alerts Banner ───────────────────────────────────────────────────────────
@@ -4783,7 +4962,7 @@ function renderAppGallery(apps) {
 
     var grafanaUrl = 'https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22' + encodeURIComponent(a.namespace) + '%5C%22%7D%22%7D%5D%7D';
 
-    return '<div class="app-tile" ' + tileClick + ' style="' + cursorStyle + '">' +
+    return '<div class="app-tile" data-app-id="' + esc(a.namespace) + '/' + esc(a.name) + '" ' + tileClick + ' style="' + cursorStyle + '">' +
       '<div class="app-tile-header">' +
         '<div class="app-tile-name">' +
           '<span class="health-dot ' + (a.ready ? 'green' : 'yellow') + '"></span>' +
@@ -4808,14 +4987,29 @@ function renderAppGallery(apps) {
 }
 
 async function deleteAppFromGallery(namespace, name) {
-  if (!confirm('Delete app "' + name + '" from "' + namespace + '"?')) return;
-  try {
-    await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
-    showToast('Deleted ' + name, 'success');
-    setTimeout(loadAppGallery, 1000);
-  } catch (err) {
-    showToast('Delete failed: ' + err.message, 'error');
-  }
+  showConfirm(
+    'Delete Application',
+    'This will permanently remove <strong>' + esc(name) + '</strong> from <strong>' + esc(namespace) + '</strong>, including all pods, services, and associated resources.',
+    'Delete',
+    async function() {
+      try {
+        var resp = await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+        if (resp.ok) {
+          showToast('Deleted ' + name, 'success');
+          // Immediately remove tile from DOM so user sees instant feedback
+          var tile = document.querySelector('.app-tile[data-app-id="' + namespace + '/' + name + '"]');
+          if (tile) tile.remove();
+          // Delayed reload as backup to sync with actual cluster state
+          setTimeout(loadAppGallery, 3000);
+        } else {
+          var errData = await resp.json().catch(function() { return { error: resp.statusText }; });
+          showToast('Delete failed: ' + (errData.error || resp.statusText), 'error');
+        }
+      } catch (err) {
+        showToast('Delete failed: ' + err.message, 'error');
+      }
+    }
+  );
 }
 
 // ── Deploy ───────────────────────────────────────────────────────────────────
@@ -5366,7 +5560,7 @@ async function loadDeployedApps() {
 
     document.getElementById('apps-table').innerHTML = tenantApps.map(function(app) {
       var grafanaUrl = 'https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22' + encodeURIComponent(app.namespace) + '%5C%22%7D%22%7D%5D%7D';
-      return '<tr>' +
+      return '<tr data-app-id="' + esc(app.namespace) + '/' + esc(app.name) + '">' +
         '<td><span class="badge ' + (app.ready ? 'green' : 'yellow') + '">' + (app.ready ? 'Running' : 'Deploying') + '</span></td>' +
         '<td><strong>' + esc(app.name) + '</strong></td>' +
         '<td>' + esc(app.namespace) + '</td>' +
@@ -5465,14 +5659,29 @@ async function scaleApp(namespace, name, replicas) {
 }
 
 async function deleteApp(namespace, name) {
-  if (!confirm('Delete app "' + name + '" from "' + namespace + '"?')) return;
-  try {
-    await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
-    showToast('Deleted ' + name, '');
-    setTimeout(loadDeployedApps, 1000);
-  } catch (err) {
-    showToast('Delete failed: ' + err.message, 'error');
-  }
+  showConfirm(
+    'Delete Application',
+    'This will permanently remove <strong>' + esc(name) + '</strong> from <strong>' + esc(namespace) + '</strong>, including all pods, services, and associated resources.',
+    'Delete',
+    async function() {
+      try {
+        var resp = await fetch('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+        if (resp.ok) {
+          showToast('Deleted ' + name, 'success');
+          // Immediately remove row from DOM so user sees instant feedback
+          var row = document.querySelector('tr[data-app-id="' + namespace + '/' + name + '"]');
+          if (row) row.remove();
+          // Delayed reload as backup to sync with actual cluster state
+          setTimeout(loadDeployedApps, 3000);
+        } else {
+          var errData = await resp.json().catch(function() { return { error: resp.statusText }; });
+          showToast('Delete failed: ' + (errData.error || resp.statusText), 'error');
+        }
+      } catch (err) {
+        showToast('Delete failed: ' + err.message, 'error');
+      }
+    }
+  );
 }
 
 // ── Build Pipeline Handlers ──────────────────────────────────────────────────
@@ -6386,7 +6595,7 @@ async function loadDatabases() {
     }
     listEl.innerHTML = data.databases.map(function(db) {
       var statusClass = db.readyInstances >= db.instances ? 'ready' : 'creating';
-      return '<div class="db-card">' +
+      return '<div class="db-card" data-db-id="' + esc(db.namespace) + '/' + esc(db.name) + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
           '<strong>' + esc(db.name) + '</strong>' +
           '<span class="db-status ' + statusClass + '">' + esc(db.phase) + ' (' + db.readyInstances + '/' + db.instances + ')</span>' +
@@ -6402,14 +6611,29 @@ async function loadDatabases() {
 }
 
 async function deleteDatabase(ns, name) {
-  if (!confirm('Delete database "' + name + '" from "' + ns + '"? This is permanent.')) return;
-  try {
-    await fetch('/api/databases/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name), { method: 'DELETE' });
-    showToast('Database ' + name + ' deleted', '');
-    loadDatabases();
-  } catch (err) {
-    showToast('Delete failed: ' + err.message, 'error');
-  }
+  showConfirm(
+    'Delete Database',
+    'This will permanently delete database <strong>' + esc(name) + '</strong> from <strong>' + esc(ns) + '</strong>. All data will be lost and this cannot be undone.',
+    'Delete',
+    async function() {
+      try {
+        var resp = await fetch('/api/databases/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name), { method: 'DELETE' });
+        if (resp.ok) {
+          showToast('Database ' + name + ' deleted', 'success');
+          // Immediately remove card from DOM so user sees instant feedback
+          var card = document.querySelector('.db-card[data-db-id="' + ns + '/' + name + '"]');
+          if (card) card.remove();
+          // Delayed reload as backup to sync with actual cluster state
+          setTimeout(loadDatabases, 3000);
+        } else {
+          var errData = await resp.json().catch(function() { return { error: resp.statusText }; });
+          showToast('Delete failed: ' + (errData.error || resp.statusText), 'error');
+        }
+      } catch (err) {
+        showToast('Delete failed: ' + err.message, 'error');
+      }
+    }
+  );
 }
 
 // ── Status Page (NEW) ───────────────────────────────────────────────────────
@@ -7216,18 +7440,14 @@ function getCommands() {
   var cmds = [];
 
   // ── Navigation ──
-  cmds.push({ category: 'Navigation', label: 'Go to Home', desc: 'Portal landing page', icon: '\uD83C\uDFE0', keys: '', action: function() { switchTabByName('portal'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Overview', desc: 'Admin dashboard overview', icon: '\uD83D\uDCCA', keys: '', action: function() { switchTabByName('overview'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Services', desc: 'Platform services status', icon: '\uD83D\uDD27', keys: '', action: function() { switchTabByName('services'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Deploy', desc: 'Deploy new applications', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to My Apps', desc: 'Registered applications', icon: '\uD83D\uDCE6', keys: '', action: function() { switchTabByName('apps'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Dashboard', desc: 'Home and platform overview', icon: '\uD83C\uDFE0', keys: '', action: function() { switchTabByName('dashboard'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Applications', desc: 'Manage and deploy applications', icon: '\uD83D\uDCE6', keys: '', action: function() { switchTabByName('applications'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Platform', desc: 'Platform services and health status', icon: '\uD83D\uDD27', keys: '', action: function() { switchTabByName('platform'); } });
   cmds.push({ category: 'Navigation', label: 'Go to Cluster', desc: 'Cluster management panel', icon: '\u2699\uFE0F', keys: '', action: function() { switchTabByName('cluster'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Users', desc: 'User and group management', icon: '\uD83D\uDC65', keys: '', action: function() { switchTabByName('users'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Pipeline', desc: 'Pipeline runs, gates, and ISSM reviews', icon: '\uD83D\uDD27', keys: '', action: function() { switchTabByName('pipeline'); } });
   cmds.push({ category: 'Navigation', label: 'Go to Audit', desc: 'Audit logs and events', icon: '\uD83D\uDCDD', keys: '', action: function() { switchTabByName('audit'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Credentials', desc: 'Service credentials vault', icon: '\uD83D\uDD11', keys: '', action: function() { switchTabByName('credentials'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Status', desc: 'System health status', icon: '\uD83D\uDFE2', keys: '', action: function() { switchTabByName('status'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to Pipeline History', desc: 'DSOP pipeline runs and gate results', icon: '\uD83D\uDD27', keys: '', action: function() { switchTabByName('pipeline'); } });
-  cmds.push({ category: 'Navigation', label: 'Go to ISSM Queue', desc: 'ISSM review queue for pipeline approvals', icon: '\uD83D\uDEE1', keys: '', action: function() { switchTabByName('issm'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to Admin', desc: 'User management and credentials', icon: '\uD83D\uDC65', keys: '', action: function() { switchTabByName('admin'); } });
+  cmds.push({ category: 'Navigation', label: 'Go to ISSM Queue', desc: 'Filter pipeline to pending reviews', icon: '\uD83D\uDEE1', keys: '', action: function() { switchTabByName('pipeline'); setTimeout(function() { setPipelineQuickFilter('review_pending', document.querySelector('.pipeline-quick-filters .cluster-subnav-btn:nth-child(2)')); }, 200); } });
 
   // Cluster sub-panels
   cmds.push({ category: 'Cluster', label: 'Cluster: View Nodes', desc: 'Node health, CPU, memory, taints', icon: '\uD83D\uDDA5', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('nodes'); }, 100); } });
@@ -7239,22 +7459,22 @@ function getCommands() {
   cmds.push({ category: 'Cluster', label: 'Cluster: Quick Actions', desc: 'Restart, scale, cordon operations', icon: '\u26A1', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function(){ switchClusterPanel('actions'); }, 100); } });
 
   // ── Quick Actions ──
-  cmds.push({ category: 'Actions', label: 'Create new user', desc: 'Add a user to the platform via Keycloak', icon: '\u2795', keys: '', action: function() { switchTabByName('users'); setTimeout(showCreateUserModal, 300); } });
-  cmds.push({ category: 'Actions', label: 'Create new group', desc: 'Create a Keycloak RBAC group', icon: '\u2795', keys: '', action: function() { switchTabByName('users'); setTimeout(showCreateGroupModal, 300); } });
-  cmds.push({ category: 'Actions', label: 'Deploy app', desc: 'Open the deployment wizard', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); } });
-  cmds.push({ category: 'Actions', label: 'Deploy from Git', desc: 'Auto-detect and deploy from a Git repository', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); setTimeout(function() { var card = document.querySelector('.deploy-mode-card:nth-child(2)'); if (card) card.click(); }, 300); } });
-  cmds.push({ category: 'Actions', label: 'Deploy: Quick NGINX demo', desc: 'Pre-fill a demo NGINX deployment', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('deploy'); setTimeout(function() { var nameEl = document.getElementById('deploy-name'); if(nameEl) { nameEl.value = 'demo-nginx'; } }, 200); } });
-  cmds.push({ category: 'Actions', label: 'View problem pods', desc: 'Show pods in CrashLoopBackOff, Error, Pending', icon: '\u26A0\uFE0F', keys: '', action: function() { switchTabByName('overview'); setTimeout(toggleProblemPods, 300); } });
+  cmds.push({ category: 'Actions', label: 'Create new user', desc: 'Add a user to the platform via Keycloak', icon: '\u2795', keys: '', action: function() { switchTabByName('admin'); setTimeout(showCreateUserModal, 300); } });
+  cmds.push({ category: 'Actions', label: 'Create new group', desc: 'Create a Keycloak RBAC group', icon: '\u2795', keys: '', action: function() { switchTabByName('admin'); setTimeout(showCreateGroupModal, 300); } });
+  cmds.push({ category: 'Actions', label: 'Deploy app', desc: 'Open the deployment panel', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('applications'); setTimeout(function() { var s = document.getElementById('deploy-section'); if (s) s.style.display = 'block'; }, 200); } });
+  cmds.push({ category: 'Actions', label: 'Deploy from Git', desc: 'Auto-detect and deploy from a Git repository', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('applications'); setTimeout(function() { var s = document.getElementById('deploy-section'); if (s) s.style.display = 'block'; }, 200); } });
+  cmds.push({ category: 'Actions', label: 'Deploy: Quick NGINX demo', desc: 'Pre-fill a demo NGINX deployment', icon: '\uD83D\uDE80', keys: '', action: function() { switchTabByName('applications'); setTimeout(function() { var s = document.getElementById('deploy-section'); if (s) s.style.display = 'block'; }, 200); } });
+  cmds.push({ category: 'Actions', label: 'View problem pods', desc: 'Show pods in CrashLoopBackOff, Error, Pending', icon: '\u26A0\uFE0F', keys: '', action: function() { switchTabByName('dashboard'); setTimeout(toggleProblemPods, 300); } });
   cmds.push({ category: 'Actions', label: 'View cluster logs', desc: 'Real-time log stream from cluster', icon: '\uD83D\uDCDC', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('logs'); }, 300); } });
   cmds.push({ category: 'Actions', label: 'View cluster events', desc: 'Warnings, errors, scheduling events', icon: '\uD83D\uDCCB', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('events'); }, 300); } });
   cmds.push({ category: 'Actions', label: 'Restart a deployment', desc: 'Rolling restart via Quick Actions panel', icon: '\uD83D\uDD04', keys: '', action: function() { switchTabByName('cluster'); setTimeout(function() { switchClusterPanel('actions'); }, 300); } });
   cmds.push({ category: 'Actions', label: 'Refresh health data', desc: 'Reload health checks from all services', icon: '\uD83D\uDD04', keys: '', action: function() { loadHealth(); showToast('Health data refreshed'); } });
-  cmds.push({ category: 'Actions', label: 'View cluster health', desc: 'Scroll to health metrics on Overview', icon: '\uD83D\uDFE2', keys: '', action: function() { switchTabByName('overview'); } });
+  cmds.push({ category: 'Actions', label: 'View cluster health', desc: 'Scroll to health metrics on Dashboard', icon: '\uD83D\uDFE2', keys: '', action: function() { switchTabByName('dashboard'); } });
   cmds.push({ category: 'Actions', label: 'View alerts', desc: 'Open Alertmanager in a new tab', icon: '\uD83D\uDD14', keys: '', action: function() { openService('https://alertmanager.apps.sre.example.com'); } });
   cmds.push({ category: 'Actions', label: 'Scan images', desc: 'Open Harbor vulnerability scanner', icon: '\uD83D\uDD0D', keys: '', action: function() { openService('https://harbor.apps.sre.example.com'); } });
   cmds.push({ category: 'Actions', label: 'Manage secrets', desc: 'Open OpenBao secrets vault', icon: '\uD83D\uDD10', keys: '', action: function() { openService('https://openbao.apps.sre.example.com'); } });
-  cmds.push({ category: 'Actions', label: 'View HelmReleases', desc: 'Show all Flux HelmRelease status', icon: '\u2699\uFE0F', keys: '', action: function() { switchTabByName('status'); } });
-  cmds.push({ category: 'Actions', label: 'View Kyverno policies', desc: 'Policy compliance on Services tab', icon: '\uD83D\uDEE1', keys: '', action: function() { switchTabByName('services'); } });
+  cmds.push({ category: 'Actions', label: 'View HelmReleases', desc: 'Show all Flux HelmRelease status', icon: '\u2699\uFE0F', keys: '', action: function() { switchTabByName('platform'); } });
+  cmds.push({ category: 'Actions', label: 'View Kyverno policies', desc: 'Policy compliance on Platform tab', icon: '\uD83D\uDEE1', keys: '', action: function() { switchTabByName('platform'); } });
 
   // ── External Services ──
   cmds.push({ category: 'Services', label: 'Open Grafana', desc: 'Metrics dashboards and visualization', icon: '\uD83D\uDCCA', keys: '', action: function() { openService('https://grafana.apps.sre.example.com'); } });
@@ -7340,8 +7560,8 @@ function getCommands() {
   // ── Dynamic: Users (from allUsers if loaded) ──
   if (allUsers && allUsers.length > 0) {
     allUsers.forEach(function(u) {
-      cmds.push({ category: 'Users', label: 'Edit user: ' + u.username + (u.firstName ? ' (' + u.firstName + ' ' + (u.lastName || '') + ')' : ''), desc: 'Modify user profile and attributes', icon: '\uD83D\uDC64', keys: '', action: function() { switchTabByName('users'); setTimeout(function() { editUser(u.id); }, 300); } });
-      cmds.push({ category: 'Users', label: 'Edit groups: ' + u.username, desc: 'Change group memberships', icon: '\uD83D\uDC65', keys: '', action: function() { switchTabByName('users'); setTimeout(function() { editUserGroups(u.id, u.username); }, 300); } });
+      cmds.push({ category: 'Users', label: 'Edit user: ' + u.username + (u.firstName ? ' (' + u.firstName + ' ' + (u.lastName || '') + ')' : ''), desc: 'Modify user profile and attributes', icon: '\uD83D\uDC64', keys: '', action: function() { switchTabByName('admin'); setTimeout(function() { editUser(u.id); }, 300); } });
+      cmds.push({ category: 'Users', label: 'Edit groups: ' + u.username, desc: 'Change group memberships', icon: '\uD83D\uDC65', keys: '', action: function() { switchTabByName('admin'); setTimeout(function() { editUserGroups(u.id, u.username); }, 300); } });
       cmds.push({ category: 'Users', label: 'Reset password: ' + u.username, desc: 'Set a new password for this user', icon: '\uD83D\uDD11', keys: '', action: function() { openService('https://keycloak.apps.sre.example.com/admin/sre/console/#/sre/users/' + u.id + '/credentials'); } });
     });
   }
@@ -7350,7 +7570,7 @@ function getCommands() {
   if (healthData && healthData.helmReleases) {
     healthData.helmReleases.forEach(function(hr) {
       var statusBadge = (hr.ready === true || hr.status === 'Ready' || hr.status === 'deployed') ? 'Ready' : (hr.status || 'Unknown');
-      cmds.push({ category: 'Components', label: hr.name + ' (' + hr.namespace + ')', desc: 'HelmRelease: ' + statusBadge, icon: '\uD83D\uDCE6', badge: statusBadge, keys: '', action: function() { switchTabByName('overview'); } });
+      cmds.push({ category: 'Components', label: hr.name + ' (' + hr.namespace + ')', desc: 'HelmRelease: ' + statusBadge, icon: '\uD83D\uDCE6', badge: statusBadge, keys: '', action: function() { switchTabByName('dashboard'); } });
     });
   }
 
@@ -7381,7 +7601,12 @@ function getCommands() {
 
 function switchTabByName(name) {
   var btn = document.querySelector('nav button[data-tab="' + name + '"]');
-  if (btn) switchTab(name, btn);
+  // Support old tab names via switchTab's redirect map
+  if (btn) {
+    switchTab(name, btn);
+  } else {
+    switchTab(name, null);
+  }
 }
 
 function openCommandPalette() {
@@ -8933,43 +9158,11 @@ async function submitForReview(runId) {
 }
 
 async function loadIssmQueue() {
-  try {
-    var resp = await fetch('/api/pipeline/runs?status=review_pending&limit=50', { credentials: 'include' });
-    if (!resp.ok) throw new Error('Failed');
-    var data = await resp.json();
-    var runs = data.runs || data || [];
-
-    document.getElementById('issm-queue-count').textContent = runs.length + ' pending review' + (runs.length !== 1 ? 's' : '');
-
-    var tbody = document.getElementById('issm-queue-table');
-    if (!runs.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-dim);">No pending reviews</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = runs.map(function(run) {
-      var critCount = 0, highCount = 0;
-      (run.gates || []).forEach(function(g) {
-        (g.findings || []).forEach(function(f) {
-          if ((f.severity || '').toLowerCase() === 'critical') critCount++;
-          if ((f.severity || '').toLowerCase() === 'high') highCount++;
-        });
-      });
-
-      return '<tr class="clickable-row" onclick="showReviewPanel(\'' + esc(run.id) + '\')">' +
-        '<td style="font-weight:600;">' + esc(run.appName || run.app_name || '--') + '</td>' +
-        '<td>' + esc(run.team || '--') + '</td>' +
-        '<td>' + esc(run.createdBy || run.created_by || run.submittedBy || run.submitted_by || '--') + '</td>' +
-        '<td>' + renderClsBadge(run.classification) + '</td>' +
-        '<td style="font-size:12px;color:var(--text-dim);">' + pipelineTimeAgo(run.submittedAt || run.submitted_at || run.createdAt || run.created_at) + '</td>' +
-        '<td>' + (critCount > 0 ? '<span class="sev-badge critical">' + critCount + '</span>' : '<span style="color:var(--text-dim);">0</span>') + '</td>' +
-        '<td>' + (highCount > 0 ? '<span class="sev-badge high">' + highCount + '</span>' : '<span style="color:var(--text-dim);">0</span>') + '</td>' +
-        '<td><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();showReviewPanel(\'' + esc(run.id) + '\')">Review</button></td>' +
-      '</tr>';
-    }).join('');
-  } catch (err) {
-    document.getElementById('issm-queue-table').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-dim);">Failed to load review queue</td></tr>';
-  }
+  // ISSM queue is now merged into the Pipeline tab via the quick filter.
+  // This function is kept for backward compatibility (called after review actions).
+  // Refresh the pipeline runs with review_pending filter if that filter is active.
+  loadPipelineStats();
+  loadPipelineRuns();
 }
 
 async function showReviewPanel(runId) {

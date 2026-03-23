@@ -17,7 +17,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '0');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-ancestors 'none'");
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
@@ -5055,8 +5055,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
     const actor = getActor(req);
     await undeployViaGitOps(namespace, name, actor);
 
-    // Step 2: Remove finalizers so the HelmRelease can be deleted even if
-    // helm uninstall fails (prevents stuck Terminating state)
+    // Step 2: Remove finalizers and delete the HelmRelease directly
     try {
       await customApi.patchNamespacedCustomObject(
         "helm.toolkit.fluxcd.io",
@@ -5072,6 +5071,15 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
       );
     } catch (e) {
       // Ignore if already gone
+    }
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+      );
+    } catch (e) {
+      if (e.statusCode !== 404) {
+        console.warn(`[delete] Could not delete HelmRelease ${name}: ${e.message}`);
+      }
     }
 
     // Step 3: Clean up orphaned Helm release secrets
@@ -5097,8 +5105,20 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
     try {
       const deps = await appsApi.listNamespacedDeployment(namespace);
       for (const d of deps.body.items) {
-        if (d.metadata.name.startsWith(`${name}-`)) {
+        if (d.metadata.name === name || d.metadata.name.startsWith(`${name}-`)) {
           await appsApi.deleteNamespacedDeployment(d.metadata.name, namespace);
+        }
+      }
+    } catch (e) {
+      // Non-critical
+    }
+
+    // Step 4b: Clean up orphaned Services
+    try {
+      const svcs = await k8sApi.listNamespacedService(namespace);
+      for (const s of svcs.body.items) {
+        if (s.metadata.name === name || s.metadata.name.startsWith(`${name}-`)) {
+          await k8sApi.deleteNamespacedService(s.metadata.name, namespace);
         }
       }
     } catch (e) {
