@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: "SRE Platform Team"
+  description: "Shared RKE2 prerequisites for server and agent nodes"
+  license: "MIT"
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - rke2
+    - kubernetes
+    - prerequisites
+
+dependencies: []

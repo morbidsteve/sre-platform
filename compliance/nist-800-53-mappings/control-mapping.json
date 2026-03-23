@@ -22,8 +22,7 @@
       "components": ["keycloak"],
       "implementation": "Keycloak provides centralized identity management with SSO/OIDC for all platform UIs. User accounts are managed through Keycloak realms with group-based access control. Account provisioning, modification, and deprovisioning are tracked via Keycloak audit events. Supports LDAP/AD federation for enterprise identity integration. Inactive accounts are automatically disabled based on configurable session and account policies.",
       "evidence": [
-        "platform/addons/keycloak/helmrelease.yaml",
-        "platform/addons/keycloak/realm-config.yaml"
+        "platform/addons/keycloak/helmrelease.yaml (realm configured in HelmRelease values)"
       ],
       "status": "implemented",
       "automated": true,
@@ -39,9 +38,9 @@
       "implementation": "Access enforcement operates at three layers: (1) Kubernetes RBAC with namespace-scoped Roles and ClusterRoles mapped to Keycloak groups via OIDC, (2) Istio AuthorizationPolicy CRDs controlling service-to-service communication based on SPIFFE identity, namespace, and request attributes, (3) Kyverno policies isolating tenant namespaces and preventing cross-tenant resource creation or modification.",
       "evidence": [
         "platform/core/kyverno/helmrelease.yaml",
-        "platform/core/istio/authorization-policy-default.yaml",
-        "apps/tenants/team-alpha/rbac.yaml",
-        "apps/tenants/team-beta/rbac.yaml"
+        "platform/core/istio/helmrelease-istiod.yaml (AuthorizationPolicy configured in HelmRelease values)",
+        "apps/tenants/_base/rbac.yaml",
+        "apps/tenants/_base/kustomization.yaml"
       ],
       "status": "implemented",
       "automated": true,
@@ -56,9 +55,9 @@
       "components": ["istio", "kyverno", "neuvector"],
       "implementation": "Information flow is controlled through: (1) Istio mTLS STRICT mode encrypting and authenticating all in-cluster traffic, (2) Kubernetes NetworkPolicies with default-deny in all namespaces and explicit allow rules for required traffic paths, (3) Kyverno policies requiring NetworkPolicies in every namespace and restricting egress to approved destinations, (4) NeuVector Layer 7 DLP sensors detecting and blocking sensitive data patterns in network traffic.",
       "evidence": [
-        "platform/core/istio/peer-authentication.yaml",
-        "apps/tenants/team-alpha/network-policies/default-deny.yaml",
-        "apps/tenants/team-beta/network-policies/default-deny.yaml",
+        "platform/core/istio/helmrelease-istiod.yaml (PeerAuthentication configured in HelmRelease values)",
+        "apps/tenants/_base/network-policies/default-deny.yaml",
+        "apps/tenants/_base/network-policies/allow-base.yaml",
         "policies/custom/require-network-policies.yaml"
       ],
       "status": "implemented",
@@ -77,7 +76,7 @@
         "policies/custom/require-security-context.yaml",
         "policies/restricted/require-run-as-nonroot.yaml",
         "policies/restricted/require-drop-all-capabilities.yaml",
-        "apps/tenants/team-alpha/rbac.yaml"
+        "apps/tenants/_base/rbac.yaml"
       ],
       "status": "implemented",
       "automated": true,
@@ -109,7 +108,7 @@
       "implementation": "All privileged operations are logged: (1) Kubernetes API audit policy captures authentication, authorization, and CRUD on all resources with user identity, (2) Istio access logs record all service mesh traffic with source/destination SPIFFE identity, (3) OS-level auditd captures privileged command execution and file access on all nodes.",
       "evidence": [
         "platform/core/logging/helmrelease-alloy.yaml",
-        "platform/core/istio/helmrelease.yaml",
+        "platform/core/istio/helmrelease-istiod.yaml",
         "infrastructure/ansible/roles/os-hardening/tasks/auditd.yml"
       ],
       "status": "implemented",
@@ -143,7 +142,7 @@
       "components": ["istio"],
       "implementation": "Istio PeerAuthentication set to STRICT mode cluster-wide prevents any unauthenticated service-to-service communication. All mesh traffic requires valid mTLS certificates. Non-mesh traffic is blocked by default via Kyverno policies requiring Istio sidecar injection labels on all tenant namespaces.",
       "evidence": [
-        "platform/core/istio/peer-authentication.yaml"
+        "platform/core/istio/helmrelease-istiod.yaml (PeerAuthentication configured in HelmRelease values)"
       ],
       "status": "implemented",
       "automated": true,
@@ -159,7 +158,7 @@
       "implementation": "All remote access to management interfaces (Grafana, Harbor, NeuVector, Kiali) is routed through Keycloak SSO with MFA enforcement. Istio ingress gateway provides TLS termination for all external traffic. SSH access to cluster nodes is hardened via Ansible STIG role (key-only auth, restricted ciphers, login banners, session timeouts).",
       "evidence": [
         "platform/addons/keycloak/helmrelease.yaml",
-        "platform/core/istio/gateway.yaml",
+        "platform/core/istio/helmrelease-gateway.yaml",
         "infrastructure/ansible/roles/os-hardening/tasks/sshd.yml"
       ],
       "status": "implemented",
@@ -221,7 +220,7 @@
       "components": ["monitoring", "logging"],
       "implementation": "Prometheus alerts are configured for: Loki ingestion rate drops, Alloy DaemonSet pod failures, Loki disk pressure, audit log pipeline errors, and auditd service failures on nodes. AlertManager routes these critical alerts to platform administrators via configured receivers (Slack, email, PagerDuty).",
       "evidence": [
-        "platform/core/monitoring/prometheusrule-sre.yaml",
+        "platform/core/monitoring/sre-alerting-rules.yaml",
         "platform/core/logging/helmrelease-loki.yaml"
       ],
       "status": "implemented",
@@ -463,8 +462,8 @@
       "components": ["istio"],
       "implementation": "Workload (device) identity is provided by Istio mTLS with SPIFFE identities. Every workload receives a cryptographic X.509 certificate with identity spiffe://cluster.local/ns/<namespace>/sa/<serviceaccount>. Mutual authentication is enforced for all mesh communication via PeerAuthentication STRICT mode.",
       "evidence": [
-        "platform/core/istio/peer-authentication.yaml",
-        "platform/core/istio/helmrelease.yaml"
+        "platform/core/istio/helmrelease-istiod.yaml (PeerAuthentication configured in HelmRelease values)",
+        "platform/core/istio/helmrelease-istiod.yaml"
       ],
       "status": "implemented",
       "automated": true,
@@ -496,7 +495,7 @@
       "components": ["istio"],
       "implementation": "All external traffic enters through the Istio ingress gateway which enforces authentication via RequestAuthentication (JWT validation) and AuthorizationPolicy. No unauthenticated access is permitted to platform services. External API consumers must present valid JWT tokens issued by Keycloak.",
       "evidence": [
-        "platform/core/istio/gateway.yaml"
+        "platform/core/istio/helmrelease-gateway.yaml"
       ],
       "status": "implemented",
       "automated": true,
@@ -512,7 +511,7 @@
       "implementation": "Incident handling workflow: (1) NeuVector detects runtime security events (process anomalies, network violations, file system modifications), (2) Events are forwarded to Prometheus via SYSLOG/Alloy, (3) AlertManager evaluates alert rules and routes to configured receivers (Slack, email, PagerDuty), (4) Grafana dashboards provide incident investigation with correlated metrics, logs, and traces, (5) Runbooks linked from alerts guide incident response procedures.",
       "evidence": [
         "platform/core/runtime-security/helmrelease.yaml",
-        "platform/core/monitoring/prometheusrule-sre.yaml"
+        "platform/core/monitoring/sre-alerting-rules.yaml"
       ],
       "status": "implemented",
       "automated": true,
@@ -620,8 +619,8 @@
       "components": ["istio", "kyverno"],
       "implementation": "Security function isolation: (1) Kubernetes namespaces provide resource isolation between platform components and tenants, (2) NetworkPolicies enforce default-deny communication between namespaces with explicit allow rules, (3) Istio AuthorizationPolicies provide service-level access control within and across namespaces, (4) Platform namespaces are protected from tenant modification by Kyverno policies.",
       "evidence": [
-        "platform/core/istio/authorization-policy-default.yaml",
-        "apps/tenants/team-alpha/network-policies/default-deny.yaml"
+        "platform/core/istio/helmrelease-istiod.yaml (AuthorizationPolicy configured in HelmRelease values)",
+        "apps/tenants/_base/network-policies/default-deny.yaml"
       ],
       "status": "implemented",
       "automated": true,
@@ -636,7 +635,7 @@
       "components": ["istio", "neuvector"],
       "implementation": "Boundary protection layers: (1) Istio ingress gateway as the single entry point for all external traffic with TLS termination and traffic routing, (2) Istio egress gateway controlling all outbound cluster traffic, (3) Kubernetes NetworkPolicies with default-deny in all namespaces restricting both ingress and egress, (4) NeuVector network microsegmentation with Layer 7 DLP/WAF capabilities, (5) Cloud-level security groups (managed by OpenTofu) restricting node-level access.",
       "evidence": [
-        "platform/core/istio/gateway.yaml",
+        "platform/core/istio/helmrelease-gateway.yaml",
         "platform/core/runtime-security/helmrelease.yaml"
       ],
       "status": "implemented",
@@ -652,7 +651,7 @@
       "components": ["istio", "rke2"],
       "implementation": "All data in transit is encrypted: (1) Istio mTLS STRICT mode encrypts all pod-to-pod traffic with TLS 1.2+ using FIPS-compliant cipher suites, (2) External traffic TLS-terminated at Istio ingress gateway with certificates from cert-manager, (3) RKE2 control plane uses mTLS for etcd, API server, and kubelet communication, (4) SSH connections to nodes use approved ciphers configured by Ansible.",
       "evidence": [
-        "platform/core/istio/peer-authentication.yaml"
+        "platform/core/istio/helmrelease-istiod.yaml (PeerAuthentication configured in HelmRelease values)"
       ],
       "status": "implemented",
       "automated": true,
@@ -761,7 +760,7 @@
       "components": ["monitoring", "neuvector"],
       "implementation": "Security alerting pipeline: (1) Grafana AlertManager routes alerts to Slack, email, and PagerDuty based on severity, (2) NeuVector CVE alerts notify teams of newly discovered vulnerabilities in running containers, (3) PrometheusRules define SRE-specific alerts for pod security violations, certificate expiry, Flux reconciliation failures, and NeuVector security events.",
       "evidence": [
-        "platform/core/monitoring/prometheusrule-sre.yaml",
+        "platform/core/monitoring/sre-alerting-rules.yaml",
         "platform/core/runtime-security/helmrelease.yaml"
       ],
       "status": "implemented",

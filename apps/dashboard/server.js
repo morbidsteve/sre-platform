@@ -17,7 +17,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '0');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-ancestors 'none'");
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
@@ -429,7 +429,7 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
 
     // Sanitize team name
     const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
 
     // Auto-create namespace if it doesn't exist
     await ensureNamespace(nsName, teamName);
@@ -446,7 +446,7 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
     });
 
     // Apply the manifest to the cluster (GitOps if enabled, else direct kubectl)
-    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    const actor = getActor(req);
     await deployViaGitOps(manifest, nsName, safeName, actor);
 
     // Auto-register OAuth2 proxy path for SSO callbacks
@@ -475,7 +475,7 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
 app.delete("/api/deploy/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     const { namespace, name } = req.params;
-    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    const actor = getActor(req);
     await undeployViaGitOps(namespace, name, actor);
 
     // Clean up VirtualService
@@ -981,6 +981,16 @@ function parseDockerCompose(yamlText) {
 
 // ── Input Validation Helpers ──────────────────────────────────────────────
 
+function getActor(req) {
+  const raw = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+  return typeof raw === "string" ? raw.replace(/[^\w.@+-]/g, "").substring(0, 128) : "dashboard";
+}
+
+function normalizeTeamName(team) {
+  const normalized = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  return normalized.startsWith("team-") ? normalized : `team-${normalized}`;
+}
+
 function sanitizeName(raw) {
   if (typeof raw !== "string") return "";
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "").substring(0, 63);
@@ -1070,7 +1080,7 @@ app.post("/api/deploy/compose", mutateLimiter, requireGroups("sre-admins", "deve
     }
 
     const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
     const safePrefix = prefix ? sanitizeName(prefix) : "";
 
     // Parse docker-compose YAML
@@ -1144,7 +1154,7 @@ app.post("/api/deploy/compose", mutateLimiter, requireGroups("sre-admins", "deve
         env: env.slice(0, 50),
       });
 
-      const actor = req.headers["x-auth-request-email"] || "dashboard";
+      const actor = getActor(req);
       await deployViaGitOps(manifest, nsName, appName, actor);
 
       // Auto-create DestinationRule for HTTPS backend detection
@@ -1189,7 +1199,7 @@ app.post("/api/deploy/multi", mutateLimiter, requireGroups("sre-admins", "develo
     }
 
     const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
 
     // Validate all services upfront
     for (let i = 0; i < services.length; i++) {
@@ -1239,7 +1249,7 @@ app.post("/api/deploy/multi", mutateLimiter, requireGroups("sre-admins", "develo
         env: svcEnv,
       });
 
-      const actor = req.headers["x-auth-request-email"] || "dashboard";
+      const actor = getActor(req);
       await deployViaGitOps(manifest, nsName, safeName, actor);
 
       // Auto-register OAuth2 proxy path for SSO callbacks
@@ -1456,7 +1466,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
     }
 
     const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
     const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
 
     // Phase 1: Analyze the repo to detect project type
@@ -1825,7 +1835,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
             port: svc.port || 8080, replicas: 1, ingressHost: "",
             env: svc.environment || [],
           });
-          const actor = req.headers["x-auth-request-email"] || "dashboard";
+          const actor = getActor(req);
           await deployViaGitOps(manifest, nsName, svcAppName, actor);
 
           // Auto-create DestinationRule for HTTPS backend detection
@@ -1945,7 +1955,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
         },
       };
 
-      const actor = req.headers["x-auth-request-email"] || "dashboard";
+      const actor = getActor(req);
       await deployViaGitOps(helmRelease, nsName, safeName, actor);
 
       // Auto-create DestinationRule for HTTPS backend detection
@@ -2235,8 +2245,32 @@ const KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.2";
 const GIT_CLONE_IMAGE = "alpine/git:2.43.0";
 const REPO_ANALYZE_IMAGE = "alpine/git:2.43.0";
 
+// TTL Map to prevent memory leaks from accumulating build entries
+class TTLMap {
+  constructor(ttlMs = 3600000) { // 1 hour default
+    this._map = new Map();
+    this._ttl = ttlMs;
+  }
+  set(key, value) {
+    if (this._map.has(key)) clearTimeout(this._map.get(key)._timer);
+    const timer = setTimeout(() => this._map.delete(key), this._ttl);
+    this._map.set(key, { value, _timer: timer });
+    return this;
+  }
+  get(key) {
+    const entry = this._map.get(key);
+    return entry ? entry.value : undefined;
+  }
+  has(key) { return this._map.has(key); }
+  delete(key) {
+    const entry = this._map.get(key);
+    if (entry) clearTimeout(entry._timer);
+    return this._map.delete(key);
+  }
+  get size() { return this._map.size; }
+}
 // In-memory build tracking (supplements K8s Job status)
-const buildRegistry = new Map();
+const buildRegistry = new TTLMap(3600000); // 1 hour TTL
 
 // Ensure a Harbor project exists before pushing images
 // Uses Node.js built-in http module as primary (more reliable in-cluster than global fetch)
@@ -2931,7 +2965,7 @@ app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins",
 
     const safeName = sanitizeName(appName);
     const teamName = sanitizeName(team);
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
 
     await ensureNamespace(nsName, teamName);
 
@@ -3022,7 +3056,7 @@ app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins",
           env,
         });
 
-        const actor = req.headers["x-auth-request-email"] || "dashboard";
+        const actor = getActor(req);
         await deployViaGitOps(manifest, nsName, svcAppName, actor);
         deployed.push({
           name: svcAppName,
@@ -3056,7 +3090,7 @@ app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins",
           env: Array.isArray(svc.env) ? svc.env : [],
         });
 
-        const actor = req.headers["x-auth-request-email"] || "dashboard";
+        const actor = getActor(req);
         await deployViaGitOps(manifest, nsName, svcAppName, actor);
         deployed.push({ name: svcAppName, type: "internal", port: svc.port, image: svc.image });
       }
@@ -3596,7 +3630,7 @@ app.post("/api/deploy/from-build", mutateLimiter, requireGroups("sre-admins", "d
     }
 
     const teamName = sanitizeName(team);
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
     const containerPort = port || 8080;
     const ingressHost = ingress || `${safeName}.apps.sre.example.com`;
 
@@ -3614,7 +3648,7 @@ app.post("/api/deploy/from-build", mutateLimiter, requireGroups("sre-admins", "d
       ingressHost,
     });
 
-    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    const actor = getActor(req);
     await deployViaGitOps(manifest, nsName, safeName, actor);
 
     res.json({
@@ -3654,7 +3688,7 @@ app.post("/api/deploy/helm-chart", mutateLimiter, requireGroups("sre-admins", "d
     if (!isValidName(safeName)) return res.status(400).json({ error: "Invalid app name" });
 
     const teamName = sanitizeName(team);
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
     const safeChartName = sanitizeName(chartName);
     const safeVersion = (chartVersion || "").replace(/[^a-zA-Z0-9._-]/g, "").substring(0, 64);
 
@@ -3739,7 +3773,7 @@ app.post("/api/deploy/helm-chart", mutateLimiter, requireGroups("sre-admins", "d
       },
     };
 
-    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    const actor = getActor(req);
     await deployViaGitOps(helmRelease, nsName, safeName, actor);
 
     // Auto-create DestinationRule for HTTPS backend detection
@@ -3776,7 +3810,7 @@ app.post("/api/databases", mutateLimiter, requireGroups("sre-admins", "developer
     if (!isValidName(safeName)) return res.status(400).json({ error: "Invalid database name" });
 
     const teamName = sanitizeName(team);
-    const nsName = teamName.startsWith("team-") ? teamName : `team-${teamName}`;
+    const nsName = normalizeTeamName(team);
     const dbInstances = Math.min(Math.max(Number(instances) || 1, 1), 3);
     const dbStorage = (storage || "1Gi").replace(/[^a-zA-Z0-9]/g, "");
 
@@ -4625,7 +4659,7 @@ async function ensureKyvernoExclusions(namespace) {
 async function shouldBePrivileged(appName, teamName) {
   if (!dbAvailable) return false;
   try {
-    const result = await db.listRuns({ team: teamName.startsWith("team-") ? teamName : `team-${teamName}`, limit: 5 });
+    const result = await db.listRuns({ team: normalizeTeamName(teamName), limit: 5 });
     const run = (result.runs || []).find(r => r.app_name === appName && r.security_exceptions);
     if (!run) return false;
     const exceptions = typeof run.security_exceptions === 'string' ? JSON.parse(run.security_exceptions) : (run.security_exceptions || []);
@@ -5018,7 +5052,7 @@ app.delete("/api/apps/:namespace/:name", mutateLimiter, requireGroups("sre-admin
     const { namespace, name } = req.params;
 
     // Step 1: Remove from Git (if GitOps enabled) and delete the HelmRelease
-    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "dashboard";
+    const actor = getActor(req);
     await undeployViaGitOps(namespace, name, actor);
 
     // Step 2: Remove finalizers so the HelmRelease can be deleted even if
@@ -5115,7 +5149,7 @@ app.post("/api/admin/migrate-to-gitops", mutateLimiter, requireGroups("sre-admin
   }
 
   try {
-    const actor = req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "admin";
+    const actor = getActor(req);
     // Find all team-* namespaces
     const nsResp = await k8sApi.listNamespace();
     const teamNamespaces = nsResp.body.items
@@ -5759,10 +5793,6 @@ function requireDb(req, res, next) {
   next();
 }
 
-function getActor(req) {
-  return req.headers["x-auth-request-email"] || req.headers["x-auth-request-user"] || "unknown";
-}
-
 // Default DSOP gates for a new pipeline run
 function getDefaultGates() {
   return [
@@ -6270,6 +6300,28 @@ app.post("/api/pipeline/runs/:id/gates/:gateId/override", mutateLimiter, require
       completedAt: new Date().toISOString(),
     });
     await db.auditLog(id, "gate_override", actor, `Gate ${gateId} overridden to ${status}: ${reason}`, { gateId: parseInt(gateId), status, reason });
+
+    // Auto-set disposition on unresolved findings from this gate
+    await db.pool.query(
+      `UPDATE pipeline_findings SET disposition = 'accepted_risk', mitigation = $1, mitigated_by = $2, mitigated_at = NOW()
+       WHERE gate_id = $3 AND run_id = $4 AND disposition IS NULL`,
+      [`Admin override: ${reason}`, actor, parseInt(gateId), id]
+    );
+
+    // Re-evaluate run status — if all automated gates are now passed/warning/skipped, move to review_pending
+    const run = await db.getRun(id);
+    if (run && run.status === "scanning") {
+      const automatedGates = run.gates.filter(g => !["ISSM_REVIEW", "IMAGE_SIGNING"].includes(g.short_name));
+      const allDone = automatedGates.every(g => ["passed", "warning", "skipped"].includes(g.status));
+      if (allDone) {
+        await db.updateRunStatus(id, "review_pending");
+        const issmGate = run.gates.find(g => g.short_name === "ISSM_REVIEW");
+        if (issmGate) {
+          await db.updateGate(issmGate.id, { status: "warning", summary: "Awaiting ISSM review" });
+        }
+        await db.auditLog(id, "scan_complete_ready_for_review", actor, "All automated scans resolved via override — ready for ISSM review");
+      }
+    }
 
     res.json({ success: true });
   } catch (err) {

@@ -19,6 +19,10 @@ spec:
     spec:
       serviceAccountName: {{ include "sre-api-service.serviceAccountName" . }}
       automountServiceAccountToken: false
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- else }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -26,6 +30,7 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      {{- end }}
       containers:
         - name: {{ .Values.app.name }}
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
@@ -34,6 +39,10 @@ spec:
             - name: http
               containerPort: {{ .Values.app.port }}
               protocol: TCP
+          {{- if .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- else }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -41,6 +50,7 @@ spec:
             capabilities:
               drop:
                 - ALL
+          {{- end }}
           resources:
             requests:
               cpu: {{ .Values.app.resources.requests.cpu }}
@@ -49,17 +59,29 @@ spec:
               cpu: {{ .Values.app.resources.limits.cpu }}
               memory: {{ .Values.app.resources.limits.memory }}
           livenessProbe:
+            {{- if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.app.probes.liveness.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.app.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.app.probes.liveness.failureThreshold | default 3 }}
           readinessProbe:
+            {{- if eq (.Values.app.probes.readiness.type | default "http") "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.app.probes.readiness.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.app.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.app.probes.readiness.failureThreshold | default 3 }}
           env:
             {{- range .Values.app.env }}
             {{- if .value }}

@@ -7,4 +7,5 @@ resources:
   - deployment.yaml
   - service.yaml
   - virtualservice.yaml
-  - network-policy.yaml
+  - network-policies/default-deny.yaml
+  - network-policies/allow-oauth2-proxy.yaml

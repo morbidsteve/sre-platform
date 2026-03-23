@@ -1,3 +1,7 @@
+> **Quick navigation:** This guide covers the Deploy from Git feature specifically.
+> For all deployment methods, see [Developer Guide](developer-guide.md).
+> For first-time setup, see [Getting Started](getting-started-developer.md).
+
 # Developer Deployment Guide — Deploy from Git on SRE
 
 This guide walks you through deploying an application to the SRE Platform using the **Deploy from Git** feature. You give the platform a Git URL, and it handles the rest: building images, creating Kubernetes resources, setting up networking, and securing everything with Istio mTLS.

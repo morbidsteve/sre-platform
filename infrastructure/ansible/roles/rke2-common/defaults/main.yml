@@ -1,0 +1,6 @@
+---
+# RKE2 Common Role — Default Variables
+# Shared between server and agent roles.
+
+# Data directory for RKE2
+rke2_data_dir: "/var/lib/rancher/rke2"

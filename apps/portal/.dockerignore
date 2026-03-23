@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+*.log
+k8s/
+tests/
+docs/
+*.md
+!README.md
+build-and-deploy.sh
+.dockerignore
+Dockerfile

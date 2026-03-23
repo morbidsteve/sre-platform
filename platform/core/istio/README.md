@@ -24,7 +24,7 @@ Istio provides zero-trust networking for all workloads in the SRE platform. It i
 
 ## Helm Chart Versions
 
-All Istio charts are pinned to version `1.21.1`.
+All Istio charts are pinned to version `1.25.2`.
 
 ## Configuration
 

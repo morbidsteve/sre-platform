@@ -6,7 +6,7 @@ Kubernetes-native policy enforcement using YAML-based policies. Kyverno validate
 
 | Resource | Purpose |
 |----------|---------|
-| `helmrelease.yaml` | Kyverno Helm chart (v3.1.4) |
+| `helmrelease.yaml` | Kyverno Helm chart (v3.3.7) |
 | `namespace.yaml` | Kyverno namespace (no Istio injection) |
 | `network-policies/` | Default deny + explicit allows |
 

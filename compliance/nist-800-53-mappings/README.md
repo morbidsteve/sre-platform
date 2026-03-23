@@ -90,6 +90,11 @@ When adding or modifying a platform component:
 4. Add evidence file paths pointing to the actual manifests or policies
 5. Update `compliance/oscal/ssp.json` to keep the SSP in sync
 
+## Keeping in Sync
+
+This machine-readable mapping should be kept in sync with the human-readable version at
+`docs/agent-docs/compliance-mapping.md`. When updating controls, update both files.
+
 ## Related Files
 
 - `../oscal/ssp.json` — OSCAL System Security Plan referencing these controls

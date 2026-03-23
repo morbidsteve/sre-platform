@@ -5,3 +5,7 @@ metadata:
   name: external-dns
   labels:
     app.kubernetes.io/part-of: sre-platform
+    istio-injection: disabled
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

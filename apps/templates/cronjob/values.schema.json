@@ -24,7 +24,8 @@
             "repository": {
               "type": "string",
               "minLength": 1,
-              "description": "Container image repository (use harbor.sre.internal/ when Harbor is deployed)"
+              "pattern": "^harbor\\.sre\\.internal/",
+              "description": "Container image repository. Must be from internal Harbor registry (harbor.sre.internal/...)"
             },
             "tag": {
               "type": "string",
@@ -143,6 +144,14 @@
         "enabled": { "type": "boolean" },
         "additionalEgress": { "type": "array" }
       }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "description": "Override pod-level security context. Defaults to restricted PSS if not set."
+    },
+    "containerSecurityContext": {
+      "type": "object",
+      "description": "Override container-level security context. Defaults to restricted PSS if not set."
     }
   }
 }

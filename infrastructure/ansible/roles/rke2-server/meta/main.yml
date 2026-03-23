@@ -9,5 +9,12 @@ galaxy_info:
     - name: EL
       versions:
         - "9"
+  galaxy_tags:
+    - rke2
+    - kubernetes
+    - server
+    - security
+    - hardening
 
-dependencies: []
+dependencies:
+  - role: rke2-common

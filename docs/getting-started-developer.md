@@ -1,3 +1,7 @@
+> **Quick navigation:** This guide covers first-time setup and cluster access.
+> For deployment methods and workflows, see [Developer Guide](developer-guide.md).
+> For the Deploy from Git feature specifically, see [Deploy from Git Guide](developer-deployment-guide.md).
+
 # Getting Started: Deploy Your App to SRE
 
 This guide takes you from zero to a running application on the Secure Runtime Environment. It covers every tool you need to install, how to get credentials, how to build a compliant container image, and how to integrate with platform services.

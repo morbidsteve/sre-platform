@@ -32,23 +32,25 @@ spec:
           - resources:
               namespaces:
                 - kube-system
-                - kube-public
                 - kube-node-lease
-                - istio-system
+                - kube-public
                 - flux-system
-                - kyverno
+                - istio-system
                 - cert-manager
                 - monitoring
                 - logging
                 - tempo
                 - openbao
                 - external-secrets
+                - runtime-security
+                - backup
+                - kyverno
                 - neuvector
                 - harbor
                 - velero
                 - keycloak
-                - sre-dashboard
                 - sre-portal
+                - sre-dashboard
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
@@ -76,23 +78,25 @@ spec:
           - resources:
               namespaces:
                 - kube-system
-                - kube-public
                 - kube-node-lease
-                - istio-system
+                - kube-public
                 - flux-system
-                - kyverno
+                - istio-system
                 - cert-manager
                 - monitoring
                 - logging
                 - tempo
                 - openbao
                 - external-secrets
+                - runtime-security
+                - backup
+                - kyverno
                 - neuvector
                 - harbor
                 - velero
                 - keycloak
-                - sre-dashboard
                 - sre-portal
+                - sre-dashboard
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system

@@ -113,7 +113,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-monitoring
   namespace: monitoring
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -127,7 +127,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-monitoring
   namespace: monitoring
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -135,7 +135,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-monitoring
 subjects:
   - kind: ServiceAccount
     name: sre-dashboard
@@ -145,7 +145,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-harbor
   namespace: harbor
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -159,7 +159,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-harbor
   namespace: harbor
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -167,7 +167,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-harbor
 subjects:
   - kind: ServiceAccount
     name: sre-dashboard
@@ -177,7 +177,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-keycloak
   namespace: keycloak
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -191,7 +191,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-keycloak
   namespace: keycloak
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -199,7 +199,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-keycloak
 subjects:
   - kind: ServiceAccount
     name: sre-dashboard
@@ -249,7 +249,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-openbao
   namespace: openbao
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -263,7 +263,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-openbao
   namespace: openbao
   labels:
     app.kubernetes.io/name: sre-dashboard
@@ -271,7 +271,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: sre-dashboard-secrets
+  name: sre-dashboard-secrets-openbao
 subjects:
   - kind: ServiceAccount
     name: sre-dashboard

@@ -6,7 +6,7 @@ kube-prometheus-stack providing metrics collection, alerting, and visualization 
 
 | Component | Description | Version |
 |---|---|---|
-| Prometheus | Metrics collection, storage, and querying (15-day in-cluster retention) | kube-prometheus-stack `57.2.0` |
+| Prometheus | Metrics collection, storage, and querying (15-day in-cluster retention) | kube-prometheus-stack `72.6.2` |
 | Grafana | Unified dashboards for metrics, logs, and traces | Bundled with kube-prometheus-stack |
 | AlertManager | Alert routing with webhook, PagerDuty, Slack, and email support | Bundled with kube-prometheus-stack |
 | Prometheus Operator | Manages Prometheus, AlertManager, and ServiceMonitor CRDs | Bundled with kube-prometheus-stack |

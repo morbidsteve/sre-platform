@@ -1,0 +1,39 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-default-namespace
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Disallow Default Namespace
+    policies.kyverno.io/description: >-
+      Prevents resources from being created in the default namespace.
+      All workloads must be deployed to a dedicated namespace.
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    sre.io/nist-controls: "AC-6, CM-5"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-default-namespace
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+                - CronJob
+              namespaces:
+                - default
+      validate:
+        message: >-
+          Resources must not be deployed in the default namespace.
+          Create a dedicated namespace for your workload using the tenant onboarding process.
+          See docs/onboarding-guide.md for details.
+        deny: {}

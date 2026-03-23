@@ -5,3 +5,9 @@ metadata:
   name: cnpg-system
   labels:
     app.kubernetes.io/part-of: sre-platform
+    istio-injection: disabled
+    # CNPG operator needs privileged access to manage PostgreSQL pods
+    # (volume mounts, init containers, shared memory settings)
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

@@ -22,7 +22,7 @@ Open-source container runtime security providing detection and enforcement for t
 
 ## Helm Chart Version
 
-NeuVector core chart is pinned to version `2.7.3`.
+NeuVector core chart is pinned to version `2.8.6`.
 
 ## Architecture
 

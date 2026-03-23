@@ -1,4 +1,8 @@
 ---
+# RKE2 Kubernetes STIG — Quick Reference Summary
+# Authoritative checklist: rke2-stig.json (87 findings)
+# This file contains the 12 highest-priority findings for quick review.
+# For full compliance assessment, use rke2-stig.json
 stig:
   title: "Kubernetes DISA STIG (RKE2)"
   version: "V1R11"

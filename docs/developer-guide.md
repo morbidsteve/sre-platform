@@ -1,3 +1,7 @@
+> **Quick navigation:** This is the primary developer guide covering all deployment methods.
+> For first-time setup, see [Getting Started](getting-started-developer.md).
+> For the Deploy from Git feature specifically, see [Deploy from Git Guide](developer-deployment-guide.md).
+
 # Developer Guide — Deploy Your App on SRE
 
 This guide takes you from "I have a container image" to "my app is running on the SRE platform" in under 5 minutes.

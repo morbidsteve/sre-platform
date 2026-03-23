@@ -210,3 +210,29 @@ metadata:
 spec:
   interval: 1h
   url: https://kubernetes-sigs.github.io/external-dns
+
+---
+# ── MetalLB ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: metallb
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://metallb.github.io/metallb
+
+---
+# ── Backstage ──
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: backstage
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  interval: 1h
+  url: https://backstage.github.io/charts

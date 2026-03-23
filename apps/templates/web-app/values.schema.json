@@ -24,7 +24,8 @@
             "repository": {
               "type": "string",
               "minLength": 1,
-              "description": "Container image repository (use harbor.sre.internal/ when Harbor is deployed)"
+              "pattern": "^harbor\\.sre\\.internal/",
+              "description": "Container image repository. Must be from internal Harbor registry (harbor.sre.internal/...)"
             },
             "tag": {
               "type": "string",
@@ -87,17 +88,55 @@
             "liveness": {
               "type": "object",
               "properties": {
-                "path": { "type": "string" },
-                "initialDelaySeconds": { "type": "integer" },
-                "periodSeconds": { "type": "integer" }
+                "type": {
+                  "type": "string",
+                  "enum": ["http", "tcp"],
+                  "default": "http",
+                  "description": "Probe type: http (httpGet) or tcp (tcpSocket)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "HTTP path for health check (required when type is http)"
+                },
+                "initialDelaySeconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 10
+                },
+                "periodSeconds": { "type": "integer" },
+                "failureThreshold": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 3,
+                  "description": "Number of failures before marking probe failed"
+                }
               }
             },
             "readiness": {
               "type": "object",
               "properties": {
-                "path": { "type": "string" },
-                "initialDelaySeconds": { "type": "integer" },
-                "periodSeconds": { "type": "integer" }
+                "type": {
+                  "type": "string",
+                  "enum": ["http", "tcp"],
+                  "default": "http",
+                  "description": "Probe type: http (httpGet) or tcp (tcpSocket)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "HTTP path for health check (required when type is http)"
+                },
+                "initialDelaySeconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 5
+                },
+                "periodSeconds": { "type": "integer" },
+                "failureThreshold": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 3,
+                  "description": "Number of failures before marking probe failed"
+                }
               }
             }
           }
@@ -168,6 +207,14 @@
           }
         }
       }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "description": "Override pod-level security context. Defaults to restricted PSS if not set."
+    },
+    "containerSecurityContext": {
+      "type": "object",
+      "description": "Override container-level security context. Defaults to restricted PSS if not set."
     }
   }
 }

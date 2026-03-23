@@ -7,6 +7,8 @@ metadata:
     sre.io/system-namespace: "true"
     sre.io/network-policy-configured: "true"
     sre.io/security-categorization: "moderate"
-    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
     istio-injection: enabled
     kubernetes.io/metadata.name: sre-dashboard

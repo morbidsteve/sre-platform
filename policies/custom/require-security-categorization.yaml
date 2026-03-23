@@ -30,22 +30,25 @@ spec:
           - resources:
               namespaces:
                 - kube-system
-                - kube-public
                 - kube-node-lease
+                - kube-public
                 - default
-                - istio-system
                 - flux-system
-                - kyverno
+                - istio-system
                 - cert-manager
                 - monitoring
                 - logging
                 - tempo
                 - openbao
                 - external-secrets
+                - runtime-security
+                - backup
+                - kyverno
                 - neuvector
                 - harbor
                 - velero
                 - keycloak
+                - sre-portal
                 - sre-dashboard
                 - oauth2-proxy
                 - local-path-storage

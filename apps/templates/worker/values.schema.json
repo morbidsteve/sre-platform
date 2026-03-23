@@ -24,7 +24,8 @@
             "repository": {
               "type": "string",
               "minLength": 1,
-              "description": "Container image repository (use harbor.sre.internal/ when Harbor is deployed)"
+              "pattern": "^harbor\\.sre\\.internal/",
+              "description": "Container image repository. Must be from internal Harbor registry (harbor.sre.internal/...)"
             },
             "tag": {
               "type": "string",
@@ -83,6 +84,65 @@
               "secretRef": { "type": "string" }
             }
           }
+        },
+        "probes": {
+          "type": "object",
+          "properties": {
+            "liveness": {
+              "type": "object",
+              "properties": {
+                "exec": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Command to execute for health check"
+                    }
+                  },
+                  "required": ["command"]
+                },
+                "initialDelaySeconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 10
+                },
+                "periodSeconds": { "type": "integer" },
+                "failureThreshold": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 3
+                }
+              }
+            },
+            "readiness": {
+              "type": "object",
+              "properties": {
+                "exec": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Command to execute for readiness check"
+                    }
+                  },
+                  "required": ["command"]
+                },
+                "initialDelaySeconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 5
+                },
+                "periodSeconds": { "type": "integer" },
+                "failureThreshold": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 3
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -123,6 +183,14 @@
         "enabled": { "type": "boolean" },
         "minAvailable": { "type": "integer", "minimum": 0 }
       }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "description": "Override pod-level security context. Defaults to restricted PSS if not set."
+    },
+    "containerSecurityContext": {
+      "type": "object",
+      "description": "Override container-level security context. Defaults to restricted PSS if not set."
     }
   }
 }

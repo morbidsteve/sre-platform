@@ -6,7 +6,7 @@ OpenBao (open-source Vault fork under Linux Foundation) deployed in HA mode with
 
 | Resource | Purpose |
 |----------|---------|
-| `helmrelease.yaml` | OpenBao Helm chart (v0.6.0) in HA mode |
+| `helmrelease.yaml` | OpenBao Helm chart (v0.9.0) in HA mode |
 | `namespace.yaml` | Namespace with Istio injection |
 | `network-policies/` | Default deny + explicit allows |
 

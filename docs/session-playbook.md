@@ -1,3 +1,7 @@
+> **Note:** This playbook was used to build the SRE Platform from scratch. The platform is now deployed and operational.
+> For current operations, see [Operator Guide](operator-guide.md). For architecture decisions, see [decisions.md](decisions.md).
+> This document is preserved as a historical reference and for rebuilding the platform from scratch if needed.
+
 # SRE Build Playbook — Session-by-Session Guide
 
 This is your reference during implementation. One session per component, one concern per session.

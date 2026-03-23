@@ -28,6 +28,10 @@ spec:
         spec:
           serviceAccountName: {{ include "sre-cronjob.serviceAccountName" . }}
           automountServiceAccountToken: false
+          {{- if .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          {{- else }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -35,6 +39,7 @@ spec:
             fsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
+          {{- end }}
           restartPolicy: {{ .Values.schedule.restartPolicy }}
           containers:
             - name: {{ .Values.app.name }}
@@ -48,6 +53,10 @@ spec:
               args:
                 {{- toYaml . | nindent 16 }}
               {{- end }}
+              {{- if .Values.containerSecurityContext }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+              {{- else }}
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -55,6 +64,7 @@ spec:
                 capabilities:
                   drop:
                     - ALL
+              {{- end }}
               resources:
                 requests:
                   cpu: {{ .Values.app.resources.requests.cpu }}

@@ -22,7 +22,7 @@ Grafana Tempo provides distributed tracing storage and query for the SRE platfor
 
 ## Helm Chart Version
 
-Grafana Tempo chart is pinned to version `1.7.2`.
+Grafana Tempo chart is pinned to version `1.18.2`.
 
 ## Architecture
 

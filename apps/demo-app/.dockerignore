@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.log
+k8s/
+tests/
+docs/
+*.md
+!README.md
+Dockerfile
+.dockerignore

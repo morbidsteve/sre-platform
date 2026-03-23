@@ -1,4 +1,8 @@
 ---
+# CMMC 2.0 Level 2 Self-Assessment Summary
+# Canonical/authoritative version: level2-assessment.json
+# This YAML file is a human-readable summary for quick reference.
+# Always update level2-assessment.json first, then sync this file.
 assessment:
   title: "CMMC 2.0 Level 2 Self-Assessment"
   organization: "SRE Platform"

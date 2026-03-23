@@ -2,10 +2,135 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - rbac.yaml
-  - resource-quota.yaml
-  - limit-range.yaml
-  - network-policies/default-deny.yaml
-  - network-policies/allow-base.yaml
+  - ../_base
   - apps/
+
+patches:
+  # --- Namespace ---
+  - target:
+      kind: Namespace
+      name: TENANT_NAME
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-alpha
+      - op: replace
+        path: /metadata/labels/sre.io~1team
+        value: team-alpha
+
+  # --- ResourceQuota ---
+  - target:
+      kind: ResourceQuota
+      name: tenant-quota
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-alpha-quota
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- LimitRange ---
+  - target:
+      kind: LimitRange
+      name: tenant-limits
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-alpha-limits
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- RBAC: developers ---
+  - target:
+      kind: RoleBinding
+      name: tenant-developers
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-alpha-developers
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+      - op: replace
+        path: /subjects/0/name
+        value: team-alpha-developers
+
+  # --- RBAC: viewers ---
+  - target:
+      kind: RoleBinding
+      name: tenant-viewers
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-alpha-viewers
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+      - op: replace
+        path: /subjects/0/name
+        value: team-alpha-viewers
+
+  # --- NetworkPolicy: default-deny-all ---
+  - target:
+      kind: NetworkPolicy
+      name: default-deny-all
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- NetworkPolicy: allow-dns ---
+  - target:
+      kind: NetworkPolicy
+      name: allow-dns
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- NetworkPolicy: allow-monitoring ---
+  - target:
+      kind: NetworkPolicy
+      name: allow-monitoring
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- NetworkPolicy: allow-istio-gateway ---
+  - target:
+      kind: NetworkPolicy
+      name: allow-istio-gateway
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- NetworkPolicy: allow-same-namespace ---
+  - target:
+      kind: NetworkPolicy
+      name: allow-same-namespace
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- NetworkPolicy: allow-istio-control-plane ---
+  - target:
+      kind: NetworkPolicy
+      name: allow-istio-control-plane
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
+
+  # --- NetworkPolicy: allow-https-egress ---
+  - target:
+      kind: NetworkPolicy
+      name: allow-https-egress
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-alpha
