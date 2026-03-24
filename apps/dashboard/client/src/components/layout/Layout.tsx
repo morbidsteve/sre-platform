@@ -2,7 +2,6 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ClassificationBanner } from './ClassificationBanner';
 import { Header } from './Header';
 import { Navigation } from './Navigation';
-import { AlertBanner } from '../shared/AlertBanner';
 import { useUserContext } from '../../context/UserContext';
 
 interface LayoutProps {
@@ -39,7 +38,6 @@ export function Layout({ children, activeTab, onTabChange, onOpenCommandPalette 
   return (
     <div className="min-h-screen flex flex-col">
       <ClassificationBanner position="top" />
-      <AlertBanner />
       <Header
         onToggleMobileNav={() => setMobileNavOpen((v) => !v)}
         mobileNavOpen={mobileNavOpen}
