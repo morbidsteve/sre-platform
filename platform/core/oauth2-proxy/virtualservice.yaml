@@ -43,9 +43,26 @@ metadata:
   annotations:
     sre.io/nist-controls: "AC-2, AC-3, IA-2, IA-8"
 spec:
-  # Wildcard covers ALL apps — any new app automatically gets SSO
+  # All service hosts that need /oauth2/* routing for SSO
+  # When deploying new apps, the dashboard auto-adds them via kubectl patch
   hosts:
-    - "*.${SRE_DOMAIN}"
+    - "dashboard.${SRE_DOMAIN}"
+    - "grafana.${SRE_DOMAIN}"
+    - "prometheus.${SRE_DOMAIN}"
+    - "alertmanager.${SRE_DOMAIN}"
+    - "harbor.${SRE_DOMAIN}"
+    - "neuvector.${SRE_DOMAIN}"
+    - "openbao.${SRE_DOMAIN}"
+    - "portal.${SRE_DOMAIN}"
+    - "dsop.${SRE_DOMAIN}"
+    - "compliance.${SRE_DOMAIN}"
+    - "statusboard.${SRE_DOMAIN}"
+    - "wireshark.${SRE_DOMAIN}"
+    - "admin-tools.${SRE_DOMAIN}"
+    - "intel.${SRE_DOMAIN}"
+    - "keystone.${SRE_DOMAIN}"
+    - "nginx-demo.${SRE_DOMAIN}"
+    - "ws.${SRE_DOMAIN}"
   gateways:
     - istio-system/main
   http:
