@@ -44,7 +44,12 @@ const credentialLimiter = rateLimit({ windowMs: 60000, max: 5, message: { error:
 app.use(globalLimiter);
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+
+// Serve React SPA build output if it exists, otherwise fall back to public/
+const clientDistPath = path.join(__dirname, "client", "dist");
+const publicPath = path.join(__dirname, "public");
+const staticPath = fs.existsSync(clientDistPath) ? clientDistPath : publicPath;
+app.use(express.static(staticPath));
 
 // ── RBAC Middleware ──────────────────────────────────────────────────────────
 
@@ -6157,6 +6162,41 @@ app.get("/api/pipeline/stats", requireDb, requireGroups("sre-admins", "developer
   }
 });
 
+// DELETE /api/pipeline/runs/:id — Delete a pipeline run
+app.delete("/api/pipeline/runs/:id", mutateLimiter, requireDb, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const run = await db.getRun(req.params.id);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+    const actor = getActor(req);
+    await db.auditLog(req.params.id, "run_deleted", actor, `Pipeline run deleted for ${run.app_name}`);
+    await db.pool.query("DELETE FROM pipeline_runs WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[pipeline] Delete run error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/pipeline/active — Active pipeline runs for My Apps cards
+app.get("/api/pipeline/active", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    if (!dbAvailable) return res.json({ runs: [] });
+    // Team-based isolation
+    const groupsHeader = req.headers["x-auth-request-groups"] || "";
+    const userGroups = groupsHeader.split(/[,\s]+/).map(g => g.trim().replace(/^\//, "")).filter(Boolean);
+    const isAdmin = userGroups.some(g => ["sre-admins", "issm"].includes(g));
+    let team = null;
+    if (!isAdmin) {
+      team = userGroups.find(g => g.startsWith("team-"));
+    }
+    const runs = await db.getActiveRuns(team);
+    res.json({ runs });
+  } catch (err) {
+    console.error("[pipeline] Active runs error:", err);
+    res.json({ runs: [] });
+  }
+});
+
 // POST /api/pipeline/cleanup — Mark stale scanning runs as failed
 app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-admins"), async (req, res) => {
   try {
@@ -7315,8 +7355,58 @@ async function executePipelineDeploy(run, actor) {
       console.debug('[pipeline] Security exception check for deploy best-effort:', e.message);
     }
 
-    if (run.git_url) {
-      // Call the real deploy-from-git endpoint internally via localhost
+    // Check if the pipeline already built an image (ARTIFACT_STORE gate passed)
+    const builtImage = run.image_url || (run.gates || []).find(g => g.gate_name === 'ARTIFACT_STORE' && g.status === 'passed' && g.output)?.output;
+
+    if (builtImage && !builtImage.startsWith('{')) {
+      // Image already built during pipeline — skip rebuild, just create HelmRelease
+      logger.info('pipeline', `Using pre-built image for ${safeName}: ${builtImage}`, { runId: run.id });
+      const nsName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
+      const imageParts = builtImage.split(":");
+      const imageRepo = imageParts.slice(0, -1).join(":") || builtImage;
+      const imageTag = imageParts.length > 1 ? imageParts[imageParts.length - 1] : "latest";
+      const ingressHost = `${safeName}.${domain}`;
+
+      await ensureNamespace(nsName, run.team);
+
+      const manifest = generateHelmRelease({
+        name: safeName,
+        team: nsName,
+        image: imageRepo,
+        tag: imageTag,
+        port: run.port || 8080,
+        replicas: 2,
+        ingressHost: ingressHost,
+        privileged: needsPrivileged,
+      });
+
+      await deployViaGitOps(manifest, nsName, safeName, actor);
+      const deployedUrl = `https://${ingressHost}`;
+
+      // Register in app portal
+      const appData = {
+        name: safeName,
+        namespace: nsName,
+        team: run.team,
+        url: deployedUrl,
+        helmRelease: safeName,
+        deployedVia: "pipeline",
+        registeredAt: new Date().toISOString(),
+      };
+      appRegistry.push(appData);
+      try {
+        await coreApi.replaceNamespacedConfigMap(APP_REGISTRY_CM, DASHBOARD_NAMESPACE, {
+          metadata: { name: APP_REGISTRY_CM, namespace: DASHBOARD_NAMESPACE },
+          data: { "apps.json": JSON.stringify(appRegistry) },
+        });
+      } catch (cmErr) {
+        console.debug('[pipeline] Registry update best-effort:', cmErr.message);
+      }
+
+      await db.updateRunStatus(run.id, "deployed", { deployedUrl });
+      await db.auditLog(run.id, "deploy_completed", actor, `Deployed ${run.app_name} to ${deployedUrl} (pre-built image)`);
+    } else if (run.git_url) {
+      // Fallback: no pre-built image, call deploy-from-git to build + deploy
       const http = require("http");
       const deployPayload = {
         url: run.git_url,
@@ -8033,6 +8123,16 @@ async function resumeJobPoll(runId, gate) {
     }
   }
 }
+
+// SPA catch-all: serve index.html for non-API routes (React Router / client-side nav)
+app.get('*', (req, res) => {
+  const indexPath = path.join(staticPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Not found');
+  }
+});
 
 db.initDb().then(async () => {
   dbAvailable = true;
