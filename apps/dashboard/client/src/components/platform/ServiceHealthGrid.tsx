@@ -14,9 +14,10 @@ interface ServiceHealthGridProps {
   services: ServiceInfo[];
   lastChecked: string;
   loading: boolean;
+  onOpenService?: (url: string, name: string) => void;
 }
 
-export function ServiceHealthGrid({ services, lastChecked, loading }: ServiceHealthGridProps) {
+export function ServiceHealthGrid({ services, lastChecked, loading, onOpenService }: ServiceHealthGridProps) {
   if (loading) {
     return (
       <div className="flex justify-center py-8">
@@ -29,13 +30,27 @@ export function ServiceHealthGrid({ services, lastChecked, loading }: ServiceHea
     return <p className="text-text-dim">No services to check.</p>;
   }
 
+  const handleClick = (svc: ServiceInfo) => {
+    if (onOpenService) {
+      onOpenService(svc.url, svc.name);
+    } else {
+      window.open(svc.url, '_blank', 'noopener');
+    }
+  };
+
   return (
     <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {services.map((svc) => (
           <div
             key={svc.name}
-            className="bg-card border border-border rounded-[var(--radius)] p-4 flex items-start gap-3"
+            className="bg-card border border-border rounded-[var(--radius)] p-4 flex items-start gap-3 cursor-pointer hover:border-border-hover hover:bg-surface-hover transition-all group"
+            onClick={() => handleClick(svc)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleClick(svc);
+            }}
           >
             <div className="mt-0.5">
               {svc.healthy ? (
@@ -45,18 +60,19 @@ export function ServiceHealthGrid({ services, lastChecked, loading }: ServiceHea
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm text-text-bright mb-0.5">
-                {svc.name.charAt(0).toUpperCase() + svc.name.slice(1)}
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="font-semibold text-sm text-text-bright">
+                  {svc.name.charAt(0).toUpperCase() + svc.name.slice(1)}
+                </span>
+                <ExternalLink className="w-3 h-3 text-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <a
-                href={svc.url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <div className="text-[11px] text-text-dim mb-1">{svc.description}</div>
+              <div
                 className="text-xs text-text-dim hover:text-accent truncate block"
                 title={svc.url}
               >
                 {svc.url.replace('https://', '')}
-              </a>
+              </div>
               <span
                 className={`inline-block mt-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium ${
                   svc.healthy

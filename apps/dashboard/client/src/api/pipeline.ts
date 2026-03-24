@@ -6,8 +6,27 @@ import type {
   GateOutputResponse,
 } from '../types/api';
 
-export function fetchPipelineStats(): Promise<PipelineStats> {
-  return apiFetch<PipelineStats>('/api/pipeline/stats');
+interface ServerPipelineStats {
+  totalRuns: number;
+  byStatus: Record<string, number>;
+  approvalRate: string;
+  avgReviewTimeSeconds: number | null;
+  avgReviewTimeHuman: string;
+}
+
+export async function fetchPipelineStats(): Promise<PipelineStats> {
+  const raw = await apiFetch<ServerPipelineStats>('/api/pipeline/stats');
+  const byStatus = raw.byStatus || {};
+  return {
+    total: raw.totalRuns ?? 0,
+    passed: (byStatus['passed'] ?? 0),
+    failed: (byStatus['failed'] ?? 0),
+    pending: (byStatus['pending'] ?? 0),
+    running: (byStatus['running'] ?? 0),
+    review_pending: (byStatus['review_pending'] ?? 0),
+    approved: (byStatus['approved'] ?? 0),
+    deployed: (byStatus['deployed'] ?? 0),
+  };
 }
 
 export function fetchPipelineRuns(params?: {

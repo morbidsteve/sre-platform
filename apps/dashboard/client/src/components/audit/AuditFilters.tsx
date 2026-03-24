@@ -1,4 +1,5 @@
 import React from 'react';
+import { Search } from 'lucide-react';
 
 const TYPE_FILTERS = [
   { id: 'all', label: 'All' },
@@ -12,9 +13,20 @@ interface AuditFiltersProps {
   namespaces: string[];
   onTypeChange: (type: string) => void;
   onNsChange: (ns: string) => void;
+  /** Optional free-text search */
+  searchText?: string;
+  onSearchChange?: (text: string) => void;
 }
 
-export function AuditFilters({ typeFilter, nsFilter, namespaces, onTypeChange, onNsChange }: AuditFiltersProps) {
+export function AuditFilters({
+  typeFilter,
+  nsFilter,
+  namespaces,
+  onTypeChange,
+  onNsChange,
+  searchText,
+  onSearchChange,
+}: AuditFiltersProps) {
   return (
     <div className="flex flex-wrap gap-2 items-center mb-4">
       <div className="flex gap-1">
@@ -43,6 +55,19 @@ export function AuditFilters({ typeFilter, nsFilter, namespaces, onTypeChange, o
           <option key={ns} value={ns}>{ns}</option>
         ))}
       </select>
+
+      {onSearchChange !== undefined && (
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-dim pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search events..."
+            className="form-input !mb-0 text-xs pl-7 min-w-[160px]"
+            value={searchText ?? ''}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+        </div>
+      )}
     </div>
   );
 }

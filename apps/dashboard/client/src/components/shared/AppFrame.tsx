@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, ExternalLink } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
 
@@ -10,6 +10,15 @@ interface AppFrameProps {
 
 export function AppFrame({ url, title, onClose }: AppFrameProps) {
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!url) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [url, onClose]);
 
   if (!url) return null;
 

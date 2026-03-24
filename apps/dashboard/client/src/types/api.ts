@@ -345,6 +345,7 @@ export interface Namespace {
 export interface TopPod {
   name: string;
   namespace: string;
+  node: string;
   cpu: string;
   memory: string;
   cpuRaw: number;

@@ -6,6 +6,8 @@ import { fetchDeployments, fetchNamespaces, restartDeployment, scaleDeployment }
 import { useUser } from '../../hooks/useUser';
 import type { Deployment, Namespace } from '../../types/api';
 
+const POLL_INTERVAL = 5000;
+
 interface DeploymentsPanelProps {
   active: boolean;
   refreshKey: number;
@@ -43,6 +45,13 @@ export function DeploymentsPanel({ active, refreshKey }: DeploymentsPanelProps) 
     setLoading(true);
     load();
   }, [load, refreshKey]);
+
+  // Poll every 5s
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(load, POLL_INTERVAL);
+    return () => clearInterval(timer);
+  }, [active, load]);
 
   const handleRestart = async (ns: string, name: string) => {
     if (!confirm(`Restart deployment ${name} in ${ns}?`)) return;

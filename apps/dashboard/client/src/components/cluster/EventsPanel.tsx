@@ -5,6 +5,43 @@ import { EmptyState } from '../ui/EmptyState';
 import { fetchEvents, fetchNamespaces } from '../../api/cluster';
 import type { ClusterEvent, Namespace } from '../../types/api';
 
+const POLL_INTERVAL = 5000;
+
+function eventBorderColor(type: string, reason: string): string {
+  // Error/Failed events: red
+  if (
+    type === 'Warning' &&
+    (reason === 'Failed' || reason === 'FailedScheduling' || reason === 'FailedMount' ||
+     reason === 'BackOff' || reason === 'Unhealthy' || reason === 'OOMKilling' ||
+     reason === 'FailedCreate' || reason === 'FailedValidation' || reason === 'CrashLoopBackOff' ||
+     reason === 'ErrImagePull' || reason === 'ImagePullBackOff' || reason === 'NodeNotReady')
+  ) {
+    return 'border-l-4 border-l-red';
+  }
+  // Warning events: yellow/amber
+  if (type === 'Warning') {
+    return 'border-l-4 border-l-yellow';
+  }
+  // Normal events: green
+  return 'border-l-4 border-l-green';
+}
+
+function eventBadgeVariant(type: string, reason: string): 'green' | 'yellow' | 'red' {
+  if (
+    type === 'Warning' &&
+    (reason === 'Failed' || reason === 'FailedScheduling' || reason === 'FailedMount' ||
+     reason === 'BackOff' || reason === 'Unhealthy' || reason === 'OOMKilling' ||
+     reason === 'FailedCreate' || reason === 'FailedValidation' || reason === 'CrashLoopBackOff' ||
+     reason === 'ErrImagePull' || reason === 'ImagePullBackOff' || reason === 'NodeNotReady')
+  ) {
+    return 'red';
+  }
+  if (type === 'Warning') {
+    return 'yellow';
+  }
+  return 'green';
+}
+
 interface EventsPanelProps {
   active: boolean;
   refreshKey: number;
@@ -34,10 +71,18 @@ export function EventsPanel({ active, refreshKey }: EventsPanelProps) {
     fetchNamespaces().then(setNamespaces).catch(() => {});
   }, [active]);
 
+  // Initial load
   useEffect(() => {
     setLoading(true);
     loadEvents();
   }, [loadEvents, refreshKey]);
+
+  // Poll every 5s
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(loadEvents, POLL_INTERVAL);
+    return () => clearInterval(timer);
+  }, [active, loadEvents]);
 
   return (
     <div>
@@ -74,14 +119,24 @@ export function EventsPanel({ active, refreshKey }: EventsPanelProps) {
       ) : (
         <div className="space-y-1">
           {events.slice(0, 100).map((e, i) => (
-            <div key={i} className="flex items-start gap-3 py-2 px-3 rounded hover:bg-surface/50 transition-colors">
-              <Badge variant={e.type === 'Warning' ? 'yellow' : 'green'}>
+            <div
+              key={i}
+              className={`flex items-start gap-3 py-2 px-3 rounded hover:bg-surface/50 transition-colors ${eventBorderColor(e.type, e.reason)}`}
+            >
+              <Badge variant={eventBadgeVariant(e.type, e.reason)}>
                 {e.type}
               </Badge>
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-text-primary">{e.message}</div>
                 <div className="text-[11px] text-text-dim mt-0.5">
-                  {e.reason} &middot; {e.namespace}/{e.object || ''} &middot; {e.age}
+                  <span className={`font-medium ${
+                    eventBadgeVariant(e.type, e.reason) === 'red'
+                      ? 'text-red'
+                      : eventBadgeVariant(e.type, e.reason) === 'yellow'
+                      ? 'text-yellow'
+                      : 'text-text-dim'
+                  }`}>{e.reason}</span>
+                  {' '}&middot; {e.namespace}/{e.object || ''} &middot; {e.age}
                   {e.count > 1 && <span> &middot; x{e.count}</span>}
                 </div>
               </div>

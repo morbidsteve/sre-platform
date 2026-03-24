@@ -8,6 +8,8 @@ import { fetchPods, fetchNamespaces } from '../../api/cluster';
 import { useUser } from '../../hooks/useUser';
 import type { ClusterPod, Namespace } from '../../types/api';
 
+const POLL_INTERVAL = 5000;
+
 interface PodsPanelProps {
   active: boolean;
   refreshKey: number;
@@ -56,10 +58,18 @@ export function PodsPanel({ active, refreshKey }: PodsPanelProps) {
     fetchNamespaces().then(setNamespaces).catch(() => {});
   }, [active]);
 
+  // Initial load
   useEffect(() => {
     setLoading(true);
     loadPods();
   }, [loadPods, refreshKey]);
+
+  // Poll every 5s
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(loadPods, POLL_INTERVAL);
+    return () => clearInterval(timer);
+  }, [active, loadPods]);
 
   const togglePod = (ns: string, name: string) => {
     if (expandedPod?.ns === ns && expandedPod?.name === name) {

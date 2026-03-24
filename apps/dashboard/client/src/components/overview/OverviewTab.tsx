@@ -10,12 +10,38 @@ import {
   ChevronUp,
   AlertTriangle,
   Settings,
+  X,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { fetchPipelineStats } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
 import { Skeleton } from '../ui/Skeleton';
+import { Modal } from '../ui/Modal';
 import type { PipelineStats, AuditEvent } from '../../types/api';
+
+const PLATFORM_NAMESPACES = new Set([
+  'cert-manager',
+  'istio-system',
+  'monitoring',
+  'logging',
+  'openbao',
+  'external-secrets',
+  'harbor',
+  'keycloak',
+  'neuvector',
+  'tempo',
+  'velero',
+  'kyverno',
+  'backup',
+  'runtime-security',
+  'sre-dashboard',
+  'sre-portal',
+  'sre-dsop',
+  'oauth2-proxy',
+  'metallb-system',
+  'flux-system',
+  'kube-system',
+]);
 
 interface OverviewTabProps {
   user: { user: string; email: string; role: string; isAdmin: boolean };
@@ -25,7 +51,7 @@ interface OverviewTabProps {
 
 export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) {
   const { health, alerts: alertsData, apps: appsData } = useData();
-  const { summary, loading: healthLoading } = health;
+  const { helmReleases, summary, loading: healthLoading } = health;
   const { alerts, criticalCount, warningCount } = alertsData;
   const { apps, loading: appsLoading } = appsData;
 
@@ -33,12 +59,27 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
   const [recentEvents, setRecentEvents] = useState<AuditEvent[]>([]);
   const [localLoading, setLocalLoading] = useState(true);
   const [alertsExpanded, setAlertsExpanded] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
+
+  // Filter health to platform-only namespaces
+  const platformHealth = useMemo(() => {
+    const platformReleases = helmReleases.filter((hr) =>
+      PLATFORM_NAMESPACES.has(hr.namespace)
+    );
+    return {
+      ready: platformReleases.filter((hr) => hr.ready).length,
+      total: platformReleases.length,
+    };
+  }, [helmReleases]);
 
   // Compute apps count from context data
   const appsCount = useMemo(() => ({
     running: apps.filter((a) => a.ready).length,
     deploying: apps.filter((a) => !a.ready).length,
   }), [apps]);
+
+  // Suppress unused variable warning - onOpenApp kept for other callers
+  void onOpenApp;
 
   // Only fetch pipeline stats and audit events locally
   const loadLocalData = useCallback(async () => {
@@ -122,12 +163,12 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           ) : (
             <div
               className={`text-3xl font-bold font-mono ${
-                summary.helmReleasesReady === summary.helmReleasesTotal
+                platformHealth.ready === platformHealth.total
                   ? 'text-green'
                   : 'text-red'
               }`}
             >
-              {summary.helmReleasesReady}/{summary.helmReleasesTotal}
+              {platformHealth.ready}/{platformHealth.total}
             </div>
           )}
           <div className="text-[11px] text-text-dim mt-1">services ready</div>
@@ -291,10 +332,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           <button
             className="btn text-[13px] !px-5 flex items-center gap-1.5"
             onClick={() =>
-              onOpenApp(
-                'https://grafana.apps.sre.example.com',
-                'Grafana'
-              )
+              window.open('https://grafana.apps.sre.example.com', '_blank')
             }
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -303,10 +341,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           <button
             className="btn text-[13px] !px-5 flex items-center gap-1.5"
             onClick={() =>
-              onOpenApp(
-                'https://harbor.apps.sre.example.com',
-                'Harbor'
-              )
+              window.open('https://harbor.apps.sre.example.com', '_blank')
             }
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -364,9 +399,10 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
                     return (
                       <tr
                         key={idx}
-                        className={`border-b border-border last:border-0 hover:bg-surface/50 transition-colors ${
+                        className={`border-b border-border last:border-0 hover:bg-surface/50 transition-colors cursor-pointer ${
                           isWarning ? 'bg-yellow/5' : ''
                         }`}
+                        onClick={() => setSelectedEvent(event)}
                       >
                         <td className="px-4 py-2 text-xs text-text-dim whitespace-nowrap">
                           {ts}
@@ -400,6 +436,66 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           )}
         </div>
       </div>
+
+      {/* Event Detail Modal */}
+      <Modal open={!!selectedEvent} onClose={() => setSelectedEvent(null)} className="max-w-lg w-full">
+        {selectedEvent && (
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-text-bright">Event Details</h3>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="text-text-dim hover:text-text-primary transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <span className="text-text-dim font-mono uppercase tracking-wider">Timestamp</span>
+                <p className="text-text-primary mt-0.5 font-mono">
+                  {selectedEvent.timestamp
+                    ? new Date(selectedEvent.timestamp).toISOString()
+                    : 'N/A'}
+                </p>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <span className="text-text-dim font-mono uppercase tracking-wider">Type</span>
+                  <p className="mt-0.5">
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded ${
+                        selectedEvent.type === 'Warning'
+                          ? 'bg-yellow/15 text-yellow'
+                          : 'bg-green/15 text-green'
+                      }`}
+                    >
+                      {selectedEvent.type}
+                    </span>
+                  </p>
+                </div>
+                <div className="flex-1">
+                  <span className="text-text-dim font-mono uppercase tracking-wider">Reason</span>
+                  <p className="text-text-primary mt-0.5">{selectedEvent.reason || '--'}</p>
+                </div>
+              </div>
+              <div>
+                <span className="text-text-dim font-mono uppercase tracking-wider">Message</span>
+                <p className="text-text-primary mt-0.5 break-words">{selectedEvent.message || '--'}</p>
+              </div>
+              <div>
+                <span className="text-text-dim font-mono uppercase tracking-wider">Involved Object</span>
+                <p className="text-text-primary mt-0.5 font-mono">
+                  {selectedEvent.kind}/{selectedEvent.name}
+                  {selectedEvent.namespace && (
+                    <span className="text-text-dim ml-2">in {selectedEvent.namespace}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

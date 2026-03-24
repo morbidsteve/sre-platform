@@ -4392,9 +4392,15 @@ app.get("/api/cluster/top/pods", async (req, res) => {
   try {
     const sortBy = req.query.sortBy || "cpu";
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const metricsRes = await customApi.listClusterCustomObject(
-      "metrics.k8s.io", "v1beta1", "pods"
-    );
+    const [metricsRes, podsRes] = await Promise.all([
+      customApi.listClusterCustomObject("metrics.k8s.io", "v1beta1", "pods"),
+      k8sApi.listPodForAllNamespaces(),
+    ]);
+    // Build node lookup: namespace/name -> nodeName
+    const nodeMap = {};
+    for (const p of podsRes.body.items) {
+      nodeMap[p.metadata.namespace + "/" + p.metadata.name] = p.spec.nodeName || "";
+    }
     const metricsItems = metricsRes?.body?.items || metricsRes?.items || [];
     const items = metricsItems.map((m) => {
       let cpuTotal = 0, memTotal = 0;
@@ -4405,6 +4411,7 @@ app.get("/api/cluster/top/pods", async (req, res) => {
       return {
         name: m.metadata.name,
         namespace: m.metadata.namespace,
+        node: nodeMap[m.metadata.namespace + "/" + m.metadata.name] || "",
         cpu: fmtCpu(cpuTotal),
         memory: fmtMem(memTotal),
         cpuRaw: cpuTotal,

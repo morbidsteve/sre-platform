@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs } from '../ui/Tabs';
 import { SkeletonCard } from '../ui/Skeleton';
-import { ServiceTilesGrid } from '../platform/ServiceTilesGrid';
 import { ServiceHealthGrid } from '../platform/ServiceHealthGrid';
 import { DNSSetup } from '../platform/DNSSetup';
 import { NodesPanel } from '../cluster/NodesPanel';
@@ -21,6 +20,8 @@ interface ServiceInfo {
 
 interface IngressRoute {
   hosts: string[];
+  name?: string;
+  namespace?: string;
 }
 
 interface IngressData {
@@ -39,6 +40,8 @@ const OPS_TABS = [
   { id: 'dns', label: 'DNS' },
 ];
 
+const POLL_INTERVAL = 5000;
+
 interface OperationsTabProps {
   active: boolean;
   onOpenApp: (url: string, title: string) => void;
@@ -50,7 +53,6 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
 
   // Platform services state
   const [services, setServices] = useState<ServiceInfo[]>([]);
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [ingressData, setIngressData] = useState<IngressData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState('');
@@ -64,18 +66,15 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
   const loadPlatformData = useCallback(async () => {
     try {
       setError(null);
-      const [statusResp, ingressResp, favResp] = await Promise.all([
+      const [statusResp, ingressResp] = await Promise.all([
         fetch('/api/status'),
         fetch('/api/ingress'),
-        fetch('/api/favorites'),
       ]);
       const statusData: ServiceInfo[] = await statusResp.json();
       const ingress: IngressData = await ingressResp.json();
-      const favData = await favResp.json();
 
       setServices(statusData);
       setIngressData(ingress);
-      setFavorites(favData.favorites || []);
       setLastChecked(new Date().toLocaleTimeString());
     } catch {
       setError('Failed to load platform data');
@@ -84,33 +83,18 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
     }
   }, []);
 
+  // Poll every 5 seconds when active
   useEffect(() => {
     if (!active) return;
     loadPlatformData();
     const timer = setInterval(() => {
       loadPlatformData();
       triggerRefresh();
-    }, 30000);
+    }, POLL_INTERVAL);
     return () => clearInterval(timer);
   }, [active, loadPlatformData, triggerRefresh]);
 
-  const handleToggleFavorite = async (name: string) => {
-    const newFavs = favorites.includes(name)
-      ? favorites.filter((f) => f !== name)
-      : [...favorites, name];
-    setFavorites(newFavs);
-    try {
-      await fetch('/api/favorites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ favorites: newFavs }),
-      });
-    } catch {
-      // non-critical
-    }
-  };
-
-  const handleOpenService = (url: string) => {
+  const handleOpenService = (url: string, name: string) => {
     if (url && url.includes('dsop.apps.sre.example.com')) {
       onOpenApp(url, 'DSOP Security Pipeline');
       return;
@@ -122,10 +106,16 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
     window.open(url, '_blank', 'noopener');
   };
 
+  // Build DNS hosts entries from ingress data (includes ALL deployed apps)
   const hostsEntry = ingressData
     ? ingressData.routes
-        .map((r) => r.hosts[0])
+        .flatMap((r) => {
+          // Support both shapes: routes with hosts array and routes with single host
+          const hosts = (r as IngressRoute).hosts || [];
+          return hosts;
+        })
         .filter(Boolean)
+        .filter((h, i, arr) => arr.indexOf(h) === i) // deduplicate
         .map((h) => `${ingressData.nodeIp}  ${h}`)
         .join('\n')
     : '';
@@ -149,25 +139,12 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
               {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
             </div>
           ) : (
-            <>
-              <ServiceTilesGrid
-                services={services}
-                favorites={favorites}
-                loading={loading}
-                onToggleFavorite={handleToggleFavorite}
-                onOpenService={handleOpenService}
-              />
-              <div className="mt-6">
-                <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-3">
-                  Service Health Status
-                </h2>
-                <ServiceHealthGrid
-                  services={services}
-                  lastChecked={lastChecked}
-                  loading={loading}
-                />
-              </div>
-            </>
+            <ServiceHealthGrid
+              services={services}
+              lastChecked={lastChecked}
+              loading={loading}
+              onOpenService={handleOpenService}
+            />
           )}
         </div>
       )}
