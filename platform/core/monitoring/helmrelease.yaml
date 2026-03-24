@@ -73,18 +73,18 @@ spec:
         security:
           cookie_samesite: none
           cookie_secure: true
-        # Keycloak SSO — OIDC config (secret injected via grafana-oidc-credentials valuesFrom)
-        auth.generic_oauth:
+        # Transparent SSO via OAuth2 proxy headers — no login page needed
+        auth.proxy:
           enabled: true
-          name: "Keycloak"
-          allow_sign_up: true
-          client_id: "grafana"
-          scopes: "openid profile email groups"
-          auth_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/auth"
-          token_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/token"
-          api_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/userinfo"
-          role_attribute_path: "contains(groups[*], 'platform-admins') && 'Admin' || contains(groups[*], 'developers') && 'Editor' || 'Viewer'"
-          tls_skip_verify_insecure: true
+          header_name: "X-Auth-Request-Email"
+          header_property: "email"
+          auto_sign_up: true
+          headers: "Groups:X-Auth-Request-Groups"
+          enable_login_token: true
+        auth:
+          disable_login_form: true
+        users:
+          auto_assign_org_role: "Viewer"
       assertNoLeakedSecrets: false
       service:
         type: ClusterIP

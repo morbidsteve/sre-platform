@@ -37,11 +37,8 @@ spec:
               - /oauth2/*
               - /ui/vault/auth/oidc/oidc/callback*
             notHosts:
+              # Only Keycloak is excluded — it IS the identity provider
               - "keycloak.${SRE_DOMAIN}"
-              - "harbor.${SRE_DOMAIN}"
-              - "neuvector.${SRE_DOMAIN}"
-              # Tenant apps — SSO handled by nginx auth_request pattern inside the app
-              - "keystone.${SRE_DOMAIN}"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
