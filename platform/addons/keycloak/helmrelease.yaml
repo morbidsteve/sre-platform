@@ -73,7 +73,7 @@ spec:
       - name: KC_HOSTNAME_URL
         value: "https://keycloak.${SRE_DOMAIN}"
       - name: KC_HOSTNAME_STRICT
-        value: "false"
+        value: "true"
       - name: KC_HTTP_RELATIVE_PATH
         value: "/"
 
