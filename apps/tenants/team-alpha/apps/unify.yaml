@@ -74,6 +74,8 @@ spec:
           value: "unifi"
         - name: MONGO_PASS
           value: "unifi"
+        - name: MONGO_AUTHSOURCE
+          value: "admin"
         - name: MEM_LIMIT
           value: "1024"
         - name: MEM_STARTUP
