@@ -62,7 +62,8 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
   const [securityContext, setSecurityContext] = useState<SecurityContextOptions>({});
 
   const handleOpenDsopWizard = useCallback(() => {
-    onOpenApp('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline');
+    // Append timestamp to force a fresh wizard session (no cached state from previous run)
+    onOpenApp(`https://dsop.apps.sre.example.com?new=${Date.now()}`, 'DSOP Security Pipeline');
   }, [onOpenApp]);
 
   const handleQuickDeploy = useCallback(async (item: DeployItem) => {
