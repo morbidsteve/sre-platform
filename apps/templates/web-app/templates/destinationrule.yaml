@@ -1,17 +1,6 @@
-{{- if and .Values.ingress.enabled (.Values.ingress.backendProtocol | default "" | eq "HTTPS") }}
----
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: {{ include "sre-web-app.fullname" . }}
-  labels:
-    {{- include "sre-web-app.labels" . | nindent 4 }}
-spec:
-  exportTo:
-    - "*"
-  host: {{ include "sre-web-app.fullname" . }}
-  trafficPolicy:
-    tls:
-      mode: SIMPLE
-      insecureSkipVerify: true
-{{- end }}
+{{/*
+  DestinationRule is not needed for HTTPS backends.
+  Istio mTLS STRICT handles sidecar-to-sidecar encryption.
+  For HTTPS backends, the service port is named "tcp" for opaque TCP passthrough
+  so the gateway forwards raw TCP to the sidecar, which forwards to the app.
+*/}}
