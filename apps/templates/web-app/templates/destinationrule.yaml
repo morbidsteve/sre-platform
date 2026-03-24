@@ -1,0 +1,14 @@
+{{- if and .Values.ingress.enabled (.Values.ingress.backendProtocol | default "" | eq "HTTPS") }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "sre-web-app.fullname" . }}
+  labels:
+    {{- include "sre-web-app.labels" . | nindent 4 }}
+spec:
+  host: {{ include "sre-web-app.fullname" . }}
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+{{- end }}

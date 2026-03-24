@@ -2610,6 +2610,7 @@
     .pipe-badge.rejected { background: rgba(239,68,68,0.15); color: var(--red); }
     .pipe-badge.deploying { background: rgba(77,171,247,0.15); color: var(--accent); }
     .pipe-badge.deployed { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .pipe-badge.deployed_unhealthy { background: rgba(239,68,68,0.15); color: var(--red); }
     .pipe-badge.failed { background: rgba(239,68,68,0.15); color: var(--red); }
 
     @keyframes pipe-pulse {
@@ -5111,8 +5112,8 @@ function renderAppGallery(apps) {
 
   gallery.innerHTML = apps.map(function(a) {
     if (a._isPipelineRun) return renderPipelineAppTile(a);
-    var statusCls = a.ready ? 'running' : 'deploying';
-    var statusText = a.ready ? 'Running' : 'Deploying';
+    var statusCls = a.status === 'running' ? 'running' : a.status === 'failed' ? 'failed' : 'deploying';
+    var statusText = a.status === 'running' ? 'Running' : a.status === 'failed' ? 'Failed' : 'Deploying';
     var imageStr = a.image ? (esc(a.image) + ':' + esc(a.tag)) : 'unknown';
     var hasUrl = a.url && a.host;
     var tileClick = hasUrl
@@ -5129,11 +5130,12 @@ function renderAppGallery(apps) {
     return '<div class="app-tile" data-app-id="' + esc(a.namespace) + '/' + esc(a.name) + '" ' + tileClick + ' style="' + cursorStyle + '">' +
       '<div class="app-tile-header">' +
         '<div class="app-tile-name">' +
-          '<span class="health-dot ' + (a.ready ? 'green' : 'yellow') + '"></span>' +
+          '<span class="health-dot ' + (statusCls === 'running' ? 'green' : statusCls === 'failed' ? 'red' : 'yellow') + '"></span>' +
           esc(a.name) +
         '</div>' +
         '<span class="app-tile-badge ' + statusCls + '">' + statusText + '</span>' +
       '</div>' +
+      (a.statusReason ? '<div style="font-size:11px;color:var(--red);padding:2px 0;font-family:var(--font-mono);word-break:break-all;">' + esc(a.statusReason) + '</div>' : '') +
       '<div class="app-tile-image">' + imageStr + '</div>' +
       urlLine +
       '<div class="app-tile-meta">' +
@@ -5783,7 +5785,7 @@ async function loadDeployedApps() {
     document.getElementById('apps-table').innerHTML = tenantApps.map(function(app) {
       var grafanaUrl = 'https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22' + encodeURIComponent(app.namespace) + '%5C%22%7D%22%7D%5D%7D';
       return '<tr data-app-id="' + esc(app.namespace) + '/' + esc(app.name) + '">' +
-        '<td><span class="badge ' + (app.ready ? 'green' : 'yellow') + '">' + (app.ready ? 'Running' : 'Deploying') + '</span></td>' +
+        '<td><span class="badge ' + (app.status === 'running' ? 'green' : app.status === 'failed' ? 'red' : 'yellow') + '">' + (app.status === 'running' ? 'Running' : app.status === 'failed' ? 'Failed' : 'Deploying') + '</span>' + (app.statusReason ? '<br><span style="font-size:10px;color:var(--red);">' + esc(app.statusReason) + '</span>' : '') + '</td>' +
         '<td><strong>' + esc(app.name) + '</strong></td>' +
         '<td>' + esc(app.namespace) + '</td>' +
         '<td><code style="font-size:12px;">' + esc(app.chart || 'web-app') + '</code></td>' +
@@ -8728,8 +8730,11 @@ function renderPipelineActions(run) {
     html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();openAppFrame(\'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(run.id) + '\', \'DSOP Security Pipeline\')" title="Resume in DSOP Wizard">Wizard</button>';
   } else if (st === 'deploying') {
     html += '<span class="pipe-badge deploying" style="font-size:9px;"><span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px;"></span>Deploying...</span>';
-  } else if (st === 'deployed') {
+  } else if (st === 'deployed' || st === 'deployed_unhealthy') {
     var url = run.deployedUrl || run.deployed_url;
+    if (st === 'deployed_unhealthy') {
+      html += '<span class="pipe-badge" style="font-size:9px;background:rgba(239,68,68,0.15);color:var(--red);">Unhealthy</span>';
+    }
     if (url) {
       html += '<a href="' + esc(url) + '" target="_blank" class="btn btn-sm btn-success" style="font-size:10px;padding:2px 8px;text-decoration:none;">Open App</a>';
     }
@@ -8986,8 +8991,11 @@ function renderRunDetail(run, isReview) {
       html += '<span style="font-size:12px;color:var(--text-dim);">Approved: ' + esc(run.reviewComment || run.review_comment) + '</span>';
     }
   }
-  if (run.status === 'deployed') {
+  if (run.status === 'deployed' || run.status === 'deployed_unhealthy') {
     var url = run.deployedUrl || run.deployed_url;
+    if (run.status === 'deployed_unhealthy') {
+      html += '<div style="background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:4px;padding:8px;margin-bottom:8px;font-size:12px;color:var(--red);">App deployed but not healthy. Check pod logs for errors (e.g., missing dependencies, permission issues).</div>';
+    }
     if (url) {
       html += '<a href="' + esc(url) + '" target="_blank" class="btn btn-success" style="text-decoration:none;">Open Deployed App</a>';
     }
@@ -9158,10 +9166,15 @@ function renderDeployProgress(run) {
   html += '</div>';
 
   // If deployed, show link
-  if (run.status === 'deployed') {
+  if (run.status === 'deployed' || run.status === 'deployed_unhealthy') {
     var url = run.deployedUrl || run.deployed_url;
     html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">';
-    html += '<span style="color:var(--green);font-weight:600;">Deployed successfully!</span>';
+    if (run.status === 'deployed_unhealthy') {
+      html += '<span style="color:var(--red);font-weight:600;">Deployed but unhealthy</span>';
+      html += '<div style="font-size:11px;color:var(--red);margin-top:4px;">The HelmRelease was created but pods are not healthy. Check pod logs for errors.</div>';
+    } else {
+      html += '<span style="color:var(--green);font-weight:600;">Deployed successfully!</span>';
+    }
     if (url) {
       html += ' <a href="' + esc(url) + '" target="_blank" class="btn btn-sm btn-success" style="margin-left:8px;text-decoration:none;">Open App</a>';
     }

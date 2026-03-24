@@ -815,11 +815,87 @@ app.get("/api/apps", async (req, res) => {
           const readyCondition = (hr.status?.conditions || []).find((c) => c.type === "Ready");
           const appValues = hr.spec?.values?.app || {};
           const ingressValues = hr.spec?.values?.ingress || {};
+
+          // Determine detailed status beyond just ready/not-ready
+          let status = "deploying";
+          let statusReason = "";
+          const hrReady = readyCondition?.status === "True";
+
+          if (hrReady) {
+            status = "running";
+          } else if (readyCondition?.status === "False") {
+            // HelmRelease has a failure condition — check the reason
+            const msg = readyCondition.message || "";
+            const installFails = hr.status?.installFailures || 0;
+            const upgradeFails = hr.status?.upgradeFailures || 0;
+            if (installFails >= 3 || upgradeFails >= 3) {
+              status = "failed";
+              statusReason = "Helm install/upgrade retries exhausted";
+            } else if (msg.includes("failed") || msg.includes("timed out") || msg.includes("error")) {
+              status = "failed";
+              statusReason = msg.substring(0, 150);
+            }
+          }
+
+          // If HelmRelease looks OK (not failed), check actual pod status for CrashLoop/Error
+          if (status !== "failed" && status !== "running") {
+            try {
+              const appName = appValues.name || hr.metadata.name;
+              const podResp = await k8sApi.listNamespacedPod(
+                ns.metadata.name, undefined, undefined, undefined, undefined,
+                `app.kubernetes.io/name=${appName}`
+              );
+              const pods = podResp.body.items || [];
+              if (pods.length > 0) {
+                const crashingPods = pods.filter((p) => {
+                  const cs = (p.status?.containerStatuses || []);
+                  return cs.some((c) =>
+                    c.state?.waiting?.reason === "CrashLoopBackOff" ||
+                    c.state?.waiting?.reason === "ErrImagePull" ||
+                    c.state?.waiting?.reason === "ImagePullBackOff" ||
+                    c.state?.waiting?.reason === "CreateContainerConfigError" ||
+                    (c.state?.terminated?.reason === "Error" && c.restartCount > 2)
+                  );
+                });
+                if (crashingPods.length > 0) {
+                  status = "failed";
+                  // Get the specific reason from the first crashing container
+                  const cs = crashingPods[0].status?.containerStatuses || [];
+                  const failingContainer = cs.find((c) => c.state?.waiting?.reason || (c.state?.terminated && c.restartCount > 2));
+                  if (failingContainer?.state?.waiting?.reason) {
+                    statusReason = failingContainer.state.waiting.reason;
+                    if (failingContainer.state.waiting.message) {
+                      statusReason += ": " + failingContainer.state.waiting.message.substring(0, 100);
+                    }
+                  } else if (failingContainer?.lastState?.terminated?.reason) {
+                    statusReason = failingContainer.lastState.terminated.reason;
+                    if (failingContainer.lastState.terminated.message) {
+                      statusReason += ": " + failingContainer.lastState.terminated.message.substring(0, 100);
+                    }
+                  }
+                } else {
+                  // Pods exist but none crashing — check if any are actually ready
+                  const readyPods = pods.filter((p) => p.status?.phase === "Running" &&
+                    (p.status?.containerStatuses || []).every((c) => c.ready));
+                  if (readyPods.length > 0) {
+                    status = "running";
+                  }
+                  // else still deploying — pods exist but not ready yet
+                }
+              }
+              // No pods yet — still deploying
+            } catch (podErr) {
+              console.debug(`[apps] Pod status check best-effort for ${hr.metadata.name}:`, podErr.message);
+            }
+          }
+
           apps.push({
             name: hr.metadata.name,
             namespace: ns.metadata.name,
             team: ns.metadata.labels?.["sre.io/team"] || ns.metadata.name.replace(/^team-/, ""),
-            ready: readyCondition?.status === "True",
+            ready: status === "running",
+            status: status,
+            statusReason: statusReason,
             image: appValues.image?.repository || "",
             tag: appValues.image?.tag || "",
             port: appValues.port || 8080,
@@ -2413,6 +2489,8 @@ const SRE_PLATFORM_SERVICES = {
   postgres: { type: "database", sre: "cnpg", label: "CNPG PostgreSQL" },
   postgresql: { type: "database", sre: "cnpg", label: "CNPG PostgreSQL" },
   postgis: { type: "database", sre: "cnpg", label: "CNPG PostgreSQL (PostGIS)" },
+  mongo: { type: "database", sre: "mongo", label: "MongoDB (sidecar)" },
+  mongodb: { type: "database", sre: "mongo", label: "MongoDB (sidecar)" },
   redis: { type: "cache", sre: "redis", label: "Redis (in-cluster)" },
   prometheus: { type: "monitoring", sre: "skip", label: "SRE Monitoring (already deployed)" },
   grafana: { type: "monitoring", sre: "skip", label: "SRE Grafana (already deployed)" },
@@ -4943,7 +5021,7 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
   console.error(`[deploy-git] Group ${groupId} timed out waiting for builds after ${maxIterations * pollInterval / 1000}s`);
 }
 
-function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env, privileged, securityContext }) {
+function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env, privileged, securityContext, extraContainers, extraVolumes, backendProtocol }) {
   const safeEnv = Array.isArray(env) ? env.filter((e) => e && e.name) : [];
 
   // Determine if we need privileged-level security context.
@@ -5047,6 +5125,20 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
   if (privileged && !sc.runAsRoot && !sc.writableFilesystem && !sc.capabilities) {
     values.podSecurityContext = { runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: "RuntimeDefault" } };
     values.containerSecurityContext = { allowPrivilegeEscalation: true, readOnlyRootFilesystem: false, runAsNonRoot: false, runAsUser: 0 };
+  }
+
+  // Extra sidecar containers (e.g., MongoDB for unifi-network-application)
+  if (Array.isArray(extraContainers) && extraContainers.length > 0) {
+    values.extraContainers = extraContainers;
+  }
+  // Extra volumes for sidecars
+  if (Array.isArray(extraVolumes) && extraVolumes.length > 0) {
+    values.extraVolumes = extraVolumes;
+  }
+  // Backend protocol (HTTPS) for DestinationRule
+  if (backendProtocol) {
+    values.ingress = values.ingress || {};
+    values.ingress.backendProtocol = backendProtocol;
   }
 
   return hr;
@@ -7552,10 +7644,13 @@ async function executePipelineDeploy(run, actor) {
 
       // Monitor HelmRelease status — auto-retry on max retry failure
       const hrStatus = await waitForHelmRelease(nsName, safeName, 180);
+      let deployHealthy = true;
+      let deployWarning = "";
       if (!hrStatus.ready && hrStatus.error) {
+        deployHealthy = false;
+        deployWarning = hrStatus.error;
         logger.warn('pipeline', `HelmRelease ${safeName} not ready: ${hrStatus.error}`, { runId: run.id });
         await db.auditLog(run.id, "deploy_warning", actor, `HelmRelease issue: ${hrStatus.error}`);
-        // Don't fail the pipeline deploy — the HelmRelease may recover on its own via Flux
       }
 
       const deployedUrl = `https://${ingressHost}`;
@@ -7580,8 +7675,9 @@ async function executePipelineDeploy(run, actor) {
         console.debug('[pipeline] Registry update best-effort:', cmErr.message);
       }
 
-      await db.updateRunStatus(run.id, "deployed", { deployedUrl });
-      await db.auditLog(run.id, "deploy_completed", actor, `Deployed ${run.app_name} to ${deployedUrl} (pre-built image)`);
+      const deployStatus = deployHealthy ? "deployed" : "deployed_unhealthy";
+      await db.updateRunStatus(run.id, deployStatus, { deployedUrl, deployWarning });
+      await db.auditLog(run.id, "deploy_completed", actor, `Deployed ${run.app_name} to ${deployedUrl} (pre-built image)${deployWarning ? " — WARNING: " + deployWarning : ""}`);
     } else if (run.git_url) {
       // Fallback: no pre-built image, call deploy-from-git to build + deploy
       const http = require("http");
@@ -7698,15 +7794,20 @@ async function executePipelineDeploy(run, actor) {
 
       // Monitor HelmRelease status — auto-retry on max retry failure
       const hrStatus2 = await waitForHelmRelease(nsName, safeName, 180);
+      let deployHealthy2 = true;
+      let deployWarning2 = "";
       if (!hrStatus2.ready && hrStatus2.error) {
+        deployHealthy2 = false;
+        deployWarning2 = hrStatus2.error;
         logger.warn('pipeline', `HelmRelease ${safeName} not ready: ${hrStatus2.error}`, { runId: run.id });
         await db.auditLog(run.id, "deploy_warning", actor, `HelmRelease issue: ${hrStatus2.error}`);
       }
 
       const deployedUrl = `https://${ingressHost}`;
-      await db.updateRunStatus(run.id, "deployed", { deployedUrl });
+      const deployStatus2 = deployHealthy2 ? "deployed" : "deployed_unhealthy";
+      await db.updateRunStatus(run.id, deployStatus2, { deployedUrl, deployWarning: deployWarning2 });
       await db.auditLog(run.id, "deploy_completed", actor,
-        `Deployed ${run.app_name} from image ${run.image_url}`,
+        `Deployed ${run.app_name} from image ${run.image_url}${deployWarning2 ? " — WARNING: " + deployWarning2 : ""}`,
         { deployedUrl, privileged: needsPrivileged });
     } else {
       throw new Error("No git URL or image URL available for deployment");

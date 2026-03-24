@@ -35,28 +35,102 @@ spec:
         repository: harbor.apps.sre.example.com/team-alpha/unify
         tag: pipe-f7cb4942
         pullPolicy: IfNotPresent
-      port: 8080
-      replicas: 2
+      port: 8443
+      replicas: 1
       resources:
         requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
           cpu: 200m
-          memory: 256Mi
+          memory: 512Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
       probes:
         liveness:
           path: /
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          type: tcp
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 10
         readiness:
           path: /
-          initialDelaySeconds: 5
-          periodSeconds: 5
-      env: []
+          type: tcp
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 10
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York"
+        - name: MONGO_HOST
+          value: "localhost"
+        - name: MONGO_PORT
+          value: "27017"
+        - name: MONGO_DBNAME
+          value: "unifi"
+        - name: MONGO_USER
+          value: "unifi"
+        - name: MONGO_PASS
+          value: "unifi"
+        - name: MEM_LIMIT
+          value: "1024"
+        - name: MEM_STARTUP
+          value: "1024"
+    # Unifi requires root (s6-overlay) and writable filesystem
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+      fsGroup: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: true
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      runAsUser: 0
+      capabilities:
+        add:
+          - NET_BIND_SERVICE
+        drop: []
+    # MongoDB sidecar — unifi requires a MongoDB instance
+    extraContainers:
+      - name: mongodb
+        image: docker.io/library/mongo:4.4
+        ports:
+          - containerPort: 27017
+            protocol: TCP
+        env:
+          - name: MONGO_INITDB_ROOT_USERNAME
+            value: "unifi"
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            value: "unifi"
+          - name: MONGO_INITDB_DATABASE
+            value: "unifi"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: false
+          runAsUser: 0
+        volumeMounts:
+          - name: mongo-data
+            mountPath: /data/db
+    extraVolumes:
+      - name: mongo-data
+        emptyDir: {}
     ingress:
       enabled: true
       host: unify.apps.sre.example.com
+      backendProtocol: HTTPS
     autoscaling:
       enabled: false
     serviceMonitor:
