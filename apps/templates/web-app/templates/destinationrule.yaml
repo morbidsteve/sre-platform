@@ -7,6 +7,8 @@ metadata:
   labels:
     {{- include "sre-web-app.labels" . | nindent 4 }}
 spec:
+  exportTo:
+    - "*"
   host: {{ include "sre-web-app.fullname" . }}
   trafficPolicy:
     tls:
