@@ -1,8 +1,12 @@
 ---
-# OpenBao auto-unseal CronJob
-# Checks seal status every 5 minutes and auto-unseals using stored keys.
-# For production, replace with transit auto-unseal or cloud KMS.
-# NIST Controls: SC-12, SC-28
+# OpenBao auto-unseal and configure CronJob
+# Checks seal status every 5 minutes, auto-unseals using stored keys,
+# and configures Kubernetes auth + KV engine + ESO role if missing.
+# With in-memory storage, all config is lost on pod restart — this
+# CronJob ensures OpenBao is always ready for ESO after recovery.
+# For production, replace with transit auto-unseal or cloud KMS
+# and use persistent (Raft/Consul) storage.
+# NIST Controls: SC-12, SC-28, IA-3
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -12,7 +16,7 @@ metadata:
     app.kubernetes.io/name: openbao-auto-unseal
     app.kubernetes.io/part-of: sre-platform
   annotations:
-    sre.io/nist-controls: "SC-12, SC-28"
+    sre.io/nist-controls: "SC-12, SC-28, IA-3"
 spec:
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
@@ -52,20 +56,27 @@ spec:
                 - |
                   set -euo pipefail
 
+                  VAULT_ADDR="http://127.0.0.1:8200"
+
                   # Check if the init keys secret exists
                   if ! kubectl get secret openbao-init-keys -n openbao &>/dev/null; then
                     echo "No init keys secret found. Skipping auto-unseal."
                     exit 0
                   fi
 
-                  # Get unseal keys from secret
+                  # Get unseal keys and root token from secret
                   UNSEAL_KEY=$(kubectl get secret openbao-init-keys -n openbao \
                     -o jsonpath='{.data.unseal-key-0}' 2>/dev/null | base64 -d)
+                  ROOT_TOKEN=$(kubectl get secret openbao-init-keys -n openbao \
+                    -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d)
 
                   if [ -z "$UNSEAL_KEY" ]; then
                     echo "No unseal key found in secret. Skipping."
                     exit 0
                   fi
+
+                  # Track if we performed an unseal (config may need re-applying)
+                  DID_UNSEAL="false"
 
                   # Check each OpenBao pod
                   for pod in $(kubectl get pods -n openbao -l app.kubernetes.io/name=openbao \
@@ -73,13 +84,14 @@ spec:
 
                     # Check seal status
                     SEALED=$(kubectl exec -n openbao "$pod" -- \
-                      sh -c 'export VAULT_ADDR=http://127.0.0.1:8200; vault status -format=json 2>/dev/null | grep -o "\"sealed\":[a-z]*" | cut -d: -f2' 2>/dev/null || echo "unknown")
+                      sh -c "export VAULT_ADDR=$VAULT_ADDR; vault status -format=json 2>/dev/null | grep -o '\"sealed\":[a-z]*' | cut -d: -f2" 2>/dev/null || echo "unknown")
 
                     if [ "$SEALED" = "true" ]; then
                       echo "Pod $pod is sealed. Unsealing..."
                       kubectl exec -n openbao "$pod" -- \
-                        sh -c "export VAULT_ADDR=http://127.0.0.1:8200; vault operator unseal $UNSEAL_KEY" 2>&1 || true
+                        sh -c "export VAULT_ADDR=$VAULT_ADDR; vault operator unseal $UNSEAL_KEY" 2>&1 || true
                       echo "Unseal command sent to $pod"
+                      DID_UNSEAL="true"
                     elif [ "$SEALED" = "false" ]; then
                       echo "Pod $pod is already unsealed."
                     else
@@ -88,6 +100,83 @@ spec:
                   done
 
                   echo "Auto-unseal check complete."
+
+                  # -------------------------------------------------------
+                  # Post-unseal configuration
+                  # With in-memory storage, Kubernetes auth, KV engine,
+                  # policies, and roles are lost on every pod restart.
+                  # Re-apply them idempotently after every unseal cycle.
+                  # -------------------------------------------------------
+                  if [ -z "$ROOT_TOKEN" ]; then
+                    echo "No root token available. Skipping post-unseal config."
+                    exit 0
+                  fi
+
+                  # Use the first running pod for configuration
+                  TARGET_POD=$(kubectl get pods -n openbao -l app.kubernetes.io/name=openbao \
+                    --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+                  if [ -z "$TARGET_POD" ]; then
+                    echo "No running OpenBao pod found. Skipping config."
+                    exit 0
+                  fi
+
+                  # Check if Kubernetes auth is already enabled
+                  K8S_AUTH=$(kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault auth list -format=json 2>/dev/null" \
+                    2>/dev/null || echo "{}")
+
+                  if echo "$K8S_AUTH" | grep -q '"kubernetes/"'; then
+                    echo "Kubernetes auth already enabled."
+                  else
+                    echo "Enabling Kubernetes auth method..."
+                    kubectl exec -n openbao "$TARGET_POD" -- \
+                      sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault auth enable kubernetes" 2>&1 || true
+                  fi
+
+                  # Configure Kubernetes auth with in-cluster API
+                  echo "Configuring Kubernetes auth..."
+                  kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc.cluster.local:443" 2>&1 || true
+
+                  # Check if KV v2 at 'sre' path is enabled
+                  SECRETS_LIST=$(kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault secrets list -format=json 2>/dev/null" \
+                    2>/dev/null || echo "{}")
+
+                  if echo "$SECRETS_LIST" | grep -q '"sre/"'; then
+                    echo "KV engine at sre/ already enabled."
+                  else
+                    echo "Enabling KV v2 engine at sre/..."
+                    kubectl exec -n openbao "$TARGET_POD" -- \
+                      sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault secrets enable -path=sre -version=2 kv" 2>&1 || true
+                  fi
+
+                  # Create/update the external-secrets policy
+                  echo "Writing external-secrets policy..."
+                  kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault policy write external-secrets - <<'POLICY'
+                  path \"sre/*\" {
+                    capabilities = [\"read\", \"list\"]
+                  }
+                  path \"sre/data/*\" {
+                    capabilities = [\"read\", \"list\"]
+                  }
+                  path \"sre/metadata/*\" {
+                    capabilities = [\"read\", \"list\"]
+                  }
+                  POLICY" 2>&1 || true
+
+                  # Create/update the Kubernetes auth role for ESO
+                  echo "Writing external-secrets role..."
+                  kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault write auth/kubernetes/role/external-secrets \
+                      bound_service_account_names=external-secrets \
+                      bound_service_account_namespaces=external-secrets \
+                      policies=external-secrets \
+                      ttl=1h" 2>&1 || true
+
+                  echo "Post-unseal configuration complete."
               resources:
                 requests:
                   cpu: 25m
