@@ -39,21 +39,48 @@ spec:
       replicas: 1
       resources:
         requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
+          cpu: 100m
           memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
       probes:
         liveness:
           path: /
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          type: http
         readiness:
           path: /
-          initialDelaySeconds: 5
-          periodSeconds: 5
-      env: []
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          type: http
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York"
+    # Wireshark requires root and NET_ADMIN for packet capture
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+      fsGroup: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: true
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      runAsUser: 0
+      capabilities:
+        add:
+          - NET_ADMIN
+          - NET_RAW
+          - SYS_NICE
+        drop: []
     ingress:
       enabled: true
       host: wireshark.apps.sre.example.com
