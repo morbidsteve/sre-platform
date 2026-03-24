@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { UserProvider, useUserContext } from './context/UserContext';
 import { ToastProvider } from './context/ToastContext';
@@ -24,6 +24,7 @@ function AppContent() {
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
+    setAppFrame(null); // Close AppFrame when switching tabs
   }, []);
 
   const handleOpenAppFrame = useCallback((url: string, title: string) => {
@@ -40,6 +41,18 @@ function AppContent() {
 
   const handleCloseCommandPalette = useCallback(() => {
     setCommandPaletteOpen(false);
+  }, []);
+
+  // Global Ctrl+K listener to open command palette
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    }
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
   if (loading) {
