@@ -3,7 +3,7 @@ apiVersion: v2
 name: sre-lib
 description: Shared Helm library chart for SRE Platform application templates
 type: library
-version: 0.1.0
+version: 0.2.0
 keywords:
   - sre
   - library

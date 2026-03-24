@@ -2570,6 +2570,13 @@ function classifyService(svcName, svc, composeParsed) {
 // Detect container port from compose ports or Dockerfile EXPOSE
 // When multiple ports are exposed, prefer common HTTP ports over others.
 const PREFERRED_HTTP_PORTS = [80, 8080, 3000, 8000, 8888, 5000, 4200, 3001, 9090];
+const KNOWN_HTTPS_PORTS = [443, 8443, 9443];
+
+// Detect if the app serves HTTPS based on port number
+function isHttpsPort(port) {
+  return KNOWN_HTTPS_PORTS.includes(port);
+}
+
 function detectPort(svc, dockerfileContent) {
   // First: check compose ports (container side = right of colon)
   if (svc.ports && svc.ports.length > 0) {
@@ -5135,10 +5142,11 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
   if (Array.isArray(extraVolumes) && extraVolumes.length > 0) {
     values.extraVolumes = extraVolumes;
   }
-  // Backend protocol (HTTPS) for DestinationRule
-  if (backendProtocol) {
+  // Backend protocol — auto-detect HTTPS from port, or use explicit value
+  const effectiveProtocol = backendProtocol || (isHttpsPort(port) ? "HTTPS" : null);
+  if (effectiveProtocol) {
     values.ingress = values.ingress || {};
-    values.ingress.backendProtocol = backendProtocol;
+    values.ingress.backendProtocol = effectiveProtocol;
   }
 
   return hr;
