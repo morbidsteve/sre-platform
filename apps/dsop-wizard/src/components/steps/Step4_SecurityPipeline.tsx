@@ -199,6 +199,7 @@ export function Step4_SecurityPipeline({
           <GateCard
             key={gate.id}
             gate={gate}
+            pipelineRunId={pipelineRunId}
             onAcknowledge={handleAcknowledge}
             onUpdateFinding={onUpdateFinding}
             onOverrideGate={onOverrideGate}

@@ -19,6 +19,8 @@ interface Step3Props {
   appName: string;
   onBack: () => void;
   onRunPipeline: () => void;
+  hasPipelineRun?: boolean;
+  onGoToPipeline?: () => void;
 }
 
 const typeLabels: Record<string, string> = {
@@ -43,6 +45,8 @@ export function Step3_Detection({
   appName,
   onBack,
   onRunPipeline,
+  hasPipelineRun,
+  onGoToPipeline,
 }: Step3Props) {
   const sourceDisplay =
     source.type === 'git'
@@ -181,13 +185,25 @@ export function Step3_Detection({
         >
           Back
         </Button>
-        <Button
-          onClick={onRunPipeline}
-          icon={<Shield className="w-4 h-4" />}
-          size="lg"
-        >
-          Run Security Pipeline
-        </Button>
+        <div className="flex gap-3">
+          {hasPipelineRun && onGoToPipeline && (
+            <Button
+              onClick={onGoToPipeline}
+              icon={<ArrowRight className="w-4 h-4" />}
+              size="lg"
+            >
+              View Pipeline Results
+            </Button>
+          )}
+          <Button
+            onClick={onRunPipeline}
+            variant={hasPipelineRun ? 'secondary' : 'primary'}
+            icon={<Shield className="w-4 h-4" />}
+            size="lg"
+          >
+            {hasPipelineRun ? 'Run New Pipeline' : 'Run Security Pipeline'}
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -133,6 +133,8 @@ export default function App() {
             appName={state.appInfo.name}
             onBack={wizard.prevStep}
             onRunPipeline={wizard.runPipeline}
+            hasPipelineRun={!!state.pipelineRunId}
+            onGoToPipeline={() => wizard.setStep(4)}
           />
         );
 
@@ -216,8 +218,13 @@ export default function App() {
       currentStep={state.currentStep}
       classification={state.appInfo.classification}
       onStepClick={(step) => {
-        // Only allow navigating to completed steps (before current)
-        if (step < state.currentStep && !state.isDeploying && !state.isPipelineRunning && !state.isAnalyzing) {
+        // Allow navigating to completed steps or to step 4 if pipeline exists
+        if (state.isDeploying || state.isAnalyzing) return;
+        if (step < state.currentStep) {
+          wizard.setStep(step);
+        } else if (step === 4 && state.pipelineRunId && !state.isPipelineRunning) {
+          wizard.setStep(4);
+        } else if (step <= state.currentStep) {
           wizard.setStep(step);
         }
       }}

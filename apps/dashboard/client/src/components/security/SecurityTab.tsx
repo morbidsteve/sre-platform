@@ -175,15 +175,29 @@ export function SecurityTab({ active }: SecurityTabProps) {
               {pendingRuns.map((run) => {
                 const gates = run.gates || [];
                 const passed = gates.filter((g) => g.status === 'passed' || g.status === 'warning').length;
+                const failed = gates.filter((g) => g.status === 'failed').length;
                 const total = gates.length || 8;
                 const timeWaiting = run.updated_at
                   ? formatTimeAgo(run.updated_at)
                   : '--';
 
+                // Aggregate finding counts by severity for priority indication
+                const allFindings = gates.flatMap((g) => g.findings || []);
+                const critCount = allFindings.filter((f) => f.severity === 'critical').length;
+                const highCount = allFindings.filter((f) => f.severity === 'high').length;
+                const medCount = allFindings.filter((f) => f.severity === 'medium').length;
+
+                // Determine border color by severity: critical/failed = red, warnings = yellow
+                const borderClass = failed > 0 || critCount > 0
+                  ? 'border-l-red'
+                  : highCount > 0
+                  ? 'border-l-yellow'
+                  : 'border-l-yellow';
+
                 return (
                   <div
                     key={run.id}
-                    className="bg-card border-l-[3px] border-l-yellow border border-border rounded-[var(--radius)] p-4 cursor-pointer hover:bg-surface-hover transition-all"
+                    className={`bg-card border-l-[3px] ${borderClass} border border-border rounded-[var(--radius)] p-4 cursor-pointer hover:bg-surface-hover transition-all`}
                     onClick={() => handleReviewRun(run.id)}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -197,7 +211,8 @@ export function SecurityTab({ active }: SecurityTabProps) {
                     <div className="text-xs text-text-dim mb-2">
                       {run.image_url || run.git_url || 'No source'}
                     </div>
-                    <div className="flex items-center gap-1 mb-2">
+                    {/* Gate status bar */}
+                    <div className="flex items-center gap-1 mb-1.5">
                       {gates.map((g, i) => {
                         const color =
                           g.status === 'passed' ? 'bg-green' :
@@ -207,6 +222,22 @@ export function SecurityTab({ active }: SecurityTabProps) {
                       })}
                       <span className="text-[11px] text-text-dim ml-1">{passed}/{total} gates</span>
                     </div>
+                    {/* Findings severity summary */}
+                    {allFindings.length > 0 && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        {critCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red/10 text-red border border-red/20 font-semibold">{critCount} critical</span>}
+                        {highCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red/10 text-red border border-red/20">{highCount} high</span>}
+                        {medCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow/10 text-yellow border border-yellow/20">{medCount} medium</span>}
+                        {critCount === 0 && highCount === 0 && medCount === 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/10 text-green border border-green/20">{allFindings.length} low/info</span>
+                        )}
+                      </div>
+                    )}
+                    {allFindings.length === 0 && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/10 text-green border border-green/20">0 findings</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-[11px] text-text-dim">
                       <span>By {run.submitted_by || '--'}</span>
                       <span className="flex items-center gap-1">

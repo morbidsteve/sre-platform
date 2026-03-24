@@ -3,6 +3,7 @@ import type {
   WizardState,
   AppSource,
   AppInfo,
+  Classification,
   SecurityException,
   SecurityGate,
   GateFinding,
@@ -112,18 +113,46 @@ export function useWizardState() {
     saveSession(state);
   }, [state.currentStep, state.source, state.appInfo, state.pipelineRunId, state.deployedUrl]);
 
-  // On mount, if we have a pipelineRunId, refetch it to restore gate state
+  // On mount, check URL for ?runId= parameter first, then fall back to session
   useEffect(() => {
-    if (state.pipelineRunId) {
-      getPipelineRun(state.pipelineRunId).then((run) => {
-        const mappedGates = run.gates.map((g) =>
+    const params = new URLSearchParams(window.location.search);
+    const urlRunId = params.get('runId');
+    const runIdToLoad = urlRunId || state.pipelineRunId;
+
+    if (runIdToLoad) {
+      getPipelineRun(runIdToLoad).then((run) => {
+        const mappedGates = run.gates.map((g: PipelineGate) =>
           mapPipelineGateToSecurityGate(g, run.findings, getInitialGates())
         );
+        // Determine which step to show based on run status
+        const step = run.status === 'deployed' ? 7 :
+                     run.status === 'deploying' ? 6 :
+                     run.status === 'approved' || run.status === 'review_pending' || run.status === 'rejected' ? 5 :
+                     run.status === 'scanning' || run.status === 'failed' ? 4 : 4;
         setState((prev) => ({
           ...prev,
+          pipelineRunId: run.id,
           pipelineRun: run,
           gates: mappedGates,
+          currentStep: urlRunId ? step : prev.currentStep,
+          appInfo: urlRunId ? {
+            ...prev.appInfo,
+            name: run.app_name || prev.appInfo.name,
+            team: run.team || prev.appInfo.team,
+            classification: (run.classification || prev.appInfo.classification) as Classification,
+          } : prev.appInfo,
+          source: urlRunId ? {
+            ...prev.source,
+            gitUrl: run.git_url || prev.source.gitUrl,
+            branch: run.branch || prev.source.branch,
+            imageUrl: run.image_url || prev.source.imageUrl,
+            type: run.source_type === 'image' ? 'container' : 'git',
+          } : prev.source,
         }));
+        // Clean URL parameter without reload
+        if (urlRunId) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
       }).catch(() => { /* run may have been deleted */ });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

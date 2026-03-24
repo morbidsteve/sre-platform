@@ -228,20 +228,48 @@ export function RunDetailOverlay({ runId, isReview = false, onClose, onActionCom
               </div>
             )}
 
+            {/* Gate Summary Bar (quick glance for ISSM) */}
+            {run.gates && run.gates.length > 0 && (
+              <div className="mb-3 flex items-center gap-2 flex-wrap">
+                {(() => {
+                  const passed = run.gates.filter(g => g.status === 'passed').length;
+                  const warnings = run.gates.filter(g => g.status === 'warning').length;
+                  const failed = run.gates.filter(g => g.status === 'failed').length;
+                  const pending = run.gates.filter(g => g.status === 'pending' || g.status === 'running').length;
+                  return (
+                    <>
+                      {passed > 0 && <span className="text-[11px] px-2 py-0.5 rounded bg-green/10 text-green border border-green/20">{passed} passed</span>}
+                      {warnings > 0 && <span className="text-[11px] px-2 py-0.5 rounded bg-yellow/10 text-yellow border border-yellow/20">{warnings} warning</span>}
+                      {failed > 0 && <span className="text-[11px] px-2 py-0.5 rounded bg-red/10 text-red border border-red/20">{failed} failed</span>}
+                      {pending > 0 && <span className="text-[11px] px-2 py-0.5 rounded bg-surface text-text-dim border border-border">{pending} pending</span>}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
             {/* Gate Timeline */}
             {run.gates && run.gates.length > 0 && (
               <div className="mb-5">
                 <h3 className="text-sm font-semibold text-text-primary mb-3">
                   {isReview ? 'Security Gate Evidence' : 'Gate Results'}
                 </h3>
-                {run.gates.map((gate, i) => (
-                  <GateEvidenceRow
-                    key={gate.gate_id || i}
-                    gate={gate}
-                    isReview={isReview}
-                    onDispositionChange={!isReview ? handleDispositionChange : undefined}
-                  />
-                ))}
+                {(() => {
+                  // Auto-expand the first gate that has findings or failed
+                  const firstWithIssues = run.gates.findIndex(g =>
+                    g.status === 'failed' || g.status === 'warning' || (g.findings && g.findings.length > 0)
+                  );
+                  return run.gates.map((gate, i) => (
+                    <GateEvidenceRow
+                      key={gate.gate_id || i}
+                      gate={gate}
+                      isReview={isReview}
+                      runId={run.id}
+                      defaultExpanded={i === firstWithIssues}
+                      onDispositionChange={!isReview ? handleDispositionChange : undefined}
+                    />
+                  ));
+                })()}
               </div>
             )}
 
