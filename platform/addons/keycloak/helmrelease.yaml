@@ -63,18 +63,17 @@ spec:
     proxy: "edge"
 
     # ---------------------------------------------------------------
-    # Hostname — must include NodePort so redirects work correctly
-    # Without this, Keycloak redirects to port 443 which is unreachable
+    # Hostname — KC_HOSTNAME_URL forces https:// scheme in ALL OIDC
+    # discovery responses, even when accessed internally via HTTP.
+    # This is required for internal OIDC clients (OpenBao, etc.) that
+    # use http://keycloak.keycloak.svc:80 but need the issuer to match
+    # the external https:// URL used by browsers.
     # ---------------------------------------------------------------
     extraEnvVars:
-      - name: KC_HOSTNAME
-        value: "keycloak.${SRE_DOMAIN}"
-      - name: KC_HOSTNAME_PORT
-        value: "443"
+      - name: KC_HOSTNAME_URL
+        value: "https://keycloak.${SRE_DOMAIN}"
       - name: KC_HOSTNAME_STRICT
         value: "false"
-      - name: KC_HOSTNAME_STRICT_HTTPS
-        value: "true"
       - name: KC_HTTP_RELATIVE_PATH
         value: "/"
 
