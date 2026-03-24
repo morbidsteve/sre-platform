@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { X, ChevronDown, ChevronUp, AlertTriangle, AlertCircle } from 'lucide-react';
-import { useAlerts } from '../../hooks/useAlerts';
+import { useData } from '../../context/DataContext';
 import type { Alert } from '../../types/api';
 
 export function AlertBanner() {
-  const { alerts } = useAlerts();
+  const { alerts: alertsData } = useData();
+  const { alerts } = alertsData;
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState(false);
 

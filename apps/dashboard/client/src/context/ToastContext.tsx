@@ -6,6 +6,7 @@ interface Toast {
   id: number;
   message: string;
   type: ToastType;
+  dismissing: boolean;
 }
 
 interface ToastContextValue {
@@ -24,17 +25,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
 
-  const showToast = useCallback((message: string, type: ToastType = 'info') => {
-    const id = nextId.current++;
-    setToasts((prev) => [...prev, { id, message, type }]);
+  const removeToast = useCallback((id: number) => {
+    // Set dismissing state, then remove after animation
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, dismissing: true } : t));
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, 200);
   }, []);
 
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+    const id = nextId.current++;
+    setToasts((prev) => [...prev, { id, message, type, dismissing: false }]);
+    setTimeout(() => {
+      removeToast(id);
+    }, 4000);
+  }, [removeToast]);
+
   const dismissToast = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+    removeToast(id);
+  }, [removeToast]);
 
   return (
     <ToastContext.Provider value={{ toasts, showToast, dismissToast }}>
@@ -55,11 +64,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div
               key={toast.id}
               className={`toast toast-${toast.type}`}
+              onClick={() => dismissToast(toast.id)}
               style={{
                 padding: '10px 16px',
                 borderRadius: 8,
                 fontSize: 13,
                 color: '#fff',
+                cursor: 'pointer',
                 background:
                   toast.type === 'error'
                     ? '#ef4444'
@@ -69,7 +80,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                         ? '#22c55e'
                         : '#6366f1',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                animation: 'fadeIn 0.2s ease-out',
+                animation: toast.dismissing
+                  ? 'fadeSlideDown 0.2s ease-in forwards'
+                  : 'fadeIn 0.2s ease-out',
                 maxWidth: 400,
                 wordBreak: 'break-word',
               }}

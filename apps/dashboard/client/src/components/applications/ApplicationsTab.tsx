@@ -1,18 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2 } from 'lucide-react';
-
-interface AppInfo {
-  name: string;
-  namespace: string;
-  team?: string;
-  image: string;
-  tag: string;
-  port?: number;
-  host?: string;
-  url?: string;
-  ready: boolean;
-  status?: string;
-}
+import { useData } from '../../context/DataContext';
+import { SkeletonCard } from '../ui/Skeleton';
 
 interface ApplicationsTabProps {
   user: { user: string; email: string; role: string; isAdmin: boolean };
@@ -21,27 +10,10 @@ interface ApplicationsTabProps {
 }
 
 export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTabProps) {
-  const [apps, setApps] = useState<AppInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { apps: appsData } = useData();
+  const { apps, loading, refreshApps } = appsData;
   const [searchQuery, setSearchQuery] = useState('');
-
-  const loadApps = useCallback(async () => {
-    try {
-      const resp = await fetch('/api/apps', { credentials: 'include' });
-      const data = await resp.json();
-      setApps(data.apps || []);
-    } catch {
-      setApps([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadApps();
-    const timer = setInterval(loadApps, 8000);
-    return () => clearInterval(timer);
-  }, [loadApps]);
+  const [deletedKeys, setDeletedKeys] = useState<Set<string>>(new Set());
 
   const handleDelete = async (namespace: string, name: string) => {
     if (!confirm(`Delete ${name} from ${namespace}? This removes all pods, services, and resources.`)) {
@@ -53,8 +25,8 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
         { method: 'DELETE' }
       );
       if (resp.ok) {
-        setApps((prev) => prev.filter((a) => !(a.namespace === namespace && a.name === name)));
-        setTimeout(loadApps, 3000);
+        setDeletedKeys((prev) => new Set(prev).add(`${namespace}/${name}`));
+        setTimeout(refreshApps, 3000);
       }
     } catch {
       // handle silently
@@ -73,8 +45,11 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
     window.open(url, '_blank', 'noopener');
   };
 
+  // Filter out optimistically deleted apps, then apply search
+  const visibleApps = apps.filter((a) => !deletedKeys.has(`${a.namespace}/${a.name}`));
+
   const filtered = searchQuery
-    ? apps.filter((a) => {
+    ? visibleApps.filter((a) => {
         const q = searchQuery.toLowerCase();
         return (
           a.name.toLowerCase().includes(q) ||
@@ -83,7 +58,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
           (a.namespace || '').toLowerCase().includes(q)
         );
       })
-    : apps;
+    : visibleApps;
 
   const runningCount = filtered.filter((a) => a.ready).length;
   const deployingCount = filtered.filter((a) => !a.ready).length;
@@ -119,7 +94,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
         <span className="text-xs text-text-dim font-mono">{countText}</span>
         <button
           className="btn text-xs !py-1.5 !px-3 !min-h-0 flex items-center gap-1"
-          onClick={loadApps}
+          onClick={refreshApps}
         >
           <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -127,16 +102,16 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
       </div>
 
       {/* App Cards Grid */}
-      {loading && apps.length === 0 ? (
-        <div className="flex justify-center py-8">
-          <span className="inline-block w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      {loading && visibleApps.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-10 bg-card border border-border rounded-[var(--radius)]">
           <h3 className="text-base font-semibold text-text-primary mb-2">
-            {apps.length === 0 ? 'No applications deployed yet' : 'No apps match your search'}
+            {visibleApps.length === 0 ? 'No applications deployed yet' : 'No apps match your search'}
           </h3>
-          {apps.length === 0 && (
+          {visibleApps.length === 0 && (
             <>
               <p className="text-sm text-text-dim mb-4">
                 Get started by deploying your first application.
@@ -160,14 +135,15 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
             return (
               <div
                 key={`${app.namespace}/${app.name}`}
-                className={`bg-card border border-border rounded-[var(--radius)] p-4 transition-all ${
+                className={`bg-card border border-border border-l-[3px] rounded-[var(--radius)] p-4 transition-all ${
+                  app.ready ? 'border-l-green' : 'border-l-yellow'
+                } ${
                   hasUrl ? 'cursor-pointer hover:border-border-hover hover:bg-surface-hover' : ''
                 }`}
                 onClick={hasUrl ? () => handleOpenService(app.url!) : undefined}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${app.ready ? 'bg-green' : 'bg-yellow'}`} />
                     <span className="font-semibold text-sm text-text-bright">{app.name}</span>
                   </div>
                   <span
@@ -205,7 +181,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                   {app.port && <span>:{app.port}</span>}
                 </div>
 
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                   <a
                     className="btn text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 no-underline"
                     href={grafanaUrl}

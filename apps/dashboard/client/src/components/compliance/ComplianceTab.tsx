@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Shield,
   CheckCircle,
-  Clock,
   ExternalLink,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
+import { SkeletonCard } from '../ui/Skeleton';
 import { Button } from '../ui/Button';
 import { AuditFilters } from '../audit/AuditFilters';
 import { AuditTable } from '../audit/AuditTable';
@@ -159,14 +159,16 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [nsFilter, setNsFilter] = useState('');
   const [page, setPage] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const loadAudit = useCallback(async () => {
     if (!active) return;
     try {
+      setError(null);
       const data = await fetchAuditEvents();
       setAllEvents(data);
     } catch {
-      // silently fail
+      setError('Failed to load audit data');
     } finally {
       setAuditLoading(false);
     }
@@ -208,6 +210,14 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
 
   return (
     <div>
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded border text-sm"
+             style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)', color: 'var(--red)' }}>
+          {error} — <button className="underline" onClick={loadAudit}>Retry</button>
+        </div>
+      )}
+
       {/* Section 1: Compliance Summary Cards */}
       <div className="mb-6">
         <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-3 flex items-center gap-2">
@@ -329,8 +339,8 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
           Audit Trail
         </h2>
         {auditLoading && allEvents.length === 0 ? (
-          <div className="flex justify-center py-16">
-            <Spinner size="lg" />
+          <div className="grid grid-cols-1 gap-3">
+            {[...Array(3)].map((_, i) => <SkeletonCard key={i} />)}
           </div>
         ) : (
           <div className="card-base overflow-hidden">

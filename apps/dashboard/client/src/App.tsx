@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { UserProvider, useUserContext } from './context/UserContext';
 import { ToastProvider } from './context/ToastContext';
 import { ModalProvider } from './context/ModalContext';
+import { DataProvider } from './context/DataContext';
 import { Layout } from './components/layout/Layout';
 import { UserLandingPage } from './components/layout/UserLandingPage';
 import { OverviewTab } from './components/overview/OverviewTab';
@@ -14,17 +15,53 @@ import { ComplianceTab } from './components/compliance/ComplianceTab';
 import { AdminTab } from './components/admin/AdminTab';
 import { AppFrame } from './components/shared/AppFrame';
 import { CommandPalette } from './components/shared/CommandPalette';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Spinner } from './components/ui/Spinner';
+
+const VALID_TABS = ['overview', 'deploy', 'applications', 'security', 'operations', 'compliance', 'admin'];
+
+function getInitialTab(): string {
+  const hash = window.location.hash.slice(1);
+  return VALID_TABS.includes(hash) ? hash : 'overview';
+}
 
 function AppContent() {
   const { user, isAdmin, isDeveloper, loading } = useUserContext();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([getInitialTab()]));
   const [appFrame, setAppFrame] = useState<{ url: string; title: string } | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const prevTabRef = useRef(activeTab);
+
+  // Track visited tabs
+  useEffect(() => {
+    setVisitedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      return new Set(prev).add(activeTab);
+    });
+  }, [activeTab]);
+
+  // Update hash when tab changes
+  useEffect(() => {
+    window.location.hash = activeTab;
+    prevTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Listen for hash changes (browser back/forward)
+  useEffect(() => {
+    const handler = () => {
+      const hash = window.location.hash.slice(1);
+      if (VALID_TABS.includes(hash)) {
+        setActiveTab(hash);
+      }
+    };
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
-    setAppFrame(null); // Close AppFrame when switching tabs
+    setAppFrame(null);
   }, []);
 
   const handleOpenAppFrame = useCallback((url: string, title: string) => {
@@ -91,39 +128,69 @@ function AppContent() {
   return (
     <>
       <Layout activeTab={activeTab} onTabChange={handleTabChange} onOpenCommandPalette={handleOpenCommandPalette}>
-        {activeTab === 'overview' && (
-          <OverviewTab
-            user={userObj}
-            onSwitchTab={handleTabChange}
-            onOpenApp={handleOpenAppFrame}
-          />
+        {visitedTabs.has('overview') && (
+          <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }} className={activeTab === 'overview' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <OverviewTab
+                user={userObj}
+                onSwitchTab={handleTabChange}
+                onOpenApp={handleOpenAppFrame}
+              />
+            </ErrorBoundary>
+          </div>
         )}
-        {activeTab === 'deploy' && (
-          <DeployTab
-            user={userObj}
-            onOpenApp={handleOpenAppFrame}
-          />
+        {visitedTabs.has('deploy') && (
+          <div style={{ display: activeTab === 'deploy' ? 'block' : 'none' }} className={activeTab === 'deploy' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <DeployTab
+                user={userObj}
+                onOpenApp={handleOpenAppFrame}
+              />
+            </ErrorBoundary>
+          </div>
         )}
-        {activeTab === 'applications' && (
-          <ApplicationsTab
-            user={userObj}
-            onOpenApp={handleOpenAppFrame}
-            onSwitchTab={handleTabChange}
-          />
+        {visitedTabs.has('applications') && (
+          <div style={{ display: activeTab === 'applications' ? 'block' : 'none' }} className={activeTab === 'applications' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <ApplicationsTab
+                user={userObj}
+                onOpenApp={handleOpenAppFrame}
+                onSwitchTab={handleTabChange}
+              />
+            </ErrorBoundary>
+          </div>
         )}
-        {activeTab === 'security' && (
-          <SecurityTab active={activeTab === 'security'} />
+        {visitedTabs.has('security') && (
+          <div style={{ display: activeTab === 'security' ? 'block' : 'none' }} className={activeTab === 'security' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <SecurityTab active={activeTab === 'security'} />
+            </ErrorBoundary>
+          </div>
         )}
-        {activeTab === 'operations' && (
-          <OperationsTab
-            active={activeTab === 'operations'}
-            onOpenApp={handleOpenAppFrame}
-          />
+        {visitedTabs.has('operations') && (
+          <div style={{ display: activeTab === 'operations' ? 'block' : 'none' }} className={activeTab === 'operations' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <OperationsTab
+                active={activeTab === 'operations'}
+                onOpenApp={handleOpenAppFrame}
+              />
+            </ErrorBoundary>
+          </div>
         )}
-        {activeTab === 'compliance' && (
-          <ComplianceTab active={activeTab === 'compliance'} />
+        {visitedTabs.has('compliance') && (
+          <div style={{ display: activeTab === 'compliance' ? 'block' : 'none' }} className={activeTab === 'compliance' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <ComplianceTab active={activeTab === 'compliance'} />
+            </ErrorBoundary>
+          </div>
         )}
-        {activeTab === 'admin' && <AdminTab active={activeTab === 'admin'} />}
+        {visitedTabs.has('admin') && (
+          <div style={{ display: activeTab === 'admin' ? 'block' : 'none' }} className={activeTab === 'admin' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <AdminTab active={activeTab === 'admin'} />
+            </ErrorBoundary>
+          </div>
+        )}
       </Layout>
 
       {appFrame && (
@@ -150,7 +217,9 @@ export default function App() {
       <UserProvider>
         <ToastProvider>
           <ModalProvider>
-            <AppContent />
+            <DataProvider>
+              <AppContent />
+            </DataProvider>
           </ModalProvider>
         </ToastProvider>
       </UserProvider>

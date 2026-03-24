@@ -2,7 +2,7 @@ import React from 'react';
 import { Shield, Moon, Sun, Menu, X, LogOut } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useUserContext } from '../../context/UserContext';
-import { useHealth } from '../../hooks/useHealth';
+import { useData } from '../../context/DataContext';
 import { StatusDot } from '../ui/StatusDot';
 import { Badge } from '../ui/Badge';
 
@@ -15,7 +15,8 @@ interface HeaderProps {
 export function Header({ onToggleMobileNav, mobileNavOpen, onOpenCommandPalette }: HeaderProps) {
   const { theme, toggleTheme } = useThemeContext();
   const { user, isAdmin, isDeveloper, loading } = useUserContext();
-  const { summary } = useHealth();
+  const { health } = useData();
+  const { summary } = health;
 
   const healthyCount = summary.helmReleasesReady + summary.nodesReady;
   const totalCount = summary.helmReleasesTotal + summary.nodesTotal;
@@ -57,7 +58,10 @@ export function Header({ onToggleMobileNav, mobileNavOpen, onOpenCommandPalette 
         {/* Health + Ctrl+K */}
         <div className="flex items-center gap-3 text-[13px] text-text-dim">
           <span className="flex items-center gap-1.5">
-            <StatusDot color={allHealthy ? 'green' : totalCount === 0 ? 'unknown' : 'red'} />
+            <span className={`w-2 h-2 rounded-full inline-block flex-shrink-0 ${
+              allHealthy ? 'bg-green animate-pulse' :
+              totalCount === 0 ? 'bg-text-dim' : 'bg-red animate-[pulse_1s_ease-in-out_infinite]'
+            }`} />
             <span className="hidden sm:inline">{healthyCount}/{totalCount}</span>
           </span>
           <span

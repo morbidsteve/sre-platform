@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs } from '../ui/Tabs';
+import { SkeletonCard } from '../ui/Skeleton';
 import { ServiceTilesGrid } from '../platform/ServiceTilesGrid';
 import { ServiceHealthGrid } from '../platform/ServiceHealthGrid';
 import { DNSSetup } from '../platform/DNSSetup';
@@ -53,6 +54,7 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
   const [ingressData, setIngressData] = useState<IngressData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const triggerRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -61,6 +63,7 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
   // Load platform data
   const loadPlatformData = useCallback(async () => {
     try {
+      setError(null);
       const [statusResp, ingressResp, favResp] = await Promise.all([
         fetch('/api/status'),
         fetch('/api/ingress'),
@@ -75,7 +78,7 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
       setFavorites(favData.favorites || []);
       setLastChecked(new Date().toLocaleTimeString());
     } catch {
-      // silently ignore
+      setError('Failed to load platform data');
     } finally {
       setLoading(false);
     }
@@ -129,27 +132,43 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
 
   return (
     <div>
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded border text-sm"
+             style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)', color: 'var(--red)' }}>
+          {error} — <button className="underline" onClick={loadPlatformData}>Retry</button>
+        </div>
+      )}
+
       <Tabs tabs={OPS_TABS} active={subTab} onChange={setSubTab} />
 
       {subTab === 'services' && (
         <div>
-          <ServiceTilesGrid
-            services={services}
-            favorites={favorites}
-            loading={loading}
-            onToggleFavorite={handleToggleFavorite}
-            onOpenService={handleOpenService}
-          />
-          <div className="mt-6">
-            <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-3">
-              Service Health Status
-            </h2>
-            <ServiceHealthGrid
-              services={services}
-              lastChecked={lastChecked}
-              loading={loading}
-            />
-          </div>
+          {loading && services.length === 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
+              {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          ) : (
+            <>
+              <ServiceTilesGrid
+                services={services}
+                favorites={favorites}
+                loading={loading}
+                onToggleFavorite={handleToggleFavorite}
+                onOpenService={handleOpenService}
+              />
+              <div className="mt-6">
+                <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-3">
+                  Service Health Status
+                </h2>
+                <ServiceHealthGrid
+                  services={services}
+                  lastChecked={lastChecked}
+                  loading={loading}
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
 

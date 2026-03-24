@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Activity,
   Server,
@@ -11,25 +11,11 @@ import {
   AlertTriangle,
   Settings,
 } from 'lucide-react';
-import { useAlerts } from '../../hooks/useAlerts';
+import { useData } from '../../context/DataContext';
 import { fetchPipelineStats } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
+import { Skeleton } from '../ui/Skeleton';
 import type { PipelineStats, AuditEvent } from '../../types/api';
-
-interface HealthSummary {
-  helmReleasesReady: number;
-  helmReleasesTotal: number;
-  nodesReady: number;
-  nodesTotal: number;
-  problemPodCount: number;
-}
-
-interface HealthData {
-  helmReleases: unknown[];
-  nodes: unknown[];
-  problemPods: unknown[];
-  summary: HealthSummary;
-}
 
 interface OverviewTabProps {
   user: { user: string; email: string; role: string; isAdmin: boolean };
@@ -38,44 +24,45 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) {
-  const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const { health, alerts: alertsData, apps: appsData } = useData();
+  const { summary, loading: healthLoading } = health;
+  const { alerts, criticalCount, warningCount } = alertsData;
+  const { apps, loading: appsLoading } = appsData;
+
   const [pipelineStats, setPipelineStats] = useState<PipelineStats | null>(null);
   const [recentEvents, setRecentEvents] = useState<AuditEvent[]>([]);
-  const [appsCount, setAppsCount] = useState<{ running: number; deploying: number }>({ running: 0, deploying: 0 });
-  const [loading, setLoading] = useState(true);
-  const { alerts, criticalCount, warningCount } = useAlerts();
+  const [localLoading, setLocalLoading] = useState(true);
   const [alertsExpanded, setAlertsExpanded] = useState(false);
 
-  const loadData = useCallback(async () => {
+  // Compute apps count from context data
+  const appsCount = useMemo(() => ({
+    running: apps.filter((a) => a.ready).length,
+    deploying: apps.filter((a) => !a.ready).length,
+  }), [apps]);
+
+  // Only fetch pipeline stats and audit events locally
+  const loadLocalData = useCallback(async () => {
     try {
-      const [healthResp, appsResp, statsData, auditData] = await Promise.all([
-        fetch('/api/health').then((r) => r.json()),
-        fetch('/api/apps', { credentials: 'include' }).then((r) => r.json()).catch(() => ({ apps: [] })),
+      const [statsData, auditData] = await Promise.all([
         fetchPipelineStats().catch(() => null),
         fetchAuditEvents().catch(() => []),
       ]);
-      setHealthData(healthResp);
-      const apps = appsResp.apps || [];
-      setAppsCount({
-        running: apps.filter((a: { ready: boolean }) => a.ready).length,
-        deploying: apps.filter((a: { ready: boolean }) => !a.ready).length,
-      });
       setPipelineStats(statsData);
       setRecentEvents((auditData || []).slice(0, 10));
     } catch {
       // silently ignore
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadData();
-    const timer = setInterval(loadData, 30000);
+    loadLocalData();
+    const timer = setInterval(loadLocalData, 30000);
     return () => clearInterval(timer);
-  }, [loadData]);
+  }, [loadLocalData]);
 
-  const summary = healthData?.summary;
+  const loading = healthLoading || appsLoading || localLoading;
   const isIssm = user.role === 'issm' || user.isAdmin;
 
   const userName = user.email
@@ -83,6 +70,9 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
     : user.user !== 'anonymous'
     ? user.user
     : '';
+
+  // Suppress unused variable warning - loading is used conceptually for combined state
+  void loading;
 
   return (
     <div>
@@ -127,8 +117,8 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
               Platform Health
             </h3>
           </div>
-          {loading || !summary ? (
-            <div className="text-3xl font-bold font-mono text-text-dim">--</div>
+          {healthLoading ? (
+            <Skeleton className="h-9 w-20" />
           ) : (
             <div
               className={`text-3xl font-bold font-mono ${
@@ -154,8 +144,8 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
               Applications
             </h3>
           </div>
-          {loading ? (
-            <div className="text-3xl font-bold font-mono text-text-dim">--</div>
+          {appsLoading ? (
+            <Skeleton className="h-9 w-12" />
           ) : (
             <div className="text-3xl font-bold font-mono text-text-primary">
               {appsCount.running}
@@ -177,8 +167,8 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
               Security
             </h3>
           </div>
-          {loading || !pipelineStats ? (
-            <div className="text-3xl font-bold font-mono text-text-dim">--</div>
+          {localLoading || !pipelineStats ? (
+            <Skeleton className="h-9 w-8" />
           ) : (
             <div
               className={`text-3xl font-bold font-mono ${
@@ -202,8 +192,8 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
               Cluster
             </h3>
           </div>
-          {loading || !summary ? (
-            <div className="text-3xl font-bold font-mono text-text-dim">--</div>
+          {healthLoading ? (
+            <Skeleton className="h-9 w-16" />
           ) : (
             <div
               className={`text-3xl font-bold font-mono ${
@@ -333,7 +323,15 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
         <div className="bg-card border border-border rounded-[var(--radius)] overflow-hidden">
           {recentEvents.length === 0 ? (
             <div className="px-4 py-8 text-center text-text-dim text-sm">
-              No recent activity
+              {localLoading ? (
+                <div className="flex flex-col gap-2 items-center">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-4 w-52" />
+                </div>
+              ) : (
+                'No recent activity'
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">

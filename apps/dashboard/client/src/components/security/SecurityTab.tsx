@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Shield, CheckCircle, Clock, Trash2 } from 'lucide-react';
+import { SkeletonCard } from '../ui/Skeleton';
 import { PipelineStatsCards } from '../pipeline/PipelineStatsCards';
 import { PipelineFilters } from '../pipeline/PipelineFilters';
 import { PipelineTable } from '../pipeline/PipelineTable';
@@ -34,6 +35,8 @@ export function SecurityTab({ active }: SecurityTabProps) {
   const [isReviewMode, setIsReviewMode] = useState(false);
   const [pendingRuns, setPendingRuns] = useState<PipelineRun[]>([]);
   const [securityEvents, setSecurityEvents] = useState<AuditEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
 
   const loadStats = useCallback(async () => {
@@ -41,7 +44,7 @@ export function SecurityTab({ active }: SecurityTabProps) {
       const data = await fetchPipelineStats();
       setStats(data);
     } catch {
-      // silently fail
+      setError('Failed to load pipeline stats');
     }
   }, []);
 
@@ -56,7 +59,7 @@ export function SecurityTab({ active }: SecurityTabProps) {
       setRuns(data.runs || []);
       setTotal(data.total || 0);
     } catch {
-      // silently fail
+      setError('Failed to load pipeline runs');
     }
   }, [statusFilter, searchFilter, offset]);
 
@@ -66,7 +69,7 @@ export function SecurityTab({ active }: SecurityTabProps) {
       const data = await fetchPipelineRuns({ status: 'review_pending', limit: 10 });
       setPendingRuns(data.runs || []);
     } catch {
-      // silently fail
+      // non-critical
     }
   }, [canReview]);
 
@@ -75,15 +78,14 @@ export function SecurityTab({ active }: SecurityTabProps) {
       const events = await fetchAuditEvents();
       setSecurityEvents((events || []).slice(0, 20));
     } catch {
-      // silently fail
+      // non-critical
     }
   }, []);
 
-  const refreshAll = useCallback(() => {
-    loadStats();
-    loadRuns();
-    loadPendingReviews();
-    loadSecurityEvents();
+  const refreshAll = useCallback(async () => {
+    setError(null);
+    await Promise.all([loadStats(), loadRuns(), loadPendingReviews(), loadSecurityEvents()]);
+    setInitialLoading(false);
   }, [loadStats, loadRuns, loadPendingReviews, loadSecurityEvents]);
 
   useEffect(() => {
@@ -144,6 +146,14 @@ export function SecurityTab({ active }: SecurityTabProps) {
 
   return (
     <div>
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded border text-sm"
+             style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)', color: 'var(--red)' }}>
+          {error} — <button className="underline" onClick={refreshAll}>Retry</button>
+        </div>
+      )}
+
       {/* Section 1: Review Queue */}
       {canReview && (
         <div className="mb-6">
@@ -151,7 +161,11 @@ export function SecurityTab({ active }: SecurityTabProps) {
             <Shield className="w-4 h-4" />
             ISSM Review Queue
           </h2>
-          {pendingRuns.length === 0 ? (
+          {initialLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[...Array(3)].map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          ) : pendingRuns.length === 0 ? (
             <div className="bg-card border border-border rounded-[var(--radius)] p-5 flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green" />
               <span className="text-sm text-text-primary">No pending reviews</span>
@@ -234,31 +248,37 @@ export function SecurityTab({ active }: SecurityTabProps) {
         <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-3">
           Security Posture
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="card-base p-4 text-center">
-            <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Pipeline Pass Rate</h3>
-            <div className={`text-2xl font-bold ${passRate >= 80 ? 'text-green' : passRate >= 50 ? 'text-yellow' : 'text-red'}`}>
-              {stats ? `${passRate}%` : '--'}
+        {initialLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="card-base p-4 text-center">
+              <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Pipeline Pass Rate</h3>
+              <div className={`text-2xl font-bold ${passRate >= 80 ? 'text-green' : passRate >= 50 ? 'text-yellow' : 'text-red'}`}>
+                {stats ? `${passRate}%` : '--'}
+              </div>
+            </div>
+            <div className="card-base p-4 text-center">
+              <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Total Runs</h3>
+              <div className="text-2xl font-bold text-text-primary">
+                {stats ? stats.total : '--'}
+              </div>
+            </div>
+            <div className="card-base p-4 text-center">
+              <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Policy Violations</h3>
+              <div className="text-2xl font-bold text-text-dim">0</div>
+              <div className="text-[10px] text-text-dim mt-0.5">Kyverno integration coming</div>
+            </div>
+            <div className="card-base p-4 text-center">
+              <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Gate Failure Rate</h3>
+              <div className={`text-2xl font-bold ${failRate <= 20 ? 'text-green' : 'text-red'}`}>
+                {stats ? `${failRate}%` : '--'}
+              </div>
             </div>
           </div>
-          <div className="card-base p-4 text-center">
-            <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Total Runs</h3>
-            <div className="text-2xl font-bold text-text-primary">
-              {stats ? stats.total : '--'}
-            </div>
-          </div>
-          <div className="card-base p-4 text-center">
-            <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Policy Violations</h3>
-            <div className="text-2xl font-bold text-text-dim">0</div>
-            <div className="text-[10px] text-text-dim mt-0.5">Kyverno integration coming</div>
-          </div>
-          <div className="card-base p-4 text-center">
-            <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Gate Failure Rate</h3>
-            <div className={`text-2xl font-bold ${failRate <= 20 ? 'text-green' : 'text-red'}`}>
-              {stats ? `${failRate}%` : '--'}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Section 3: Pipeline Runs */}

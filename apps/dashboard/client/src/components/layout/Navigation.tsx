@@ -37,10 +37,17 @@ export function Navigation({ activeTab, onTabChange, isAdmin, mobileOpen = false
   const visibleTabs = tabs.filter((t) => !t.adminOnly || isAdmin);
 
   return (
+    <>
+    {mobileOpen && (
+      <div
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[98] md:hidden"
+        onClick={() => onTabChange(activeTab)}
+      />
+    )}
     <nav
       className={`bg-bg-secondary border-b border-border px-6 gap-0 overflow-x-auto
         ${mobileOpen
-          ? 'flex flex-col absolute top-full left-0 right-0 z-[99] p-0 border-b border-border'
+          ? 'flex flex-col absolute top-full left-0 right-0 z-[99] p-0 border-b border-border animate-slide-in'
           : 'hidden md:flex'
         }`}
     >
@@ -67,5 +74,6 @@ export function Navigation({ activeTab, onTabChange, isAdmin, mobileOpen = false
         </button>
       ))}
     </nav>
+    </>
   );
 }
