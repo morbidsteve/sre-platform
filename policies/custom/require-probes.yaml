@@ -72,8 +72,12 @@ spec:
                 path: /readyz
                 port: 8080
               initialDelaySeconds: 5
-        pattern:
-          spec:
-            containers:
-              - livenessProbe: "?*"
-                readinessProbe: "?*"
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.containers[?livenessProbe == null] | length(@) }}"
+                operator: GreaterThan
+                value: "0"
+              - key: "{{ request.object.spec.containers[?readinessProbe == null] | length(@) }}"
+                operator: GreaterThan
+                value: "0"
