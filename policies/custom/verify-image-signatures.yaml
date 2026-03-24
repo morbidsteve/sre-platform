@@ -72,7 +72,3 @@ spec:
                       -----BEGIN PUBLIC KEY-----
                       REPLACE_ME_WITH_COSIGN_PUBLIC_KEY
                       -----END PUBLIC KEY-----
-          message: >-
-            Image signature verification is not yet configured. This policy is in
-            Audit mode. To enable enforcement, configure Cosign key pair and update
-            this policy. See the operator guide for setup instructions.
