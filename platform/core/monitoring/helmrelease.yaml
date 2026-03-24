@@ -81,8 +81,8 @@ spec:
           client_id: "grafana"
           scopes: "openid profile email groups"
           auth_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/auth"
-          token_url: "http://keycloak-http.keycloak.svc.cluster.local:80/realms/sre/protocol/openid-connect/token"
-          api_url: "http://keycloak-http.keycloak.svc.cluster.local:80/realms/sre/protocol/openid-connect/userinfo"
+          token_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/token"
+          api_url: "https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/userinfo"
           role_attribute_path: "contains(groups[*], 'platform-admins') && 'Admin' || contains(groups[*], 'developers') && 'Editor' || 'Viewer'"
           tls_skip_verify_insecure: true
       assertNoLeakedSecrets: false
