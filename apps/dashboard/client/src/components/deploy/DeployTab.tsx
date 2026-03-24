@@ -4,6 +4,8 @@ import { QuickStartPanel } from '../applications/QuickStartPanel';
 import { HelmDeployForm } from '../applications/HelmDeployForm';
 import { DatabaseForm } from '../applications/DatabaseForm';
 import { DeployProgress } from '../applications/DeployProgress';
+import { SecurityContextSection } from './SecurityContextSection';
+import type { SecurityContextOptions } from '../../types/api';
 
 type DeployMethod = 'none' | 'dsop' | 'quick' | 'helm' | 'database';
 
@@ -57,6 +59,7 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
   const [method, setMethod] = useState<DeployMethod>('none');
   const [deployItems, setDeployItems] = useState<DeployItem[]>([]);
   const [showProgress, setShowProgress] = useState(false);
+  const [securityContext, setSecurityContext] = useState<SecurityContextOptions>({});
 
   const handleOpenDsopWizard = useCallback(() => {
     onOpenApp('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline');
@@ -65,6 +68,8 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
   const handleQuickDeploy = useCallback(async (item: DeployItem) => {
     setDeployItems([item]);
     setShowProgress(true);
+    const hasSecCtx = securityContext.runAsRoot || securityContext.writableFilesystem ||
+      securityContext.allowPrivilegeEscalation || (securityContext.capabilities && securityContext.capabilities.length > 0);
     try {
       const resp = await fetch('/api/deploy', {
         method: 'POST',
@@ -77,6 +82,7 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
           port: item.port,
           replicas: item.replicas,
           ingress: item.ingress,
+          ...(hasSecCtx ? { securityContext } : {}),
         }),
       });
       const data = await resp.json();
@@ -86,7 +92,7 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
     } catch (err) {
       console.error('Deploy error:', err);
     }
-  }, []);
+  }, [securityContext]);
 
   const handleHelmDeploy = useCallback(async (payload: {
     repoUrl: string;
@@ -96,11 +102,16 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
     team: string;
     values: string;
   }) => {
+    const hasSecCtx = securityContext.runAsRoot || securityContext.writableFilesystem ||
+      securityContext.allowPrivilegeEscalation || (securityContext.capabilities && securityContext.capabilities.length > 0);
     try {
       const resp = await fetch('/api/deploy/helm-chart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          ...(hasSecCtx ? { securityContext } : {}),
+        }),
       });
       const data = await resp.json();
       if (data.success) {
@@ -120,7 +131,7 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
     } catch {
       // handle silently
     }
-  }, []);
+  }, [securityContext]);
 
   const handleCreateDatabase = useCallback(async (payload: {
     name: string;
@@ -208,8 +219,22 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
             Back to methods
           </button>
 
-          {method === 'quick' && <QuickStartPanel onDeploy={handleQuickDeploy} />}
-          {method === 'helm' && <HelmDeployForm onDeploy={handleHelmDeploy} />}
+          {method === 'quick' && (
+            <>
+              <QuickStartPanel onDeploy={handleQuickDeploy} />
+              <div className="mt-4">
+                <SecurityContextSection value={securityContext} onChange={setSecurityContext} />
+              </div>
+            </>
+          )}
+          {method === 'helm' && (
+            <>
+              <HelmDeployForm onDeploy={handleHelmDeploy} />
+              <div className="mt-4">
+                <SecurityContextSection value={securityContext} onChange={setSecurityContext} />
+              </div>
+            </>
+          )}
           {method === 'database' && <DatabaseForm onCreateDatabase={handleCreateDatabase} />}
         </div>
       )}

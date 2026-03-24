@@ -327,10 +327,24 @@ spec:
           serviceAccountName: git-poller-sa
           restartPolicy: Never
           automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: poller
               image: bitnami/kubectl:1.29.2
               command: ["sh", "/scripts/poll.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                    - ALL
               env:
                 - name: GITHUB_TOKEN
                   valueFrom:

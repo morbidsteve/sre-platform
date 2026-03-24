@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Shield, CheckCircle, Clock } from 'lucide-react';
+import { Shield, CheckCircle, Clock, Trash2 } from 'lucide-react';
 import { PipelineStatsCards } from '../pipeline/PipelineStatsCards';
 import { PipelineFilters } from '../pipeline/PipelineFilters';
 import { PipelineTable } from '../pipeline/PipelineTable';
 import { PipelinePagination } from '../pipeline/PipelinePagination';
 import { RunDetailOverlay } from '../pipeline/RunDetailOverlay';
-import { fetchPipelineStats, fetchPipelineRuns } from '../../api/pipeline';
+import { fetchPipelineStats, fetchPipelineRuns, deletePipelineRun } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
 import { useUserContext } from '../../context/UserContext';
+import { useModal } from '../../context/ModalContext';
+import { useToast } from '../../context/ToastContext';
 import type { PipelineStats, PipelineRun, AuditEvent } from '../../types/api';
 
 const PAGE_LIMIT = 20;
@@ -19,6 +21,8 @@ interface SecurityTabProps {
 export function SecurityTab({ active }: SecurityTabProps) {
   const { isAdmin, isIssm } = useUserContext();
   const canReview = isAdmin || isIssm;
+  const { confirm } = useModal();
+  const { showToast } = useToast();
 
   const [stats, setStats] = useState<PipelineStats | null>(null);
   const [runs, setRuns] = useState<PipelineRun[]>([]);
@@ -88,6 +92,23 @@ export function SecurityTab({ active }: SecurityTabProps) {
     const id = setInterval(refreshAll, 10000);
     return () => clearInterval(id);
   }, [active, refreshAll]);
+
+  const handleDeleteRun = useCallback((run: PipelineRun) => {
+    confirm(
+      'Delete Pipeline Run',
+      `Are you sure you want to delete the pipeline run for "${run.app_name}"? This action cannot be undone.`,
+      async () => {
+        try {
+          await deletePipelineRun(run.id);
+          showToast(`Pipeline run for "${run.app_name}" deleted`, 'success');
+          refreshAll();
+        } catch {
+          showToast('Failed to delete pipeline run', 'error');
+        }
+      },
+      { confirmLabel: 'Delete', danger: true },
+    );
+  }, [confirm, showToast, refreshAll]);
 
   const handleStatusChange = (status: string) => {
     setStatusFilter(status);
@@ -179,15 +200,27 @@ export function SecurityTab({ active }: SecurityTabProps) {
                         {timeWaiting}
                       </span>
                     </div>
-                    <button
-                      className="btn btn-primary text-xs w-full mt-3"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReviewRun(run.id);
-                      }}
-                    >
-                      Review Now
-                    </button>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        className="btn btn-primary text-xs flex-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReviewRun(run.id);
+                        }}
+                      >
+                        Review Now
+                      </button>
+                      <button
+                        className="btn btn-danger text-xs !px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteRun(run);
+                        }}
+                        title="Delete run"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -242,6 +275,7 @@ export function SecurityTab({ active }: SecurityTabProps) {
         <PipelineTable
           runs={runs}
           onSelectRun={handleSelectRun}
+          onDeleteRun={canReview ? handleDeleteRun : undefined}
           totalCount={total}
         />
         <PipelinePagination

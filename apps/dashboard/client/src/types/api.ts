@@ -102,6 +102,13 @@ export interface SamplesResponse {
 
 // ── Deploy ──────────────────────────────────────────────────────────────────
 
+export interface SecurityContextOptions {
+  runAsRoot?: boolean;
+  writableFilesystem?: boolean;
+  allowPrivilegeEscalation?: boolean;
+  capabilities?: string[];
+}
+
 export interface DeployRequest {
   name: string;
   team: string;
@@ -112,6 +119,7 @@ export interface DeployRequest {
   ingress?: string;
   privileged?: boolean;
   env?: { name: string; value: string }[];
+  securityContext?: SecurityContextOptions;
 }
 
 export interface DeployResponse {
@@ -128,6 +136,7 @@ export interface HelmDeployRequest {
   values?: string | Record<string, unknown>;
   appName: string;
   team: string;
+  securityContext?: SecurityContextOptions;
 }
 
 export interface GitDeployRequest {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trash2 } from 'lucide-react';
 import { EmptyState } from '../ui/EmptyState';
 import type { PipelineRun } from '../../types/api';
 
@@ -36,10 +37,11 @@ function gateCircleColor(status: string): string {
 interface PipelineTableProps {
   runs: PipelineRun[];
   onSelectRun: (id: string) => void;
+  onDeleteRun?: (run: PipelineRun) => void;
   totalCount: number;
 }
 
-export function PipelineTable({ runs, onSelectRun, totalCount }: PipelineTableProps) {
+export function PipelineTable({ runs, onSelectRun, onDeleteRun, totalCount }: PipelineTableProps) {
   if (runs.length === 0) {
     return <EmptyState title="No pipeline runs found" description="No runs match the current filters." />;
   }
@@ -61,6 +63,7 @@ export function PipelineTable({ runs, onSelectRun, totalCount }: PipelineTablePr
               <th className="py-2 px-3 text-text-dim font-medium text-xs">Classification</th>
               <th className="py-2 px-3 text-text-dim font-medium text-xs">Created</th>
               <th className="py-2 px-3 text-text-dim font-medium text-xs">Gates</th>
+              {onDeleteRun && <th className="py-2 px-3 text-text-dim font-medium text-xs w-10"></th>}
             </tr>
           </thead>
           <tbody>
@@ -102,6 +105,20 @@ export function PipelineTable({ runs, onSelectRun, totalCount }: PipelineTablePr
                       )}
                     </div>
                   </td>
+                  {onDeleteRun && (
+                    <td className="py-2 px-3">
+                      <button
+                        className="p-1 rounded hover:bg-red/10 text-text-dim hover:text-red transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteRun(run);
+                        }}
+                        title="Delete run"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
