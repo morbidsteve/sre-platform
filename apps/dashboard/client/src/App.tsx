@@ -5,12 +5,12 @@ import { ToastProvider } from './context/ToastContext';
 import { ModalProvider } from './context/ModalContext';
 import { Layout } from './components/layout/Layout';
 import { UserLandingPage } from './components/layout/UserLandingPage';
-import { DashboardTab } from './components/dashboard/DashboardTab';
+import { OverviewTab } from './components/overview/OverviewTab';
+import { DeployTab } from './components/deploy/DeployTab';
 import { ApplicationsTab } from './components/applications/ApplicationsTab';
-import { PlatformTab } from './components/platform/PlatformTab';
-import { ClusterTab } from './components/cluster/ClusterTab';
-import { PipelineTab } from './components/pipeline/PipelineTab';
-import { AuditTab } from './components/audit/AuditTab';
+import { SecurityTab } from './components/security/SecurityTab';
+import { OperationsTab } from './components/operations/OperationsTab';
+import { ComplianceTab } from './components/compliance/ComplianceTab';
 import { AdminTab } from './components/admin/AdminTab';
 import { AppFrame } from './components/shared/AppFrame';
 import { CommandPalette } from './components/shared/CommandPalette';
@@ -18,7 +18,7 @@ import { Spinner } from './components/ui/Spinner';
 
 function AppContent() {
   const { user, isAdmin, isDeveloper, loading } = useUserContext();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('overview');
   const [appFrame, setAppFrame] = useState<{ url: string; title: string } | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -78,10 +78,16 @@ function AppContent() {
   return (
     <>
       <Layout activeTab={activeTab} onTabChange={handleTabChange} onOpenCommandPalette={handleOpenCommandPalette}>
-        {activeTab === 'dashboard' && (
-          <DashboardTab
+        {activeTab === 'overview' && (
+          <OverviewTab
             user={userObj}
             onSwitchTab={handleTabChange}
+            onOpenApp={handleOpenAppFrame}
+          />
+        )}
+        {activeTab === 'deploy' && (
+          <DeployTab
+            user={userObj}
             onOpenApp={handleOpenAppFrame}
           />
         )}
@@ -89,21 +95,20 @@ function AppContent() {
           <ApplicationsTab
             user={userObj}
             onOpenApp={handleOpenAppFrame}
+            onSwitchTab={handleTabChange}
           />
         )}
-        {activeTab === 'platform' && (
-          <PlatformTab
+        {activeTab === 'security' && (
+          <SecurityTab active={activeTab === 'security'} />
+        )}
+        {activeTab === 'operations' && (
+          <OperationsTab
+            active={activeTab === 'operations'}
             onOpenApp={handleOpenAppFrame}
           />
         )}
-        {activeTab === 'cluster' && (
-          <ClusterTab active={activeTab === 'cluster'} />
-        )}
-        {activeTab === 'pipeline' && (
-          <PipelineTab active={activeTab === 'pipeline'} />
-        )}
-        {activeTab === 'audit' && (
-          <AuditTab active={activeTab === 'audit'} />
+        {activeTab === 'compliance' && (
+          <ComplianceTab active={activeTab === 'compliance'} />
         )}
         {activeTab === 'admin' && <AdminTab active={activeTab === 'admin'} />}
       </Layout>

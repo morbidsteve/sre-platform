@@ -1,8 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { AppGallery } from './AppGallery';
-import { DeploySection } from './DeploySection';
-import { DeployProgress } from './DeployProgress';
-import { Rocket } from 'lucide-react';
+import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2 } from 'lucide-react';
 
 interface AppInfo {
   name: string;
@@ -15,89 +12,24 @@ interface AppInfo {
   url?: string;
   ready: boolean;
   status?: string;
-  _isPipelineRun?: boolean;
-  _runId?: string;
-  gates?: { short_name: string; gate_name: string; status: string }[];
-  classification?: string;
-  created_at?: string;
-}
-
-interface DeployItem {
-  name: string;
-  team: string;
-  image: string;
-  tag: string;
-  port: number;
-  replicas: number;
-  ingress: string;
 }
 
 interface ApplicationsTabProps {
   user: { user: string; email: string; role: string; isAdmin: boolean };
   onOpenApp: (url: string, title: string) => void;
+  onSwitchTab: (tab: string) => void;
 }
 
-export function ApplicationsTab({ user, onOpenApp }: ApplicationsTabProps) {
+export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTabProps) {
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showDeploy, setShowDeploy] = useState(false);
-  const [deployItems, setDeployItems] = useState<DeployItem[]>([]);
-  const [showProgress, setShowProgress] = useState(false);
-
-  const canDeploy = user.role === 'admin' || user.role === 'developer' || user.role === 'issm';
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadApps = useCallback(async () => {
     try {
-      const [appsResp, pipeResp] = await Promise.all([
-        fetch('/api/apps', { credentials: 'include' }).then((r) => r.json()),
-        fetch('/api/pipeline/active', { credentials: 'include' })
-          .then((r) => r.json())
-          .catch(() => ({ runs: [] })),
-      ]);
-
-      const deployedApps: AppInfo[] = appsResp.apps || [];
-      const activeRuns = pipeResp.runs || [];
-
-      const deployedNames = new Set(
-        deployedApps.map((a: AppInfo) => `${a.team || a.namespace}/${a.name}`)
-      );
-
-      const pipelineCards: AppInfo[] = activeRuns
-        .filter(
-          (r: { team: string; app_name: string }) =>
-            !deployedNames.has(`${r.team || ''}/${r.app_name}`)
-        )
-        .map(
-          (r: {
-            id: string;
-            app_name: string;
-            team: string;
-            image_url?: string;
-            git_url?: string;
-            status: string;
-            gates?: { short_name: string; gate_name: string; status: string }[];
-            classification?: string;
-            created_at?: string;
-          }) => ({
-            _isPipelineRun: true,
-            _runId: r.id,
-            name: r.app_name,
-            namespace: r.team,
-            team: r.team,
-            ready: false,
-            image: r.image_url || r.git_url || '',
-            tag: '',
-            port: undefined,
-            host: '',
-            url: '',
-            status: r.status,
-            gates: r.gates || [],
-            classification: r.classification,
-            created_at: r.created_at,
-          })
-        );
-
-      setApps([...pipelineCards, ...deployedApps]);
+      const resp = await fetch('/api/apps', { credentials: 'include' });
+      const data = await resp.json();
+      setApps(data.apps || []);
     } catch {
       setApps([]);
     } finally {
@@ -116,9 +48,10 @@ export function ApplicationsTab({ user, onOpenApp }: ApplicationsTabProps) {
       return;
     }
     try {
-      const resp = await fetch(`/api/apps/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
-        method: 'DELETE',
-      });
+      const resp = await fetch(
+        `/api/apps/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+        { method: 'DELETE' }
+      );
       if (resp.ok) {
         setApps((prev) => prev.filter((a) => !(a.namespace === namespace && a.name === name)));
         setTimeout(loadApps, 3000);
@@ -140,88 +73,24 @@ export function ApplicationsTab({ user, onOpenApp }: ApplicationsTabProps) {
     window.open(url, '_blank', 'noopener');
   };
 
-  const handleOpenDsopWizard = () => {
-    onOpenApp('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline');
-  };
+  const filtered = searchQuery
+    ? apps.filter((a) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          a.name.toLowerCase().includes(q) ||
+          (a.team || '').toLowerCase().includes(q) ||
+          (a.image || '').toLowerCase().includes(q) ||
+          (a.namespace || '').toLowerCase().includes(q)
+        );
+      })
+    : apps;
 
-  const handleQuickDeploy = async (item: DeployItem) => {
-    setDeployItems([item]);
-    setShowProgress(true);
-    try {
-      const resp = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: item.name,
-          team: item.team,
-          image: item.image,
-          tag: item.tag,
-          port: item.port,
-          replicas: item.replicas,
-          ingress: item.ingress,
-        }),
-      });
-      const data = await resp.json();
-      if (!data.success) {
-        console.error('Deploy failed:', data.error);
-      }
-    } catch (err) {
-      console.error('Deploy error:', err);
-    }
-    setTimeout(loadApps, 3000);
-  };
-
-  const handleHelmDeploy = async (payload: {
-    repoUrl: string;
-    chartName: string;
-    version: string;
-    releaseName: string;
-    team: string;
-    values: string;
-  }) => {
-    try {
-      const resp = await fetch('/api/deploy/helm-chart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json();
-      if (data.success) {
-        setDeployItems([
-          {
-            name: payload.releaseName,
-            team: payload.team,
-            image: payload.chartName,
-            tag: payload.version || 'latest',
-            port: 0,
-            replicas: 1,
-            ingress: '',
-          },
-        ]);
-        setShowProgress(true);
-      }
-    } catch {
-      // handle silently
-    }
-    setTimeout(loadApps, 3000);
-  };
-
-  const handleCreateDatabase = async (payload: {
-    name: string;
-    team: string;
-    storage: string;
-    instances: number;
-  }) => {
-    try {
-      await fetch('/api/databases', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch {
-      // handle silently
-    }
-  };
+  const runningCount = filtered.filter((a) => a.ready).length;
+  const deployingCount = filtered.filter((a) => !a.ready).length;
+  const countText =
+    filtered.length > 0
+      ? `${runningCount} running${deployingCount > 0 ? `, ${deployingCount} deploying` : ''}`
+      : '';
 
   return (
     <div>
@@ -230,50 +99,148 @@ export function ApplicationsTab({ user, onOpenApp }: ApplicationsTabProps) {
         <div>
           <h2 className="text-lg font-semibold text-text-bright mb-1">Applications</h2>
           <p className="text-text-dim text-[13px]">
-            Manage and deploy applications on the SRE Platform.
+            Running applications on the SRE Platform.
           </p>
         </div>
-        {canDeploy && (
-          <button
-            className="btn btn-primary text-[13px] !px-5"
-            onClick={handleOpenDsopWizard}
-          >
-            <Rocket className="w-4 h-4 inline-block mr-1" />
-            Deploy New App
-          </button>
-        )}
       </div>
 
-      {/* App Gallery */}
-      <AppGallery
-        apps={apps}
-        loading={loading}
-        isAdmin={user.isAdmin}
-        onRefresh={loadApps}
-        onDelete={handleDelete}
-        onOpenService={handleOpenService}
-        onOpenDsopWizard={handleOpenDsopWizard}
-      />
+      {/* Search and controls */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="flex-1 min-w-[200px] relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-dim" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search apps by name, team, namespace, or image..."
+            className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-[var(--radius)] text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+          />
+        </div>
+        <span className="text-xs text-text-dim font-mono">{countText}</span>
+        <button
+          className="btn text-xs !py-1.5 !px-3 !min-h-0 flex items-center gap-1"
+          onClick={loadApps}
+        >
+          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
 
-      {/* Deploy Progress */}
-      <DeployProgress
-        items={deployItems}
-        visible={showProgress}
-        onDismiss={() => {
-          setShowProgress(false);
-          setDeployItems([]);
-        }}
-      />
+      {/* App Cards Grid */}
+      {loading && apps.length === 0 ? (
+        <div className="flex justify-center py-8">
+          <span className="inline-block w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-10 bg-card border border-border rounded-[var(--radius)]">
+          <h3 className="text-base font-semibold text-text-primary mb-2">
+            {apps.length === 0 ? 'No applications deployed yet' : 'No apps match your search'}
+          </h3>
+          {apps.length === 0 && (
+            <>
+              <p className="text-sm text-text-dim mb-4">
+                Get started by deploying your first application.
+              </p>
+              <button
+                className="btn btn-primary"
+                onClick={() => onSwitchTab('deploy')}
+              >
+                <Rocket className="w-4 h-4 inline-block mr-1" />
+                Go to Deploy
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map((app) => {
+            const hasUrl = !!(app.url && app.host);
+            const grafanaUrl = `https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22${encodeURIComponent(app.namespace)}%5C%22%7D%22%7D%5D%7D`;
 
-      {/* Deploy Section */}
-      <DeploySection
-        visible={showDeploy}
-        onClose={() => setShowDeploy(false)}
-        onOpenDsopWizard={handleOpenDsopWizard}
-        onQuickDeploy={handleQuickDeploy}
-        onHelmDeploy={handleHelmDeploy}
-        onCreateDatabase={handleCreateDatabase}
-      />
+            return (
+              <div
+                key={`${app.namespace}/${app.name}`}
+                className={`bg-card border border-border rounded-[var(--radius)] p-4 transition-all ${
+                  hasUrl ? 'cursor-pointer hover:border-border-hover hover:bg-surface-hover' : ''
+                }`}
+                onClick={hasUrl ? () => handleOpenService(app.url!) : undefined}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${app.ready ? 'bg-green' : 'bg-yellow'}`} />
+                    <span className="font-semibold text-sm text-text-bright">{app.name}</span>
+                  </div>
+                  <span
+                    className={`text-[11px] font-mono px-2 py-0.5 rounded ${
+                      app.ready
+                        ? 'bg-[rgba(64,192,87,0.15)] text-green'
+                        : 'bg-[rgba(250,176,5,0.15)] text-yellow'
+                    }`}
+                  >
+                    {app.ready ? 'Running' : 'Deploying'}
+                  </span>
+                </div>
+
+                <div className="text-xs text-text-dim font-mono mb-2 truncate">
+                  {app.image ? `${app.image}:${app.tag}` : 'unknown'}
+                </div>
+
+                {hasUrl ? (
+                  <a
+                    className="text-xs text-accent hover:underline block mb-2 truncate"
+                    href={app.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {app.host}
+                  </a>
+                ) : (
+                  <span className="text-xs text-text-dim block mb-2">Cluster-internal only</span>
+                )}
+
+                <div className="flex items-center gap-3 text-[11px] text-text-dim mb-3">
+                  <span>{app.team || app.namespace}</span>
+                  <span>{app.namespace}</span>
+                  {app.port && <span>:{app.port}</span>}
+                </div>
+
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <a
+                    className="btn text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 no-underline"
+                    href={grafanaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    Logs
+                  </a>
+                  {hasUrl && (
+                    <a
+                      className="btn btn-primary text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 no-underline"
+                      href={app.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Open
+                    </a>
+                  )}
+                  {user.isAdmin && (
+                    <button
+                      className="btn btn-danger text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1"
+                      onClick={() => handleDelete(app.namespace, app.name)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

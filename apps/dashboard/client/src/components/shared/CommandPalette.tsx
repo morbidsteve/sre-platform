@@ -37,12 +37,12 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
 
   const commands = useMemo<CommandItem[]>(() => {
     const navItems: CommandItem[] = [
-      { category: 'Navigation', label: 'Dashboard', icon: '\uD83C\uDFE0', description: 'Platform overview', action: () => onTabChange('dashboard') },
-      { category: 'Navigation', label: 'Applications', icon: '\uD83D\uDCE6', description: 'Deployed applications', action: () => onTabChange('applications') },
-      { category: 'Navigation', label: 'Platform Services', icon: '\uD83D\uDCC8', description: 'Monitoring, logging, security', action: () => onTabChange('platform') },
-      { category: 'Navigation', label: 'Cluster', icon: '\uD83D\uDDA5\uFE0F', description: 'Nodes, pods, events', action: () => onTabChange('cluster') },
-      { category: 'Navigation', label: 'Pipeline', icon: '\uD83D\uDEE1\uFE0F', description: 'DSOP security pipeline', action: () => onTabChange('pipeline') },
-      { category: 'Navigation', label: 'Audit Log', icon: '\uD83D\uDCC4', description: 'Security audit events', action: () => onTabChange('audit') },
+      { category: 'Navigation', label: 'Overview', icon: '\uD83C\uDFE0', description: 'Platform overview and health summary', action: () => onTabChange('overview') },
+      { category: 'Navigation', label: 'Deploy', icon: '\uD83D\uDE80', description: 'Deploy applications to the platform', action: () => onTabChange('deploy') },
+      { category: 'Navigation', label: 'Applications', icon: '\uD83D\uDCE6', description: 'Running applications', action: () => onTabChange('applications') },
+      { category: 'Navigation', label: 'Security', icon: '\uD83D\uDEE1\uFE0F', description: 'SOC, ISSM reviews, pipeline runs', action: () => onTabChange('security') },
+      { category: 'Navigation', label: 'Operations', icon: '\uD83D\uDCCA', description: 'Platform services, nodes, pods, events', action: () => onTabChange('operations') },
+      { category: 'Navigation', label: 'Compliance', icon: '\uD83D\uDCC4', description: 'ATO tracking, audit trail, NIST controls', action: () => onTabChange('compliance') },
     ];
 
     if (isAdmin) {

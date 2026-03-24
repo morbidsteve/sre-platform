@@ -1,12 +1,12 @@
 import React from 'react';
 import {
   LayoutDashboard,
-  Grid3X3,
-  Layers,
-  Server,
-  ShieldCheck,
-  FileText,
-  Users,
+  Rocket,
+  AppWindow,
+  Shield,
+  Activity,
+  ClipboardCheck,
+  Settings,
 } from 'lucide-react';
 
 interface NavigationProps {
@@ -24,13 +24,13 @@ interface TabDef {
 }
 
 const tabs: TabDef[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
-  { id: 'applications', label: 'Applications', icon: <Grid3X3 size={14} /> },
-  { id: 'platform', label: 'Platform', icon: <Layers size={14} /> },
-  { id: 'cluster', label: 'Cluster', icon: <Server size={14} /> },
-  { id: 'pipeline', label: 'Pipeline', icon: <ShieldCheck size={14} /> },
-  { id: 'audit', label: 'Audit', icon: <FileText size={14} /> },
-  { id: 'admin', label: 'Admin', icon: <Users size={14} />, adminOnly: true },
+  { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={14} /> },
+  { id: 'deploy', label: 'Deploy', icon: <Rocket size={14} /> },
+  { id: 'applications', label: 'Applications', icon: <AppWindow size={14} /> },
+  { id: 'security', label: 'Security', icon: <Shield size={14} /> },
+  { id: 'operations', label: 'Operations', icon: <Activity size={14} /> },
+  { id: 'compliance', label: 'Compliance', icon: <ClipboardCheck size={14} /> },
+  { id: 'admin', label: 'Admin', icon: <Settings size={14} />, adminOnly: true },
 ];
 
 export function Navigation({ activeTab, onTabChange, isAdmin, mobileOpen = false }: NavigationProps) {

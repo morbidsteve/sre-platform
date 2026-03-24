@@ -6,13 +6,13 @@ export interface TabDef {
 }
 
 export const TABS: TabDef[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: 'home', adminOnly: false },
-  { id: 'applications', label: 'Applications', icon: 'grid', adminOnly: false },
-  { id: 'platform', label: 'Platform', icon: 'layers', adminOnly: false },
-  { id: 'cluster', label: 'Cluster', icon: 'server', adminOnly: false },
-  { id: 'pipeline', label: 'Pipeline', icon: 'git-branch', adminOnly: false },
-  { id: 'audit', label: 'Audit', icon: 'clipboard', adminOnly: false },
-  { id: 'admin', label: 'Admin', icon: 'settings', adminOnly: true },
+  { id: 'overview', label: 'Overview', icon: 'LayoutDashboard', adminOnly: false },
+  { id: 'deploy', label: 'Deploy', icon: 'Rocket', adminOnly: false },
+  { id: 'applications', label: 'Applications', icon: 'AppWindow', adminOnly: false },
+  { id: 'security', label: 'Security', icon: 'Shield', adminOnly: false },
+  { id: 'operations', label: 'Operations', icon: 'Activity', adminOnly: false },
+  { id: 'compliance', label: 'Compliance', icon: 'ClipboardCheck', adminOnly: false },
+  { id: 'admin', label: 'Admin', icon: 'Settings', adminOnly: true },
 ];
 
 export const SERVICE_ICONS: Record<string, string> = {
@@ -75,14 +75,14 @@ export interface CommandItem {
 }
 
 export const COMMAND_ITEMS: CommandItem[] = [
-  { id: 'nav-dashboard', label: 'Go to Dashboard', action: 'navigate:dashboard', keywords: 'home overview' },
-  { id: 'nav-apps', label: 'Go to Applications', action: 'navigate:applications', keywords: 'apps deploy' },
-  { id: 'nav-platform', label: 'Go to Platform Services', action: 'navigate:platform', keywords: 'services status' },
-  { id: 'nav-cluster', label: 'Go to Cluster', action: 'navigate:cluster', keywords: 'nodes pods' },
-  { id: 'nav-pipeline', label: 'Go to Pipeline', action: 'navigate:pipeline', keywords: 'dsop security' },
-  { id: 'nav-audit', label: 'Go to Audit Log', action: 'navigate:audit', keywords: 'events log' },
+  { id: 'nav-overview', label: 'Go to Overview', action: 'navigate:overview', keywords: 'home dashboard landing' },
+  { id: 'nav-deploy', label: 'Go to Deploy', action: 'navigate:deploy', keywords: 'deploy new app launch create' },
+  { id: 'nav-apps', label: 'Go to Applications', action: 'navigate:applications', keywords: 'apps running deployed' },
+  { id: 'nav-security', label: 'Go to Security', action: 'navigate:security', keywords: 'soc issm review pipeline dsop' },
+  { id: 'nav-operations', label: 'Go to Operations', action: 'navigate:operations', keywords: 'noc platform cluster nodes pods services' },
+  { id: 'nav-compliance', label: 'Go to Compliance', action: 'navigate:compliance', keywords: 'ato audit nist controls' },
   { id: 'nav-admin', label: 'Go to Admin', action: 'navigate:admin', keywords: 'users groups credentials', adminOnly: true },
-  { id: 'deploy-app', label: 'Deploy New Application', action: 'deploy', keywords: 'create launch new' },
+  { id: 'deploy-app', label: 'Deploy New Application', action: 'navigate:deploy', keywords: 'create launch new' },
   { id: 'open-grafana', label: 'Open Grafana', action: 'open:https://grafana.apps.sre.example.com', keywords: 'monitoring dashboards' },
   { id: 'open-harbor', label: 'Open Harbor Registry', action: 'open:https://harbor.apps.sre.example.com', keywords: 'images container' },
   { id: 'open-keycloak', label: 'Open Keycloak', action: 'open:https://keycloak.apps.sre.example.com', keywords: 'sso identity' },
