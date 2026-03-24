@@ -434,7 +434,7 @@ app.get("/api/tenants/:namespace/apps", requireGroups("sre-admins", "developers"
 // Deploy a new app
 app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { name, team, image, tag, port, replicas, ingress, privileged } = req.body;
+    const { name, team, image, tag, port, replicas, ingress, privileged, securityContext } = req.body;
 
     if (!name || !team || !image || !tag) {
       return res.status(400).json({
@@ -464,6 +464,7 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
       replicas: replicas || 2,
       ingressHost: ingress || "",
       privileged: !!privileged,
+      securityContext: securityContext || null,
     });
 
     // Apply the manifest to the cluster (GitOps if enabled, else direct kubectl)
@@ -1334,16 +1335,35 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
       );
       const hr = hrResp.body;
       const readyCondition = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+      // Extract actionable error information from the HelmRelease status
+      const failureReasons = ["InstallFailed", "UpgradeFailed", "ReconciliationFailed", "ArtifactFailed"];
+      const retriesExhausted = hr.status?.installFailures >= 3 || hr.status?.upgradeFailures >= 3;
+      let errorDetail = "";
+      if (readyCondition?.status === "False") {
+        errorDetail = readyCondition.message || "";
+        // Extract the actionable part of long Helm error messages
+        const helmErrMatch = errorDetail.match(/(?:install|upgrade) retries exhausted|Helm install failed|Helm upgrade failed|failed to install|failed to create resource|timed out/i);
+        if (helmErrMatch) {
+          errorDetail = readyCondition.message.substring(0, 500);
+        }
+      }
+
       helmRelease = {
         ready: readyCondition?.status === "True",
         message: readyCondition?.message || "",
         lastTransition: readyCondition?.lastTransitionTime || "",
+        reason: readyCondition?.reason || "",
+        retriesExhausted: !!retriesExhausted,
+        errorDetail: errorDetail,
       };
       progress = 25;
       phase = "creating";
 
-      if (readyCondition?.status === "False" && readyCondition?.reason === "InstallFailed") {
+      if (readyCondition?.status === "False" && failureReasons.includes(readyCondition?.reason)) {
         phase = "failed";
+        if (retriesExhausted) {
+          helmRelease.message = `Deployment failed after max retries. Error: ${errorDetail || readyCondition.message}. The HelmRelease must be deleted and recreated to retry.`;
+        }
       }
     } catch (err) {
       if (err.statusCode === 404) {
@@ -1475,7 +1495,7 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
 // Auto-detects repo type (compose, helm, dockerfile, kustomize) and routes to the right strategy
 app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { url, branch, team, name } = req.body;
+    const { url, branch, team, name, securityContext } = req.body;
 
     if (!url || !isValidGitUrl(url)) {
       return res.status(400).json({ error: "Missing or invalid required field: url (must be a valid Git URL)" });
@@ -2470,6 +2490,8 @@ function classifyService(svcName, svc, composeParsed) {
 }
 
 // Detect container port from compose ports or Dockerfile EXPOSE
+// When multiple ports are exposed, prefer common HTTP ports over others.
+const PREFERRED_HTTP_PORTS = [80, 8080, 3000, 8000, 8888, 5000, 4200, 3001, 9090];
 function detectPort(svc, dockerfileContent) {
   // First: check compose ports (container side = right of colon)
   if (svc.ports && svc.ports.length > 0) {
@@ -2480,10 +2502,18 @@ function detectPort(svc, dockerfileContent) {
       if (num > 0 && num <= 65535) return num;
     }
   }
-  // Second: check Dockerfile EXPOSE
+  // Second: check Dockerfile EXPOSE — prefer common HTTP ports when multiple are exposed
   if (dockerfileContent) {
     const exposed = parseDockerfileExpose(dockerfileContent);
-    if (exposed.length > 0) return exposed[0];
+    if (exposed.length === 1) return exposed[0];
+    if (exposed.length > 1) {
+      // Pick the first port that matches a common HTTP server port
+      for (const preferred of PREFERRED_HTTP_PORTS) {
+        if (exposed.includes(preferred)) return preferred;
+      }
+      // No known HTTP port — return the lowest port (most likely the main service)
+      return Math.min(...exposed);
+    }
   }
   return 8080; // fallback
 }
@@ -4678,40 +4708,14 @@ async function registerOAuth2ProxyPath(hostname) {
   }
 }
 
-async function createBackendTLSRule(appName, namespace, serviceName) {
-  const dr = {
-    apiVersion: "networking.istio.io/v1",
-    kind: "DestinationRule",
-    metadata: {
-      name: `${appName}-tls`,
-      namespace: namespace,
-      labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": namespace },
-    },
-    spec: {
-      host: `${serviceName}.${namespace}.svc.cluster.local`,
-      trafficPolicy: {
-        tls: { mode: "SIMPLE", insecureSkipVerify: true },
-      },
-    },
-  };
-  try {
-    await customApi.createNamespacedCustomObject(
-      "networking.istio.io", "v1", namespace, "destinationrules", dr
-    );
-    console.log(`[deploy-git] Created DestinationRule for ${serviceName} in ${namespace}`);
-  } catch (err) {
-    if (err.statusCode === 409) {
-      await customApi.patchNamespacedCustomObject(
-        "networking.istio.io", "v1", namespace, "destinationrules", `${appName}-tls`,
-        dr,
-        undefined, undefined, undefined,
-        { headers: { "Content-Type": "application/merge-patch+json" } }
-      );
-      console.log(`[deploy-git] Updated DestinationRule for ${serviceName} in ${namespace}`);
-    } else {
-      console.log(`[deploy-git] DestinationRule creation skipped: ${err.message}`);
-    }
-  }
+// NOTE: createBackendTLSRule removed — Istio mTLS handles sidecar-to-sidecar encryption
+// automatically. Creating DestinationRules with tls.mode: SIMPLE breaks plaintext upstream
+// connections (e.g., docker-wireshark on port 3000) by attempting TLS handshake to a
+// non-TLS backend, causing "upstream connect error or disconnect/reset before headers".
+// Only create DestinationRules when the upstream service actually speaks TLS.
+async function createBackendTLSRule(_appName, _namespace, _serviceName) {
+  // Intentionally no-op. Kept as a function to avoid breaking callers.
+  // Istio PeerAuthentication STRICT handles mTLS between sidecars.
 }
 
 async function ensureKyvernoExclusions(namespace) {
@@ -4757,6 +4761,21 @@ async function shouldBePrivileged(appName, teamName) {
   } catch (err) {
     console.debug('[pipeline] Security exception check failed:', err.message);
     return false;
+  }
+}
+
+// Look up the security context from the most recent pipeline run for this app
+async function getSecurityContextFromPipeline(appName, teamName) {
+  if (!dbAvailable) return null;
+  try {
+    const result = await db.listRuns({ team: normalizeTeamName(teamName), limit: 5 });
+    const run = (result.runs || []).find(r => r.app_name === appName && r.metadata);
+    if (!run) return null;
+    const runMeta = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : (run.metadata || {});
+    return runMeta.securityContext || null;
+  } catch (err) {
+    console.debug('[pipeline] Security context lookup failed:', err.message);
+    return null;
   }
 }
 
@@ -4828,6 +4847,7 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
           ingressHost,
           env: envVars,
           privileged: await shouldBePrivileged(safeName, teamName),
+          securityContext: await getSecurityContextFromPipeline(safeName, teamName),
         });
 
         try {
@@ -4923,8 +4943,14 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
   console.error(`[deploy-git] Group ${groupId} timed out waiting for builds after ${maxIterations * pollInterval / 1000}s`);
 }
 
-function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env, privileged }) {
+function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env, privileged, securityContext }) {
   const safeEnv = Array.isArray(env) ? env.filter((e) => e && e.name) : [];
+
+  // Determine if we need privileged-level security context.
+  // securityContext (granular) takes precedence over the boolean privileged flag.
+  const sc = securityContext || {};
+  const needsPrivileged = privileged || sc.runAsRoot || false;
+
   const hr = {
     apiVersion: "helm.toolkit.fluxcd.io/v2",
     kind: "HelmRelease",
@@ -4965,10 +4991,10 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
           image: { repository: image, tag: tag, pullPolicy: "IfNotPresent" },
           port: port,
           replicas: replicas,
-          resources: privileged
+          resources: needsPrivileged
             ? { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "2", memory: "2Gi" } }
             : { requests: { cpu: "50m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } },
-          probes: privileged
+          probes: needsPrivileged
             ? { liveness: { type: "tcp", path: "/", initialDelaySeconds: 30, periodSeconds: 15, failureThreshold: 10 }, readiness: { type: "tcp", path: "/", initialDelaySeconds: 15, periodSeconds: 10, failureThreshold: 10 } }
             : { liveness: { path: "/", initialDelaySeconds: 10, periodSeconds: 10 }, readiness: { path: "/", initialDelaySeconds: 5, periodSeconds: 5 } },
           env: safeEnv,
@@ -4977,10 +5003,6 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
           enabled: !!ingressHost,
           host: ingressHost || "",
         },
-        ...(privileged ? {
-          podSecurityContext: { runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: "RuntimeDefault" } },
-          containerSecurityContext: { allowPrivilegeEscalation: true, readOnlyRootFilesystem: false, runAsNonRoot: false, runAsUser: 0 },
-        } : {}),
         autoscaling: { enabled: false },
         serviceMonitor: { enabled: false },
         networkPolicy: { enabled: true },
@@ -4988,6 +5010,45 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
       },
     },
   };
+
+  // Apply security context overrides (granular securityContext takes precedence over boolean privileged)
+  const values = hr.spec.values;
+  if (sc.runAsRoot) {
+    values.podSecurityContext = {
+      runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
+      seccompProfile: { type: "RuntimeDefault" },
+    };
+  }
+  // Writable filesystem
+  if (sc.writableFilesystem || sc.runAsRoot) {
+    values.containerSecurityContext = values.containerSecurityContext || {};
+    values.containerSecurityContext.readOnlyRootFilesystem = false;
+  }
+  // Privilege escalation
+  if (sc.allowPrivilegeEscalation || sc.runAsRoot) {
+    values.containerSecurityContext = values.containerSecurityContext || {};
+    values.containerSecurityContext.allowPrivilegeEscalation = true;
+  }
+  // Extra capabilities (e.g., NET_ADMIN, NET_RAW)
+  if (sc.capabilities && sc.capabilities.length > 0) {
+    values.containerSecurityContext = values.containerSecurityContext || {};
+    values.containerSecurityContext.capabilities = {
+      add: sc.capabilities,
+      drop: [],
+    };
+  }
+  // If root is set, ensure container-level context matches
+  if (sc.runAsRoot) {
+    values.containerSecurityContext = values.containerSecurityContext || {};
+    values.containerSecurityContext.runAsNonRoot = false;
+    values.containerSecurityContext.runAsUser = 0;
+  }
+  // Fallback: old-style boolean privileged flag with no granular sc
+  if (privileged && !sc.runAsRoot && !sc.writableFilesystem && !sc.capabilities) {
+    values.podSecurityContext = { runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: "RuntimeDefault" } };
+    values.containerSecurityContext = { allowPrivilegeEscalation: true, readOnlyRootFilesystem: false, runAsNonRoot: false, runAsUser: 0 };
+  }
+
   return hr;
 }
 
@@ -5116,6 +5177,66 @@ async function deployViaGitOps(manifest, nsName, appName, actor) {
   } else {
     await applyManifest(manifest, nsName);
   }
+}
+
+// Monitor a HelmRelease after deploy and auto-retry if it hits max retries.
+// Returns { ready, error } — ready=true if deploy succeeded, error string if failed.
+async function waitForHelmRelease(nsName, appName, timeoutSeconds = 180) {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  let lastMessage = "";
+
+  while (Date.now() < deadline) {
+    try {
+      const hrResp = await customApi.getNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", nsName, "helmreleases", appName
+      );
+      const hr = hrResp.body;
+      const readyCondition = (hr.status?.conditions || []).find(c => c.type === "Ready");
+
+      if (readyCondition?.status === "True") {
+        return { ready: true, error: null };
+      }
+
+      if (readyCondition?.status === "False") {
+        lastMessage = readyCondition.message || "Unknown error";
+        const retriesExhausted = (hr.status?.installFailures >= 3) || (hr.status?.upgradeFailures >= 3);
+
+        if (retriesExhausted) {
+          // Auto-recover: delete the failed HelmRelease so it can be recreated
+          console.log(`[deploy] HelmRelease ${appName} in ${nsName} hit max retries — deleting for retry`);
+          try {
+            // Remove finalizers first
+            await customApi.patchNamespacedCustomObject(
+              "helm.toolkit.fluxcd.io", "v2", nsName, "helmreleases", appName,
+              { metadata: { finalizers: null } },
+              undefined, undefined, undefined,
+              { headers: { "Content-Type": "application/merge-patch+json" } }
+            );
+          } catch (e) { console.debug('[deploy] Finalizer removal best-effort:', e.message); }
+          try {
+            await customApi.deleteNamespacedCustomObject("helm.toolkit.fluxcd.io", "v2", nsName, "helmreleases", appName);
+          } catch (e) { console.debug('[deploy] HelmRelease delete best-effort:', e.message); }
+
+          // Trigger Flux reconciliation to recreate from Git
+          if (gitops.isEnabled()) {
+            try { await gitops.triggerFluxReconcile(); } catch (e) { console.debug('[deploy] Flux reconcile best-effort:', e.message); }
+          }
+
+          return { ready: false, error: `HelmRelease failed after max retries: ${lastMessage}. It has been deleted and will be recreated by Flux.` };
+        }
+      }
+    } catch (err) {
+      if (err.statusCode === 404) {
+        // HelmRelease not created yet — keep waiting
+      } else {
+        console.debug('[deploy] HelmRelease status check error:', err.message);
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 5000));
+  }
+
+  return { ready: false, error: lastMessage || "Timed out waiting for HelmRelease to become ready" };
 }
 
 async function undeployViaGitOps(nsName, appName, actor) {
@@ -5932,7 +6053,7 @@ function getDefaultGates() {
 // POST /api/pipeline/runs — Create a new pipeline run
 app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { appName, gitUrl, branch, imageUrl, sourceType, team, classification, contact } = req.body;
+    const { appName, gitUrl, branch, imageUrl, sourceType, team, classification, contact, securityContext, port } = req.body;
     if (!appName || !team) return res.status(400).json({ error: "appName and team are required" });
     if (!gitUrl && !imageUrl) return res.status(400).json({ error: "gitUrl or imageUrl is required" });
 
@@ -5966,6 +6087,21 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
     for (const gateSpec of getDefaultGates()) {
       const gate = await db.createGate(run.id, gateSpec);
       gates.push(gate);
+    }
+
+    // Store security context and port override in run metadata if provided
+    if (securityContext || port) {
+      const runMetadata = {};
+      if (securityContext) runMetadata.securityContext = securityContext;
+      if (port) runMetadata.portOverride = port;
+      try {
+        await db.pool.query(
+          "UPDATE pipeline_runs SET metadata = $1::jsonb, port = $2, updated_at = NOW() WHERE id = $3",
+          [JSON.stringify(runMetadata), port || null, run.id]
+        );
+      } catch (metaErr) {
+        console.debug('[pipeline] Metadata/port storage best-effort:', metaErr.message);
+      }
     }
 
     await db.auditLog(run.id, "run_created", actor, `Pipeline run created for ${appName}`, { team, sourceType: run.source_type });
@@ -7374,6 +7510,18 @@ async function executePipelineDeploy(run, actor) {
       console.debug('[pipeline] Security exception check for deploy best-effort:', e.message);
     }
 
+    // Extract security context from run metadata (set during pipeline creation)
+    let pipelineSecurityContext = null;
+    try {
+      const runMeta = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {});
+      if (runMeta.securityContext) {
+        pipelineSecurityContext = runMeta.securityContext;
+        logger.info('pipeline', `Run ${run.id} has security context from pipeline creation`, { runId: run.id, sc: pipelineSecurityContext });
+      }
+    } catch (e) {
+      console.debug('[pipeline] Security context metadata read best-effort:', e.message);
+    }
+
     // Check if the pipeline already built an image (ARTIFACT_STORE gate passed)
     const builtImage = run.image_url || (run.gates || []).find(g => g.gate_name === 'ARTIFACT_STORE' && g.status === 'passed' && g.output)?.output;
 
@@ -7397,9 +7545,19 @@ async function executePipelineDeploy(run, actor) {
         replicas: 2,
         ingressHost: ingressHost,
         privileged: needsPrivileged,
+        securityContext: pipelineSecurityContext,
       });
 
       await deployViaGitOps(manifest, nsName, safeName, actor);
+
+      // Monitor HelmRelease status — auto-retry on max retry failure
+      const hrStatus = await waitForHelmRelease(nsName, safeName, 180);
+      if (!hrStatus.ready && hrStatus.error) {
+        logger.warn('pipeline', `HelmRelease ${safeName} not ready: ${hrStatus.error}`, { runId: run.id });
+        await db.auditLog(run.id, "deploy_warning", actor, `HelmRelease issue: ${hrStatus.error}`);
+        // Don't fail the pipeline deploy — the HelmRelease may recover on its own via Flux
+      }
+
       const deployedUrl = `https://${ingressHost}`;
 
       // Register in app portal
@@ -7434,6 +7592,7 @@ async function executePipelineDeploy(run, actor) {
         name: safeName,
       };
       if (needsPrivileged) deployPayload.privileged = true;
+      if (pipelineSecurityContext) deployPayload.securityContext = pipelineSecurityContext;
       const deployResult = await new Promise((resolve, reject) => {
         const postData = JSON.stringify(deployPayload);
         const req = http.request({
@@ -7532,9 +7691,17 @@ async function executePipelineDeploy(run, actor) {
         replicas: 2,
         ingressHost: ingressHost,
         privileged: needsPrivileged,
+        securityContext: pipelineSecurityContext,
       });
 
       await deployViaGitOps(manifest, nsName, safeName, actor);
+
+      // Monitor HelmRelease status — auto-retry on max retry failure
+      const hrStatus2 = await waitForHelmRelease(nsName, safeName, 180);
+      if (!hrStatus2.ready && hrStatus2.error) {
+        logger.warn('pipeline', `HelmRelease ${safeName} not ready: ${hrStatus2.error}`, { runId: run.id });
+        await db.auditLog(run.id, "deploy_warning", actor, `HelmRelease issue: ${hrStatus2.error}`);
+      }
 
       const deployedUrl = `https://${ingressHost}`;
       await db.updateRunStatus(run.id, "deployed", { deployedUrl });
@@ -7579,9 +7746,18 @@ async function executePipelineDeploy(run, actor) {
       console.error(`[pipeline] DAST setup error for run ${run.id}: ${dastSetupErr.message}`);
     }
   } catch (err) {
+    // Provide actionable error message
+    let errorMsg = err.message;
+    if (errorMsg.includes("Build job failed")) {
+      errorMsg = "Container image build failed. Check the build logs in the pipeline run detail.";
+    } else if (errorMsg.includes("Timed out")) {
+      errorMsg = "Deployment timed out. The HelmRelease may still be reconciling. Check the app status page.";
+    } else if (errorMsg.includes("No git URL or image URL")) {
+      errorMsg = "No source available for deployment. Ensure the pipeline run has a git URL or pre-built image.";
+    }
     await db.updateRunStatus(run.id, "failed");
-    await db.auditLog(run.id, "deploy_failed", actor, `Deploy failed: ${err.message}`);
-    logger.error('pipeline', `Deploy failed for run ${run.id}`, { runId: run.id, error: err.message });
+    await db.auditLog(run.id, "deploy_failed", actor, `Deploy failed: ${errorMsg}`, { originalError: err.message });
+    logger.error('pipeline', `Deploy failed for run ${run.id}: ${errorMsg}`, { runId: run.id, error: err.message });
   }
 }
 

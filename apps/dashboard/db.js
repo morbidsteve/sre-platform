@@ -117,6 +117,18 @@ DO $$ BEGIN
   ALTER TABLE pipeline_gates ADD COLUMN IF NOT EXISTS job_name TEXT;
 EXCEPTION WHEN others THEN NULL;
 END $$;
+
+-- Migration: add metadata JSONB column for storing security context, port overrides, etc.
+DO $$ BEGIN
+  ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+
+-- Migration: add port column for storing the detected/overridden container port
+DO $$ BEGIN
+  ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS port INTEGER;
+EXCEPTION WHEN others THEN NULL;
+END $$;
 `;
 
 // ── Init with retry ─────────────────────────────────────────────────────────
@@ -471,17 +483,30 @@ async function getRunPackage(id) {
 
 // ── Active Runs (for crash recovery) ──────────────────────────────────────
 
-async function getActiveRuns() {
+async function getActiveRuns(team) {
   if (!pool) return [];
-  const { rows: runs } = await query(
-    "SELECT * FROM pipeline_runs WHERE status IN ('scanning', 'deploying', 'pending') ORDER BY created_at"
-  );
-  for (const run of runs) {
-    const { rows: gates } = await query(
-      "SELECT * FROM pipeline_gates WHERE run_id = $1 ORDER BY gate_order",
-      [run.id]
+  const statuses = ['pending', 'scanning', 'review_pending', 'approved', 'deploying'];
+  let sql = "SELECT * FROM pipeline_runs WHERE status = ANY($1) ORDER BY created_at DESC";
+  const params = [statuses];
+  if (team) {
+    sql = "SELECT * FROM pipeline_runs WHERE status = ANY($1) AND team = $2 ORDER BY created_at DESC";
+    params.push(team);
+  }
+  const { rows: runs } = await query(sql, params);
+  if (runs.length > 0) {
+    const runIds = runs.map(r => r.id);
+    const { rows: allGates } = await query(
+      "SELECT id, run_id, gate_name, short_name, gate_order, status, progress, summary, tool, completed_at FROM pipeline_gates WHERE run_id = ANY($1) ORDER BY gate_order",
+      [runIds]
     );
-    run.gates = gates;
+    const gatesByRun = {};
+    for (const g of allGates) {
+      if (!gatesByRun[g.run_id]) gatesByRun[g.run_id] = [];
+      gatesByRun[g.run_id].push(g);
+    }
+    for (const run of runs) {
+      run.gates = gatesByRun[run.id] || [];
+    }
   }
   return runs;
 }
