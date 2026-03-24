@@ -176,6 +176,43 @@ spec:
                       policies=external-secrets \
                       ttl=1h" 2>&1 || true
 
+                  # -------------------------------------------------------
+                  # OIDC Auth for Keycloak SSO
+                  # Enables "Sign in with Keycloak" on the OpenBao UI.
+                  # Uses http:// discovery URL because OpenBao pod has no
+                  # Istio sidecar and the internal Keycloak service returns
+                  # http:// issuer (matching the discovery URL).
+                  # NIST Controls: IA-2, IA-8, AC-2
+                  # -------------------------------------------------------
+                  OIDC_AUTH=$(echo "$K8S_AUTH" | grep -c '"oidc/"' || true)
+                  if [ "$OIDC_AUTH" -eq 0 ]; then
+                    echo "Enabling OIDC auth method..."
+                    kubectl exec -n openbao "$TARGET_POD" -- \
+                      sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault auth enable oidc" 2>&1 || true
+                  else
+                    echo "OIDC auth already enabled."
+                  fi
+
+                  echo "Configuring OIDC auth..."
+                  kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault write auth/oidc/config \
+                      oidc_discovery_url='http://keycloak.${SRE_DOMAIN}/realms/sre' \
+                      oidc_client_id='openbao' \
+                      oidc_client_secret='LMEeknLI2RKfPwzhIPhUZlFk4PUEexb9' \
+                      default_role='sre-user'" 2>&1 || true
+
+                  echo "Writing OIDC sre-user role..."
+                  kubectl exec -n openbao "$TARGET_POD" -- \
+                    sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault write auth/oidc/role/sre-user \
+                      bound_audiences='openbao' \
+                      allowed_redirect_uris='https://openbao.${SRE_DOMAIN}/ui/vault/auth/oidc/oidc/callback' \
+                      allowed_redirect_uris='http://localhost:8250/oidc/callback' \
+                      user_claim='preferred_username' \
+                      groups_claim='groups' \
+                      oidc_scopes='openid,profile,email,groups' \
+                      policies='default' \
+                      ttl=1h" 2>&1 || true
+
                   echo "Post-unseal configuration complete."
               resources:
                 requests:
