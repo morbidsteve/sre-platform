@@ -120,10 +120,11 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
   };
 
   const hostsEntry = ingressData
-    ? `${ingressData.nodeIp}  ${ingressData.routes
+    ? ingressData.routes
         .map((r) => r.hosts[0])
         .filter(Boolean)
-        .join(' ')}`
+        .map((h) => `${ingressData.nodeIp}  ${h}`)
+        .join('\n')
     : '';
 
   return (

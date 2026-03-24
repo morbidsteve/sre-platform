@@ -15,6 +15,7 @@ metadata:
 data:
   hosts-entries: |
     # SRE Platform — MetalLB gateway IP for all *.${SRE_DOMAIN} services
+    # Platform services
     192.168.2.200 harbor.${SRE_DOMAIN}
     192.168.2.200 dashboard.${SRE_DOMAIN}
     192.168.2.200 grafana.${SRE_DOMAIN}
@@ -25,6 +26,16 @@ data:
     192.168.2.200 portal.${SRE_DOMAIN}
     192.168.2.200 prometheus.${SRE_DOMAIN}
     192.168.2.200 alertmanager.${SRE_DOMAIN}
+    192.168.2.200 dsop.${SRE_DOMAIN}
+    192.168.2.200 compliance.${SRE_DOMAIN}
+    # Deployed tenant apps
+    192.168.2.200 wireshark.${SRE_DOMAIN}
+    192.168.2.200 ws.${SRE_DOMAIN}
+    192.168.2.200 statusboard.${SRE_DOMAIN}
+    192.168.2.200 intel.${SRE_DOMAIN}
+    192.168.2.200 admin-tools.${SRE_DOMAIN}
+    192.168.2.200 nginx-demo.${SRE_DOMAIN}
+    192.168.2.200 keystone.${SRE_DOMAIN}
   registries-yaml: |
     mirrors:
       harbor.${SRE_DOMAIN}:
@@ -63,13 +74,42 @@ spec:
             - /bin/sh
             - -c
             - |
-              # Add SRE platform hosts entries if not already present
-              MARKER="# SRE-PLATFORM-MANAGED"
+              # Manage SRE platform hosts entries using start/end markers
+              # so the managed block can be replaced when the ConfigMap updates
+              MARKER_START="# BEGIN SRE-PLATFORM-MANAGED"
+              MARKER_END="# END SRE-PLATFORM-MANAGED"
+              LEGACY_MARKER="# SRE-PLATFORM-MANAGED"
+              HOSTS="/host-etc/hosts"
               while true; do
-                if ! grep -q "$${MARKER}" /host-etc/hosts; then
-                  echo "" >> /host-etc/hosts
-                  echo "$${MARKER}" >> /host-etc/hosts
-                  cat /config/hosts-entries >> /host-etc/hosts
+                # Build desired content
+                DESIRED="$${MARKER_START}
+              $(cat /config/hosts-entries)
+              $${MARKER_END}"
+                # Remove legacy one-line marker block if present (from old DaemonSet)
+                if grep -q "$${LEGACY_MARKER}" "$${HOSTS}" 2>/dev/null && ! grep -q "$${MARKER_START}" "$${HOSTS}" 2>/dev/null; then
+                  # Strip everything from the legacy marker to end of file
+                  LEGACY_LINE=$(grep -n "$${LEGACY_MARKER}" "$${HOSTS}" | head -1 | cut -d: -f1)
+                  if [ -n "$${LEGACY_LINE}" ]; then
+                    head -n $$(($${LEGACY_LINE} - 1)) "$${HOSTS}" > "$${HOSTS}.tmp"
+                    mv "$${HOSTS}.tmp" "$${HOSTS}"
+                    echo "Removed legacy SRE-PLATFORM-MANAGED block"
+                  fi
+                fi
+                # Check if managed block exists and matches current config
+                if grep -q "$${MARKER_START}" "$${HOSTS}" 2>/dev/null; then
+                  # Extract current managed block for comparison
+                  CURRENT=$(sed -n "/$${MARKER_START}/,/$${MARKER_END}/p" "$${HOSTS}")
+                  if [ "$${CURRENT}" != "$${DESIRED}" ]; then
+                    # Replace the managed block with updated entries
+                    sed -i "/$${MARKER_START}/,/$${MARKER_END}/d" "$${HOSTS}"
+                    echo "" >> "$${HOSTS}"
+                    echo "$${DESIRED}" >> "$${HOSTS}"
+                    echo "Updated SRE platform hosts entries"
+                  fi
+                else
+                  # First time — add the managed block
+                  echo "" >> "$${HOSTS}"
+                  echo "$${DESIRED}" >> "$${HOSTS}"
                   echo "Added SRE platform hosts entries"
                 fi
                 # Write RKE2 registries.yaml for Harbor TLS trust
@@ -79,7 +119,7 @@ spec:
                   cp /config/registries-yaml "$${REGISTRIES}"
                   echo "Wrote RKE2 registries.yaml (RKE2 restart needed to pick up)"
                 fi
-                sleep 3600
+                sleep 300
               done
           volumeMounts:
             - name: host-etc

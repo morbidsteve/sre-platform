@@ -398,9 +398,11 @@ app.get("/api/health", async (req, res) => {
 app.get("/api/ingress", async (req, res) => {
   try {
     const routes = await getIngressRoutes();
+    const gatewayIp = await getGatewayIp();
     const nodeIp = await getFirstNodeIp();
     const httpsPort = await getGatewayPort();
-    res.json({ routes, nodeIp, httpsPort });
+    // Prefer LoadBalancer IP (MetalLB) over node IP for DNS setup
+    res.json({ routes, nodeIp: gatewayIp || nodeIp, httpsPort });
   } catch (err) {
     console.error("Error fetching ingress:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -4524,6 +4526,23 @@ async function getFirstNodeIp() {
     (a) => a.type === "InternalIP"
   );
   return ip?.address || "unknown";
+}
+
+async function getGatewayIp() {
+  try {
+    const resp = await k8sApi.readNamespacedService(
+      "istio-gateway",
+      "istio-system"
+    );
+    const ingress = resp.body.status?.loadBalancer?.ingress;
+    if (ingress && ingress.length > 0) {
+      return ingress[0].ip || null;
+    }
+    return null;
+  } catch (err) {
+    console.debug('[networking] Gateway IP lookup failed:', err.message);
+    return null;
+  }
 }
 
 async function getGatewayPort() {

@@ -37,10 +37,10 @@ export function DNSSetup({ hostsEntry }: DNSSetupProps) {
         onClick={handleCopy}
         title="Click to copy"
       >
-        <code className="text-[13px] font-mono text-text-primary break-all">
+        <pre className="text-[13px] font-mono text-text-primary whitespace-pre overflow-x-auto pr-8">
           {hostsEntry || 'Loading...'}
-        </code>
-        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-text-dim group-hover:text-accent transition-colors">
+        </pre>
+        <span className="absolute right-2 top-2 text-text-dim group-hover:text-accent transition-colors">
           {copied ? (
             <Check className="w-4 h-4 text-green" />
           ) : (

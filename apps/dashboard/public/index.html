@@ -4325,6 +4325,7 @@ var sessionWarnTimer = null;
 var statusRefreshTimer = null;
 var auditRefreshTimer = null;
 var pipelineRefreshTimer = null;
+var appGalleryRefreshTimer = null;
 var issmRefreshTimer = null;
 var pipelineCurrentOffset = 0;
 var pipelinePageLimit = 20;
@@ -4403,6 +4404,7 @@ function switchTab(tab, btn) {
   clearInterval(auditRefreshTimer);
   clearInterval(clusterRefreshTimer);
   clearInterval(pipelineRefreshTimer);
+  clearInterval(appGalleryRefreshTimer);
   clearInterval(issmRefreshTimer);
 
   if (tab === 'dashboard') {
@@ -4411,6 +4413,7 @@ function switchTab(tab, btn) {
   if (tab === 'applications') {
     loadAppGallery();
     loadTenants();
+    appGalleryRefreshTimer = setInterval(loadAppGallery, 8000);
   }
   if (tab === 'platform') {
     loadServiceTiles();
@@ -4977,9 +4980,16 @@ function openService(url) {
 
 function renderHostsEntry() {
   if (!ingressData) return;
-  var allHosts = ingressData.routes.map(function(r) { return r.hosts[0]; }).filter(Boolean).join(' ');
+  var lines = ingressData.routes
+    .map(function(r) { return r.hosts[0]; })
+    .filter(Boolean)
+    .map(function(h) { return ingressData.nodeIp + '  ' + h; })
+    .join('\n');
   var el = document.getElementById('hosts-entry');
-  if (el) el.textContent = ingressData.nodeIp + '  ' + allHosts;
+  if (el) {
+    el.style.whiteSpace = 'pre';
+    el.textContent = lines;
+  }
 }
 
 // ── Favorites ───────────────────────────────────────────────────────────────
@@ -5022,9 +5032,40 @@ var allGalleryApps = [];
 
 async function loadAppGallery() {
   try {
-    var resp = await fetch('/api/apps');
-    var data = await resp.json();
-    allGalleryApps = data.apps || [];
+    var results = await Promise.all([
+      fetch('/api/apps', { credentials: 'include' }).then(function(r) { return r.json(); }),
+      fetch('/api/pipeline/active', { credentials: 'include' }).then(function(r) { return r.json(); }).catch(function() { return { runs: [] }; })
+    ]);
+    var deployedApps = results[0].apps || [];
+    var activeRuns = results[1].runs || [];
+
+    // Convert pipeline runs to card objects, exclude runs that match a deployed app
+    var deployedNames = {};
+    deployedApps.forEach(function(a) { deployedNames[(a.team || a.namespace) + '/' + a.name] = true; });
+
+    var pipelineCards = activeRuns
+      .filter(function(r) { return !deployedNames[(r.team || '') + '/' + r.app_name]; })
+      .map(function(r) {
+        return {
+          _isPipelineRun: true,
+          _runId: r.id,
+          name: r.app_name,
+          namespace: r.team,
+          team: r.team,
+          ready: false,
+          image: r.image_url || r.git_url || '',
+          tag: '',
+          port: null,
+          host: '',
+          url: '',
+          status: r.status,
+          gates: r.gates || [],
+          classification: r.classification,
+          created_at: r.created_at
+        };
+      });
+
+    allGalleryApps = pipelineCards.concat(deployedApps);
     renderAppGallery(allGalleryApps);
   } catch (err) {
     console.error('Failed to load app gallery:', err);
@@ -5043,7 +5084,8 @@ function filterAppGallery() {
     return a.name.toLowerCase().includes(q) ||
            (a.team || '').toLowerCase().includes(q) ||
            (a.image || '').toLowerCase().includes(q) ||
-           (a.namespace || '').toLowerCase().includes(q);
+           (a.namespace || '').toLowerCase().includes(q) ||
+           (a._isPipelineRun && (a.status || '').toLowerCase().includes(q));
   });
   renderAppGallery(filtered);
 }
@@ -5063,9 +5105,12 @@ function renderAppGallery(apps) {
     return;
   }
 
-  countEl.textContent = apps.length + ' app' + (apps.length !== 1 ? 's' : '');
+  var pipeCount = apps.filter(function(a) { return a._isPipelineRun; }).length;
+  var appCount = apps.length - pipeCount;
+  countEl.textContent = appCount + ' app' + (appCount !== 1 ? 's' : '') + (pipeCount > 0 ? ', ' + pipeCount + ' in pipeline' : '');
 
   gallery.innerHTML = apps.map(function(a) {
+    if (a._isPipelineRun) return renderPipelineAppTile(a);
     var statusCls = a.ready ? 'running' : 'deploying';
     var statusText = a.ready ? 'Running' : 'Deploying';
     var imageStr = a.image ? (esc(a.image) + ':' + esc(a.tag)) : 'unknown';
@@ -5103,6 +5148,64 @@ function renderAppGallery(apps) {
       '</div>' +
     '</div>';
   }).join('');
+}
+
+function renderPipelineAppTile(a) {
+  var st = a.status || 'pending';
+  var borderColor = st === 'scanning' || st === 'deploying' ? 'var(--accent)' :
+                    st === 'review_pending' ? 'var(--yellow)' :
+                    st === 'approved' ? 'var(--green)' : 'var(--text-dim)';
+  var dotColor = st === 'scanning' || st === 'deploying' ? 'blue' :
+                 st === 'review_pending' ? 'yellow' :
+                 st === 'approved' ? 'green' : 'gray';
+  var dotAnim = (st === 'scanning' || st === 'deploying') ? 'animation:pulse 1.5s infinite;' : '';
+
+  // Gate progress
+  var gates = a.gates || [];
+  var passed = gates.filter(function(g) { return g.status === 'passed' || g.status === 'warning'; }).length;
+  var failed = gates.filter(function(g) { return g.status === 'failed'; }).length;
+  var running = gates.filter(function(g) { return g.status === 'running'; }).length;
+  var total = gates.length || 8;
+  var gateCircles = gates.map(function(g) {
+    var c = g.status === 'passed' ? 'var(--green)' : g.status === 'warning' ? 'var(--yellow)' : g.status === 'failed' ? 'var(--red)' : g.status === 'running' ? 'var(--accent)' : 'var(--surface-light)';
+    var anim = g.status === 'running' ? 'animation:pulse 1s infinite;' : '';
+    return '<span title="' + esc(g.short_name || g.gate_name || '') + ': ' + esc(g.status) + '" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + c + ';' + anim + '"></span>';
+  }).join('');
+
+  // Status message
+  var statusMsg = st === 'scanning' ? 'Scanning... ' + passed + '/' + total + ' gates' :
+                  st === 'review_pending' ? 'Awaiting ISSM Review' :
+                  st === 'approved' ? 'Approved — Ready to Deploy' :
+                  st === 'deploying' ? 'Deploying...' :
+                  st === 'pending' ? 'Pipeline starting...' : st;
+
+  var timeAgo = a.created_at ? pipelineTimeAgo(a.created_at) : '';
+
+  var wizardUrl = 'https://dsop.apps.sre.example.com?runId=' + encodeURIComponent(a._runId);
+
+  return '<div class="app-tile" style="border-left:3px solid ' + borderColor + ';cursor:pointer;" onclick="showRunDetail(\'' + esc(a._runId) + '\')">' +
+    '<div class="app-tile-header">' +
+      '<div class="app-tile-name">' +
+        '<span class="health-dot ' + dotColor + '" style="' + dotAnim + '"></span>' +
+        esc(a.name) +
+      '</div>' +
+      renderPipeBadge(st) +
+    '</div>' +
+    '<div style="display:flex;gap:4px;align-items:center;margin:6px 0;">' + gateCircles + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">' + statusMsg +
+      (failed > 0 ? ' <span style="color:var(--red);">(' + failed + ' failed)</span>' : '') +
+    '</div>' +
+    '<div class="app-tile-meta">' +
+      '<span>&#x1F465; ' + esc(a.team || '') + '</span>' +
+      '<span>' + timeAgo + '</span>' +
+    '</div>' +
+    '<div class="app-tile-actions">' +
+      '<button class="btn btn-sm" onclick="event.stopPropagation();showRunDetail(\'' + esc(a._runId) + '\')" style="font-size:11px;padding:4px 10px;">Details</button>' +
+      '<a class="btn btn-sm btn-primary" href="' + esc(wizardUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;padding:4px 10px;text-decoration:none;">Open Wizard</a>' +
+      (st === 'approved' ? '<button class="btn btn-sm btn-success" onclick="event.stopPropagation();confirmDeployPipelineRun(\'' + esc(a._runId) + '\',\'' + esc(a.name) + '\')" style="font-size:11px;padding:4px 10px;">Deploy</button>' : '') +
+      '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();confirmDeletePipelineRun(\'' + esc(a._runId) + '\',\'' + esc(a.name) + '\')" style="font-size:11px;padding:4px 10px;">Delete</button>' +
+    '</div>' +
+  '</div>';
 }
 
 async function deleteAppFromGallery(namespace, name) {
