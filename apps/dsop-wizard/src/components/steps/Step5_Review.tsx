@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getConfig } from '../../config';
 import {
   ArrowLeft,
   Rocket,
@@ -855,7 +856,7 @@ export function Step5_Review({
           <div className="flex items-center gap-2 md:col-span-2">
             <span className="text-gray-500 w-28">URL:</span>
             <span className="text-cyan-400 font-mono">
-              {appInfo.name || 'my-app'}.apps.sre.example.com
+              {appInfo.name || 'my-app'}.{getConfig().domain}
             </span>
           </div>
           {pipelineRun && (

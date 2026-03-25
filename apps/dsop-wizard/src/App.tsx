@@ -10,6 +10,7 @@ import { Step7_Complete } from './components/steps/Step7_Complete';
 import { useWizard } from './hooks/useWizard';
 import { useUser } from './hooks/useUser';
 import { Spinner } from './components/ui/Spinner';
+import { getConfig } from './config';
 
 export default function App() {
   const { user, loading: userLoading } = useUser();
@@ -198,7 +199,7 @@ export default function App() {
             appName={state.appInfo.name || 'my-app'}
             deployedUrl={
               state.deployedUrl ||
-              `https://${state.appInfo.name || 'my-app'}.apps.sre.example.com`
+              `https://${state.appInfo.name || 'my-app'}.${getConfig().domain}`
             }
             classification={state.appInfo.classification}
             gates={state.gates}

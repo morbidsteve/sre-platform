@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { SkeletonCard } from '../ui/Skeleton';
 
 interface ApplicationsTabProps {
@@ -10,6 +11,7 @@ interface ApplicationsTabProps {
 }
 
 export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTabProps) {
+  const config = useConfig();
   const { apps: appsData } = useData();
   const { apps, loading, refreshApps } = appsData;
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,11 +36,11 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
   };
 
   const handleOpenService = (url: string) => {
-    if (url.includes('dsop.apps.sre.example.com')) {
+    if (url.includes(`dsop.${config.domain}`)) {
       onOpenApp(url, 'DSOP Security Pipeline');
       return;
     }
-    if (url.includes('portal.apps.sre.example.com')) {
+    if (url.includes(`portal.${config.domain}`)) {
       onOpenApp(url, 'App Portal');
       return;
     }
@@ -130,7 +132,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map((app) => {
             const hasUrl = !!(app.url && app.host);
-            const grafanaUrl = `https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22${encodeURIComponent(app.namespace)}%5C%22%7D%22%7D%5D%7D`;
+            const grafanaUrl = `${serviceUrl(config, 'grafana')}/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22${encodeURIComponent(app.namespace)}%5C%22%7D%22%7D%5D%7D`;
 
             return (
               <div

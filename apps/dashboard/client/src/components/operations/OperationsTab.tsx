@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs } from '../ui/Tabs';
 import { SkeletonCard } from '../ui/Skeleton';
+import { useConfig } from '../../context/ConfigContext';
 import { ServiceHealthGrid } from '../platform/ServiceHealthGrid';
 import { DNSSetup } from '../platform/DNSSetup';
 import { NodesPanel } from '../cluster/NodesPanel';
@@ -48,6 +49,7 @@ interface OperationsTabProps {
 }
 
 export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
+  const config = useConfig();
   const [subTab, setSubTab] = useState('services');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -99,7 +101,7 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
 
     // Keycloak admin console uses separate master realm credentials
     if (lname.includes('keycloak')) {
-      if (window.confirm('Keycloak Admin Console uses separate credentials:\n\nUsername: admin\nPassword: 03F2tLffxi\n\nOpen Keycloak?')) {
+      if (window.confirm('Keycloak Admin Console uses separate credentials.\n\nSee Admin > Credentials for details.\n\nOpen Keycloak?')) {
         window.open(url, '_blank', 'noopener');
       }
       return;
@@ -118,11 +120,11 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
     }
 
     // DSOP wizard — open in app frame modal
-    if (url && url.includes('dsop.apps.sre.example.com')) {
+    if (url && url.includes(`dsop.${config.domain}`)) {
       onOpenApp(url, 'DSOP Security Pipeline');
       return;
     }
-    if (url && url.includes('portal.apps.sre.example.com')) {
+    if (url && url.includes(`portal.${config.domain}`)) {
       onOpenApp(url, 'App Portal');
       return;
     }

@@ -37,18 +37,17 @@ export interface PlatformServiceDef {
   serviceName: string;
   icon: string;
   description: string;
-  url: string;
 }
 
 export const PLATFORM_SERVICES: PlatformServiceDef[] = [
-  { name: 'grafana', namespace: 'monitoring', serviceName: 'kube-prometheus-stack-grafana', icon: 'chart', description: 'Dashboards & observability', url: 'https://grafana.apps.sre.example.com' },
-  { name: 'prometheus', namespace: 'monitoring', serviceName: 'kube-prometheus-stack-prometheus', icon: 'search', description: 'Metrics collection & alerting rules', url: 'https://prometheus.apps.sre.example.com' },
-  { name: 'alertmanager', namespace: 'monitoring', serviceName: 'kube-prometheus-stack-alertmanager', icon: 'bell', description: 'Alert routing & notifications', url: 'https://alertmanager.apps.sre.example.com' },
-  { name: 'harbor', namespace: 'harbor', serviceName: 'harbor-core', icon: 'container', description: 'Container image registry', url: 'https://harbor.apps.sre.example.com' },
-  { name: 'keycloak', namespace: 'keycloak', serviceName: 'keycloak', icon: 'key', description: 'Identity & access management', url: 'https://keycloak.apps.sre.example.com' },
-  { name: 'neuvector', namespace: 'neuvector', serviceName: 'neuvector-service-webui', icon: 'shield', description: 'Container security platform', url: 'https://neuvector.apps.sre.example.com' },
-  { name: 'openbao', namespace: 'openbao', serviceName: 'openbao', icon: 'lock', description: 'Secrets management', url: 'https://openbao.apps.sre.example.com' },
-  { name: 'dashboard', namespace: 'sre-dashboard', serviceName: 'sre-dashboard', icon: 'layout', description: 'This SRE Platform Dashboard', url: 'https://dashboard.apps.sre.example.com' },
+  { name: 'grafana', namespace: 'monitoring', serviceName: 'kube-prometheus-stack-grafana', icon: 'chart', description: 'Dashboards & observability' },
+  { name: 'prometheus', namespace: 'monitoring', serviceName: 'kube-prometheus-stack-prometheus', icon: 'search', description: 'Metrics collection & alerting rules' },
+  { name: 'alertmanager', namespace: 'monitoring', serviceName: 'kube-prometheus-stack-alertmanager', icon: 'bell', description: 'Alert routing & notifications' },
+  { name: 'harbor', namespace: 'harbor', serviceName: 'harbor-core', icon: 'container', description: 'Container image registry' },
+  { name: 'keycloak', namespace: 'keycloak', serviceName: 'keycloak', icon: 'key', description: 'Identity & access management' },
+  { name: 'neuvector', namespace: 'neuvector', serviceName: 'neuvector-service-webui', icon: 'shield', description: 'Container security platform' },
+  { name: 'openbao', namespace: 'openbao', serviceName: 'openbao', icon: 'lock', description: 'Secrets management' },
+  { name: 'dashboard', namespace: 'sre-dashboard', serviceName: 'sre-dashboard', icon: 'layout', description: 'This SRE Platform Dashboard' },
 ];
 
 export interface ClusterPanelDef {
@@ -83,9 +82,9 @@ export const COMMAND_ITEMS: CommandItem[] = [
   { id: 'nav-compliance', label: 'Go to Compliance', action: 'navigate:compliance', keywords: 'ato audit nist controls' },
   { id: 'nav-admin', label: 'Go to Admin', action: 'navigate:admin', keywords: 'users groups credentials', adminOnly: true },
   { id: 'deploy-app', label: 'Deploy New Application', action: 'navigate:deploy', keywords: 'create launch new' },
-  { id: 'open-grafana', label: 'Open Grafana', action: 'open:https://grafana.apps.sre.example.com', keywords: 'monitoring dashboards' },
-  { id: 'open-harbor', label: 'Open Harbor Registry', action: 'open:https://harbor.apps.sre.example.com', keywords: 'images container' },
-  { id: 'open-keycloak', label: 'Open Keycloak', action: 'open:https://keycloak.apps.sre.example.com', keywords: 'sso identity' },
-  { id: 'open-neuvector', label: 'Open NeuVector', action: 'open:https://neuvector.apps.sre.example.com', keywords: 'security runtime' },
+  { id: 'open-grafana', label: 'Open Grafana', action: 'open:grafana', keywords: 'monitoring dashboards' },
+  { id: 'open-harbor', label: 'Open Harbor Registry', action: 'open:harbor', keywords: 'images container' },
+  { id: 'open-keycloak', label: 'Open Keycloak', action: 'open:keycloak', keywords: 'sso identity' },
+  { id: 'open-neuvector', label: 'Open NeuVector', action: 'open:neuvector', keywords: 'security runtime' },
   { id: 'toggle-theme', label: 'Toggle Dark/Light Theme', action: 'theme', keywords: 'dark light mode' },
 ];

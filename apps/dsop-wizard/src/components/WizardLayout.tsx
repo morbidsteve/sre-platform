@@ -2,6 +2,7 @@ import React from 'react';
 import { Shield, ArrowLeft } from 'lucide-react';
 import { ClassificationBanner, ClassificationBannerBottom } from './ClassificationBanner';
 import { StepIndicator } from './StepIndicator';
+import { svcUrl } from '../config';
 import type { Classification } from '../types';
 
 interface WizardLayoutProps {
@@ -31,7 +32,7 @@ export function WizardLayout({ currentStep, classification, onStepClick, childre
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <a
-              href="https://dashboard.apps.sre.example.com"
+              href={svcUrl('dashboard')}
               className="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />

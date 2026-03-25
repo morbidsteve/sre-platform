@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink, BarChart3, Trash2, Rocket } from 'lucide-react';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 
 interface AppInfo {
   name: string;
@@ -39,12 +40,14 @@ function timeAgo(dateStr: string): string {
 }
 
 export function AppTile({ app, isAdmin, onDelete, onOpenService, onShowRunDetail }: AppTileProps) {
+  const config = useConfig();
+
   if (app._isPipelineRun) {
     return <PipelineAppTile app={app} onShowRunDetail={onShowRunDetail} />;
   }
 
   const hasUrl = !!(app.url && app.host);
-  const grafanaUrl = `https://grafana.apps.sre.example.com/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22${encodeURIComponent(app.namespace)}%5C%22%7D%22%7D%5D%7D`;
+  const grafanaUrl = `${serviceUrl(config, 'grafana')}/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22${encodeURIComponent(app.namespace)}%5C%22%7D%22%7D%5D%7D`;
 
   return (
     <div

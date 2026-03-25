@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Star, ExternalLink, Package } from 'lucide-react';
+import { useConfig } from '../../context/ConfigContext';
 
 const SERVICE_ICONS: Record<string, string> = {
   chart: '\uD83D\uDCCA',
@@ -29,6 +30,7 @@ interface PortalAppsGridProps {
 }
 
 export function PortalAppsGrid({ onOpenApp }: PortalAppsGridProps) {
+  const config = useConfig();
   const [apps, setApps] = useState<PortalApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -78,11 +80,11 @@ export function PortalAppsGrid({ onOpenApp }: PortalAppsGridProps) {
   };
 
   const handleTileClick = (app: PortalApp) => {
-    if (app.url && app.url.includes('dsop.apps.sre.example.com')) {
+    if (app.url && app.url.includes(`dsop.${config.domain}`)) {
       onOpenApp(app.url, 'DSOP Security Pipeline');
       return;
     }
-    if (app.url && app.url.includes('portal.apps.sre.example.com')) {
+    if (app.url && app.url.includes(`portal.${config.domain}`)) {
       onOpenApp(app.url, 'App Portal');
       return;
     }

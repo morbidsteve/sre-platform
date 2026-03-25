@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { getConfig } from '../config';
 import type {
   WizardState,
   AppSource,
@@ -447,7 +448,7 @@ export function useWizardState() {
               setState((prev) => ({
                 ...prev,
                 deploySteps: completedSteps,
-                deployedUrl: updatedRun.deployed_url || `https://${state.appInfo.name || 'my-app'}.apps.sre.example.com`,
+                deployedUrl: updatedRun.deployed_url || `https://${state.appInfo.name || 'my-app'}.${getConfig().domain}`,
                 isDeploying: false,
                 currentStep: 7,
               }));

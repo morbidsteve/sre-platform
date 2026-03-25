@@ -1,4 +1,5 @@
 import React from 'react';
+import { getConfig } from '../../config';
 import {
   ArrowLeft,
   ArrowRight,
@@ -167,7 +168,7 @@ export function Step3_Detection({
                 <span className="text-gray-600 mx-1">&rarr;</span>
                 <span className="text-sm text-cyan-400 font-mono">
                   {appName
-                    ? `${appName}.apps.sre.example.com`
+                    ? `${appName}.${getConfig().domain}`
                     : ea.hostname}
                 </span>
               </div>

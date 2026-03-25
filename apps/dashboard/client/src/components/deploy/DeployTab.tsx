@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Shield, Rocket, Box, Database, ChevronLeft } from 'lucide-react';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { QuickStartPanel } from '../applications/QuickStartPanel';
 import { HelmDeployForm } from '../applications/HelmDeployForm';
 import { DatabaseForm } from '../applications/DatabaseForm';
@@ -56,6 +57,7 @@ const DEPLOY_METHODS = [
 ];
 
 export function DeployTab({ user, onOpenApp }: DeployTabProps) {
+  const config = useConfig();
   const [method, setMethod] = useState<DeployMethod>('none');
   const [deployItems, setDeployItems] = useState<DeployItem[]>([]);
   const [showProgress, setShowProgress] = useState(false);
@@ -63,8 +65,8 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
 
   const handleOpenDsopWizard = useCallback(() => {
     // Append timestamp to force a fresh wizard session (no cached state from previous run)
-    onOpenApp(`https://dsop.apps.sre.example.com?new=${Date.now()}`, 'DSOP Security Pipeline');
-  }, [onOpenApp]);
+    onOpenApp(`${serviceUrl(config, 'dsop')}?new=${Date.now()}`, 'DSOP Security Pipeline');
+  }, [onOpenApp, config]);
 
   const handleQuickDeploy = useCallback(async (item: DeployItem) => {
     setDeployItems([item]);

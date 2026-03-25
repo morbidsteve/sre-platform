@@ -1,4 +1,5 @@
 import type { PortalAppsResponse, UserInfo } from './types';
+import { svcUrl } from './config';
 
 export async function fetchApps(): Promise<PortalAppsResponse> {
   try {
@@ -48,72 +49,80 @@ export async function checkHealth(url: string): Promise<boolean> {
   }
 }
 
-export const platformServices = [
-  {
-    name: 'Grafana',
-    description: 'Dashboards & metrics visualization',
-    url: 'https://grafana.apps.sre.example.com',
-    icon: 'BarChart3',
-    category: 'Observability',
-    healthUrl: 'https://grafana.apps.sre.example.com/api/health',
-  },
-  {
-    name: 'Prometheus',
-    description: 'Metrics collection & PromQL queries',
-    url: 'https://prometheus.apps.sre.example.com',
-    icon: 'Activity',
-    category: 'Observability',
-    healthUrl: 'https://prometheus.apps.sre.example.com/-/healthy',
-  },
-  {
-    name: 'Alertmanager',
-    description: 'Alert routing & notification',
-    url: 'https://alertmanager.apps.sre.example.com',
-    icon: 'Bell',
-    category: 'Observability',
-    healthUrl: 'https://alertmanager.apps.sre.example.com/-/healthy',
-  },
-  {
-    name: 'NeuVector',
-    description: 'Runtime container security',
-    url: 'https://neuvector.apps.sre.example.com',
-    icon: 'Shield',
-    category: 'Security',
-    healthUrl: 'https://neuvector.apps.sre.example.com/',
-  },
-  {
-    name: 'Harbor',
-    description: 'Container registry & vulnerability scanning',
-    url: 'https://harbor.apps.sre.example.com',
-    icon: 'Container',
-    category: 'Security',
-    healthUrl: 'https://harbor.apps.sre.example.com/api/v2.0/health',
-  },
-  {
-    name: 'OpenBao',
-    description: 'Secrets vault & certificate management',
-    url: 'https://openbao.apps.sre.example.com',
-    icon: 'Lock',
-    category: 'Security',
-    healthUrl: 'https://openbao.apps.sre.example.com/v1/sys/health',
-  },
-];
+export function getPlatformServices() {
+  return [
+    {
+      name: 'Grafana',
+      description: 'Dashboards & metrics visualization',
+      url: svcUrl('grafana'),
+      icon: 'BarChart3',
+      category: 'Observability',
+      healthUrl: `${svcUrl('grafana')}/api/health`,
+    },
+    {
+      name: 'Prometheus',
+      description: 'Metrics collection & PromQL queries',
+      url: svcUrl('prometheus'),
+      icon: 'Activity',
+      category: 'Observability',
+      healthUrl: `${svcUrl('prometheus')}/-/healthy`,
+    },
+    {
+      name: 'Alertmanager',
+      description: 'Alert routing & notification',
+      url: svcUrl('alertmanager'),
+      icon: 'Bell',
+      category: 'Observability',
+      healthUrl: `${svcUrl('alertmanager')}/-/healthy`,
+    },
+    {
+      name: 'NeuVector',
+      description: 'Runtime container security',
+      url: svcUrl('neuvector'),
+      icon: 'Shield',
+      category: 'Security',
+      healthUrl: `${svcUrl('neuvector')}/`,
+    },
+    {
+      name: 'Harbor',
+      description: 'Container registry & vulnerability scanning',
+      url: svcUrl('harbor'),
+      icon: 'Container',
+      category: 'Security',
+      healthUrl: `${svcUrl('harbor')}/api/v2.0/health`,
+    },
+    {
+      name: 'OpenBao',
+      description: 'Secrets vault & certificate management',
+      url: svcUrl('openbao'),
+      icon: 'Lock',
+      category: 'Security',
+      healthUrl: `${svcUrl('openbao')}/v1/sys/health`,
+    },
+  ];
+}
 
-export const adminServices = [
-  {
-    name: 'Keycloak',
-    description: 'Identity & SSO management',
-    url: 'https://keycloak.apps.sre.example.com',
-    icon: 'Users',
-    category: 'Identity & Admin',
-    healthUrl: 'https://keycloak.apps.sre.example.com/realms/sre',
-  },
-  {
-    name: 'SRE Dashboard',
-    description: 'Platform admin & deployment',
-    url: 'https://dashboard.apps.sre.example.com',
-    icon: 'LayoutDashboard',
-    category: 'Identity & Admin',
-    healthUrl: 'https://dashboard.apps.sre.example.com/api/health',
-  },
-];
+export function getAdminServices() {
+  return [
+    {
+      name: 'Keycloak',
+      description: 'Identity & SSO management',
+      url: svcUrl('keycloak'),
+      icon: 'Users',
+      category: 'Identity & Admin',
+      healthUrl: `${svcUrl('keycloak')}/realms/sre`,
+    },
+    {
+      name: 'SRE Dashboard',
+      description: 'Platform admin & deployment',
+      url: svcUrl('dashboard'),
+      icon: 'LayoutDashboard',
+      category: 'Identity & Admin',
+      healthUrl: `${svcUrl('dashboard')}/api/health`,
+    },
+  ];
+}
+
+// Keep backward-compatible exports
+export const platformServices = getPlatformServices();
+export const adminServices = getAdminServices();

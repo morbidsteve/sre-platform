@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { useUserContext } from '../../context/UserContext';
 import { useThemeContext } from '../../context/ThemeContext';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 
 interface CommandItem {
   category: string;
@@ -37,6 +38,7 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
   const resultsRef = useRef<HTMLDivElement>(null);
   const { isAdmin, isDeveloper, isIssm, user } = useUserContext();
   const { toggleTheme, theme } = useThemeContext();
+  const config = useConfig();
 
   const commands = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = [];
@@ -60,7 +62,7 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
     // ── Quick Deploy Actions ────────────────────────────────
     if (isAdmin || isDeveloper) {
       items.push(
-        { category: 'Deploy', label: 'Open DSOP Wizard', icon: '🔐', description: 'Full security pipeline deployment', badge: 'Recommended', action: () => { if (onOpenApp) onOpenApp('https://dsop.apps.sre.example.com', 'DSOP Security Pipeline'); } },
+        { category: 'Deploy', label: 'Open DSOP Wizard', icon: '🔐', description: 'Full security pipeline deployment', badge: 'Recommended', action: () => { if (onOpenApp) onOpenApp(serviceUrl(config, 'dsop'), 'DSOP Security Pipeline'); } },
         { category: 'Deploy', label: 'Quick Deploy', icon: '⚡', description: 'Deploy pre-built sample apps', action: () => onTabChange('deploy') },
         { category: 'Deploy', label: 'Deploy Helm Chart', icon: '📦', description: 'Deploy from Helm chart repository', action: () => onTabChange('deploy') },
         { category: 'Deploy', label: 'Create Database', icon: '🗄️', description: 'Provision PostgreSQL via CNPG', action: () => onTabChange('deploy') },
@@ -113,12 +115,12 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
 
     // ── Platform Services ───────────────────────────────────
     const services = [
-      { label: 'Grafana', icon: '📊', description: 'Metrics dashboards & log explorer', badge: 'Monitoring', url: 'https://grafana.apps.sre.example.com' },
-      { label: 'Prometheus', icon: '🔥', description: 'Metrics & alerting', badge: 'Monitoring', url: 'https://prometheus.apps.sre.example.com' },
-      { label: 'Harbor', icon: '🚢', description: 'Container registry & vulnerability scanning', badge: 'Registry', url: 'https://harbor.apps.sre.example.com' },
-      { label: 'Keycloak', icon: '🔐', description: 'Identity provider & SSO management', badge: 'Auth', url: 'https://keycloak.apps.sre.example.com' },
-      { label: 'NeuVector', icon: '🛡️', description: 'Runtime security & network monitoring', badge: 'Security', url: 'https://neuvector.apps.sre.example.com' },
-      { label: 'Loki', icon: '📝', description: 'Log aggregation & querying', badge: 'Logging', url: 'https://grafana.apps.sre.example.com/explore' },
+      { label: 'Grafana', icon: '📊', description: 'Metrics dashboards & log explorer', badge: 'Monitoring', url: serviceUrl(config, 'grafana') },
+      { label: 'Prometheus', icon: '🔥', description: 'Metrics & alerting', badge: 'Monitoring', url: serviceUrl(config, 'prometheus') },
+      { label: 'Harbor', icon: '🚢', description: 'Container registry & vulnerability scanning', badge: 'Registry', url: serviceUrl(config, 'harbor') },
+      { label: 'Keycloak', icon: '🔐', description: 'Identity provider & SSO management', badge: 'Auth', url: serviceUrl(config, 'keycloak') },
+      { label: 'NeuVector', icon: '🛡️', description: 'Runtime security & network monitoring', badge: 'Security', url: serviceUrl(config, 'neuvector') },
+      { label: 'Loki', icon: '📝', description: 'Log aggregation & querying', badge: 'Logging', url: `${serviceUrl(config, 'grafana')}/explore` },
     ];
 
     for (const svc of services) {
@@ -143,7 +145,7 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
     );
 
     return items;
-  }, [isAdmin, isDeveloper, isIssm, user, onTabChange, onOpenApp, toggleTheme, theme]);
+  }, [isAdmin, isDeveloper, isIssm, user, onTabChange, onOpenApp, toggleTheme, theme, config]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return commands;

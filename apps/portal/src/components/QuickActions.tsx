@@ -1,4 +1,5 @@
 import { Rocket, BarChart3, Users, ShieldCheck } from 'lucide-react';
+import { svcUrl } from '../config';
 
 type UserRole = 'admin' | 'issm' | 'developer' | 'viewer';
 
@@ -15,44 +16,46 @@ function resolveRole(isAdmin: boolean, groups: string[]): UserRole {
   return 'viewer';
 }
 
-const actions = [
-  {
-    label: 'Deploy App',
-    icon: Rocket,
-    href: 'https://dashboard.apps.sre.example.com/deploy',
-    color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-    hoverColor: 'hover:bg-cyan-500/20 hover:border-cyan-500/30',
-    roles: ['admin', 'developer'] as UserRole[],
-  },
-  {
-    label: 'Review Queue',
-    icon: ShieldCheck,
-    href: 'https://dashboard.apps.sre.example.com',
-    color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-    hoverColor: 'hover:bg-emerald-500/20 hover:border-emerald-500/30',
-    roles: ['issm'] as UserRole[],
-  },
-  {
-    label: 'View Metrics',
-    icon: BarChart3,
-    href: 'https://grafana.apps.sre.example.com',
-    color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
-    hoverColor: 'hover:bg-indigo-500/20 hover:border-indigo-500/30',
-    roles: ['admin', 'issm', 'developer', 'viewer'] as UserRole[],
-  },
-  {
-    label: 'Manage Users',
-    icon: Users,
-    href: 'https://keycloak.apps.sre.example.com',
-    color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-    hoverColor: 'hover:bg-amber-500/20 hover:border-amber-500/30',
-    roles: ['admin'] as UserRole[],
-  },
-];
+function getActions() {
+  return [
+    {
+      label: 'Deploy App',
+      icon: Rocket,
+      href: `${svcUrl('dashboard')}/deploy`,
+      color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
+      hoverColor: 'hover:bg-cyan-500/20 hover:border-cyan-500/30',
+      roles: ['admin', 'developer'] as UserRole[],
+    },
+    {
+      label: 'Review Queue',
+      icon: ShieldCheck,
+      href: svcUrl('dashboard'),
+      color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+      hoverColor: 'hover:bg-emerald-500/20 hover:border-emerald-500/30',
+      roles: ['issm'] as UserRole[],
+    },
+    {
+      label: 'View Metrics',
+      icon: BarChart3,
+      href: svcUrl('grafana'),
+      color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
+      hoverColor: 'hover:bg-indigo-500/20 hover:border-indigo-500/30',
+      roles: ['admin', 'issm', 'developer', 'viewer'] as UserRole[],
+    },
+    {
+      label: 'Manage Users',
+      icon: Users,
+      href: svcUrl('keycloak'),
+      color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+      hoverColor: 'hover:bg-amber-500/20 hover:border-amber-500/30',
+      roles: ['admin'] as UserRole[],
+    },
+  ];
+}
 
 export function QuickActions({ isAdmin, userGroups }: QuickActionsProps) {
   const role = resolveRole(isAdmin, userGroups);
-  const visibleActions = actions.filter((a) => a.roles.includes(role));
+  const visibleActions = getActions().filter((a) => a.roles.includes(role));
 
   return (
     <div className="flex flex-wrap gap-3">

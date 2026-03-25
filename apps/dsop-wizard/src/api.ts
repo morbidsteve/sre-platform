@@ -1,4 +1,5 @@
 import type { AppSource, DetectionResult, SecurityGate, DeployStep, PipelineRun, FindingDisposition } from './types';
+import { getConfig, svcUrl } from './config';
 
 const API_BASE = '/api';
 
@@ -90,7 +91,7 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
       ],
       platformServices: [],
       externalAccess: [
-        { service: imageName, hostname: `${imageName}.apps.sre.example.com` },
+        { service: imageName, hostname: `${imageName}.${getConfig().domain}` },
       ],
     };
   }
@@ -103,7 +104,7 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
       ],
       platformServices: [],
       externalAccess: [
-        { service: source.chartName || 'app', hostname: `${source.chartName || 'app'}.apps.sre.example.com` },
+        { service: source.chartName || 'app', hostname: `${source.chartName || 'app'}.${getConfig().domain}` },
       ],
     };
   }
@@ -122,7 +123,7 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
     ],
     platformServices: [],
     externalAccess: [
-      { service: repoName, hostname: `${repoName}.apps.sre.example.com` },
+      { service: repoName, hostname: `${repoName}.${getConfig().domain}` },
     ],
   };
 }
@@ -281,13 +282,13 @@ export async function runSecurityPipeline(
     status: 'passed',
     progress: 100,
     summary: 'Harbor: Images pushed and stored',
-    reportUrl: 'https://harbor.apps.sre.example.com',
+    reportUrl: svcUrl('harbor'),
     implemented: true,
   };
   onUpdate([...updated]);
 
   // Gate 2: SBOM (Syft) — REAL
-  const imageName = `harbor.apps.sre.example.com/platform/${(repoUrl || '').split('/').pop()?.replace('.git', '') || 'app'}:latest`;
+  const imageName = `${getConfig().registryUrl}/platform/${(repoUrl || '').split('/').pop()?.replace('.git', '') || 'app'}:latest`;
   await runGate(1, '/security/sbom', { image: imageName }, 'passed', 'SBOM generated (SPDX + CycloneDX)');
 
   // Gate 4: CVE Scan (Trivy) — via Harbor auto-scan, show results from proxy
@@ -312,7 +313,7 @@ export async function runSecurityPipeline(
       progress: 100,
       summary: `Trivy: ${totalCrit} critical, ${totalHigh} high, ${totalMed} medium`,
       findings: allFindings,
-      reportUrl: 'https://harbor.apps.sre.example.com/harbor/projects',
+      reportUrl: `${svcUrl('harbor')}/harbor/projects`,
       implemented: true,
     };
   } catch {
@@ -326,7 +327,7 @@ export async function runSecurityPipeline(
   onUpdate([...updated]);
 
   // Gate 5: DAST (ZAP) — REAL (runs against target URL if available)
-  await runGate(4, '/security/dast', { targetUrl: `https://${(repoUrl || '').split('/').pop()?.replace('.git', '') || 'app'}.apps.sre.example.com` }, 'passed', 'ZAP: 0 alerts');
+  await runGate(4, '/security/dast', { targetUrl: `https://${(repoUrl || '').split('/').pop()?.replace('.git', '') || 'app'}.${getConfig().domain}` }, 'passed', 'ZAP: 0 alerts');
 
   // Gate 6: ISSM Review — manual approval (always requires human)
   updated[5] = {
@@ -404,7 +405,7 @@ export async function runDeploy(
       await simulateDelay(500);
     }
 
-    const url = result.url || `https://${appName}.apps.sre.example.com`;
+    const url = result.url || `https://${appName}.${getConfig().domain}`;
     return { url, steps: updated };
   } catch (err) {
     // Mark current step as failed

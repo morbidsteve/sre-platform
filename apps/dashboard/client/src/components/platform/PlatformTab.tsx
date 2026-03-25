@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ServiceHealthGrid } from './ServiceHealthGrid';
 import { DNSSetup } from './DNSSetup';
+import { useConfig } from '../../context/ConfigContext';
 
 interface ServiceInfo {
   name: string;
@@ -26,6 +27,7 @@ interface PlatformTabProps {
 }
 
 export function PlatformTab({ onOpenApp }: PlatformTabProps) {
+  const config = useConfig();
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [ingressData, setIngressData] = useState<IngressData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,11 +59,11 @@ export function PlatformTab({ onOpenApp }: PlatformTabProps) {
   }, [loadData]);
 
   const handleOpenService = (url: string, name: string) => {
-    if (url && url.includes('dsop.apps.sre.example.com')) {
+    if (url && url.includes(`dsop.${config.domain}`)) {
       onOpenApp(url, 'DSOP Security Pipeline');
       return;
     }
-    if (url && url.includes('portal.apps.sre.example.com')) {
+    if (url && url.includes(`portal.${config.domain}`)) {
       onOpenApp(url, 'App Portal');
       return;
     }

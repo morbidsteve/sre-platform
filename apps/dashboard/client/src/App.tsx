@@ -4,6 +4,7 @@ import { UserProvider, useUserContext } from './context/UserContext';
 import { ToastProvider } from './context/ToastContext';
 import { ModalProvider } from './context/ModalContext';
 import { DataProvider } from './context/DataContext';
+import { ConfigProvider } from './context/ConfigContext';
 import { Layout } from './components/layout/Layout';
 import { UserLandingPage } from './components/layout/UserLandingPage';
 import { OverviewTab } from './components/overview/OverviewTab';
@@ -214,15 +215,17 @@ function AppContent() {
 export default function App() {
   return (
     <ThemeProvider>
-      <UserProvider>
-        <ToastProvider>
-          <ModalProvider>
-            <DataProvider>
-              <AppContent />
-            </DataProvider>
-          </ModalProvider>
-        </ToastProvider>
-      </UserProvider>
+      <ConfigProvider>
+        <UserProvider>
+          <ToastProvider>
+            <ModalProvider>
+              <DataProvider>
+                <AppContent />
+              </DataProvider>
+            </ModalProvider>
+          </ToastProvider>
+        </UserProvider>
+      </ConfigProvider>
     </ThemeProvider>
   );
 }

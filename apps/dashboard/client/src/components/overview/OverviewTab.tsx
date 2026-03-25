@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { fetchPipelineStats } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
 import { Skeleton } from '../ui/Skeleton';
@@ -50,6 +51,7 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) {
+  const config = useConfig();
   const { health, alerts: alertsData, apps: appsData } = useData();
   const { helmReleases, summary, loading: healthLoading } = health;
   const { alerts, criticalCount, warningCount } = alertsData;
@@ -332,7 +334,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           <button
             className="btn text-[13px] !px-5 flex items-center gap-1.5"
             onClick={() =>
-              window.open('https://grafana.apps.sre.example.com', '_blank')
+              window.open(serviceUrl(config, 'grafana'), '_blank')
             }
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -341,7 +343,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           <button
             className="btn text-[13px] !px-5 flex items-center gap-1.5"
             onClick={() =>
-              window.open('https://harbor.apps.sre.example.com', '_blank')
+              window.open(serviceUrl(config, 'harbor'), '_blank')
             }
           >
             <ExternalLink className="w-3.5 h-3.5" />

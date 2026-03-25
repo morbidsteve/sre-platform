@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SampleAppCard } from './SampleAppCard';
+import { useConfig } from '../../context/ConfigContext';
 
 interface SampleApp {
   name: string;
@@ -22,6 +23,7 @@ interface QuickStartPanelProps {
 }
 
 export function QuickStartPanel({ onDeploy }: QuickStartPanelProps) {
+  const config = useConfig();
   const [samples, setSamples] = useState<SampleApp[]>([]);
   const [teamName, setTeamName] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ export function QuickStartPanel({ onDeploy }: QuickStartPanelProps) {
       tag: sample.tag,
       port: sample.port,
       replicas: 1,
-      ingress: `${sample.name}.apps.sre.example.com`,
+      ingress: `${sample.name}.${config.domain}`,
     });
   };
 

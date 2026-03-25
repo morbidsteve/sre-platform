@@ -1,4 +1,5 @@
 import { Inbox } from 'lucide-react';
+import { svcUrl } from '../config';
 
 export function EmptyState() {
   return (
@@ -13,7 +14,7 @@ export function EmptyState() {
         Applications you deploy will appear here. Use the SRE Dashboard to deploy your first app.
       </p>
       <a
-        href="https://dashboard.apps.sre.example.com/deploy"
+        href={`${svcUrl('dashboard')}/deploy`}
         target="_blank"
         rel="noopener noreferrer"
         className="mt-5 rounded-lg bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-400 transition-colors hover:bg-cyan-500/20"

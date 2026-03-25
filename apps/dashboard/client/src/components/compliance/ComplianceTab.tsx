@@ -16,7 +16,14 @@ import { AuditFilters } from '../audit/AuditFilters';
 import { AuditTable } from '../audit/AuditTable';
 import { fetchAuditEvents } from '../../api/audit';
 import { fetchHealth } from '../../api/health';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import type { AuditEvent, HelmRelease } from '../../types/api';
+
+// URL placeholder tokens resolved at render time via resolveUrl()
+const SVC_GRAFANA = '{{grafana}}';
+const SVC_KEYCLOAK = '{{keycloak}}';
+const SVC_NEUVECTOR = '{{neuvector}}';
+const SVC_HARBOR = '{{harbor}}';
 
 // ── Individual Control definitions from compliance-mapping.md ───────────────
 
@@ -45,12 +52,12 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     name: 'Access Control',
     description: 'Access management, RBAC, and network segmentation',
     controls: [
-      { id: 'AC-2', name: 'Account Management', status: 'implemented', implementation: 'Keycloak (centralized identity, group-based access, automated deprovisioning)', healthKeys: ['keycloak'], evidenceSources: [{ name: 'Keycloak Console', url: 'https://keycloak.apps.sre.example.com' }] },
+      { id: 'AC-2', name: 'Account Management', status: 'implemented', implementation: 'Keycloak (centralized identity, group-based access, automated deprovisioning)', healthKeys: ['keycloak'], evidenceSources: [{ name: 'Keycloak Console', url: SVC_KEYCLOAK }] },
       { id: 'AC-3', name: 'Access Enforcement', status: 'implemented', implementation: 'Kubernetes RBAC, Istio AuthorizationPolicy, Kyverno namespace isolation', healthKeys: ['kyverno', 'istiod'], evidenceSources: [{ name: 'Kyverno Policy Reports', url: '' }] },
       { id: 'AC-4', name: 'Information Flow Enforcement', status: 'implemented', implementation: 'Istio mTLS STRICT, NetworkPolicies (default deny), Kyverno egress restrictions', healthKeys: ['istiod', 'kyverno'] },
       { id: 'AC-6', name: 'Least Privilege', status: 'implemented', implementation: 'RBAC roles scoped to namespace, pod security contexts (non-root, drop ALL caps), ServiceAccount per workload', healthKeys: ['kyverno'], evidenceSources: [{ name: 'Kyverno Policy Reports', url: '' }] },
       { id: 'AC-6(1)', name: 'Authorize Access to Security Functions', status: 'implemented', implementation: 'Flux RBAC (only flux-system SA can modify platform namespaces), Kyverno policy protecting platform resources', healthKeys: ['kyverno', 'source-controller'] },
-      { id: 'AC-6(9)', name: 'Auditing Use of Privileged Functions', status: 'implemented', implementation: 'Kubernetes audit logging to Loki, Istio access logs', healthKeys: ['loki'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }] },
+      { id: 'AC-6(9)', name: 'Auditing Use of Privileged Functions', status: 'implemented', implementation: 'Kubernetes audit logging to Loki, Istio access logs', healthKeys: ['loki'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }] },
       { id: 'AC-6(10)', name: 'Prohibit Non-Privileged Users from Executing Privileged Functions', status: 'implemented', implementation: 'Kyverno (disallow-privileged, disallow-privilege-escalation), Pod Security Standards restricted', healthKeys: ['kyverno'], evidenceSources: [{ name: 'Kyverno Policy Reports', url: '' }] },
       { id: 'AC-14', name: 'Permitted Actions Without Identification', status: 'implemented', implementation: 'Istio PeerAuthentication STRICT (no unauthenticated service-to-service communication)', healthKeys: ['istiod'] },
       { id: 'AC-17', name: 'Remote Access', status: 'implemented', implementation: 'Keycloak SSO/MFA for all management interfaces, Istio gateway TLS termination', healthKeys: ['keycloak', 'istiod'] },
@@ -61,11 +68,11 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     name: 'Audit & Accountability',
     description: 'Logging, audit trails, and monitoring',
     controls: [
-      { id: 'AU-2', name: 'Audit Events', status: 'implemented', implementation: 'Kubernetes API audit policy (captures auth, CRUD on all resources), Istio access logs', healthKeys: ['istiod'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }] },
-      { id: 'AU-3', name: 'Content of Audit Records', status: 'implemented', implementation: 'Structured JSON logs with timestamp, source, user, action, resource, outcome', evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }] },
+      { id: 'AU-2', name: 'Audit Events', status: 'implemented', implementation: 'Kubernetes API audit policy (captures auth, CRUD on all resources), Istio access logs', healthKeys: ['istiod'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }] },
+      { id: 'AU-3', name: 'Content of Audit Records', status: 'implemented', implementation: 'Structured JSON logs with timestamp, source, user, action, resource, outcome', evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }] },
       { id: 'AU-4', name: 'Audit Storage Capacity', status: 'implemented', implementation: 'Loki with object storage backend (S3/MinIO), configurable retention', healthKeys: ['loki'] },
       { id: 'AU-5', name: 'Response to Audit Processing Failures', status: 'implemented', implementation: 'Prometheus alerts on Loki ingestion failures, Loki disk pressure alerts', healthKeys: ['kube-prometheus-stack', 'loki'] },
-      { id: 'AU-6', name: 'Audit Review, Analysis, and Reporting', status: 'implemented', implementation: 'Grafana dashboards for audit log analysis, pre-built compliance report queries', healthKeys: ['kube-prometheus-stack'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }] },
+      { id: 'AU-6', name: 'Audit Review, Analysis, and Reporting', status: 'implemented', implementation: 'Grafana dashboards for audit log analysis, pre-built compliance report queries', healthKeys: ['kube-prometheus-stack'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }] },
       { id: 'AU-8', name: 'Time Stamps', status: 'implemented', implementation: 'NTP enforced on all nodes via Ansible, all logs in UTC' },
       { id: 'AU-9', name: 'Protection of Audit Information', status: 'implemented', implementation: 'Loki log storage encrypted at rest, RBAC restricts log access to audit team', healthKeys: ['loki'] },
       { id: 'AU-12', name: 'Audit Generation', status: 'implemented', implementation: 'All platform components output structured JSON to stdout/stderr, collected by Alloy', healthKeys: ['alloy'] },
@@ -76,8 +83,8 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     name: 'Assessment & Authorization',
     description: 'Continuous monitoring and vulnerability scanning',
     controls: [
-      { id: 'CA-7', name: 'Continuous Monitoring', status: 'implemented', implementation: 'Prometheus + Grafana (real-time metrics), NeuVector (runtime anomaly detection), Kyverno policy reports (continuous compliance)', healthKeys: ['kube-prometheus-stack', 'neuvector', 'kyverno'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }, { name: 'NeuVector Console', url: 'https://neuvector.apps.sre.example.com' }] },
-      { id: 'CA-8', name: 'Penetration Testing', status: 'implemented', implementation: 'NeuVector vulnerability scanning, Trivy image scanning in Harbor', healthKeys: ['neuvector', 'harbor'], evidenceSources: [{ name: 'Harbor Scan Results', url: 'https://harbor.apps.sre.example.com' }] },
+      { id: 'CA-7', name: 'Continuous Monitoring', status: 'implemented', implementation: 'Prometheus + Grafana (real-time metrics), NeuVector (runtime anomaly detection), Kyverno policy reports (continuous compliance)', healthKeys: ['kube-prometheus-stack', 'neuvector', 'kyverno'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }, { name: 'NeuVector Console', url: SVC_NEUVECTOR }] },
+      { id: 'CA-8', name: 'Penetration Testing', status: 'implemented', implementation: 'NeuVector vulnerability scanning, Trivy image scanning in Harbor', healthKeys: ['neuvector', 'harbor'], evidenceSources: [{ name: 'Harbor Scan Results', url: SVC_HARBOR }] },
     ],
   },
   {
@@ -110,9 +117,9 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     name: 'Incident Response',
     description: 'Alerting, monitoring, and incident handling',
     controls: [
-      { id: 'IR-4', name: 'Incident Handling', status: 'implemented', implementation: 'NeuVector alerts to Prometheus to Grafana alerting pipeline, runbooks linked from alerts', healthKeys: ['neuvector', 'kube-prometheus-stack'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }] },
+      { id: 'IR-4', name: 'Incident Handling', status: 'implemented', implementation: 'NeuVector alerts to Prometheus to Grafana alerting pipeline, runbooks linked from alerts', healthKeys: ['neuvector', 'kube-prometheus-stack'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }] },
       { id: 'IR-5', name: 'Incident Monitoring', status: 'implemented', implementation: 'NeuVector runtime security events, Kyverno policy violations, Prometheus alert history', healthKeys: ['neuvector', 'kyverno', 'kube-prometheus-stack'] },
-      { id: 'IR-6', name: 'Incident Reporting', status: 'implemented', implementation: 'Grafana dashboards with exportable incident reports', healthKeys: ['kube-prometheus-stack'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }] },
+      { id: 'IR-6', name: 'Incident Reporting', status: 'implemented', implementation: 'Grafana dashboards with exportable incident reports', healthKeys: ['kube-prometheus-stack'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }] },
     ],
   },
   {
@@ -128,7 +135,7 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     name: 'Risk Assessment',
     description: 'Vulnerability scanning and CIS benchmarks',
     controls: [
-      { id: 'RA-5', name: 'Vulnerability Scanning', status: 'implemented', implementation: 'Harbor + Trivy (image scanning), NeuVector (runtime scanning), CIS benchmark scanning', healthKeys: ['harbor', 'neuvector'], evidenceSources: [{ name: 'Harbor Scan Results', url: 'https://harbor.apps.sre.example.com' }, { name: 'NeuVector Console', url: 'https://neuvector.apps.sre.example.com' }] },
+      { id: 'RA-5', name: 'Vulnerability Scanning', status: 'implemented', implementation: 'Harbor + Trivy (image scanning), NeuVector (runtime scanning), CIS benchmark scanning', healthKeys: ['harbor', 'neuvector'], evidenceSources: [{ name: 'Harbor Scan Results', url: SVC_HARBOR }, { name: 'NeuVector Console', url: SVC_NEUVECTOR }] },
     ],
   },
   {
@@ -137,7 +144,7 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     description: 'Developer configuration management and testing',
     controls: [
       { id: 'SA-10', name: 'Developer Configuration Management', status: 'implemented', implementation: 'GitOps workflow (all changes via Git), Flux reconciliation audit trail', healthKeys: ['source-controller'] },
-      { id: 'SA-11', name: 'Developer Testing and Evaluation', status: 'implemented', implementation: 'Kyverno policy tests, Helm chart tests, infrastructure validation pipeline', healthKeys: ['kyverno'], evidenceSources: [{ name: 'Harbor Scan Results', url: 'https://harbor.apps.sre.example.com' }] },
+      { id: 'SA-11', name: 'Developer Testing and Evaluation', status: 'implemented', implementation: 'Kyverno policy tests, Helm chart tests, infrastructure validation pipeline', healthKeys: ['kyverno'], evidenceSources: [{ name: 'Harbor Scan Results', url: SVC_HARBOR }] },
     ],
   },
   {
@@ -146,7 +153,7 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     description: 'mTLS, encryption, FIPS, network segmentation',
     controls: [
       { id: 'SC-3', name: 'Security Function Isolation', status: 'implemented', implementation: 'Namespace isolation, NetworkPolicies, Istio AuthorizationPolicy', healthKeys: ['istiod', 'kyverno'] },
-      { id: 'SC-7', name: 'Boundary Protection', status: 'implemented', implementation: 'Istio gateway (single ingress point), NetworkPolicies (default deny egress), NeuVector network segmentation', healthKeys: ['istiod', 'neuvector'], evidenceSources: [{ name: 'NeuVector Console', url: 'https://neuvector.apps.sre.example.com' }] },
+      { id: 'SC-7', name: 'Boundary Protection', status: 'implemented', implementation: 'Istio gateway (single ingress point), NetworkPolicies (default deny egress), NeuVector network segmentation', healthKeys: ['istiod', 'neuvector'], evidenceSources: [{ name: 'NeuVector Console', url: SVC_NEUVECTOR }] },
       { id: 'SC-8', name: 'Transmission Confidentiality and Integrity', status: 'implemented', implementation: 'Istio mTLS STRICT (all in-cluster traffic encrypted), TLS termination at gateway', healthKeys: ['istiod'] },
       { id: 'SC-12', name: 'Cryptographic Key Establishment and Management', status: 'implemented', implementation: 'cert-manager (automated certificate lifecycle), OpenBao (secret management and rotation)', healthKeys: ['cert-manager', 'openbao'] },
       { id: 'SC-13', name: 'Cryptographic Protection', status: 'implemented', implementation: 'RKE2 FIPS 140-2 mode, FIPS crypto policy on Rocky Linux 9' },
@@ -158,12 +165,12 @@ const CONTROL_FAMILIES: ControlFamily[] = [
     name: 'System & Information Integrity',
     description: 'Image signing, runtime protection, vulnerability remediation',
     controls: [
-      { id: 'SI-2', name: 'Flaw Remediation', status: 'implemented', implementation: 'Harbor + Trivy scanning with severity-based alerts, image update automation via Flux', healthKeys: ['harbor', 'source-controller'], evidenceSources: [{ name: 'Harbor Scan Results', url: 'https://harbor.apps.sre.example.com' }] },
-      { id: 'SI-3', name: 'Malicious Code Protection', status: 'implemented', implementation: 'NeuVector runtime protection (process blocking, file system monitoring)', healthKeys: ['neuvector'], evidenceSources: [{ name: 'NeuVector Console', url: 'https://neuvector.apps.sre.example.com' }] },
-      { id: 'SI-4', name: 'System Monitoring', status: 'implemented', implementation: 'Prometheus metrics, Loki logs, Tempo traces, NeuVector runtime events, Kyverno policy reports', healthKeys: ['kube-prometheus-stack', 'loki', 'tempo', 'neuvector', 'kyverno'], evidenceSources: [{ name: 'Grafana Dashboards', url: 'https://grafana.apps.sre.example.com' }, { name: 'NeuVector Console', url: 'https://neuvector.apps.sre.example.com' }] },
+      { id: 'SI-2', name: 'Flaw Remediation', status: 'implemented', implementation: 'Harbor + Trivy scanning with severity-based alerts, image update automation via Flux', healthKeys: ['harbor', 'source-controller'], evidenceSources: [{ name: 'Harbor Scan Results', url: SVC_HARBOR }] },
+      { id: 'SI-3', name: 'Malicious Code Protection', status: 'implemented', implementation: 'NeuVector runtime protection (process blocking, file system monitoring)', healthKeys: ['neuvector'], evidenceSources: [{ name: 'NeuVector Console', url: SVC_NEUVECTOR }] },
+      { id: 'SI-4', name: 'System Monitoring', status: 'implemented', implementation: 'Prometheus metrics, Loki logs, Tempo traces, NeuVector runtime events, Kyverno policy reports', healthKeys: ['kube-prometheus-stack', 'loki', 'tempo', 'neuvector', 'kyverno'], evidenceSources: [{ name: 'Grafana Dashboards', url: SVC_GRAFANA }, { name: 'NeuVector Console', url: SVC_NEUVECTOR }] },
       { id: 'SI-5', name: 'Security Alerts, Advisories, and Directives', status: 'implemented', implementation: 'Grafana alerting to Slack/email, NeuVector CVE alerts', healthKeys: ['kube-prometheus-stack', 'neuvector'] },
       { id: 'SI-6', name: 'Security Function Verification', status: 'implemented', implementation: 'NeuVector CIS benchmark scanning, Kyverno background policy scanning', healthKeys: ['neuvector', 'kyverno'] },
-      { id: 'SI-7', name: 'Software, Firmware, and Information Integrity', status: 'implemented', implementation: 'Cosign image signatures verified by Kyverno, SBOM generation in Harbor', healthKeys: ['kyverno', 'harbor'], evidenceSources: [{ name: 'Kyverno Policy Reports', url: '' }, { name: 'Harbor Scan Results', url: 'https://harbor.apps.sre.example.com' }] },
+      { id: 'SI-7', name: 'Software, Firmware, and Information Integrity', status: 'implemented', implementation: 'Cosign image signatures verified by Kyverno, SBOM generation in Harbor', healthKeys: ['kyverno', 'harbor'], evidenceSources: [{ name: 'Kyverno Policy Reports', url: '' }, { name: 'Harbor Scan Results', url: SVC_HARBOR }] },
       { id: 'SI-10', name: 'Information Input Validation', status: 'implemented', implementation: 'Kyverno admission control validates all resource specs, Istio request validation', healthKeys: ['kyverno', 'istiod'] },
     ],
   },
@@ -173,7 +180,7 @@ const EVIDENCE_SOURCES = [
   {
     name: 'Grafana Dashboards',
     description: 'Metrics, logs, and trace evidence for AU, IR, and SI controls',
-    url: 'https://grafana.apps.sre.example.com',
+    url: SVC_GRAFANA,
     controls: ['AU-2', 'AU-3', 'AU-6', 'IR-4', 'SI-4'],
   },
   {
@@ -185,13 +192,13 @@ const EVIDENCE_SOURCES = [
   {
     name: 'NeuVector Console',
     description: 'Runtime security events and CIS benchmark results',
-    url: 'https://neuvector.apps.sre.example.com',
+    url: SVC_NEUVECTOR,
     controls: ['SI-3', 'SI-4', 'SC-7', 'RA-5'],
   },
   {
     name: 'Harbor Scan Results',
     description: 'Container image vulnerability scan results and SBOM artifacts',
-    url: 'https://harbor.apps.sre.example.com',
+    url: SVC_HARBOR,
     controls: ['RA-5', 'SA-11', 'SI-2', 'SI-7'],
   },
 ];
@@ -203,6 +210,17 @@ interface ComplianceTabProps {
 }
 
 export function ComplianceTab({ active }: ComplianceTabProps) {
+  const config = useConfig();
+
+  // Resolve placeholder URL tokens to real service URLs
+  const resolveUrl = useCallback((url: string): string => {
+    if (url === SVC_GRAFANA) return serviceUrl(config, 'grafana');
+    if (url === SVC_KEYCLOAK) return serviceUrl(config, 'keycloak');
+    if (url === SVC_NEUVECTOR) return serviceUrl(config, 'neuvector');
+    if (url === SVC_HARBOR) return serviceUrl(config, 'harbor');
+    return url;
+  }, [config]);
+
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
 
   // Audit trail state
@@ -568,7 +586,7 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
                                         es.url ? (
                                           <a
                                             key={es.name}
-                                            href={es.url}
+                                            href={resolveUrl(es.url)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="inline-flex items-center gap-0.5 text-[10px] text-accent hover:underline"
@@ -683,7 +701,7 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
                 <h3 className="text-sm font-semibold text-text-bright">{source.name}</h3>
                 {source.url && (
                   <a
-                    href={source.url}
+                    href={resolveUrl(source.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-text-dim hover:text-accent transition-colors"

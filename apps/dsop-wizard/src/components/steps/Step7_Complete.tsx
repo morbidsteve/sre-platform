@@ -1,4 +1,5 @@
 import React from 'react';
+import { svcUrl } from '../../config';
 import {
   CheckCircle2,
   ExternalLink,
@@ -180,7 +181,7 @@ export function Step7_Complete({
         <button
           onClick={() =>
             window.open(
-              'https://dashboard.apps.sre.example.com/#services',
+              `${svcUrl('dashboard')}/#services`,
               '_blank'
             )
           }
@@ -191,7 +192,7 @@ export function Step7_Complete({
         </button>
         <button
           onClick={() =>
-            window.open('https://grafana.apps.sre.example.com', '_blank')
+            window.open(svcUrl('grafana'), '_blank')
           }
           className="flex flex-col items-center gap-3 p-6 bg-navy-800 border border-navy-600 rounded-xl hover:border-cyan-500/30 hover:bg-navy-700 transition-all group cursor-pointer"
         >
@@ -242,7 +243,7 @@ export function Step7_Complete({
         </Button>
         <Button
           variant="secondary"
-          onClick={() => window.location.href = 'https://dashboard.apps.sre.example.com'}
+          onClick={() => window.location.href = svcUrl('dashboard')}
           icon={<LayoutDashboard className="w-4 h-4" />}
           size="lg"
         >
@@ -250,7 +251,7 @@ export function Step7_Complete({
         </Button>
         <Button
           variant="secondary"
-          onClick={() => window.open('https://dashboard.apps.sre.example.com/#services', '_blank')}
+          onClick={() => window.open(`${svcUrl('dashboard')}/#services`, '_blank')}
           icon={<ArrowLeft className="w-4 h-4" />}
           size="lg"
         >

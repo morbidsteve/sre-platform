@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dsop-wizard-config
+  namespace: sre-dsop
+data:
+  config.js: |
+    window.__SRE_CONFIG__ = {
+      domain: "${SRE_DOMAIN}",
+      registryUrl: "${SRE_REGISTRY}",
+    };
