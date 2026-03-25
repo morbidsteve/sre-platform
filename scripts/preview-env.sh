@@ -12,6 +12,8 @@
 
 set -euo pipefail
 
+SRE_DOMAIN="${SRE_DOMAIN:-$(kubectl get cm sre-domain-config -n flux-system -o jsonpath='{.data.SRE_DOMAIN}' 2>/dev/null || echo 'apps.sre.example.com')}"
+
 ACTION="${1:-}"
 TEAM="${2:-}"
 APP_NAME="${3:-}"
@@ -29,7 +31,7 @@ case "$ACTION" in
         BRANCH="${5:?Missing branch}"
         PR_NUM="${6:?Missing pr-number}"
         PREVIEW_NS="preview-${TEAM}-${APP_NAME}-pr${PR_NUM}"
-        PREVIEW_HOST="pr-${PR_NUM}-${APP_NAME}.apps.sre.example.com"
+        PREVIEW_HOST="pr-${PR_NUM}-${APP_NAME}.${SRE_DOMAIN}"
 
         echo "==> Creating preview environment: $PREVIEW_NS"
 
