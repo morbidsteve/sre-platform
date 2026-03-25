@@ -10,7 +10,8 @@
 
 set -euo pipefail
 
-KC_URL="https://keycloak.apps.sre.example.com"
+SRE_DOMAIN="${SRE_DOMAIN:-$(kubectl get cm sre-domain-config -n flux-system -o jsonpath='{.data.SRE_DOMAIN}' 2>/dev/null || echo 'apps.sre.example.com')}"
+KC_URL="https://keycloak.${SRE_DOMAIN}"
 KC_REALM="sre"
 KC_ADMIN_USER="admin"
 
@@ -98,24 +99,24 @@ CLIENTJSON
 
 # Create OIDC clients for each service
 create_client "grafana" \
-    '["https://grafana.apps.sre.example.com/*", "https://grafana.apps.sre.example.com/login/generic_oauth"]' \
-    '["https://grafana.apps.sre.example.com"]'
+    "[\"https://grafana.${SRE_DOMAIN}/*\", \"https://grafana.${SRE_DOMAIN}/login/generic_oauth\"]" \
+    "[\"https://grafana.${SRE_DOMAIN}\"]"
 
 create_client "harbor" \
-    '["https://harbor.apps.sre.example.com/*", "https://harbor.apps.sre.example.com/c/oidc/callback"]' \
-    '["https://harbor.apps.sre.example.com"]'
+    "[\"https://harbor.${SRE_DOMAIN}/*\", \"https://harbor.${SRE_DOMAIN}/c/oidc/callback\"]" \
+    "[\"https://harbor.${SRE_DOMAIN}\"]"
 
 create_client "neuvector" \
-    '["https://neuvector.apps.sre.example.com/*"]' \
-    '["https://neuvector.apps.sre.example.com"]'
+    "[\"https://neuvector.${SRE_DOMAIN}/*\"]" \
+    "[\"https://neuvector.${SRE_DOMAIN}\"]"
 
 create_client "openbao" \
-    '["https://openbao.apps.sre.example.com/*", "https://openbao.apps.sre.example.com/ui/vault/auth/oidc/oidc/callback"]' \
-    '["https://openbao.apps.sre.example.com"]'
+    "[\"https://openbao.${SRE_DOMAIN}/*\", \"https://openbao.${SRE_DOMAIN}/ui/vault/auth/oidc/oidc/callback\"]" \
+    "[\"https://openbao.${SRE_DOMAIN}\"]"
 
 create_client "backstage" \
-    '["https://backstage.apps.sre.example.com/*"]' \
-    '["https://backstage.apps.sre.example.com"]'
+    "[\"https://backstage.${SRE_DOMAIN}/*\"]" \
+    "[\"https://backstage.${SRE_DOMAIN}\"]"
 
 echo ""
 echo "=========================================="

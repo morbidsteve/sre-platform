@@ -34,7 +34,8 @@ EXPLICIT_TAG="${3:-}"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-REGISTRY="${HARBOR_REGISTRY:-harbor.apps.sre.example.com}"
+SRE_DOMAIN="${SRE_DOMAIN:-$(kubectl get cm sre-domain-config -n flux-system -o jsonpath='{.data.SRE_DOMAIN}' 2>/dev/null || echo 'apps.sre.example.com')}"
+REGISTRY="${HARBOR_REGISTRY:-harbor.${SRE_DOMAIN}}"
 PROJECT="${HARBOR_PROJECT:-platform}"
 
 # ── Auto-detect deployment file ───────────────────────────────────────────────

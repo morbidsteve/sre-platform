@@ -8,5 +8,5 @@ metadata:
     app.kubernetes.io/part-of: sre-platform
 data:
   hostname-override.conf: |
-    hostname-url=https://keycloak.apps.sre.example.com
-    hostname-admin-url=https://keycloak.apps.sre.example.com
+    hostname-url=https://keycloak.${SRE_DOMAIN}
+    hostname-admin-url=https://keycloak.${SRE_DOMAIN}

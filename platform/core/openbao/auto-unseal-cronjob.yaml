@@ -193,12 +193,15 @@ spec:
                     echo "OIDC auth already enabled."
                   fi
 
+                  # Read OIDC client secret from K8s secret or domain config
+                  OIDC_SECRET=$(kubectl get secret openbao-oidc-client -n openbao -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "${SRE_OPENBAO_OIDC_SECRET}")
+
                   echo "Configuring OIDC auth..."
                   kubectl exec -n openbao "$TARGET_POD" -- \
                     sh -c "export VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=$ROOT_TOKEN; vault write auth/oidc/config \
                       oidc_discovery_url='http://keycloak.${SRE_DOMAIN}/realms/sre' \
                       oidc_client_id='openbao' \
-                      oidc_client_secret='LMEeknLI2RKfPwzhIPhUZlFk4PUEexb9' \
+                      oidc_client_secret='$OIDC_SECRET' \
                       default_role='sre-user' \
                       bound_issuer='https://keycloak.${SRE_DOMAIN}/realms/sre'" 2>&1 || true
 

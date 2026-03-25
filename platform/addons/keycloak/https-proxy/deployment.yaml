@@ -10,21 +10,21 @@ data:
       listen 8080;
       location /realms/sre/.well-known/openid-configuration {
         proxy_pass http://keycloak.keycloak.svc.cluster.local:80;
-        proxy_set_header Host keycloak.apps.sre.example.com;
+        proxy_set_header Host keycloak.${SRE_DOMAIN};
         sub_filter_types application/json;
         sub_filter_once off;
-        sub_filter 'http://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/token' 'http://keycloak-https-proxy.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/token';
-        sub_filter 'http://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/certs' 'http://keycloak-https-proxy.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/certs';
-        sub_filter 'http://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/userinfo' 'http://keycloak-https-proxy.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/userinfo';
-        sub_filter 'http://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/auth' 'https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/auth';
+        sub_filter 'http://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/token' 'http://keycloak-https-proxy.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/token';
+        sub_filter 'http://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/certs' 'http://keycloak-https-proxy.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/certs';
+        sub_filter 'http://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/userinfo' 'http://keycloak-https-proxy.keycloak.svc.cluster.local/realms/sre/protocol/openid-connect/userinfo';
+        sub_filter 'http://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/auth' 'https://keycloak.${SRE_DOMAIN}/realms/sre/protocol/openid-connect/auth';
       }
       location /realms/ {
         proxy_pass http://keycloak.keycloak.svc.cluster.local:80;
-        proxy_set_header Host keycloak.apps.sre.example.com;
+        proxy_set_header Host keycloak.${SRE_DOMAIN};
       }
       location / {
         proxy_pass http://keycloak.keycloak.svc.cluster.local:80;
-        proxy_set_header Host keycloak.apps.sre.example.com;
+        proxy_set_header Host keycloak.${SRE_DOMAIN};
       }
     }
 ---

@@ -27,6 +27,8 @@ error()   { echo -e "${RED}[sre]${NC} $*" >&2; }
 
 PF_PIDFILE="/tmp/sre-port-forwards.pids"
 
+SRE_DOMAIN="${SRE_DOMAIN:-$(kubectl get cm sre-domain-config -n flux-system -o jsonpath='{.data.SRE_DOMAIN}' 2>/dev/null || echo 'apps.sre.example.com')}"
+
 # ── Service Definitions ─────────────────────────────────────────────────────
 
 # Format: name|namespace|service|local_port|remote_port|protocol
@@ -41,13 +43,13 @@ SERVICES=(
 # Ingress routes (services accessible via Istio gateway)
 # Format: name|hostname
 INGRESS_ROUTES=(
-    "grafana|grafana.apps.sre.example.com"
-    "prometheus|prometheus.apps.sre.example.com"
-    "alertmanager|alertmanager.apps.sre.example.com"
-    "neuvector|neuvector.apps.sre.example.com"
-    "openbao|openbao.apps.sre.example.com"
-    "harbor|harbor.apps.sre.example.com"
-    "keycloak|keycloak.apps.sre.example.com"
+    "grafana|grafana.${SRE_DOMAIN}"
+    "prometheus|prometheus.${SRE_DOMAIN}"
+    "alertmanager|alertmanager.${SRE_DOMAIN}"
+    "neuvector|neuvector.${SRE_DOMAIN}"
+    "openbao|openbao.${SRE_DOMAIN}"
+    "harbor|harbor.${SRE_DOMAIN}"
+    "keycloak|keycloak.${SRE_DOMAIN}"
 )
 
 # ── Functions ───────────────────────────────────────────────────────────────
@@ -245,7 +247,7 @@ show_ingress_info() {
 
     echo
     echo -e "  ${BOLD}DNS Setup (add to /etc/hosts):${NC}"
-    echo -e "    ${CYAN}echo \"${gateway_ip}  grafana.apps.sre.example.com neuvector.apps.sre.example.com openbao.apps.sre.example.com harbor.apps.sre.example.com keycloak.apps.sre.example.com\" | sudo tee -a /etc/hosts${NC}"
+    echo -e "    ${CYAN}echo \"${gateway_ip}  grafana.${SRE_DOMAIN} neuvector.${SRE_DOMAIN} openbao.${SRE_DOMAIN} harbor.${SRE_DOMAIN} keycloak.${SRE_DOMAIN}\" | sudo tee -a /etc/hosts${NC}"
 
     if [[ -n "$tenant_vs" ]]; then
         local tenant_hosts=""

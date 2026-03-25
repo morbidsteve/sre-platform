@@ -17,3 +17,7 @@ data:
   SRE_REGISTRY: "harbor.apps.sre.example.com"
   SRE_KEYCLOAK_URL: "https://keycloak.apps.sre.example.com"
   SRE_CLUSTER_NAME: "sre-lab"
+  SRE_GATEWAY_IP: "192.168.2.200"
+  SRE_METALLB_RANGE: "192.168.2.200-192.168.2.210"
+  SRE_KEYCLOAK_PROXY_IP: "10.43.189.238"
+  SRE_OPENBAO_OIDC_SECRET: "REPLACE_ME"

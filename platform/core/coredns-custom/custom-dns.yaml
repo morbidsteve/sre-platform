@@ -16,26 +16,26 @@ data:
   hosts-entries: |
     # SRE Platform — MetalLB gateway IP for all *.${SRE_DOMAIN} services
     # Platform services
-    192.168.2.200 harbor.${SRE_DOMAIN}
-    192.168.2.200 dashboard.${SRE_DOMAIN}
-    192.168.2.200 grafana.${SRE_DOMAIN}
-    192.168.2.200 keycloak.${SRE_DOMAIN}
-    192.168.2.200 neuvector.${SRE_DOMAIN}
-    192.168.2.200 openbao.${SRE_DOMAIN}
-    192.168.2.200 oauth2.${SRE_DOMAIN}
-    192.168.2.200 portal.${SRE_DOMAIN}
-    192.168.2.200 prometheus.${SRE_DOMAIN}
-    192.168.2.200 alertmanager.${SRE_DOMAIN}
-    192.168.2.200 dsop.${SRE_DOMAIN}
-    192.168.2.200 compliance.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} harbor.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} dashboard.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} grafana.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} keycloak.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} neuvector.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} openbao.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} oauth2.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} portal.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} prometheus.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} alertmanager.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} dsop.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} compliance.${SRE_DOMAIN}
     # Deployed tenant apps
-    192.168.2.200 wireshark.${SRE_DOMAIN}
-    192.168.2.200 ws.${SRE_DOMAIN}
-    192.168.2.200 statusboard.${SRE_DOMAIN}
-    192.168.2.200 intel.${SRE_DOMAIN}
-    192.168.2.200 admin-tools.${SRE_DOMAIN}
-    192.168.2.200 nginx-demo.${SRE_DOMAIN}
-    192.168.2.200 keystone.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} wireshark.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} ws.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} statusboard.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} intel.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} admin-tools.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} nginx-demo.${SRE_DOMAIN}
+    ${SRE_GATEWAY_IP} keystone.${SRE_DOMAIN}
   registries-yaml: |
     mirrors:
       harbor.${SRE_DOMAIN}:

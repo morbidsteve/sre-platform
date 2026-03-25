@@ -29,13 +29,15 @@ spec:
       retries: 3
   values:
     server:
-      # Route keycloak.apps.sre.example.com to the nginx proxy that strips
+      # Route keycloak.${SRE_DOMAIN} to the nginx proxy that strips
       # X-Forwarded-Proto, ensuring http:// issuer in OIDC discovery + tokens.
       # Without this, the Istio gateway redirects HTTP→HTTPS causing issuer mismatch.
+      # NOTE: Update SRE_KEYCLOAK_PROXY_IP per-environment if the ClusterIP changes.
+      # Find it with: kubectl get svc keycloak-https-proxy -n keycloak -o jsonpath='{.spec.clusterIP}'
       hostAliases:
-        - ip: "10.43.189.238"  # keycloak-https-proxy.keycloak.svc ClusterIP
+        - ip: "${SRE_KEYCLOAK_PROXY_IP}"
           hostnames:
-            - "keycloak.apps.sre.example.com"
+            - "keycloak.${SRE_DOMAIN}"
       # Deployment mode (dev/standalone/ha) configured via environment
       # profile ConfigMap (openbao-env-values)
       resources:

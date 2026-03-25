@@ -21,7 +21,8 @@ error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 # ---------------------------------------------------------------------------
 # Configuration — adjust these for your environment
 # ---------------------------------------------------------------------------
-HARBOR_URL="${HARBOR_URL:-https://harbor.apps.sre.example.com}"
+SRE_DOMAIN="${SRE_DOMAIN:-$(kubectl get cm sre-domain-config -n flux-system -o jsonpath='{.data.SRE_DOMAIN}' 2>/dev/null || echo 'apps.sre.example.com')}"
+HARBOR_URL="${HARBOR_URL:-https://harbor.${SRE_DOMAIN}}"
 HARBOR_USER="${HARBOR_USER:-admin}"
 HARBOR_PASS="${HARBOR_PASS:-Harbor12345}"
 OPENBAO_NAMESPACE="${OPENBAO_NAMESPACE:-openbao}"

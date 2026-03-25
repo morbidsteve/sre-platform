@@ -12,13 +12,20 @@ const logger = require("./logger");
 const app = express();
 app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
 
+// ── Environment-driven config ────────────────────────────────────────────────
+const SRE_DOMAIN = process.env.SRE_DOMAIN || "apps.sre.example.com";
+const HARBOR_REGISTRY_EXT = process.env.HARBOR_REGISTRY || `harbor.${SRE_DOMAIN}`;
+const KEYCLOAK_EXTERNAL_URL = `https://keycloak.${SRE_DOMAIN}`;
+const HARBOR_ADMIN_USER = process.env.HARBOR_ADMIN_USER || "admin";
+const HARBOR_ADMIN_PASS = process.env.HARBOR_ADMIN_PASS || "Harbor12345";
+
 // ── Security Headers ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '0');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-src 'self' https://*.apps.sre.example.com; frame-ancestors 'self' https://*.apps.sre.example.com");
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-src 'self' https://*.${SRE_DOMAIN}; frame-ancestors 'self' https://*.${SRE_DOMAIN}`);
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
@@ -26,8 +33,7 @@ app.use((req, res, next) => {
 // ── CORS for platform apps ──────────────────────────────────────────────────
 app.use("/api", (req, res, next) => {
   const origin = req.headers.origin || "";
-  const domain = process.env.SRE_DOMAIN || "apps.sre.example.com";
-  if (origin.endsWith("." + domain) || origin === "https://" + domain) {
+  if (origin.endsWith("." + SRE_DOMAIN) || origin === "https://" + SRE_DOMAIN) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups");
@@ -323,14 +329,14 @@ const SAMPLE_APPS = [
 // ── Platform Services Definition ────────────────────────────────────────────
 
 const PLATFORM_SERVICES = [
-  { name: "grafana", namespace: "monitoring", serviceName: "kube-prometheus-stack-grafana", icon: "chart", description: "Dashboards & observability", url: "https://grafana.apps.sre.example.com" },
-  { name: "prometheus", namespace: "monitoring", serviceName: "kube-prometheus-stack-prometheus", icon: "search", description: "Metrics collection & alerting rules", url: "https://prometheus.apps.sre.example.com" },
-  { name: "alertmanager", namespace: "monitoring", serviceName: "kube-prometheus-stack-alertmanager", icon: "bell", description: "Alert routing & notifications", url: "https://alertmanager.apps.sre.example.com" },
-  { name: "harbor", namespace: "harbor", serviceName: "harbor-core", icon: "container", description: "Container image registry", url: "https://harbor.apps.sre.example.com" },
-  { name: "keycloak", namespace: "keycloak", serviceName: "keycloak", icon: "key", description: "Identity & access management", url: "https://keycloak.apps.sre.example.com" },
-  { name: "neuvector", namespace: "neuvector", serviceName: "neuvector-service-webui", icon: "shield", description: "Container security platform", url: "https://neuvector.apps.sre.example.com" },
-  { name: "openbao", namespace: "openbao", serviceName: "openbao", icon: "lock", description: "Secrets management", url: "https://openbao.apps.sre.example.com" },
-  { name: "dashboard", namespace: "sre-dashboard", serviceName: "sre-dashboard", icon: "layout", description: "This SRE Platform Dashboard", url: "https://dashboard.apps.sre.example.com" },
+  { name: "grafana", namespace: "monitoring", serviceName: "kube-prometheus-stack-grafana", icon: "chart", description: "Dashboards & observability", url: `https://grafana.${SRE_DOMAIN}` },
+  { name: "prometheus", namespace: "monitoring", serviceName: "kube-prometheus-stack-prometheus", icon: "search", description: "Metrics collection & alerting rules", url: `https://prometheus.${SRE_DOMAIN}` },
+  { name: "alertmanager", namespace: "monitoring", serviceName: "kube-prometheus-stack-alertmanager", icon: "bell", description: "Alert routing & notifications", url: `https://alertmanager.${SRE_DOMAIN}` },
+  { name: "harbor", namespace: "harbor", serviceName: "harbor-core", icon: "container", description: "Container image registry", url: `https://harbor.${SRE_DOMAIN}` },
+  { name: "keycloak", namespace: "keycloak", serviceName: "keycloak", icon: "key", description: "Identity & access management", url: KEYCLOAK_EXTERNAL_URL },
+  { name: "neuvector", namespace: "neuvector", serviceName: "neuvector-service-webui", icon: "shield", description: "Container security platform", url: `https://neuvector.${SRE_DOMAIN}` },
+  { name: "openbao", namespace: "openbao", serviceName: "openbao", icon: "lock", description: "Secrets management", url: `https://openbao.${SRE_DOMAIN}` },
+  { name: "dashboard", namespace: "sre-dashboard", serviceName: "sre-dashboard", icon: "layout", description: "This SRE Platform Dashboard", url: `https://dashboard.${SRE_DOMAIN}` },
 ];
 
 // ── Utility: HTML-escape to prevent XSS ─────────────────────────────────────
@@ -792,7 +798,7 @@ app.post("/api/favorites", async (req, res) => {
 app.get("/api/apps", async (req, res) => {
   // Allow portal cross-origin requests
   const origin = req.headers.origin || "";
-  if (origin.endsWith(".apps.sre.example.com") || origin.endsWith("." + (process.env.SRE_DOMAIN || "apps.sre.example.com"))) {
+  if (origin.endsWith("." + SRE_DOMAIN)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
@@ -946,7 +952,7 @@ app.get("/api/apps", async (req, res) => {
 // CORS preflight for /api/apps
 app.options("/api/apps", (req, res) => {
   const origin = req.headers.origin || "";
-  if (origin.endsWith(".apps.sre.example.com") || origin.endsWith("." + (process.env.SRE_DOMAIN || "apps.sre.example.com"))) {
+  if (origin.endsWith("." + SRE_DOMAIN)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET");
@@ -2203,7 +2209,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
         port: svcInfo.port || 8080,
         namespace: nsName,
         services: analysis.services,
-        url: `https://${safeName}.${process.env.SRE_DOMAIN || "apps.sre.example.com"}`,
+        url: `https://${safeName}.${SRE_DOMAIN}`,
         message: `Dockerfile detected: building and deploying "${safeName}"`,
       });
     }
@@ -2365,7 +2371,7 @@ app.post("/api/deploy/env", mutateLimiter, requireGroups("sre-admins", "develope
 
 const BUILD_NAMESPACE = "sre-builds";
 const HARBOR_REGISTRY = "harbor.harbor.svc.cluster.local";  // For Kaniko push (in-cluster DNS)
-const HARBOR_PULL_REGISTRY = "harbor.apps.sre.example.com"; // For node image pulls (node DNS)
+const HARBOR_PULL_REGISTRY = HARBOR_REGISTRY_EXT; // For node image pulls (node DNS)
 const KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.2";
 const GIT_CLONE_IMAGE = "alpine/git:2.43.0";
 const REPO_ANALYZE_IMAGE = "alpine/git:2.43.0";
@@ -2408,7 +2414,7 @@ async function ensureHarborProject(projectName) {
     "http://harbor.harbor.svc.cluster.local:80",
     "http://harbor.harbor.svc:80",
   ];
-  const authHeader = "Basic " + Buffer.from("admin:Harbor12345").toString("base64");
+  const authHeader = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
 
   for (const harborUrl of harborUrls) {
     try {
@@ -3210,7 +3216,7 @@ app.post("/api/deploy/compose-group", mutateLimiter, requireGroups("sre-admins",
 
         const svcAppName = sanitizeName(svc.deployName || buildMeta.appName);
         const isIngress = svc.role === "ingress";
-        const ingressHost = isIngress ? `${svcAppName}.apps.sre.example.com` : "";
+        const ingressHost = isIngress ? `${svcAppName}.${SRE_DOMAIN}` : "";
 
         // Build environment with service discovery for internal dependencies
         const env = Array.isArray(svc.env) ? svc.env : [];
@@ -3814,7 +3820,7 @@ app.post("/api/deploy/from-build", mutateLimiter, requireGroups("sre-admins", "d
     const teamName = sanitizeName(team);
     const nsName = normalizeTeamName(team);
     const containerPort = port || 8080;
-    const ingressHost = ingress || `${safeName}.apps.sre.example.com`;
+    const ingressHost = ingress || `${safeName}.${SRE_DOMAIN}`;
 
     // Ensure namespace
     await ensureNamespace(nsName, teamName);
@@ -4495,7 +4501,7 @@ app.post("/api/cluster/nodes/:name/cordon", mutateLimiter, requireGroups("sre-ad
 // GET /api/config — Dashboard configuration
 app.get("/api/config", (req, res) => {
   res.json({
-    baseUrl: "https://{service}.apps.sre.example.com",
+    baseUrl: `https://{service}.${SRE_DOMAIN}`,
     loginUrl: "/oauth2/start",
     logoutUrl: "/oauth2/sign_out",
     services: PLATFORM_SERVICES.map((s) => ({
@@ -4924,7 +4930,7 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
           svcName.includes("nginx") ||
           svcName.includes("web") ||
           (builds.filter(b => !b.sharedBuild).length === 1); // Single buildable service gets ingress
-        const ingressHost = isIngress ? `${safeName}.apps.sre.example.com` : "";
+        const ingressHost = isIngress ? `${safeName}.${SRE_DOMAIN}` : "";
 
         // Collect environment variables — inject DB/Redis connection info for platform services
         const envVars = meta.environment || [];
@@ -5006,7 +5012,7 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
             name: safeName,
             displayName: safeName.toUpperCase(),
             description: 'Deployed from Git',
-            url: `https://${safeName}.apps.sre.example.com`,
+            url: `https://${safeName}.${SRE_DOMAIN}`,
             icon: 'package',
             namespace: nsName,
             access: { mode: 'restricted', groups: [teamName, 'sre-admins'], users: [], attributes: [] },
@@ -5215,10 +5221,10 @@ async function ensureNamespace(nsName, teamLabel) {
           data: {
             ".dockerconfigjson": Buffer.from(JSON.stringify({
               auths: {
-                "harbor.apps.sre.example.com": {
-                  username: "admin",
-                  password: "Harbor12345",
-                  auth: Buffer.from("admin:Harbor12345").toString("base64"),
+                [HARBOR_REGISTRY_EXT]: {
+                  username: HARBOR_ADMIN_USER,
+                  password: HARBOR_ADMIN_PASS,
+                  auth: Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64"),
                 },
               },
             })).toString("base64"),
@@ -5545,7 +5551,7 @@ async function getCredentials() {
 
   // SSO — the only credentials users need
   result.sso.keycloak = {
-    url: "https://keycloak.apps.sre.example.com",
+    url: KEYCLOAK_EXTERNAL_URL,
     realm: "sre",
     username: "sre-admin",
     password: "SreAdmin123!",
@@ -5637,7 +5643,7 @@ async function getCredentials() {
     };
   } catch (err) {
     console.debug('[credentials] Harbor admin secret not found, using default:', err.message);
-    result.breakglass.harbor = { username: "admin", password: "Harbor12345" };
+    result.breakglass.harbor = { username: HARBOR_ADMIN_USER, password: HARBOR_ADMIN_PASS };
   }
 
   return result;
@@ -5816,7 +5822,7 @@ app.get("/api/portal/groups", async (req, res) => {
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || "http://keycloak.keycloak.svc.cluster.local";
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || "sre";
 const KEYCLOAK_ADMIN_USER = process.env.KEYCLOAK_ADMIN_USER || "admin";
-const KEYCLOAK_ADMIN_PASS = process.env.KEYCLOAK_ADMIN_PASS || "03F2tLffxi";
+const KEYCLOAK_ADMIN_PASS = process.env.KC_ADMIN_PASSWORD || process.env.KEYCLOAK_ADMIN_PASS || "changeme";
 
 async function getKeycloakAdminToken() {
   const resp = await fetch(`${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token`, {
@@ -6031,7 +6037,7 @@ loadAppRegistry().then(function() {
       name: 'keystone',
       displayName: 'KEYSTONE',
       description: 'Logistics Common Operating Picture — USMC',
-      url: 'https://keystone.apps.sre.example.com',
+      url: `https://keystone.${SRE_DOMAIN}`,
       icon: 'map',
       namespace: 'team-keystone',
       access: { mode: 'restricted', groups: ['logistics', 'sre-admins'], users: [], attributes: [] },
@@ -6082,7 +6088,7 @@ app.get("/api/proxy/alertmanager/alerts", async (req, res) => {
 app.get("/api/proxy/harbor/vulnerabilities", async (req, res) => {
   try {
     const harborUrl = "http://harbor-core.harbor.svc.cluster.local";
-    const auth = "Basic " + Buffer.from("admin:Harbor12345").toString("base64");
+    const auth = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
 
     // Get all projects
     const projResp = await fetch(harborUrl + "/api/v2.0/projects", {
@@ -7601,7 +7607,7 @@ async function executePipelineDeploy(run, actor) {
     await db.auditLog(run.id, "deploy_started", actor, `Starting deployment of ${run.app_name}`);
 
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
-    const domain = process.env.SRE_DOMAIN || "apps.sre.example.com";
+    const domain = SRE_DOMAIN;
 
     // Check if run has security exceptions requiring privileged mode
     let needsPrivileged = false;
