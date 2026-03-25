@@ -1676,19 +1676,748 @@ These tasks close the remaining gaps between "we have documentation" and "the sy
 | **Phase 5** | 5.1-5.3 | Medium (workflows + UI + digest) | HIGH — ISSM daily life |
 | **Phase 6** | 6.1-6.3 | Medium (RBAC + export/import + SAR) | MEDIUM — assessor experience |
 | **Phase 7** | 7.1-7.15 | Large (scripts + CronJobs + UI + docs) | HIGH — operational compliance |
+| **Phase 8** | 8.1-8.5 | Medium (wizard + API + portal + docs) | HIGH — app compliance onboarding |
 
 **Phase 7 parallel execution:**
 - **7A — Testing and scanning** (7.1, 7.4, 7.9, 7.10): Automated validation, can run together
 - **7B — Documentation and tracking** (7.6, 7.7, 7.8, 7.13, 7.14): Compliance docs + UI, can run together
 - **7C — Automation and intelligence** (7.2, 7.3, 7.5, 7.11, 7.12, 7.15): Data generation + reporting, depends on Phase 1 API
+- Phase 8 (app compliance onboarding): Depends on Phase 1 API + Phase 3.5 finding lifecycle
 
 ---
 
-## Verification Checklist
+## Phase 8: Application Compliance Onboarding
 
-After all phases are complete, verify:
+When a developer brings new software to the platform, there's a compliance dimension beyond just "deploy it." The ISSM needs to know what the app does, what data it handles, what controls it inherits vs. owns, and whether it introduces new risk. These tasks make that process structured and automated.
 
-**Platform-Portal Bridge:**
+---
+
+### Task 8.1: App Security Categorization Wizard
+
+**Problem:** Before an app deploys, its data sensitivity must be categorized per FIPS 199 (Low/Moderate/High for Confidentiality, Integrity, Availability). This determines which controls apply. Currently there's no process for this — all tenant namespaces default to "Moderate" but nobody verifies that's correct for each app.
+
+**Where:** `apps/dsop-wizard/src/` — enhance Step 2 (App Info) or add a new step.
+
+**Steps:**
+1. Add a "Security Categorization" section to the DSOP wizard Step 2 (App Info):
+
+   ```
+   What type of data does this application process?
+   ○ Public information (Low)
+   ○ Internal operational data (Low-Moderate)
+   ○ Controlled Unclassified Information / CUI (Moderate)
+   ○ Personally Identifiable Information / PII (Moderate-High)
+   ○ Protected Health Information / PHI (High)
+   ○ Financial data (Moderate-High)
+   ○ Not sure — request ISSM review
+   ```
+
+2. Based on selection, auto-set the FIPS 199 categorization:
+   - **Confidentiality:** Low / Moderate / High
+   - **Integrity:** Low / Moderate / High
+   - **Availability:** Low / Moderate / High
+
+3. If the categorization is higher than the namespace's `sre.io/security-categorization` label, flag it:
+   - "This app handles PII (High) but the namespace is categorized as Moderate. ISSM review required before deployment."
+   - Block deployment until ISSM confirms the namespace categorization is appropriate
+
+4. Store the categorization in the HelmRelease annotations:
+   ```yaml
+   metadata:
+     annotations:
+       sre.io/data-types: "CUI, PII"
+       sre.io/fips-199-confidentiality: "Moderate"
+       sre.io/fips-199-integrity: "Moderate"
+       sre.io/fips-199-availability: "Low"
+   ```
+
+5. Include in the compliance package and pipeline evidence.
+
+**Acceptance Criteria:**
+- Wizard captures data sensitivity classification before deployment
+- Mismatch between app and namespace categorization blocks deployment
+- Categorization stored in HelmRelease annotations
+- Included in compliance evidence
+
+---
+
+### Task 8.2: Inherited Controls Report per App
+
+**Problem:** When an app deploys on SRE, it inherits 30+ NIST controls from the platform. But neither the developer nor the assessor gets a document saying "here's what your app inherits and here's what you're responsible for." The control inheritance matrix (platform-experience-plan Task 3.3) covers this at the platform level, but each app needs its own tailored version based on what features it uses.
+
+**Where:** `apps/dashboard/server.js` + DSOP wizard Step 7 (Complete).
+
+**Steps:**
+1. After deployment, auto-generate an "App Compliance Profile" that shows:
+
+   **Inherited from Platform (no app action needed):**
+   - SC-8: Encryption in transit (Istio mTLS) ✓
+   - AC-4: Network isolation (NetworkPolicies) ✓
+   - AU-2: Audit logging (Loki collection) ✓
+   - SI-7: Image integrity (Cosign verified) ✓
+   - RA-5: Vulnerability scanning (Harbor Trivy) ✓
+   - ... (all controls the platform handles)
+
+   **Shared (platform + app must both act):**
+   - AC-2: Account management — Platform provides Keycloak SSO; App must use OAuth2 (not local auth)
+   - AU-12: Audit generation — Platform collects stdout; App must log in structured JSON
+   - SC-12: Key management — Platform provides OpenBao; App must use ExternalSecrets (not hardcoded)
+
+   **App-Owned (developer responsible):**
+   - SI-10: Input validation — App must validate all user input
+   - SC-18: Mobile code — App must not execute untrusted client-side scripts
+   - SA-11: Developer testing — App must have its own test suite
+
+   **Conditional (based on app features):**
+   - If `database.enabled: true` → AC-2 extends to database access control
+   - If `ingress.enabled: true` → SC-7 extends to app-level boundary protection
+   - If `externalServices` configured → CA-3 (ISA) applies for external connections
+
+2. Generate this based on the app's HelmRelease values (which chart, which features enabled).
+
+3. Include in the DSOP wizard compliance package download (Step 7).
+
+4. Create server endpoint: `GET /api/apps/:namespace/:name/compliance-profile`
+
+5. Show in the Applications tab when clicking an app: "Compliance Profile" expandable section.
+
+**Acceptance Criteria:**
+- Per-app compliance profile generated from HelmRelease values
+- Controls categorized as Inherited / Shared / App-Owned / Conditional
+- Downloadable from DSOP wizard and Applications tab
+- Tailored based on which chart features are enabled
+
+---
+
+### Task 8.3: App Owner Compliance Package Generator
+
+**Problem:** The RPOC portal has app owner templates (`rpoc-ato-portal/compliance/raise/app-owner-package/`) with 5 templates: vulnerability management plan, mitigation statement, STIG checklist, changelog, architecture template. But developers must manually fill these in. Many fields can be auto-populated from the pipeline and platform data.
+
+**Where:** RPOC portal + SRE compliance API.
+
+**Steps:**
+1. Auto-populate the app owner package documents from pipeline and platform data:
+
+   **vulnerability-management-plan-template.md:**
+   - Auto-fill: app name, team, image registry, scan tool (Trivy), scan frequency (on every push), SLA thresholds (from Task 3.5)
+   - Auto-fill: current CVE counts by severity from Harbor
+   - Leave manual: escalation contacts, exception process (link to Kyverno PolicyException docs)
+
+   **mitigation-statement-template.md:**
+   - Auto-fill from pipeline findings with disposition=`accepted_risk`:
+     - Finding ID, CVE, severity, justification, compensating controls
+   - Leave manual: ISSM signature, AO concurrence
+
+   **app-stig-checklist-template.md:**
+   - Auto-fill: app image details, base image, scan results
+   - Auto-fill any applicable STIG findings from Trivy/kube-bench
+   - Leave manual: app-specific STIG checks (e.g., application-level encryption)
+
+   **changelog-template.md:**
+   - Auto-fill from Git history: `git log --oneline --since="3 months ago" -- apps/tenants/<team>/`
+   - Include pipeline runs with dates and gate results
+
+   **application-architecture-template.md:**
+   - Auto-fill: services list (from Helm values), database (if enabled), external services (if configured)
+   - Auto-fill: data flow from Istio traffic (Task 7.2)
+   - Leave manual: business logic description, data classification narrative
+
+2. Create server endpoint: `GET /api/apps/:namespace/:name/owner-package` that generates the pre-filled package as a ZIP.
+
+3. Add a "Download App Compliance Package" button to the Applications tab per app.
+
+4. Also available from the DSOP wizard Step 7 (alongside the existing compliance package).
+
+**Acceptance Criteria:**
+- 5 app owner documents auto-populated from live data
+- Developer only needs to fill in business-specific sections
+- Downloadable from Applications tab and DSOP wizard
+- Package includes all required RAISE 2.0 APPO (Application Platform Product Owner) artifacts
+
+---
+
+### Task 8.4: Pre-Deployment Compliance Checklist
+
+**Problem:** Developers deploy apps without knowing whether they meet compliance requirements. The Kyverno policies catch some issues (image registry, security context), but there's no pre-flight check that covers the full compliance picture — data categorization, SBOM availability, signed image, scan results clean, etc.
+
+**Where:** `apps/dsop-wizard/src/` — add between Step 5 (Review) and Step 6 (Deploy).
+
+**Steps:**
+1. Add a "Compliance Readiness" check that runs before deployment:
+
+   ```
+   Pre-Deployment Compliance Checklist:
+
+   ✅ Security categorization completed (Moderate)
+   ✅ Image scanned by Trivy (0 critical, 2 high — all mitigated)
+   ✅ Image signed with Cosign
+   ✅ SBOM generated and attached (SPDX + CycloneDX)
+   ✅ All SAST findings addressed (0 open)
+   ✅ No secrets detected in source code
+   ✅ Target namespace has NetworkPolicies
+   ✅ Target namespace has Istio injection enabled
+   ⚠️ No liveness/readiness probes configured — add probes for production
+   ❌ External service api.stripe.com has no ISA — ISSM review required
+
+   Result: 9/10 passed, 1 warning, 1 blocker
+   [Deploy Anyway (warnings only)] [Request ISSM Review (blockers)]
+   ```
+
+2. Blockers (red) prevent deployment:
+   - Missing security categorization
+   - Unmitigated critical CVEs
+   - Missing image signature
+   - External services without ISA
+
+3. Warnings (yellow) allow deployment but are noted:
+   - Missing probes
+   - High CVEs with accepted_risk disposition
+   - Missing SBOM (non-blocking but tracked)
+
+4. Green items are informational (everything is good).
+
+5. Store the checklist result in the pipeline run record for audit trail.
+
+**Acceptance Criteria:**
+- Pre-deployment checklist runs automatically in DSOP wizard
+- Blockers prevent deployment until resolved or ISSM-approved
+- Warnings are logged but don't block
+- Checklist results stored in audit trail
+
+---
+
+### Task 8.5: App Decommissioning Compliance Workflow
+
+**Problem:** When an app is deleted from the platform, there's no compliance process. Data might need to be preserved for retention requirements, audit logs should be archived, and the POA&M should be updated to close any app-specific findings. Currently "delete" just removes the HelmRelease.
+
+**Where:** `apps/dashboard/server.js` — delete endpoint. `apps/dashboard/client/src/` — Applications tab.
+
+**Steps:**
+1. When a developer or admin clicks "Delete" on an app, show a compliance decommissioning checklist:
+
+   ```
+   App Decommissioning: team-alpha/payment-api
+
+   Before removal, confirm:
+   ☐ All application data has been backed up or is not subject to retention
+   ☐ Audit logs for this app have been preserved (Loki retains for 30 days)
+   ☐ Any open POA&M findings for this app have been closed or transferred
+   ☐ Any active risk acceptances for this app have been revoked
+   ☐ The app owner has been notified of decommissioning
+   ☐ Harbor images will be retained for [30/90/365] days per retention policy
+
+   Reason for decommissioning: [text field]
+
+   [Confirm Decommissioning] [Cancel]
+   ```
+
+2. On confirmation:
+   - Auto-close any POA&M findings for the app (status → "closed_decommissioned")
+   - Auto-revoke any PolicyExceptions scoped to the app
+   - Create an audit log entry: "App decommissioned by [user], reason: [text]"
+   - Delete the HelmRelease (Flux removes the resources)
+   - Do NOT delete Harbor images (retain per policy)
+
+3. Create server endpoint: `POST /api/apps/:namespace/:name/decommission` (different from plain DELETE).
+
+4. Include decommissioning events in the compliance timeline.
+
+**Acceptance Criteria:**
+- Decommissioning requires checklist acknowledgment (not just a delete button)
+- POA&M findings auto-closed on decommission
+- PolicyExceptions auto-revoked
+- Audit trail records decommissioning with reason
+- Harbor images retained per policy
+
+---
+
+## Phase 9: Assessment Readiness and Document Intelligence
+
+These close the last gaps — the things that actually trip up ATO packages during independent assessment.
+
+---
+
+### Task 9.1: One-Time Placeholder Fill Tool
+
+**Problem:** Every document in `rpoc-ato-portal/compliance/raise/` has `_[PLACEHOLDER]_` fields (organization name, ISSM name, system owner, dates, facility address, etc.). Filling these in across 30 documents is tedious and error-prone — miss one and the assessor flags it.
+
+**Where:** Create `rpoc-ato-portal/scripts/fill-placeholders.sh` or a portal UI page.
+
+**Steps:**
+1. Create a config file where the user fills in their org details once:
+   ```yaml
+   # rpoc-ato-portal/compliance/raise/org-config.yaml
+   organization:
+     name: "Defense Innovation Unit"
+     abbreviation: "DIU"
+     address: "1234 Innovation Way, Mountain View, CA 94043"
+   system:
+     name: "Secure Runtime Environment (SRE)"
+     abbreviation: "SRE"
+     emass_id: ""
+     ditpr_id: ""
+     fips_category: "Moderate-Moderate-Moderate"
+   personnel:
+     system_owner:
+       name: "John Smith"
+       title: "Program Manager"
+       email: "john.smith@example.mil"
+       phone: "(555) 123-4567"
+     issm:
+       name: "Jane Doe"
+       title: "Information System Security Manager"
+       email: "jane.doe@example.mil"
+     isso:
+       name: "Bob Wilson"
+       title: "Information System Security Officer"
+       email: "bob.wilson@example.mil"
+     authorizing_official:
+       name: "Col. Sarah Johnson"
+       title: "Authorizing Official"
+   dates:
+     ato_target: "2026-09-01"
+     system_go_live: "2026-06-01"
+   ```
+
+2. Create a script that replaces all `_[PLACEHOLDER]_`, `_[ORGANIZATION]_`, `_[ISSM NAME]_`, `_[SYSTEM OWNER]_`, etc. across all 30 markdown files using the config:
+   ```bash
+   ./scripts/fill-placeholders.sh --config compliance/raise/org-config.yaml
+   ```
+
+3. Also create a portal page (`placeholder-setup.html`) with a form that generates the config and runs the replacement — so non-technical users (ISSMs) can fill it in without touching YAML.
+
+4. Track which placeholders haven't been filled: `./scripts/fill-placeholders.sh --check` lists remaining unfilled fields.
+
+**Acceptance Criteria:**
+- Fill in org details once, propagate to all 30 documents
+- Check mode lists remaining unfilled placeholders
+- Portal UI for non-technical users
+- No placeholder is missed across any document
+
+---
+
+### Task 9.2: Cross-Reference Validator
+
+**Problem:** The SSP references specific files (`platform/core/kyverno/helmrelease.yaml`), the control mapping references manifest paths, and STIG checklists reference Ansible roles. If any of these files are moved, renamed, or deleted, the compliance documents silently break — assessors click links that go nowhere.
+
+**Where:** Create `scripts/validate-compliance-refs.sh`
+
+**Steps:**
+1. Parse all compliance documents (SSP JSON, control mapping JSON, STIG YAMLs) and extract every file path reference.
+
+2. Check that each referenced file actually exists in the repo:
+   ```bash
+   # Example checks
+   jq -r '.controls[].evidence[]' compliance/nist-800-53-mappings/control-mapping.json | while read path; do
+     [ -f "$path" ] || echo "BROKEN REF: $path (in control-mapping.json)"
+   done
+   ```
+
+3. Also check that referenced Kubernetes resources exist in the cluster:
+   - Control says "Kyverno ClusterPolicy: require-labels" → verify `kubectl get clusterpolicy require-labels`
+   - Control says "HelmRelease: istio" → verify `kubectl get helmrelease istio -n istio-system`
+
+4. Output: list of broken references with which document contains them and what they should point to.
+
+5. Run as part of `task validate` and in CI.
+
+**Acceptance Criteria:**
+- All file path references in compliance docs are validated
+- Broken references reported with source document and line
+- Runs in CI to catch drift early
+- Cluster resource references validated when cluster is reachable
+
+---
+
+### Task 9.3: Compliance Gate in CI/CD (Block PRs That Reduce Compliance)
+
+**Problem:** A developer could submit a PR that changes a Kyverno policy from `Enforce` to `Audit`, removes a NetworkPolicy, or deletes a STIG checklist. Nothing in CI catches compliance regressions.
+
+**Where:** Create `.github/workflows/compliance-gate.yaml`
+
+**Steps:**
+1. Create a GitHub Actions workflow that runs on PRs touching `policies/`, `platform/`, or `compliance/`:
+
+   ```yaml
+   name: Compliance Gate
+   on:
+     pull_request:
+       paths:
+         - 'policies/**'
+         - 'platform/**'
+         - 'compliance/**'
+         - 'apps/tenants/**'
+
+   jobs:
+     compliance-check:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+
+         # Check 1: No Kyverno policies switched from Enforce to Audit
+         - name: Check policy enforcement
+           run: |
+             git diff origin/main...HEAD -- policies/ | grep -E '^\+.*validationFailureAction.*Audit' && {
+               echo "::error::Policy switched from Enforce to Audit. This requires ISSM approval."
+               exit 1
+             } || true
+
+         # Check 2: No NetworkPolicies deleted
+         - name: Check network policies
+           run: |
+             DELETED=$(git diff origin/main...HEAD --name-only --diff-filter=D -- 'apps/tenants/*/network-policies/' 'platform/*/network-policies/')
+             [ -n "$DELETED" ] && {
+               echo "::error::NetworkPolicy files deleted: $DELETED"
+               exit 1
+             } || true
+
+         # Check 3: Kyverno policy tests exist for any new/modified policies
+         - name: Check policy tests
+           run: |
+             for policy in $(git diff origin/main...HEAD --name-only -- 'policies/custom/*.yaml' 'policies/baseline/*.yaml' 'policies/restricted/*.yaml'); do
+               POLICY_NAME=$(basename "$policy" .yaml)
+               [ -d "policies/tests/$POLICY_NAME" ] || {
+                 echo "::error::Policy $POLICY_NAME has no test suite in policies/tests/"
+                 exit 1
+               }
+             done
+
+         # Check 4: Compliance document references still valid
+         - name: Validate compliance refs
+           run: ./scripts/validate-compliance-refs.sh --files-only
+
+         # Check 5: Run Kyverno policy tests
+         - name: Run policy tests
+           run: kyverno test policies/tests/
+   ```
+
+2. Make the workflow a required check for PR merge on the `main` branch.
+
+**Acceptance Criteria:**
+- PRs that weaken policies (Enforce→Audit) are blocked
+- PRs that delete NetworkPolicies are blocked
+- New policies without tests are blocked
+- Broken compliance references are caught in CI
+- Kyverno policy tests run on every PR
+
+---
+
+### Task 9.4: Automated Evidence Screenshots via Grafana Rendering
+
+**Problem:** The ATO evidence package (Task 2.1) generates JSON artifacts, but assessors often want visual evidence — screenshots of Grafana dashboards showing metrics are healthy, Keycloak showing user management is configured, etc. Currently someone must manually take screenshots.
+
+**Where:** Enhance `scripts/generate-ato-package.sh` and add Grafana image rendering.
+
+**Steps:**
+1. Grafana has a built-in rendering API. Call it to generate PNG screenshots of key dashboards:
+   ```bash
+   # Screenshot cluster overview dashboard
+   curl -s "https://grafana.apps.sre.example.com/render/d/sre-cluster-overview/cluster-summary?width=1200&height=800&orgId=1" \
+     -u "admin:prom-operator" \
+     -o "${OUTPUT_DIR}/screenshots/cluster-overview.png"
+
+   # Screenshot Kyverno compliance dashboard
+   curl -s "https://grafana.apps.sre.example.com/render/d/sre-kyverno-compliance/compliance-summary?width=1200&height=800" \
+     -u "admin:prom-operator" \
+     -o "${OUTPUT_DIR}/screenshots/kyverno-compliance.png"
+
+   # Screenshot Istio mesh dashboard
+   curl -s "https://grafana.apps.sre.example.com/render/d/sre-istio-mesh/mesh-summary?width=1200&height=800" \
+     -u "admin:prom-operator" \
+     -o "${OUTPUT_DIR}/screenshots/istio-mesh.png"
+   ```
+
+2. Generate screenshots for 10 key dashboards that map to NIST control families:
+   - Cluster Overview → CM-2, CM-8
+   - Kyverno Compliance → AC-6, CM-7
+   - Istio Mesh → SC-8, AC-4
+   - Certificate Manager → IA-5, SC-12
+   - Flux GitOps → CM-3, SA-10
+   - NeuVector Security → SI-3, SI-4
+   - Harbor Registry → RA-5, SI-7
+   - Audit Logs → AU-2, AU-6
+   - Alerting Overview → IR-4, IR-5
+   - Node Overview → SC-13 (FIPS)
+
+3. Each screenshot is timestamped and named by control family.
+
+4. Include a `screenshots/` directory in the ATO evidence ZIP.
+
+5. If Grafana rendering is not available (no rendering plugin), skip with a warning.
+
+**Note:** Grafana image rendering requires the `grafana-image-renderer` plugin. Check if it's deployed; if not, add it to the Grafana HelmRelease values:
+```yaml
+imageRenderer:
+  enabled: true
+```
+
+**Acceptance Criteria:**
+- 10 dashboard screenshots auto-captured in the evidence package
+- Each screenshot timestamped and labeled with NIST control family
+- Graceful skip if rendering plugin not available
+- Screenshots are legible (1200x800 minimum)
+
+---
+
+### Task 9.5: POA&M Auto-Close on Remediation
+
+**Problem:** When a CVE finding is tracked in the POA&M (Task 3.5) and a developer deploys a patched image, the finding should auto-close. Currently findings sit open until someone manually updates them.
+
+**Where:** `apps/dashboard/server.js` — deployment handler + finding lifecycle.
+
+**Steps:**
+1. After a successful deployment, check if any open POA&M findings reference the deployed image:
+   ```javascript
+   async function checkRemediatedFindings(namespace, appName, newImageTag) {
+     // Find open findings for this app
+     const openFindings = await db.query(
+       `SELECT * FROM finding_lifecycle
+        WHERE affected_resource LIKE $1
+        AND status IN ('open', 'in_progress')
+        AND source IN ('trivy', 'pipeline')`,
+       [`%${namespace}/${appName}%`]
+     );
+
+     for (const finding of openFindings) {
+       // Re-scan the new image for this specific CVE
+       const stillPresent = await checkCVEInImage(newImageTag, finding.cve_id);
+       if (!stillPresent) {
+         await db.query(
+           `UPDATE finding_lifecycle SET status='mitigated', mitigated_at=NOW(),
+            mitigated_by='auto-remediation', notes='CVE no longer present in ${newImageTag}'
+            WHERE id=$1`,
+           [finding.id]
+         );
+         logger.info(`Auto-closed finding ${finding.id}: ${finding.title} — remediated in ${newImageTag}`);
+       }
+     }
+   }
+   ```
+
+2. Call this function after every successful deployment in the deploy handler.
+
+3. Log auto-closures in the audit trail.
+
+4. Show in the ISSM daily digest: "3 findings auto-remediated by new deployments yesterday"
+
+**Acceptance Criteria:**
+- Open findings auto-close when the patched image deploys
+- Auto-closure logged in audit trail
+- ISSM digest reports auto-remediations
+- Only closes findings where the specific CVE is no longer present (verified by re-scan)
+
+---
+
+### Task 9.6: SCA Assessment Dry-Run Checklist
+
+**Problem:** Before the independent SCA shows up for the 8-12 week assessment, the ISSM needs to know "are we ready?" There's no checklist for assessment preparation — what should be in place, what evidence should be pre-staged, what common gotchas to fix first.
+
+**Where:** Create `rpoc-ato-portal/compliance/raise/sca-assessment-prep.md` and a portal page.
+
+**Steps:**
+1. Create a comprehensive pre-assessment checklist:
+
+   ```markdown
+   # SCA Assessment Preparation Checklist
+
+   ## 30 Days Before Assessment
+
+   ### Documentation Ready
+   - [ ] All 30 ATO package documents have no remaining _[PLACEHOLDER]_ fields
+   - [ ] SSP control narratives uploaded to eMASS
+   - [ ] POA&M current (no stale findings older than SLA)
+   - [ ] All QREV templates filled for current quarter
+   - [ ] Cross-reference validator passes: `./scripts/validate-compliance-refs.sh`
+
+   ### Platform Ready
+   - [ ] Compliance score ≥ 95%: `./scripts/compliance-report.sh`
+   - [ ] All Kyverno policies in Enforce mode (no Audit for production controls)
+   - [ ] STIG scan passing ≥ 95%: `./scripts/quarterly-stig-scan.sh`
+   - [ ] Control validation tests pass: `./scripts/control-validation-tests.sh`
+   - [ ] No critical/high CVEs without disposition in deployed images
+   - [ ] All PolicyExceptions have valid justifications and are not expired
+   - [ ] All certificates have > 30 days before expiry
+   - [ ] Velero backups running on schedule, last restore test passed
+   - [ ] OpenBao unsealed and healthy
+
+   ### Evidence Pre-Staged
+   - [ ] Generate fresh ATO evidence package: `./scripts/generate-ato-package.sh`
+   - [ ] Grafana dashboard screenshots captured (10 dashboards)
+   - [ ] Data flow diagram current (generated from live Istio traffic)
+   - [ ] Personnel list current (training dates, access review dates)
+   - [ ] Rules of Behavior signed by all users
+   - [ ] Tabletop exercise completed this quarter with after-action report
+
+   ### Access for Assessor
+   - [ ] Assessor Keycloak account created (compliance-assessors group)
+   - [ ] Assessor can access: Dashboard, Grafana, Harbor (read-only)
+   - [ ] Assessor CANNOT access: Admin tab, deployment, user management
+   - [ ] Assessment worksheet pre-filled and ready for handoff
+
+   ## Common Gotchas (Things Assessors Always Flag)
+   - Incomplete POA&M (every finding must have a remediation plan + timeline)
+   - Stale evidence (screenshots from 6 months ago don't count)
+   - Missing signatures on RoB (every user, not just admins)
+   - PPSM registration incomplete (every external port must be registered)
+   - No evidence of contingency plan testing (need exercise reports)
+   - Separation of duties not enforced (same person can deploy and approve)
+   ```
+
+2. Add a "Assessment Prep" page to the RPOC portal with an interactive checklist.
+
+3. Create `scripts/assessment-readiness.sh` that runs all the automated checks and reports a readiness score.
+
+**Acceptance Criteria:**
+- Comprehensive checklist covering docs, platform, evidence, and access
+- Automated readiness script checks everything that can be automated
+- Portal page with interactive checklist
+- Common gotchas section prevents known assessment failures
+
+---
+
+### Task 9.7: SLSA Build Provenance Attestations
+
+**Problem:** The CI/CD pipeline signs images with Cosign (SI-7) and generates SBOMs (CM-8), but doesn't generate SLSA (Supply-chain Levels for Software Artifacts) build provenance. SLSA proves WHERE and HOW the image was built — not just that it was signed. Assessors increasingly ask for this for SA-10 (Developer Configuration Management).
+
+**Where:** `ci/github-actions/build-scan-deploy.yaml` — the sign-and-push job.
+
+**Steps:**
+1. After Cosign signing, add SLSA provenance attestation:
+   ```yaml
+   - name: Generate SLSA provenance
+     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
+     with:
+       image: ${{ env.HARBOR_REGISTRY }}/${{ inputs.harbor-project }}/${{ inputs.image-name }}
+       digest: ${{ steps.push.outputs.digest }}
+   ```
+
+   Or using Cosign attestation:
+   ```yaml
+   - name: Attach SLSA provenance
+     run: |
+       cosign attest --predicate <(cat <<EOF
+       {
+         "_type": "https://in-toto.io/Statement/v0.1",
+         "predicateType": "https://slsa.dev/provenance/v0.2",
+         "subject": [{"name": "${IMAGE}", "digest": {"sha256": "${DIGEST}"}}],
+         "predicate": {
+           "builder": {"id": "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"},
+           "buildType": "https://github.com/slsa-framework/slsa-github-generator/container@v1",
+           "invocation": {
+             "configSource": {
+               "uri": "git+https://github.com/${GITHUB_REPOSITORY}@refs/heads/${GITHUB_REF_NAME}",
+               "digest": {"sha1": "${GITHUB_SHA}"},
+               "entryPoint": ".github/workflows/build-scan-deploy.yaml"
+             }
+           },
+           "metadata": {
+             "buildStartedOn": "${BUILD_START}",
+             "buildFinishedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+             "completeness": {"parameters": true, "environment": true, "materials": true}
+           },
+           "materials": [
+             {"uri": "git+https://github.com/${GITHUB_REPOSITORY}", "digest": {"sha1": "${GITHUB_SHA}"}}
+           ]
+         }
+       }
+       EOF
+       ) --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
+   ```
+
+2. Add a Kyverno policy that verifies SLSA provenance on deployment (alongside the existing image signature verification):
+   ```yaml
+   verifyImages:
+     - imageReferences: ["harbor.apps.sre.example.com/*"]
+       attestations:
+         - predicateType: "https://slsa.dev/provenance/v0.2"
+           conditions:
+             - all:
+                 - key: "{{ builder.id }}"
+                   operator: Equals
+                   value: "https://github.com/morbidsteve/*"
+   ```
+
+3. Add SLSA status to the DSOP wizard pipeline evidence (Gate 7: Image Signing → include provenance verification).
+
+4. Document in `ci/README.md` under the image signing section.
+
+**Acceptance Criteria:**
+- SLSA provenance attestation generated for every CI/CD build
+- Provenance attached to image in Harbor via Cosign attestation
+- Kyverno policy verifies provenance on deployment (Audit mode initially)
+- Pipeline evidence shows SLSA verification status
+
+---
+
+### Task 9.8: Audit Log Integrity (Tamper-Proof Chain)
+
+**Problem:** NIST AU-9 (Protection of Audit Information) requires that audit logs can't be tampered with. The platform logs to Loki and the pipeline DB, but neither has tamper detection. If someone with admin access modifies audit entries, there's no way to detect it.
+
+**Where:** `apps/dashboard/server.js` — audit logging function.
+
+**Steps:**
+1. Add a hash chain to the audit trail in the pipeline database:
+   ```javascript
+   async function auditLog(action, actor, target, details = {}) {
+     // Get the hash of the previous entry
+     const prev = await db.query('SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1');
+     const prevHash = prev.rows.length > 0 ? prev.rows[0].hash : '0000000000000000';
+
+     const entry = {
+       timestamp: new Date().toISOString(),
+       action, actor, target,
+       details: JSON.stringify(details),
+       prev_hash: prevHash,
+     };
+
+     // Hash this entry + previous hash = chain
+     const hash = crypto.createHash('sha256')
+       .update(prevHash + entry.timestamp + entry.action + entry.actor + entry.target + entry.details)
+       .digest('hex');
+
+     await db.query(
+       'INSERT INTO audit_log (timestamp, action, actor, target, details, prev_hash, hash) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+       [entry.timestamp, entry.action, entry.actor, entry.target, entry.details, prevHash, hash]
+     );
+   }
+   ```
+
+2. Create a verification script: `scripts/verify-audit-chain.sh` that:
+   - Reads all audit entries in order
+   - Recomputes each hash from the entry data + previous hash
+   - Reports PASS if all hashes match, FAIL with the first broken link
+
+3. Run the verification weekly as a CronJob and alert if the chain is broken.
+
+4. Include audit chain verification in the ATO evidence package.
+
+**Acceptance Criteria:**
+- Every audit entry includes a hash linking to the previous entry
+- Verification script detects any modified or deleted entries
+- Weekly verification runs automatically
+- Assessors can verify the chain independently
+
+---
+
+## Execution Order Summary
+
+| Phase | Tasks | Effort | Priority |
+|-------|-------|--------|----------|
+| **Phase 1** | 1.1-1.3 | Medium (API + JS + React) | CRITICAL — connects platform to portal |
+| **Phase 2** | 2.1-2.4 | Medium (scripts + UI + formatters) | HIGH — ATO package assembly |
+| **Phase 3** | 3.1-3.5 | Large (CronJobs + DB + dashboards) | HIGH — continuous monitoring |
+| **Phase 4** | 4.1-4.3 | Medium (API + portal JS + scripts) | MEDIUM — RAISE automation |
+| **Phase 5** | 5.1-5.3 | Medium (workflows + UI + digest) | HIGH — ISSM daily life |
+| **Phase 6** | 6.1-6.3 | Medium (RBAC + export/import + SAR) | MEDIUM — assessor experience |
+| **Phase 7** | 7.1-7.15 | Large (scripts + CronJobs + UI + docs) | HIGH — operational compliance |
+| **Phase 8** | 8.1-8.5 | Medium (wizard + API + portal + docs) | HIGH — app compliance onboarding |
+| **Phase 9** | 9.1-9.8 | Medium (scripts + CI + attestations) | HIGH — assessment readiness |
+
+**Phase 9 parallel execution:**
+- **9A** (9.1, 9.2, 9.6): Documentation and validation tools — pure scripts, no dependencies
+- **9B** (9.3): CI gate — independent GitHub Actions workflow
+- **9C** (9.4, 9.5): Evidence automation — depends on Phase 2 (package generator) and Phase 3.5 (finding lifecycle)
+- **9D** (9.7, 9.8): Supply chain + audit integrity — independent, can run in parallel
 - [ ] 11 compliance API endpoints return live data from cluster
 - [ ] RPOC portal pages show live data when API is reachable and fall back to demo data when offline
 - [ ] Compliance score visible on SRE dashboard Overview tab with trend arrow
@@ -1738,3 +2467,21 @@ After all phases are complete, verify:
 - [ ] All 110 CMMC practices have evidence links with partial/planned remediation timelines
 - [ ] Rules of Behavior acknowledgment required on first login with version tracking
 - [ ] cATO evidence timeline shows per-control collection heatmap with coverage percentage
+
+**App Compliance Onboarding (Phase 8):**
+- [ ] DSOP wizard captures FIPS 199 security categorization per app before deployment
+- [ ] Categorization mismatch (app vs. namespace) blocks deployment and triggers ISSM review
+- [ ] Per-app compliance profile auto-generated showing inherited/shared/app-owned controls
+- [ ] 5 app owner compliance documents auto-populated from live data
+- [ ] Pre-deployment compliance checklist runs with blockers/warnings before every deployment
+- [ ] App decommissioning requires compliance checklist and auto-closes POA&M findings
+
+**Assessment Readiness (Phase 9):**
+- [ ] Placeholder fill tool replaces all `_[PLACEHOLDER]_` fields across 30 documents from a single config
+- [ ] Cross-reference validator catches broken file/resource references in compliance docs
+- [ ] CI compliance gate blocks PRs that weaken policies or delete NetworkPolicies
+- [ ] Grafana screenshot automation captures 10 dashboards for evidence package
+- [ ] POA&M findings auto-close when patched images deploy
+- [ ] SCA assessment preparation checklist and readiness script exist
+- [ ] SLSA build provenance attestations generated in CI/CD pipeline
+- [ ] Audit log hash chain detects any tampered or deleted entries
