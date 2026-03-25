@@ -927,6 +927,744 @@ This plan makes the entire Authority to Operate lifecycle — from initial RAISE
 
 ---
 
+## Phase 7: Operational Compliance Automation
+
+These tasks close the remaining gaps between "we have documentation" and "the system proves itself compliant automatically."
+
+---
+
+### Task 7.1: Automated Control Testing (Prove Controls Work, Don't Just Assert They Exist)
+
+**Problem:** The compliance report checks that components are *deployed* (Kyverno is running, Istio is running), but doesn't test that controls actually *work*. An assessor will ask "prove that a privileged container gets blocked" — and right now that requires a live demo.
+
+**Where:** Create `scripts/control-validation-tests.sh`
+
+**Steps:**
+1. Create a test script that actually exercises each control by attempting violations and verifying they're blocked:
+
+   ```bash
+   # AC-6: Least Privilege — try to create a privileged pod, verify Kyverno blocks it
+   test_ac6() {
+     RESULT=$(kubectl run test-priv --image=busybox --restart=Never \
+       --overrides='{"spec":{"containers":[{"name":"test","image":"busybox","securityContext":{"privileged":true}}]}}' \
+       -n default 2>&1)
+     echo "$RESULT" | grep -q "blocked" && PASS "AC-6" "Privileged pod blocked by Kyverno" || FAIL "AC-6" "Privileged pod was NOT blocked"
+   }
+
+   # SC-8: Encryption in Transit — verify mTLS is STRICT
+   test_sc8() {
+     MODE=$(kubectl get peerauthentication -n istio-system default -o jsonpath='{.spec.mtls.mode}' 2>/dev/null)
+     [ "$MODE" = "STRICT" ] && PASS "SC-8" "mTLS mode is STRICT" || FAIL "SC-8" "mTLS mode is $MODE"
+   }
+
+   # CM-11: User-Installed Software — try to deploy from Docker Hub, verify Kyverno blocks it
+   test_cm11() {
+     RESULT=$(kubectl run test-dockerhub --image=nginx:latest -n default 2>&1)
+     echo "$RESULT" | grep -q "blocked\|denied" && PASS "CM-11" "Docker Hub image blocked" || FAIL "CM-11" "Docker Hub image was NOT blocked"
+   }
+
+   # SI-7: Software Integrity — try to deploy unsigned image, verify Kyverno blocks it
+   test_si7() {
+     RESULT=$(kubectl run test-unsigned --image=harbor.apps.sre.example.com/test/unsigned:v1 -n default 2>&1)
+     echo "$RESULT" | grep -q "blocked\|signature" && PASS "SI-7" "Unsigned image blocked" || FAIL "SI-7" "Unsigned image was NOT blocked"
+   }
+
+   # AU-2: Audit Events — verify audit logs are flowing to Loki
+   test_au2() {
+     # Create an event, then check Loki for it
+     kubectl create namespace test-audit-$$  2>/dev/null
+     sleep 5
+     LOG_COUNT=$(curl -s "http://loki.logging.svc:3100/loki/api/v1/query?query={job=\"audit\"}" | jq '.data.result | length')
+     kubectl delete namespace test-audit-$$ 2>/dev/null
+     [ "$LOG_COUNT" -gt 0 ] && PASS "AU-2" "Audit logs flowing to Loki ($LOG_COUNT streams)" || FAIL "AU-2" "No audit logs in Loki"
+   }
+   ```
+
+2. Test 15+ controls with actual violation attempts (all tests clean up after themselves).
+
+3. Output as JSON for the evidence package, with test name, control ID, result, evidence, and timestamp.
+
+4. Add to `Taskfile.yml` as `task control-tests`. Include in the ATO evidence package (Task 2.1).
+
+5. Schedule as a weekly CronJob alongside the STIG scan.
+
+**Acceptance Criteria:**
+- 15+ controls tested by actually attempting violations
+- Each test cleans up after itself (no residue)
+- JSON output suitable for evidence packages
+- All tests pass on a healthy, properly-configured cluster
+- Scheduled weekly alongside STIG scans
+
+---
+
+### Task 7.2: Data Flow Diagram Auto-Generation from Istio Traffic
+
+**Problem:** The authorization boundary doc (`rpoc-ato-portal/compliance/raise/authorization-boundary.md`) has a manually-created data flow diagram. Assessors want current, accurate data flows — not a diagram drawn months ago. Istio has all the traffic data to generate this automatically.
+
+**Where:** Create `scripts/generate-data-flow.sh` or add an API endpoint.
+
+**Steps:**
+1. Query Prometheus for Istio traffic metrics to build a real data flow graph:
+   ```promql
+   sum(rate(istio_requests_total[24h])) by (source_workload, source_workload_namespace, destination_workload, destination_workload_namespace, destination_service)
+   ```
+
+2. Generate a Mermaid diagram from the results:
+   ```mermaid
+   graph LR
+     subgraph istio-system
+       gateway[Istio Gateway]
+     end
+     subgraph team-alpha
+       frontend[frontend<br/>142 req/s]
+       api[api-service<br/>89 req/s]
+     end
+     subgraph monitoring
+       prometheus[Prometheus]
+     end
+     gateway -->|HTTPS| frontend
+     frontend -->|mTLS| api
+     prometheus -.->|scrape| frontend
+     prometheus -.->|scrape| api
+   ```
+
+3. Also generate a machine-readable JSON format for OSCAL integration:
+   ```json
+   {
+     "generated_at": "2026-03-25T10:00:00Z",
+     "flows": [
+       { "source": "istio-system/gateway", "destination": "team-alpha/frontend", "protocol": "HTTPS", "rate_rps": 142 },
+       { "source": "team-alpha/frontend", "destination": "team-alpha/api", "protocol": "mTLS", "rate_rps": 89 }
+     ]
+   }
+   ```
+
+4. Add to the ATO evidence package as `data-flow-diagram.md` (Mermaid) and `data-flow.json`.
+
+5. Add a "Data Flows" visualization to the dashboard (reuses the service graph from developer-readiness-plan Task 10.9, but formatted for compliance with protocol labels and traffic classifications).
+
+**Acceptance Criteria:**
+- Data flow diagram generated from actual Istio traffic (last 24h)
+- Mermaid + JSON output formats
+- Included in ATO evidence package
+- Shows protocol (mTLS/HTTPS/TCP) and traffic rates
+- Updates automatically (not a static drawing)
+
+---
+
+### Task 7.3: License Compliance Tracking from SBOMs
+
+**Problem:** SBOMs list all packages in deployed images, but nobody tracks the software licenses. Government contracts and open-source policies may prohibit certain licenses (GPL in proprietary code, AGPL in SaaS, etc.). There's no license inventory.
+
+**Where:** `apps/dashboard/server.js` + Security tab or Compliance tab.
+
+**Steps:**
+1. Create server endpoint: `GET /api/compliance/licenses` that:
+   - Fetches SBOMs from Harbor for all deployed images
+   - Extracts license information from SPDX packages
+   - Aggregates by license type: `{ "MIT": 1423, "Apache-2.0": 892, "GPL-3.0": 12, "Unknown": 45 }`
+
+2. Create a "License Compliance" section showing:
+   - License distribution pie chart (top 10 licenses)
+   - Flagged licenses table: any GPL/AGPL/proprietary/unknown licenses with the images and packages that contain them
+   - Total packages vs. packages with known licenses (coverage percentage)
+
+3. Define a license allowlist (configurable):
+   ```json
+   {
+     "allowed": ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0"],
+     "review_required": ["GPL-2.0", "GPL-3.0", "LGPL-2.1", "LGPL-3.0"],
+     "prohibited": ["AGPL-3.0", "SSPL-1.0"]
+   }
+   ```
+
+4. Alert when a prohibited license is detected in a deployed image.
+
+**Acceptance Criteria:**
+- License inventory generated from deployed SBOMs
+- Flagged licenses (GPL, AGPL, unknown) highlighted
+- Configurable allowlist/blocklist
+- Included in ATO evidence package
+
+---
+
+### Task 7.4: Pentest Scheduling and Result Tracking
+
+**Problem:** `scripts/security-pentest.sh` exists and runs 40+ checks, but there's no scheduling, no result persistence, and no tracking of remediation. Pentest results vanish after the terminal session ends.
+
+**Where:** `platform/core/monitoring/` + `apps/dashboard/` + RPOC portal `pentest-report.html`.
+
+**Steps:**
+1. Create a CronJob that runs the pentest script monthly:
+   ```yaml
+   apiVersion: batch/v1
+   kind: CronJob
+   metadata:
+     name: pentest-monthly
+     namespace: monitoring
+   spec:
+     schedule: "0 4 15 * *"  # 4am on the 15th of each month
+   ```
+
+2. Store results in a PVC at `/data/pentest-results/YYYY-MM-DD.json`.
+
+3. Create server endpoint: `GET /api/compliance/pentest/results?date=latest` that reads stored results.
+
+4. Wire the RPOC portal's `pentest-report.html` to consume live data from this API (same pattern as Task 1.2):
+   - Auto-populate severity breakdown (Critical/High/Medium/Low)
+   - Show finding details with remediation status
+   - Trend chart: findings over time (last 12 months)
+
+5. Feed pentest findings into the finding lifecycle tracker (Task 3.5) with source=`pentest`.
+
+**Acceptance Criteria:**
+- Monthly automated pentest runs
+- Results stored for historical comparison
+- RPOC portal pentest page shows live data
+- Findings tracked in the lifecycle tracker with SLA
+
+---
+
+### Task 7.5: CCB (Change Control Board) Workflow
+
+**Problem:** The configuration management plan (`rpoc-ato-portal/compliance/raise/configuration-management-plan.md`) defines a CCB framework but has placeholder fields for meeting schedule, approval authority, and escalation. There's no actual workflow to track change requests and approvals.
+
+**Where:** `apps/dashboard/server.js` + Admin tab or new "Changes" section.
+
+**Steps:**
+1. Create a lightweight change tracking system in the dashboard:
+   - When Flux detects a new HelmRelease version change (from Git), auto-create a "change record":
+     ```json
+     {
+       "id": "CHG-001",
+       "type": "platform_upgrade",
+       "component": "kyverno",
+       "from_version": "3.3.6",
+       "to_version": "3.3.7",
+       "requested_by": "git-commit-author",
+       "requested_at": "2026-03-25T10:00:00Z",
+       "status": "applied",  // or "pending_review" for production
+       "approved_by": null,
+       "applied_at": "2026-03-25T10:15:00Z",
+       "rollback_available": true
+     }
+     ```
+
+2. For production changes, require CCB approval before Flux applies:
+   - Add a Flux notification that pauses reconciliation and sends a Slack notification: "Change CHG-042 pending CCB approval: Kyverno 3.3.6 → 3.3.7"
+   - Admin approves from dashboard, which resumes Flux reconciliation
+
+3. Create server endpoints:
+   ```
+   GET  /api/compliance/changes              — List all changes with status
+   GET  /api/compliance/changes/:id          — Single change detail
+   POST /api/compliance/changes/:id/approve  — CCB approval
+   POST /api/compliance/changes/:id/reject   — CCB rejection with reason
+   ```
+
+4. Show in the Compliance tab under a "Change Management" section:
+   - Recent changes table with approval status
+   - Changes pending approval (for CCB members)
+   - Change velocity chart (changes per week, trend)
+
+5. Include change log in the ATO evidence package for CM-3 (Configuration Change Control).
+
+**Acceptance Criteria:**
+- Platform changes auto-logged from Flux reconciliation events
+- Production changes require CCB approval before applying
+- Change history viewable in dashboard
+- Change log included in ATO evidence package
+
+---
+
+### Task 7.6: Interconnection Security Agreement Tracker
+
+**Problem:** The authorization boundary documents external interfaces (GitHub API, container pulls, NTP, DNS) but there are no formal Interconnection Security Agreements (ISAs) tracking these connections. Assessors ask "do you have ISAs for all external connections?"
+
+**Where:** Create `rpoc-ato-portal/compliance/raise/interconnection-agreements/` and a dashboard section.
+
+**Steps:**
+1. Create an ISA template:
+   ```markdown
+   # Interconnection Security Agreement: [System Name] ↔ [External System]
+
+   **Agreement ID:** ISA-001
+   **Status:** Active / Pending / Expired
+   **Effective Date:** YYYY-MM-DD
+   **Expiry Date:** YYYY-MM-DD (annual renewal)
+
+   ## Connected Systems
+   | Field | SRE Platform | External System |
+   |-------|-------------|-----------------|
+   | System Name | SRE Platform | GitHub.com |
+   | Owner | Platform Team | GitHub Inc. |
+   | Security Level | Moderate (CUI) | Commercial |
+
+   ## Connection Details
+   - **Protocol:** HTTPS (TLS 1.2+)
+   - **Direction:** Outbound only
+   - **Ports:** 443
+   - **Purpose:** GitOps source code synchronization, CI/CD webhook triggers
+   - **Data transmitted:** Git repository content (no CUI), webhook payloads
+   - **Authentication:** GitHub PAT (stored in OpenBao, rotated quarterly)
+
+   ## Security Controls
+   - Egress NetworkPolicy restricts to github.com IPs only
+   - All traffic encrypted via TLS 1.2+
+   - Credentials stored in OpenBao with rotation policy
+   - Audit logging of all API calls via Flux event logs
+
+   ## Risk Assessment
+   - **Risk:** Supply chain compromise if GitHub account is compromised
+   - **Mitigation:** Branch protection, signed commits, Cosign image verification
+   ```
+
+2. Create ISAs for all external connections identified in the authorization boundary:
+   - ISA-001: GitHub.com (GitOps, CI/CD)
+   - ISA-002: Docker Hub / ghcr.io / quay.io (image mirroring, if not air-gapped)
+   - ISA-003: Let's Encrypt (certificate issuance, if used)
+   - ISA-004: NTP servers (time synchronization)
+   - ISA-005: DNS resolvers (name resolution)
+
+3. Add an "Interconnections" section to the Compliance tab showing:
+   - List of all ISAs with status (active/pending/expired)
+   - Expiry warnings (30 days before renewal)
+   - Link to each ISA document
+
+4. Include ISAs in the ATO evidence package.
+
+**Acceptance Criteria:**
+- ISA template exists with all required fields
+- 5 ISAs created for known external connections
+- ISA status tracked with expiry warnings
+- Included in ATO evidence package
+
+---
+
+### Task 7.7: Tabletop Exercise Tracker and After-Action Reports
+
+**Problem:** The contingency plan defines quarterly tabletop exercises (4 rotating scenarios) and a monthly restore test, but there's no tracking of whether they actually happened, what was learned, or what action items resulted.
+
+**Where:** Create `compliance/exercises/` in the RPOC portal and a dashboard section.
+
+**Steps:**
+1. Create a tracking format for completed exercises:
+   ```yaml
+   # compliance/raise/exercises/2026-Q1-tabletop.yaml
+   exercise:
+     id: TTX-2026-Q1
+     type: tabletop
+     scenario: "Full cluster loss and recovery"
+     date: "2026-03-15"
+     duration_hours: 2
+     participants:
+       - name: "Platform Lead"
+         role: "Incident Commander"
+       - name: "ISSM"
+         role: "Observer/Evaluator"
+     findings:
+       - id: TTX-F001
+         description: "DR runbook missing step for OpenBao unseal after restore"
+         severity: medium
+         action: "Update backup-restore.md runbook with OpenBao unseal steps"
+         owner: "Platform Team"
+         due_date: "2026-04-01"
+         status: closed
+         closed_date: "2026-03-20"
+     lessons_learned:
+       - "Velero restore takes 45 minutes, not the 20 assumed in contingency plan"
+       - "Need to update RTO from 1h to 2h for Tier 1 services"
+     rto_met: false
+     rpo_met: true
+     next_exercise: "2026-Q2 — GitOps repo compromise scenario"
+   ```
+
+2. Create a `scripts/exercise-report.sh` that:
+   - Lists all completed exercises with dates
+   - Shows overdue exercises (e.g., quarterly tabletop not done this quarter)
+   - Counts open action items from exercises
+   - Outputs summary for compliance reports
+
+3. Add an "Exercises" section to the Compliance tab:
+   - Exercise calendar (next scheduled, last completed)
+   - Action items from exercises (open/closed)
+   - RTO/RPO validation results over time
+
+4. Include exercise history in the ATO evidence package for CP-4 (Contingency Plan Testing).
+
+**Acceptance Criteria:**
+- Exercise tracking YAML format with findings and action items
+- Overdue exercise detection
+- Dashboard section shows exercise history and open actions
+- Included in ATO evidence package
+
+---
+
+### Task 7.8: Personnel Security and Training Tracker
+
+**Problem:** NIST 800-53 AT (Awareness and Training) and PS (Personnel Security) controls require tracking who has platform access, when they completed security training, and when their access was last reviewed. None of this is tracked.
+
+**Where:** `apps/dashboard/server.js` + Admin tab enhancement.
+
+**Steps:**
+1. Extend the user management system to track per-user:
+   ```json
+   {
+     "username": "jane.doe",
+     "groups": ["team-alpha-developers"],
+     "access_granted": "2026-01-15",
+     "last_access_review": "2026-03-01",
+     "next_access_review_due": "2026-06-01",
+     "security_training_completed": "2026-02-10",
+     "security_training_due": "2027-02-10",
+     "rules_of_behavior_signed": "2026-01-15",
+     "clearance_level": "none",
+     "status": "active"
+   }
+   ```
+
+2. Store this metadata in Keycloak user attributes (Keycloak supports arbitrary attributes per user).
+
+3. Add a "Personnel" section to the Admin tab:
+   - User list with training and access review status
+   - Color-coded: green (current), yellow (due within 30 days), red (overdue)
+   - "Send Training Reminder" button
+   - "Mark Training Complete" button (with date)
+   - "Mark Access Reviewed" button (with date)
+   - Bulk actions for quarterly access reviews
+
+4. Create server endpoints:
+   ```
+   GET  /api/admin/users/:id/compliance    — User compliance metadata
+   PATCH /api/admin/users/:id/compliance   — Update training/review dates
+   GET  /api/compliance/personnel/summary  — Aggregate: X trained, Y overdue, Z unreviewed
+   ```
+
+5. Add alerts:
+   - Training overdue: user hasn't completed annual training
+   - Access review overdue: user access not reviewed in 90 days
+   - Dormant account: user hasn't logged in for 60 days
+
+6. Include personnel compliance summary in ATO evidence package for AT-2 (Security Awareness Training) and PS-4 (Personnel Termination).
+
+**Acceptance Criteria:**
+- Per-user training and access review dates tracked
+- Overdue training/reviews highlighted in Admin tab
+- Dormant account detection (60 days no login)
+- Personnel summary included in ATO evidence package
+
+---
+
+### Task 7.9: Automated CVE Alerting for Deployed Images
+
+**Problem:** When a new CVE is published (like Log4Shell), there's no automated way to know if any deployed images are affected. Someone must manually check Harbor scans. The SBOM search (Task 3.3) helps, but it's reactive — nobody is alerted proactively.
+
+**Where:** `platform/core/monitoring/` + `apps/dashboard/server.js`.
+
+**Steps:**
+1. Create a daily CronJob that:
+   - Lists all deployed images (from running pods across tenant namespaces)
+   - Queries Harbor's Trivy scan results for each image
+   - Compares against the previous day's results
+   - If NEW critical or high CVEs appear (that weren't there yesterday), trigger an alert
+
+2. Send notification:
+   ```
+   NEW CVE Alert: 3 new critical vulnerabilities detected
+
+   CVE-2026-1234 (CRITICAL) — openssl 3.0.2
+     Affected: team-alpha/my-app:v1.2.0, team-beta/api:v3.1.0
+     Fix available: openssl 3.0.15
+
+   CVE-2026-1235 (HIGH) — curl 8.1.0
+     Affected: team-alpha/frontend:v2.0.0
+     Fix available: curl 8.6.0
+   ```
+
+3. Auto-create POA&M findings (from Task 3.5) for new critical CVEs with the appropriate SLA.
+
+4. Add a "New Vulnerabilities" alert banner on the Security tab when new CVEs are found.
+
+5. Create Prometheus metric: `sre_new_cves_total{severity="critical|high"}` for trend tracking.
+
+**Acceptance Criteria:**
+- Daily CVE comparison detects NEW vulnerabilities (not just existing ones)
+- Notification includes affected images and available fixes
+- Auto-creates POA&M findings for critical CVEs
+- Alert banner shown in dashboard Security tab
+
+---
+
+### Task 7.10: Compliance Gate in Deployment Pipeline
+
+**Problem:** The DSOP pipeline has 8 security gates (SAST, Secrets, Build, SBOM, CVE, DAST, ISSM, Signing), but no compliance gate. A deployment can succeed even if it would degrade the compliance score — e.g., deploying to a namespace that has no NetworkPolicies, or deploying an image with an unreviewed STIG finding.
+
+**Where:** `apps/dashboard/server.js` — deployment endpoint. `apps/dsop-wizard/`.
+
+**Steps:**
+1. Add a pre-deployment compliance check that runs before any deployment (Quick Deploy, DSOP wizard, or Helm chart deploy):
+
+   ```javascript
+   async function complianceGate(namespace, image) {
+     const checks = [];
+
+     // Check 1: Namespace has required labels
+     const ns = await k8s.getNamespace(namespace);
+     if (!ns.metadata.labels['sre.io/security-categorization'])
+       checks.push({ severity: 'high', message: `Namespace ${namespace} missing security categorization label` });
+
+     // Check 2: Namespace has NetworkPolicies
+     const nps = await k8s.listNetworkPolicies(namespace);
+     if (nps.length === 0)
+       checks.push({ severity: 'critical', message: `Namespace ${namespace} has no NetworkPolicies` });
+
+     // Check 3: Image has been scanned (Harbor Trivy)
+     const scanStatus = await harbor.getImageScanStatus(image);
+     if (scanStatus.severity === 'critical' && scanStatus.unmitigated > 0)
+       checks.push({ severity: 'critical', message: `Image has ${scanStatus.unmitigated} unmitigated critical CVEs` });
+
+     // Check 4: Image is signed (Cosign)
+     const signed = await harbor.isImageSigned(image);
+     if (!signed)
+       checks.push({ severity: 'high', message: `Image is not signed with Cosign` });
+
+     return { passed: checks.filter(c => c.severity === 'critical').length === 0, checks };
+   }
+   ```
+
+2. Block deployment if any critical compliance check fails. Show warnings for high/medium but allow deployment.
+
+3. Show the compliance gate results in the DSOP wizard (as a pre-deploy check in Step 5 or Step 6).
+
+4. Log all compliance gate results in the audit trail.
+
+**Acceptance Criteria:**
+- Pre-deployment compliance checks run before every deployment
+- Critical failures block deployment (no NetworkPolicies, unmitigated critical CVEs)
+- High/medium findings shown as warnings
+- Compliance gate results logged in audit trail
+
+---
+
+### Task 7.11: Air-Gap Compliance Package
+
+**Problem:** In air-gapped environments (SIPR, classified networks), the RPOC portal can't reach the SRE platform API. The portal falls back to demo data, which is useless for assessors. Need a way to export a full compliance snapshot that the portal can consume offline.
+
+**Where:** `scripts/` + RPOC portal.
+
+**Steps:**
+1. Create `scripts/export-compliance-snapshot.sh` that generates a single JSON file containing everything the portal needs:
+   ```json
+   {
+     "generated_at": "2026-03-25T10:00:00Z",
+     "platform_version": "v2.1.0",
+     "controls": [ /* all control data with live health */ ],
+     "findings": [ /* all findings with status */ ],
+     "pipeline_stats": { /* gate pass rates, run counts */ },
+     "raise_status": [ /* RPOC requirement verification */ ],
+     "stig_results": { /* latest STIG scan */ },
+     "component_inventory": [ /* all HelmReleases with versions */ ],
+     "certificates": [ /* all certs with expiry */ ],
+     "poam": [ /* open POA&M items */ ],
+     "score": { "overall": 94.2, "trend": "stable" }
+   }
+   ```
+
+2. The portal loads this JSON file when the API is unreachable:
+   - Add a "Load Snapshot" button to the portal settings
+   - User uploads the JSON file or places it at a known path
+   - Portal renders all dashboards from the snapshot data
+   - Shows "Data from snapshot: 2026-03-25 10:00 UTC" instead of "Live from SRE Platform"
+
+3. Document the air-gap workflow:
+   - On the connected network: run `./scripts/export-compliance-snapshot.sh > snapshot.json`
+   - Transfer `snapshot.json` to the air-gapped network (via approved media)
+   - On the air-gapped network: load into the portal
+
+**Acceptance Criteria:**
+- Snapshot contains all data the portal needs
+- Portal can render all dashboards from a snapshot file
+- Clear indicator that data is from a snapshot (not live)
+- Air-gap workflow documented
+
+---
+
+### Task 7.12: Compliance Notification Digest for Authorizing Official (AO)
+
+**Problem:** The Authorizing Official (the person who signs the ATO) needs periodic high-level updates — not a technical dashboard, but a brief executive summary. Currently there's nothing tailored for the AO.
+
+**Where:** `scripts/` or `apps/dashboard/server.js`.
+
+**Steps:**
+1. Create a monthly AO summary (email/PDF):
+   ```
+   === SRE Platform — Monthly Compliance Summary ===
+   Period: March 2026
+
+   COMPLIANCE POSTURE: 94% (Stable — no change from February)
+
+   KEY METRICS:
+   - Controls Implemented: 46/48 (2 partial)
+   - Open Findings: 8 (0 critical, 2 high, 3 medium, 3 low)
+   - Findings Remediated This Month: 5
+   - Mean Time to Remediate: 12 days (target: 30)
+   - STIG Compliance: 96% (87/91 findings clean)
+   - Active Risk Acceptances: 2 (both current, next expiry: June 2026)
+
+   CHANGES THIS MONTH:
+   - 3 platform component upgrades (Kyverno 3.3.6→3.3.7, Istio 1.22→1.23, cert-manager 1.15→1.16)
+   - 12 application deployments processed (all passed security gates)
+   - 1 new tenant onboarded (team-gamma)
+   - 0 security incidents
+
+   ACTION ITEMS REQUIRING AO ATTENTION:
+   - None this month
+
+   NEXT QUARTER:
+   - Q2 tabletop exercise: April 15 (GitOps repo compromise scenario)
+   - Annual penetration test: May 2026
+   - CMMC C3PAO assessment: Scheduled June 2026
+   ```
+
+2. Generate automatically from compliance API data + finding lifecycle + change log.
+
+3. Deliver as PDF (via RPOC portal PDF server) + email.
+
+4. Store in `compliance/ao-summaries/YYYY-MM.pdf` for audit trail.
+
+**Acceptance Criteria:**
+- Monthly AO summary auto-generated
+- Covers posture, findings, changes, and upcoming events
+- PDF format suitable for executive consumption
+- Stored for audit trail
+
+---
+
+### Task 7.13: CMMC Practice-Level Evidence Mapping
+
+**Problem:** The CMMC self-assessment (`compliance/cmmc/self-assessment.yaml`) shows 72 implemented, 18 partial, 8 planned — but doesn't link each practice to specific, retrievable evidence. A C3PAO assessor asking "show me evidence for AC.L2-3.1.1" gets a description but not the actual artifact.
+
+**Where:** Extend `compliance/cmmc/` and the compliance API.
+
+**Steps:**
+1. For each of the 110 CMMC practices, add an `evidence` field linking to:
+   - API endpoint that returns live evidence (e.g., `/api/compliance/evidence/AC-2`)
+   - File paths in the repo (e.g., `platform/core/keycloak/helmrelease.yaml`)
+   - Grafana dashboard deep link (e.g., `grafana:keycloak`)
+   - Screenshot or export instructions if automated evidence isn't available
+
+2. For the 18 partially-implemented practices, add:
+   - What's done vs. what's remaining
+   - Remediation plan with timeline
+   - POA&M reference
+
+3. For the 8 planned practices, add:
+   - Implementation plan with timeline
+   - Dependencies (what must be done first)
+   - POA&M reference
+
+4. Create server endpoint: `GET /api/compliance/cmmc/practices` that returns all 110 practices with evidence links.
+
+5. Add a "CMMC" section to the Compliance tab (or wire to the RPOC portal's existing controls tracker).
+
+**Acceptance Criteria:**
+- All 110 CMMC practices have evidence links
+- Partial and planned practices have remediation timelines
+- C3PAO assessor can retrieve evidence per practice from the dashboard
+- Practices map to NIST 800-171 and 800-53 references
+
+---
+
+### Task 7.14: Automated Rules of Behavior Acknowledgment
+
+**Problem:** NIST PL-4 (Rules of Behavior) requires users to acknowledge acceptable use policies before getting access. The rules of behavior document exists (`rpoc-ato-portal/compliance/raise/rules-of-behavior.md`) but there's no tracking of who has signed it.
+
+**Where:** `apps/dashboard/` — login flow or first-access check.
+
+**Steps:**
+1. On first login to the SRE dashboard (or annually), show a modal:
+   ```
+   === Rules of Behavior ===
+
+   Before accessing the SRE Platform, you must acknowledge the following:
+   [Display rules-of-behavior.md content]
+
+   ☐ I have read and agree to the Rules of Behavior
+   ☐ I understand that my actions are logged and auditable
+   ☐ I will report any security incidents immediately
+
+   [Accept] [Decline — logs out]
+   ```
+
+2. Store acknowledgment in Keycloak user attributes:
+   ```json
+   {
+     "rob_accepted": "true",
+     "rob_accepted_date": "2026-03-25",
+     "rob_version": "1.0"
+   }
+   ```
+
+3. If the rules document is updated (version changes), require re-acknowledgment.
+
+4. Create server endpoint: `GET /api/compliance/rob/status` — returns count of users who have/haven't signed.
+
+5. Add to the personnel compliance view (Task 7.8): "Rules of Behavior: 45/48 users signed"
+
+6. Block dashboard access until RoB is signed (redirect to the modal on every page load if not signed).
+
+**Acceptance Criteria:**
+- First-login modal requires RoB acknowledgment before access
+- Acknowledgment stored per user with date and version
+- Re-acknowledgment required when document version changes
+- Compliance report shows signed vs. unsigned count
+
+---
+
+### Task 7.15: Continuous ATO (cATO) Evidence Timeline
+
+**Problem:** For continuous ATO, the AO needs to see that compliance evidence is collected continuously — not just at assessment time. There's no single view showing "evidence was collected for control X on these dates" over time.
+
+**Where:** `apps/dashboard/client/src/components/compliance/` + Grafana dashboard.
+
+**Steps:**
+1. Create a server endpoint: `GET /api/compliance/evidence-timeline` that returns per-control:
+   ```json
+   {
+     "AC-2": {
+       "evidence_sources": ["keycloak_users", "keycloak_events"],
+       "collection_history": [
+         { "date": "2026-03-25", "status": "collected", "source": "daily-cron" },
+         { "date": "2026-03-24", "status": "collected", "source": "daily-cron" },
+         { "date": "2026-03-23", "status": "missed", "reason": "cron failed" }
+       ],
+       "coverage_30d": 0.97,
+       "last_collected": "2026-03-25T06:00:00Z"
+     }
+   }
+   ```
+
+2. Add an "Evidence Timeline" view to the Compliance tab:
+   - Heatmap calendar (like GitHub contribution graph) per control
+   - Each cell is a day, colored by: green (evidence collected), yellow (partial), red (missed)
+   - Click a cell to see what evidence was collected that day
+   - Overall coverage percentage: "97% evidence coverage over last 90 days"
+
+3. This data comes from the daily compliance evidence CronJob (from platform-experience-plan Task 3.4).
+
+4. Alert when evidence collection fails for 3+ consecutive days for any control.
+
+5. Include the coverage report in the AO monthly summary (Task 7.12).
+
+**Acceptance Criteria:**
+- Heatmap shows per-control evidence collection over time
+- Missed collections are highlighted
+- Overall coverage percentage calculated
+- Alert on consecutive missed collections
+- AO summary includes coverage percentage
+
+---
+
 ## Execution Order Summary
 
 | Phase | Tasks | Effort | Priority |
@@ -937,14 +1675,12 @@ This plan makes the entire Authority to Operate lifecycle — from initial RAISE
 | **Phase 4** | 4.1-4.3 | Medium (API + portal JS + scripts) | MEDIUM — RAISE automation |
 | **Phase 5** | 5.1-5.3 | Medium (workflows + UI + digest) | HIGH — ISSM daily life |
 | **Phase 6** | 6.1-6.3 | Medium (RBAC + export/import + SAR) | MEDIUM — assessor experience |
+| **Phase 7** | 7.1-7.15 | Large (scripts + CronJobs + UI + docs) | HIGH — operational compliance |
 
-**Recommended parallel execution:**
-- Phase 1 first (everything depends on the compliance API)
-- Phase 2 + Phase 3.1-3.2 (package generation + drift detection, independent)
-- Phase 3.3-3.5 (SBOM + trend + finding SLA, build on Phase 1 API)
-- Phase 4 (RAISE automation, depends on Phase 1 API)
-- Phase 5 (ISSM workflow, depends on Phase 3.5 finding lifecycle)
-- Phase 6 (assessor self-service, depends on Phase 1 + Phase 2)
+**Phase 7 parallel execution:**
+- **7A — Testing and scanning** (7.1, 7.4, 7.9, 7.10): Automated validation, can run together
+- **7B — Documentation and tracking** (7.6, 7.7, 7.8, 7.13, 7.14): Compliance docs + UI, can run together
+- **7C — Automation and intelligence** (7.2, 7.3, 7.5, 7.11, 7.12, 7.15): Data generation + reporting, depends on Phase 1 API
 
 ---
 
@@ -985,3 +1721,20 @@ After all phases are complete, verify:
 - [ ] Assessor role has read-only access to all compliance evidence
 - [ ] Assessment worksheet export pre-fills platform evidence
 - [ ] SAR auto-populated with scan results and control status
+
+**Operational Compliance (Phase 7):**
+- [ ] Control validation tests attempt 15+ actual violations and verify they're blocked
+- [ ] Data flow diagram auto-generated from Istio traffic with Mermaid + JSON output
+- [ ] License inventory generated from SBOMs with allowlist/blocklist enforcement
+- [ ] Monthly pentest runs automatically with results stored and tracked
+- [ ] Change control records auto-created from Flux reconciliation events
+- [ ] 5 ISA documents created for known external connections with expiry tracking
+- [ ] Tabletop exercise tracker shows completed exercises and open action items
+- [ ] Personnel training and access review dates tracked per user with overdue alerts
+- [ ] Daily CVE alerting detects NEW vulnerabilities in deployed images
+- [ ] Pre-deployment compliance gate blocks deploys with critical compliance failures
+- [ ] Air-gap compliance snapshot exports all portal data as a single JSON file
+- [ ] Monthly AO summary auto-generated with posture, findings, changes, and upcoming events
+- [ ] All 110 CMMC practices have evidence links with partial/planned remediation timelines
+- [ ] Rules of Behavior acknowledgment required on first login with version tracking
+- [ ] cATO evidence timeline shows per-control collection heatmap with coverage percentage
