@@ -1,0 +1,119 @@
+# ============================================================================
+# SRE Platform — Tabletop Exercise Template
+# ============================================================================
+# Use this template to plan and document tabletop exercises for the SRE
+# Platform. Copy this file and fill in the details for each exercise.
+#
+# Exercises test incident response procedures, identify gaps, and generate
+# action items for improvement. Required quarterly for NIST IR-3.
+#
+# NIST Controls: IR-3 (Incident Response Testing), CP-4 (Contingency Plan Testing)
+# ============================================================================
+
+exercise:
+  # Unique identifier: YYYY-QN-type (e.g., 2026-Q1-tabletop, 2026-Q2-drill)
+  id: "YYYY-QN-exercise-type"
+
+  # Exercise metadata
+  title: "Exercise Title"
+  type: "tabletop"              # tabletop | functional | full-scale
+  date: "YYYY-MM-DD"
+  duration: "2 hours"
+  location: "Virtual / Conference Room"
+  classification: "CUI"         # Unclassified | CUI | Secret
+  status: "planned"             # planned | completed | cancelled
+
+  # Objectives — what are we testing?
+  objectives:
+    - "Test the incident response team's ability to detect and respond to [scenario]"
+    - "Validate communication procedures between platform team and stakeholders"
+    - "Identify gaps in runbooks and escalation procedures"
+
+  # Scenario description
+  scenario:
+    name: "Scenario Name"
+    description: >-
+      Detailed description of the scenario being exercised. Include
+      the attack vector, initial indicators, affected systems, and
+      expected scope of impact.
+    inject_timeline:
+      - time: "T+0"
+        event: "Initial indicator observed (e.g., alert fires)"
+        expected_action: "Acknowledge alert, begin triage"
+      - time: "T+15m"
+        event: "Second indicator (e.g., suspicious activity in logs)"
+        expected_action: "Escalate to incident commander"
+      - time: "T+30m"
+        event: "Scope identified (e.g., affected namespace/service)"
+        expected_action: "Begin containment"
+      - time: "T+1h"
+        event: "Containment confirmed"
+        expected_action: "Begin eradication and recovery"
+      - time: "T+1.5h"
+        event: "Recovery complete"
+        expected_action: "Post-incident review, lessons learned"
+
+  # Participants
+  participants:
+    - name: "Exercise Director"
+      role: "facilitator"
+      organization: "SRE Platform Team"
+    - name: "Platform Engineer"
+      role: "incident-commander"
+      organization: "SRE Platform Team"
+    - name: "Security Engineer"
+      role: "responder"
+      organization: "SRE Security Team"
+    # Add additional participants as needed
+
+  # Controls tested by this exercise
+  nist_controls:
+    - id: "IR-3"
+      title: "Incident Response Testing"
+    - id: "IR-4"
+      title: "Incident Handling"
+    - id: "IR-5"
+      title: "Incident Monitoring"
+    # Add additional controls as applicable
+
+  # Findings from the exercise
+  findings:
+    # Populate after exercise completion
+    - id: "F-001"
+      severity: "high"            # critical | high | medium | low
+      description: "Description of the finding"
+      affected_controls:
+        - "IR-4"
+      recommendation: "What should be changed or improved"
+    # - id: "F-002"
+    #   severity: "medium"
+    #   description: "..."
+    #   affected_controls: ["IR-5"]
+    #   recommendation: "..."
+
+  # Action items generated from findings
+  action_items:
+    - id: "AI-001"
+      finding_ref: "F-001"
+      description: "What needs to be done"
+      assignee: "Team or individual"
+      due_date: "YYYY-MM-DD"
+      status: "open"              # open | in-progress | complete
+    # - id: "AI-002"
+    #   finding_ref: "F-002"
+    #   description: "..."
+    #   assignee: "..."
+    #   due_date: "YYYY-MM-DD"
+    #   status: "open"
+
+  # After-action report summary
+  after_action:
+    overall_rating: ""            # effective | partially-effective | ineffective
+    strengths:
+      - "What went well during the exercise"
+    weaknesses:
+      - "What needs improvement"
+    lessons_learned:
+      - "Key takeaways for the team"
+    next_exercise_recommendation: >-
+      Recommendations for the next exercise topic, scope, or format.

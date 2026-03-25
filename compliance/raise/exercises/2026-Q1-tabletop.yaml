@@ -1,0 +1,215 @@
+# ============================================================================
+# SRE Platform — Q1 2026 Tabletop Exercise
+# ============================================================================
+# Scenario: Compromised container image deployed to production
+#
+# NIST Controls: IR-3, IR-4, IR-5, SI-3, SI-7, CM-11
+# ============================================================================
+
+exercise:
+  id: "2026-Q1-tabletop"
+  title: "Compromised Container Image in Production"
+  type: "tabletop"
+  date: "2026-01-15"
+  duration: "2 hours"
+  location: "Virtual (Teams/Slack)"
+  classification: "CUI"
+  status: "completed"
+
+  objectives:
+    - "Test the team's ability to detect a compromised container image via NeuVector and Harbor"
+    - "Validate the image quarantine and rollback procedure using Flux CD"
+    - "Exercise the supply chain security response workflow (Cosign, Kyverno, Harbor)"
+    - "Verify communication and escalation procedures with affected tenant teams"
+
+  scenario:
+    name: "Supply Chain Compromise via Malicious Base Image"
+    description: >-
+      A routine Harbor Trivy scan detects a CRITICAL CVE in a recently
+      mirrored upstream base image. NeuVector runtime monitoring also
+      triggers an alert on anomalous process activity in a tenant pod
+      using that image. Investigation reveals the base image was
+      tampered with upstream, introducing a cryptocurrency miner that
+      runs alongside the legitimate application process.
+
+      The affected image has been deployed to the team-alpha namespace
+      and has been running for approximately 4 hours. Three pods are
+      affected. The malicious process is making outbound connections
+      to a command-and-control server.
+
+    inject_timeline:
+      - time: "T+0"
+        event: "Harbor Trivy scan alerts: CRITICAL CVE-2026-XXXX in alpine:3.19 base image"
+        expected_action: "Platform team acknowledges alert, begins investigation"
+
+      - time: "T+5m"
+        event: "NeuVector fires process anomaly alert: unexpected 'xmrig' process in team-alpha/api-service pods"
+        expected_action: "Correlate with Harbor alert; declare security incident"
+
+      - time: "T+10m"
+        event: "NeuVector network alert: outbound connection to suspicious IP on port 4444 from team-alpha pods"
+        expected_action: "Incident commander assigned; begin containment"
+
+      - time: "T+20m"
+        event: "Facilitator provides: affected image tag is harbor.apps.sre.example.com/team-alpha/api-service:v2.1.0"
+        expected_action: "Identify all pods using this image; check Cosign signature status"
+
+      - time: "T+30m"
+        event: "Investigation confirms: image signature is valid but base image was compromised before signing"
+        expected_action: "Quarantine image in Harbor; block deployment via Kyverno"
+
+      - time: "T+45m"
+        event: "Containment: roll back to last known good image (v2.0.9) via Flux"
+        expected_action: "Update HelmRelease values, push to Git, verify Flux rollback"
+
+      - time: "T+1h"
+        event: "All affected pods replaced with v2.0.9; NeuVector confirms no anomalous activity"
+        expected_action: "Notify tenant team; begin post-incident analysis"
+
+      - time: "T+1.5h"
+        event: "Post-incident: review Trivy scan policies, NeuVector baseline, and image provenance chain"
+        expected_action: "Generate findings and action items"
+
+  participants:
+    - name: "Sarah Chen"
+      role: "facilitator"
+      organization: "SRE Security Team"
+    - name: "Mike Torres"
+      role: "incident-commander"
+      organization: "SRE Platform Team"
+    - name: "Alex Kim"
+      role: "responder"
+      organization: "SRE Platform Team"
+    - name: "Jordan Lee"
+      role: "observer"
+      organization: "Team Alpha"
+    - name: "Pat Rivera"
+      role: "scribe"
+      organization: "SRE Compliance"
+
+  nist_controls:
+    - id: "IR-3"
+      title: "Incident Response Testing"
+    - id: "IR-4"
+      title: "Incident Handling"
+    - id: "IR-5"
+      title: "Incident Monitoring"
+    - id: "SI-3"
+      title: "Malicious Code Protection"
+    - id: "SI-7"
+      title: "Software, Firmware, and Information Integrity"
+    - id: "CM-11"
+      title: "User-Installed Software"
+    - id: "RA-5"
+      title: "Vulnerability Scanning"
+
+  findings:
+    - id: "F-001"
+      severity: "high"
+      description: >-
+        The team did not have a documented procedure for quarantining
+        a specific image tag in Harbor. The admin had to manually
+        navigate Harbor UI to delete the affected tag. A CLI-based
+        quarantine procedure should be documented.
+      affected_controls:
+        - "IR-4"
+        - "SI-7"
+      recommendation: >-
+        Create a runbook for image quarantine via Harbor API.
+        Include CLI commands for: marking image as non-pullable,
+        adding quarantine label, and notifying affected namespaces.
+
+    - id: "F-002"
+      severity: "medium"
+      description: >-
+        NeuVector's behavioral learning baseline was too permissive
+        for the team-alpha namespace, allowing the xmrig process to
+        run for ~4 hours before the anomaly was flagged. The baseline
+        was still in Discover mode for that namespace.
+      affected_controls:
+        - "SI-3"
+        - "SI-4"
+      recommendation: >-
+        Review all tenant namespace NeuVector protection modes.
+        Ensure all production namespaces are in Protect mode with
+        tight process whitelists. Create an onboarding checklist
+        item to promote NeuVector mode within 2 weeks of deployment.
+
+    - id: "F-003"
+      severity: "medium"
+      description: >-
+        The team was unsure how to verify whether the Cosign signature
+        was applied before or after the base image was compromised.
+        The signature verification process does not check base image
+        provenance, only that the final image was signed.
+      affected_controls:
+        - "SI-7"
+      recommendation: >-
+        Implement Cosign attestation verification in addition to
+        signature verification. Require attestations for build
+        provenance (SLSA) that include base image hash.
+
+    - id: "F-004"
+      severity: "low"
+      description: >-
+        Communication to the tenant team (team-alpha) was delayed
+        by 15 minutes because there was no clear escalation channel
+        defined. The team had to search for the correct Slack channel.
+      affected_controls:
+        - "IR-4"
+        - "IR-6"
+      recommendation: >-
+        Add tenant team escalation contacts to the tenant onboarding
+        template. Include Slack channel, email DL, and on-call contact.
+
+  action_items:
+    - id: "AI-001"
+      finding_ref: "F-001"
+      description: "Create Harbor image quarantine runbook with API-based CLI commands"
+      assignee: "Platform Team"
+      due_date: "2026-02-15"
+      status: "complete"
+
+    - id: "AI-002"
+      finding_ref: "F-002"
+      description: "Audit all tenant namespaces and promote NeuVector to Protect mode"
+      assignee: "Security Team"
+      due_date: "2026-02-28"
+      status: "in-progress"
+
+    - id: "AI-003"
+      finding_ref: "F-003"
+      description: "Evaluate SLSA attestation requirements and Cosign attestation verification"
+      assignee: "Security Team"
+      due_date: "2026-03-31"
+      status: "open"
+
+    - id: "AI-004"
+      finding_ref: "F-004"
+      description: "Add escalation contacts to tenant onboarding template"
+      assignee: "Platform Team"
+      due_date: "2026-02-01"
+      status: "complete"
+
+  after_action:
+    overall_rating: "partially-effective"
+    strengths:
+      - "Harbor Trivy scan detected the CVE quickly after image mirror"
+      - "NeuVector correctly identified the anomalous process"
+      - "Flux rollback procedure worked smoothly once initiated"
+      - "Team correctly correlated multiple alert sources"
+    weaknesses:
+      - "No documented image quarantine procedure"
+      - "NeuVector baseline too permissive in tenant namespace"
+      - "No SLSA attestation verification for base image provenance"
+      - "Tenant communication delay due to missing escalation contacts"
+    lessons_learned:
+      - "Supply chain attacks require defense in depth: scanning alone is insufficient without runtime monitoring"
+      - "Image signatures prove authorship but not base image integrity; attestations are needed"
+      - "All NeuVector tenant namespaces must be in Protect mode before accepting production workloads"
+      - "Incident communication channels must be pre-established during tenant onboarding"
+    next_exercise_recommendation: >-
+      Q2 2026: Conduct a functional drill simulating a Kubernetes
+      node compromise via an exploited host-mounted volume. Focus
+      on NeuVector file integrity monitoring, Kyverno host path
+      restrictions, and the node quarantine/cordon procedure.
