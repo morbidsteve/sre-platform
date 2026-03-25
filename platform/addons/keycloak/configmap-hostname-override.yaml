@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-extra-config
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+data:
+  hostname-override.conf: |
+    hostname-url=https://keycloak.apps.sre.example.com
+    hostname-admin-url=https://keycloak.apps.sre.example.com
