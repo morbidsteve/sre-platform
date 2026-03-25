@@ -642,51 +642,7 @@ CMD ["node", "src/index.js"]
 
 ## Troubleshooting
 
-### Pod is rejected with "container must run as non-root"
-
-Your Dockerfile does not include a `USER` instruction, or it sets `USER root`. Add `USER 1000` (or another non-root user) before the `CMD` or `ENTRYPOINT`.
-
-### Pod crashes with "read-only file system"
-
-Your app is trying to write to a path that is not writable. Common culprits:
-
-- Nginx writing to `/var/cache/nginx` or `/var/run`
-- Node.js writing to `./logs` or `./uploads`
-- Python writing to `__pycache__` directories
-
-Fix: create the writable directories in your Dockerfile with correct ownership, or configure your app to write to `/tmp`.
-
-### Service cannot connect to database
-
-Verify you are using the compose service name as the hostname (e.g., `db`, not `localhost` or `127.0.0.1`). The platform creates DNS aliases for compose service names.
-
-### Frontend returns 502 Bad Gateway
-
-The nginx proxy target is unreachable. Check that:
-
-- The backend service name in `proxy_pass` matches the compose service name exactly
-- The backend is listening on the correct port
-- The backend container is passing health checks
-
-### Image build fails in Kaniko
-
-Kaniko builds run in-cluster without Docker daemon access. Common issues:
-
-- `COPY` paths that reference files outside the build context
-- Multi-stage builds referencing stages by index instead of name (use named stages)
-- Build commands that require Docker socket access
-
-### App works locally but not on SRE
-
-The most common differences between local Docker Compose and SRE:
-
-| Local | SRE |
-|---|---|
-| Runs as root | Must run as non-root |
-| Read-write filesystem | Read-only root filesystem |
-| Host volume mounts | tmpfs or PVCs only |
-| Direct port binding | Istio gateway handles routing |
-| SSL/TLS in app | Istio handles all TLS |
+See the [Troubleshooting Guide](troubleshooting.md) for solutions to common issues.
 
 ---
 

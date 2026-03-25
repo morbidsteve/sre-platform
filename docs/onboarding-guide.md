@@ -811,3 +811,9 @@ Each chart includes all required security contexts, NetworkPolicies, ServiceMoni
 - **Harbor project setup and robot accounts** -- Platform team
 - **OpenBao secrets** -- Platform team
 - **Application deployment issues** -- Check the FAQ above first, then contact the platform team
+
+---
+
+## Troubleshooting
+
+See the [Troubleshooting Guide](troubleshooting.md) for solutions to common issues.

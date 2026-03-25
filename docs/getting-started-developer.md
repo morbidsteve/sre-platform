@@ -4,6 +4,16 @@
 
 # Getting Started: Deploy Your App to SRE
 
+## Reading Order
+
+You are here: **Step 1 of 3** for deploying your first app.
+
+1. **This guide** -- Install tools and connect to the cluster
+2. [Developer Guide](developer-guide.md) -- Deploy your app (Dashboard, CLI, or manual YAML)
+3. [CI/CD Pipeline](../ci/README.md) -- Set up automated builds (optional but recommended)
+
+---
+
 This guide takes you from zero to a running application on the Secure Runtime Environment. It covers every tool you need to install, how to get credentials, how to build a compliant container image, and how to integrate with platform services.
 
 **Audience:** Application developers deploying workloads to the SRE platform.
@@ -929,6 +939,10 @@ When you deploy using the SRE Helm chart templates, the platform provides all of
 | **Automated rollback** | Flux retries failed upgrades and can rollback automatically |
 
 ---
+
+## Troubleshooting
+
+See the [Troubleshooting Guide](troubleshooting.md) for solutions to common issues.
 
 ## Further Reading
 

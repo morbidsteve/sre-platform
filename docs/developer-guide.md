@@ -420,38 +420,7 @@ Flux will delete all resources created by the HelmRelease.
 
 ## Troubleshooting
 
-### Common errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `container has runAsNonRoot and image will run as root` | Image runs as root | Use a non-root base image (e.g., `nginx-unprivileged`) |
-| `Read-only file system` | App writes to root filesystem | Write to `/tmp` or `/var/cache` instead |
-| `CrashLoopBackOff` | App crashes on startup | Check logs: `kubectl logs -n my-team -l app.kubernetes.io/name=my-app` |
-| `ImagePullBackOff` | Can't pull image | Verify image name/tag and registry access |
-| `Helm install failed` | Values don't match schema | Check: `kubectl get helmrelease -n my-team my-app -o yaml` |
-| Pod stuck in `Pending` | ResourceQuota exceeded | Check: `kubectl describe quota -n my-team` |
-
-### Port-forward for debugging
-
-If ingress isn't set up, access your app locally:
-
-```bash
-kubectl port-forward -n my-team svc/my-app-my-app 8080:8080
-# Then open http://localhost:8080
-```
-
-### Force Flux to reconcile
-
-```bash
-flux reconcile kustomization sre-tenants --with-source
-```
-
-### Check what Flux sees
-
-```bash
-flux get helmreleases -n my-team
-flux logs --kind=HelmRelease --name=my-app -n my-team
-```
+See the [Troubleshooting Guide](troubleshooting.md) for solutions to common issues.
 
 ---
 
@@ -568,6 +537,26 @@ The platform uses **Keycloak** for single sign-on. All platform UIs (Grafana, Ha
 | `harbor` | Harbor SSO login |
 | `sre-dashboard` | SRE Dashboard |
 | `neuvector` | NeuVector SSO login |
+
+## Policy Exceptions
+
+If your application has a legitimate reason to bypass a Kyverno policy (e.g., a security
+scanner that requires privileged access, or a legacy app being migrated that must run as
+root temporarily), you can request a formal policy exception.
+
+**How it works:**
+1. Copy the template: `policies/custom/policy-exception-template.yaml`
+2. Save it to `policies/custom/policy-exceptions/<your-team>-<reason>.yaml`
+3. Scope it as narrowly as possible (specific pod names, not entire namespaces)
+4. Fill in all required annotations (reason, expiry, tracking ticket)
+5. Submit a PR — the platform team reviews and approves
+
+Exceptions are time-limited (90-day maximum) and tracked in Git for audit compliance.
+
+See the full process: [Policy Exceptions Guide](../policies/custom/policy-exceptions/README.md)
+See the violation runbook: [Pod Security Violation Runbook](runbooks/pod-security-violation.md)
+
+---
 
 ## CI/CD Pipeline
 
