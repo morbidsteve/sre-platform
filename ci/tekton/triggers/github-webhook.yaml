@@ -406,29 +406,47 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 # -------------------------------------------------------------------
-# Secret: GitHub webhook secret (placeholder — replace before use)
+# ExternalSecret: GitHub webhook secret (synced from OpenBao)
 # -------------------------------------------------------------------
-apiVersion: v1
-kind: Secret
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
 metadata:
   name: github-webhook-secret
   namespace: tekton-pipelines
   labels:
     app.kubernetes.io/part-of: sre-platform
-type: Opaque
-stringData:
-  secret: "REPLACE_ME_WITH_GITHUB_WEBHOOK_SECRET"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: github-webhook-secret
+  data:
+    - secretKey: secret
+      remoteRef:
+        key: sre/platform/tekton/github-webhook
+        property: secret
 ---
 # -------------------------------------------------------------------
-# Secret: GitHub token for git push (placeholder — replace before use)
+# ExternalSecret: GitHub token for git push (synced from OpenBao)
 # -------------------------------------------------------------------
-apiVersion: v1
-kind: Secret
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
 metadata:
   name: github-token
   namespace: tekton-pipelines
   labels:
     app.kubernetes.io/part-of: sre-platform
-type: Opaque
-stringData:
-  token: "REPLACE_ME_WITH_GITHUB_TOKEN"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: github-token
+  data:
+    - secretKey: token
+      remoteRef:
+        key: sre/platform/tekton/github-token
+        property: token

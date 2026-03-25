@@ -339,29 +339,47 @@ spec:
             containers: []
 ---
 # -------------------------------------------------------------------
-# Secret: GitLab webhook secret (placeholder — replace before use)
+# ExternalSecret: GitLab webhook secret (synced from OpenBao)
 # -------------------------------------------------------------------
-apiVersion: v1
-kind: Secret
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
 metadata:
   name: gitlab-webhook-secret
   namespace: tekton-pipelines
   labels:
     app.kubernetes.io/part-of: sre-platform
-type: Opaque
-stringData:
-  secret: "REPLACE_ME_WITH_GITLAB_WEBHOOK_SECRET"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: gitlab-webhook-secret
+  data:
+    - secretKey: secret
+      remoteRef:
+        key: sre/platform/tekton/gitlab-webhook
+        property: secret
 ---
 # -------------------------------------------------------------------
-# Secret: GitLab token for git push (placeholder — replace before use)
+# ExternalSecret: GitLab token for git push (synced from OpenBao)
 # -------------------------------------------------------------------
-apiVersion: v1
-kind: Secret
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
 metadata:
   name: gitlab-token
   namespace: tekton-pipelines
   labels:
     app.kubernetes.io/part-of: sre-platform
-type: Opaque
-stringData:
-  token: "REPLACE_ME_WITH_GITLAB_TOKEN"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: gitlab-token
+  data:
+    - secretKey: token
+      remoteRef:
+        key: sre/platform/tekton/gitlab-token
+        property: token

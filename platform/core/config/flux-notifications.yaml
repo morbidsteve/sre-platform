@@ -1,16 +1,42 @@
 ---
-# Flux Notification Provider — Slack webhook
-# NIST Controls: IR-4, IR-5, SI-5
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
-kind: Provider
-metadata:
-  name: slack
-  namespace: flux-system
-spec:
-  type: slack
-  channel: sre-platform-alerts
-  secretRef:
-    name: slack-webhook-url
+# Slack notifications are optional. To enable:
+# 1. Create a Slack Incoming Webhook URL
+# 2. Store it in OpenBao: vault kv put sre/platform/slack webhook_url=<URL>
+# 3. Uncomment the ExternalSecret and Provider below
+#
+# # ExternalSecret: Slack webhook URL (synced from OpenBao)
+# apiVersion: external-secrets.io/v1beta1
+# kind: ExternalSecret
+# metadata:
+#   name: slack-webhook-url
+#   namespace: flux-system
+#   labels:
+#     app.kubernetes.io/part-of: sre-platform
+# spec:
+#   refreshInterval: 1h
+#   secretStoreRef:
+#     name: openbao-backend
+#     kind: ClusterSecretStore
+#   target:
+#     name: slack-webhook-url
+#   data:
+#     - secretKey: address
+#       remoteRef:
+#         key: sre/platform/slack
+#         property: webhook_url
+# ---
+# # Flux Notification Provider — Slack webhook
+# # NIST Controls: IR-4, IR-5, SI-5
+# apiVersion: notification.toolkit.fluxcd.io/v1beta3
+# kind: Provider
+# metadata:
+#   name: slack
+#   namespace: flux-system
+# spec:
+#   type: slack
+#   channel: sre-platform-alerts
+#   secretRef:
+#     name: slack-webhook-url
 ---
 # Alert on HelmRelease failures
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
@@ -81,12 +107,6 @@ spec:
     - ".*succeeded.*"
   summary: "SRE Platform Deployment"
 ---
-# Placeholder secret for Slack webhook URL
-apiVersion: v1
-kind: Secret
-metadata:
-  name: slack-webhook-url
-  namespace: flux-system
-type: Opaque
-stringData:
-  address: "REPLACE_ME_SLACK_WEBHOOK_URL"
+# Slack webhook secret has been removed.
+# See instructions at the top of this file to enable Slack notifications
+# via ExternalSecret synced from OpenBao.

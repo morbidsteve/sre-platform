@@ -60,7 +60,9 @@ spec:
           config:
             region: "us-east-1"
             s3ForcePathStyle: "true"
-            s3Url: "REPLACE_ME"
+            # Backup storage requires S3-compatible storage (MinIO or cloud S3).
+            # Configure the URL below when object storage is available:
+            # s3Url: "https://minio.minio.svc.cluster.local:9000"
 
       # ---------------------------------------------------------------
       # Volume Snapshot Location

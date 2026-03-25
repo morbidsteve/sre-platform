@@ -18,7 +18,7 @@ metadata:
     sre.io/nist-controls: "AC-6, CM-7"
     pod-policies.kyverno.io/autogen-controllers: none
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: require-run-as-non-root

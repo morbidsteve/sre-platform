@@ -18,7 +18,7 @@ metadata:
     sre.io/nist-controls: "CM-11, SI-7"
     pod-policies.kyverno.io/autogen-controllers: none
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: validate-image-registry
@@ -60,12 +60,19 @@ spec:
       validate:
         message: >-
           All container images in Pod {{request.object.metadata.name}} must be
-          from an approved registry. Allowed: harbor.sre.internal, docker.io,
-          ghcr.io, quay.io, cgr.dev, registry.k8s.io, or short Docker Hub names.
+          from an approved registry. Allowed: harbor.sre.internal, harbor.apps.sre.example.com,
+          harbor.harbor.svc.cluster.local, docker.io, ghcr.io, quay.io, cgr.dev,
+          registry.k8s.io, or short Docker Hub names.
         anyPattern:
           - spec:
               containers:
                 - image: "harbor.sre.internal/*"
+          - spec:
+              containers:
+                - image: "harbor.apps.sre.example.com/*"
+          - spec:
+              containers:
+                - image: "harbor.harbor.svc.cluster.local/*"
           - spec:
               containers:
                 - image: "docker.io/*"
@@ -133,6 +140,12 @@ spec:
           - spec:
               initContainers:
                 - image: "harbor.sre.internal/*"
+          - spec:
+              initContainers:
+                - image: "harbor.apps.sre.example.com/*"
+          - spec:
+              initContainers:
+                - image: "harbor.harbor.svc.cluster.local/*"
           - spec:
               initContainers:
                 - image: "docker.io/*"

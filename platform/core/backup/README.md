@@ -34,17 +34,20 @@ Velero chart is pinned to version `6.0.0`. AWS plugin is pinned to `v1.9.1`.
 
 ### S3 Storage Backend
 
-Update the `REPLACE_ME` placeholder in `helmrelease.yaml` for `s3Url`, or provide the value via the `velero-s3-credentials` Secret.
+The `s3Url` in `helmrelease.yaml` is commented out by default. Uncomment and set it when
+S3-compatible storage (MinIO or cloud S3) is available.
 
-The Secret must contain credentials in the format expected by the Velero AWS plugin:
+The `velero-s3-credentials` Secret should be created out-of-band or via an ExternalSecret
+synced from OpenBao. The secret must contain credentials in the format expected by the
+Velero AWS plugin:
 
 ```yaml
 credentials:
   secretContents:
     cloud: |
       [default]
-      aws_access_key_id=REPLACE_ME
-      aws_secret_access_key=REPLACE_ME
+      aws_access_key_id=<your-access-key>
+      aws_secret_access_key=<your-secret-key>
 ```
 
 ### Backup Schedules

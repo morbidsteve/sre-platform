@@ -36,6 +36,7 @@ Thumbs.db
 
 # Secrets — NEVER commit these
 *.key
+cosign.key
 *.pem
 *.crt
 !infrastructure/packer/**/*.pkr.hcl

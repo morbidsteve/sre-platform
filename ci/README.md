@@ -275,6 +275,49 @@ This pipeline implements the following NIST 800-53 controls:
 | IA-5 (Authenticator Management) | Gitleaks prevents credential leakage |
 | CA-2 (Security Assessment) | ISSM review gate ensures human oversight |
 
+## Tekton Webhook Secrets (OpenBao)
+
+The Tekton webhook trigger manifests use ExternalSecrets to sync credentials from
+OpenBao. Before the webhook triggers will work, you must seed these values in OpenBao.
+
+### Seed GitHub webhook secrets
+
+```bash
+# GitHub webhook secret — the shared secret configured in your GitHub webhook settings
+vault kv put sre/platform/tekton/github-webhook \
+  secret="<your-github-webhook-secret>"
+
+# GitHub token — a PAT with write access to the sre-platform repo (for git push)
+vault kv put sre/platform/tekton/github-token \
+  token="<your-github-personal-access-token>"
+```
+
+### Seed GitLab webhook secrets
+
+```bash
+# GitLab webhook secret — the secret token configured in GitLab webhook settings
+vault kv put sre/platform/tekton/gitlab-webhook \
+  secret="<your-gitlab-webhook-secret>"
+
+# GitLab token — a PAT or deploy token with write access to the repo
+vault kv put sre/platform/tekton/gitlab-token \
+  token="<your-gitlab-personal-access-token>"
+```
+
+### Verify ExternalSecrets are syncing
+
+After seeding, check that the ExternalSecrets have synced successfully:
+
+```bash
+kubectl get externalsecrets -n tekton-pipelines
+# All should show STATUS: SecretSynced
+```
+
+If a secret shows an error, verify:
+1. The ClusterSecretStore `openbao-backend` exists and is healthy
+2. The OpenBao path and property names match exactly
+3. The OpenBao policy grants read access to `sre/platform/tekton/*`
+
 ## Troubleshooting
 
 ### Semgrep SAST scan fails (GATE 1)

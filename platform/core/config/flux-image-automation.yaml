@@ -67,21 +67,42 @@ spec:
     path: ./apps/tenants
     strategy: Setters
 ---
-# Secret for Harbor registry pull credentials (for image scanning)
-# Replace with actual robot account credentials
-apiVersion: v1
-kind: Secret
+# ExternalSecret: Harbor registry credentials (synced from OpenBao)
+# The OpenBao secret at sre/platform/harbor-robot must contain:
+#   username: the Harbor robot account username (e.g., robot$ci-push)
+#   password: the Harbor robot account token
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
 metadata:
   name: harbor-registry-credentials
   namespace: flux-system
-type: kubernetes.io/dockerconfigjson
-stringData:
-  .dockerconfigjson: |
-    {
-      "auths": {
-        "harbor.sre.internal": {
-          "username": "REPLACE_ME_HARBOR_USER",
-          "password": "REPLACE_ME_HARBOR_PASSWORD"
-        }
-      }
-    }
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: harbor-registry-credentials
+    template:
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: |
+          {
+            "auths": {
+              "harbor.sre.internal": {
+                "username": "{{ .username }}",
+                "password": "{{ .password }}"
+              }
+            }
+          }
+  data:
+    - secretKey: username
+      remoteRef:
+        key: sre/platform/harbor-robot
+        property: username
+    - secretKey: password
+      remoteRef:
+        key: sre/platform/harbor-robot
+        property: password

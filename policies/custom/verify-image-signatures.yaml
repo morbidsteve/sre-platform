@@ -17,10 +17,7 @@ metadata:
     policies.kyverno.io/severity: critical
     sre.io/nist-controls: "SA-10, SI-7"
 spec:
-  # NOTE: Changed to Audit until a real Cosign signing key is configured.
-  # Once Harbor image signing is set up, change back to Enforce.
-  # See: docs/agent-docs/kyverno-patterns.md for image verification patterns
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   webhookTimeoutSeconds: 30
   rules:
@@ -70,5 +67,6 @@ spec:
                 - keys:
                     publicKeys: |-
                       -----BEGIN PUBLIC KEY-----
-                      REPLACE_ME_WITH_COSIGN_PUBLIC_KEY
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbeYmaQeGqS1AE5/puceepf0i3Avs
+                      ds4Z64EQt29IPdyQRFniSbAwG/ffyY4Qap7KWYE6RpHMeuLkKy91RVDy0A==
                       -----END PUBLIC KEY-----

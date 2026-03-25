@@ -47,5 +47,6 @@ spec:
                 - keys:
                     publicKeys: |-
                       -----BEGIN PUBLIC KEY-----
-                      REPLACE_ME_WITH_COSIGN_PUBLIC_KEY
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbeYmaQeGqS1AE5/puceepf0i3Avs
+                      ds4Z64EQt29IPdyQRFniSbAwG/ffyY4Qap7KWYE6RpHMeuLkKy91RVDy0A==
                       -----END PUBLIC KEY-----
