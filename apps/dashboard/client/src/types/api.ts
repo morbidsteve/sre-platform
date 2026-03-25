@@ -655,6 +655,38 @@ export interface QuotaResponse {
   quotas: NamespaceQuota[];
 }
 
+// ── Compliance ──────────────────────────────────────────────────────────────
+
+export interface ComplianceScore {
+  score: number;
+  trend: string;
+  controls: {
+    total: number;
+    passing: number;
+    partial: number;
+    failing: number;
+  };
+}
+
+export interface ComplianceControl {
+  id: string;
+  title: string;
+  family: string;
+  familyName: string;
+  status: 'passing' | 'partial' | 'failing';
+  implementingComponents: string[];
+  implementation: string;
+  evidence: string[];
+  automated: boolean;
+  lastVerified: string;
+}
+
+export interface ComplianceControlsResponse {
+  controls: ComplianceControl[];
+  total: number;
+  lastVerified: string;
+}
+
 // ── Manifest Export ────────────────────────────────────────────────────────
 
 export interface ManifestResponse {

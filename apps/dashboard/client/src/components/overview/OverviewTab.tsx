@@ -17,9 +17,10 @@ import { useConfig } from '../../context/ConfigContext';
 import { deepLink } from '../../utils/deepLinks';
 import { fetchPipelineStats } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
+import { fetchComplianceScore } from '../../api/compliance';
 import { Skeleton } from '../ui/Skeleton';
 import { Modal } from '../ui/Modal';
-import type { PipelineStats, AuditEvent } from '../../types/api';
+import type { PipelineStats, AuditEvent, ComplianceScore } from '../../types/api';
 
 const PLATFORM_NAMESPACES = new Set([
   'cert-manager',
@@ -59,6 +60,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
   const { apps, loading: appsLoading } = appsData;
 
   const [pipelineStats, setPipelineStats] = useState<PipelineStats | null>(null);
+  const [complianceScore, setComplianceScore] = useState<ComplianceScore | null>(null);
   const [recentEvents, setRecentEvents] = useState<AuditEvent[]>([]);
   const [localLoading, setLocalLoading] = useState(true);
   const [alertsExpanded, setAlertsExpanded] = useState(false);
@@ -84,15 +86,17 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
   // Suppress unused variable warning - onOpenApp kept for other callers
   void onOpenApp;
 
-  // Only fetch pipeline stats and audit events locally
+  // Only fetch pipeline stats, compliance score, and audit events locally
   const loadLocalData = useCallback(async () => {
     try {
-      const [statsData, auditData] = await Promise.all([
+      const [statsData, auditData, scoreData] = await Promise.all([
         fetchPipelineStats().catch(() => null),
         fetchAuditEvents().catch(() => []),
+        fetchComplianceScore().catch(() => null),
       ]);
       setPipelineStats(statsData);
       setRecentEvents((auditData || []).slice(0, 10));
+      setComplianceScore(scoreData);
     } catch {
       // silently ignore
     } finally {
@@ -149,7 +153,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
       )}
 
       {/* Health Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {/* Platform Health */}
         <div
           className="bg-card border border-border rounded-[var(--radius)] p-5 cursor-pointer hover:border-border-hover transition-colors"
@@ -223,6 +227,39 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
             </div>
           )}
           <div className="text-[11px] text-text-dim mt-1">pending reviews</div>
+        </div>
+
+        {/* Compliance */}
+        <div
+          className="bg-card border border-border rounded-[var(--radius)] p-5 cursor-pointer hover:border-border-hover transition-colors"
+          onClick={() => onSwitchTab('compliance')}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Shield className="w-4 h-4 text-text-dim" />
+            <h3 className="text-xs font-mono uppercase tracking-wider text-text-dim">
+              Compliance
+            </h3>
+          </div>
+          {localLoading || !complianceScore ? (
+            <Skeleton className="h-9 w-16" />
+          ) : (
+            <div
+              className={`text-3xl font-bold font-mono ${
+                complianceScore.score >= 90
+                  ? 'text-green'
+                  : complianceScore.score >= 70
+                  ? 'text-yellow'
+                  : 'text-red'
+              }`}
+            >
+              {Math.round(complianceScore.score)}%
+            </div>
+          )}
+          <div className="text-[11px] text-text-dim mt-1">
+            {complianceScore
+              ? `${complianceScore.controls.passing}/${complianceScore.controls.total} controls passing`
+              : 'loading...'}
+          </div>
         </div>
 
         {/* Cluster */}

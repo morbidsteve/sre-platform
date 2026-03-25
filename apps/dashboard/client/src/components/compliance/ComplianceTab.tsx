@@ -16,9 +16,11 @@ import { AuditFilters } from '../audit/AuditFilters';
 import { AuditTable } from '../audit/AuditTable';
 import { fetchAuditEvents } from '../../api/audit';
 import { fetchHealth } from '../../api/health';
+import { fetchComplianceScore } from '../../api/compliance';
 import { useConfig } from '../../context/ConfigContext';
 import { deepLink } from '../../utils/deepLinks';
-import type { AuditEvent, HelmRelease } from '../../types/api';
+import { Skeleton } from '../ui/Skeleton';
+import type { AuditEvent, HelmRelease, ComplianceScore } from '../../types/api';
 
 // URL placeholder tokens resolved at render time via resolveUrl()
 const SVC_GRAFANA = '{{grafana}}';
@@ -248,6 +250,10 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
   // Health data for real-time status
   const [helmReleases, setHelmReleases] = useState<HelmRelease[]>([]);
 
+  // Compliance score from API
+  const [complianceScore, setComplianceScore] = useState<ComplianceScore | null>(null);
+  const [scoreLoading, setScoreLoading] = useState(true);
+
   // Section refs for scrolling
   const controlFamilySectionRef = useRef<HTMLDivElement>(null);
   const auditSectionRef = useRef<HTMLDivElement>(null);
@@ -275,17 +281,32 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
     }
   }, [active]);
 
+  const loadScore = useCallback(async () => {
+    if (!active) return;
+    try {
+      const data = await fetchComplianceScore();
+      setComplianceScore(data);
+    } catch {
+      // keep existing data
+    } finally {
+      setScoreLoading(false);
+    }
+  }, [active]);
+
   useEffect(() => {
     if (!active) return;
     loadAudit();
     loadHealth();
+    loadScore();
     const auditId = setInterval(loadAudit, 30000);
     const healthId = setInterval(loadHealth, 15000);
+    const scoreId = setInterval(loadScore, 30000);
     return () => {
       clearInterval(auditId);
       clearInterval(healthId);
+      clearInterval(scoreId);
     };
-  }, [active, loadAudit, loadHealth]);
+  }, [active, loadAudit, loadHealth, loadScore]);
 
   const namespaces = useMemo(() => {
     const nsSet = new Set<string>();
@@ -413,6 +434,55 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
           {error} -- <button className="underline" onClick={loadAudit}>Retry</button>
         </div>
       )}
+
+      {/* Compliance Score Header */}
+      <div className="mb-6 bg-card border border-border rounded-[var(--radius)] p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div>
+              {scoreLoading ? (
+                <Skeleton className="h-12 w-20" />
+              ) : complianceScore ? (
+                <span
+                  className={`text-4xl font-bold font-mono ${
+                    complianceScore.score >= 90
+                      ? 'text-green'
+                      : complianceScore.score >= 70
+                      ? 'text-yellow'
+                      : 'text-red'
+                  }`}
+                >
+                  {Math.round(complianceScore.score)}%
+                </span>
+              ) : (
+                <span className="text-4xl font-bold font-mono text-text-dim">--</span>
+              )}
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-text-bright">Compliance Score</h2>
+              {complianceScore ? (
+                <p className="text-xs text-text-dim mt-0.5">
+                  <span className="text-green">{complianceScore.controls.passing} passing</span>
+                  {complianceScore.controls.partial > 0 && (
+                    <span className="text-yellow"> / {complianceScore.controls.partial} partial</span>
+                  )}
+                  {complianceScore.controls.failing > 0 && (
+                    <span className="text-red"> / {complianceScore.controls.failing} failing</span>
+                  )}
+                  <span className="text-text-dim"> of {complianceScore.controls.total} controls</span>
+                </p>
+              ) : (
+                <p className="text-xs text-text-dim mt-0.5">NIST 800-53 Rev 5 Moderate Baseline</p>
+              )}
+            </div>
+          </div>
+          {complianceScore && (
+            <div className="text-xs text-text-dim">
+              Trend: <span className="font-medium text-text-primary">{complianceScore.trend}</span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Section 1: Compliance Summary Cards -- clickable */}
       <div className="mb-6">
