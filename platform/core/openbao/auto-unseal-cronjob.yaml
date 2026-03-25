@@ -199,7 +199,8 @@ spec:
                       oidc_discovery_url='http://keycloak.${SRE_DOMAIN}/realms/sre' \
                       oidc_client_id='openbao' \
                       oidc_client_secret='LMEeknLI2RKfPwzhIPhUZlFk4PUEexb9' \
-                      default_role='sre-user'" 2>&1 || true
+                      default_role='sre-user' \
+                      bound_issuer='https://keycloak.${SRE_DOMAIN}/realms/sre'" 2>&1 || true
 
                   echo "Writing OIDC sre-user role..."
                   kubectl exec -n openbao "$TARGET_POD" -- \
