@@ -70,34 +70,14 @@ spec:
     # the external https:// URL used by browsers.
     # ---------------------------------------------------------------
     extraEnvVars:
+      - name: KC_HOSTNAME
+        value: "keycloak.${SRE_DOMAIN}"
       - name: KC_HOSTNAME_PORT
         value: "443"
       - name: KC_HOSTNAME_STRICT
         value: "false"
       - name: KC_HTTP_RELATIVE_PATH
         value: "/"
-    # Override keycloak.conf to use hostname-url (forces https:// issuer for ALL requests)
-    # The default Bitnami init writes `hostname = ...` which uses request protocol for issuer.
-    # Adding hostname-url forces https:// issuer even on internal HTTP requests.
-    # Required for OpenBao/NeuVector OIDC which access Keycloak internally via HTTP.
-    extraVolumes:
-      - name: keycloak-conf-override
-        configMap:
-          name: keycloak-extra-config
-    extraVolumeMounts:
-      - name: keycloak-conf-override
-        mountPath: /opt/bitnami/keycloak/conf/hostname-override.conf
-        subPath: hostname-override.conf
-        readOnly: true
-    command:
-      - /bin/bash
-    args:
-      - -c
-      - |
-        # Append hostname-url override to the generated keycloak.conf
-        cat /opt/bitnami/keycloak/conf/hostname-override.conf >> /opt/bitnami/keycloak/conf/keycloak.conf
-        # Start Keycloak normally
-        /opt/bitnami/scripts/keycloak/entrypoint.sh /opt/bitnami/scripts/keycloak/run.sh
 
     # ---------------------------------------------------------------
     # Service — ClusterIP (accessed via Istio Gateway + VirtualService)
