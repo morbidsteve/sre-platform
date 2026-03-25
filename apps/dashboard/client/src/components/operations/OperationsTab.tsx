@@ -95,6 +95,29 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
   }, [active, loadPlatformData, triggerRefresh]);
 
   const handleOpenService = (url: string, name: string) => {
+    const lname = name.toLowerCase();
+
+    // Keycloak admin console uses separate master realm credentials
+    if (lname.includes('keycloak')) {
+      if (window.confirm('Keycloak Admin Console uses separate credentials:\n\nUsername: admin\nPassword: 03F2tLffxi\n\nOpen Keycloak?')) {
+        window.open(url, '_blank', 'noopener');
+      }
+      return;
+    }
+
+    // NeuVector — auto-redirect to OIDC login
+    if (lname.includes('neuvector')) {
+      window.open(url + '#/login', '_blank', 'noopener');
+      return;
+    }
+
+    // OpenBao — open directly to OIDC auth method
+    if (lname.includes('openbao') || lname.includes('vault')) {
+      window.open(url + '/ui/vault/auth?with=oidc', '_blank', 'noopener');
+      return;
+    }
+
+    // DSOP wizard — open in app frame modal
     if (url && url.includes('dsop.apps.sre.example.com')) {
       onOpenApp(url, 'DSOP Security Pipeline');
       return;
@@ -103,6 +126,8 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
       onOpenApp(url, 'App Portal');
       return;
     }
+
+    // Everything else — SSO cookie handles auth transparently
     window.open(url, '_blank', 'noopener');
   };
 

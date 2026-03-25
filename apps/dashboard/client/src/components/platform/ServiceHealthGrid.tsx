@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { CheckCircle, XCircle, ExternalLink, KeyRound } from 'lucide-react';
 
 interface ServiceInfo {
   name: string;
@@ -64,7 +64,11 @@ export function ServiceHealthGrid({ services, lastChecked, loading, onOpenServic
                 <span className="font-semibold text-sm text-text-bright">
                   {svc.name.charAt(0).toUpperCase() + svc.name.slice(1)}
                 </span>
-                <ExternalLink className="w-3 h-3 text-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
+                {['keycloak', 'neuvector', 'openbao'].some(s => svc.name.toLowerCase().includes(s)) ? (
+                  <span title="Separate login required"><KeyRound className="w-3 h-3 text-yellow opacity-60" /></span>
+                ) : (
+                  <ExternalLink className="w-3 h-3 text-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
+                )}
               </div>
               <div className="text-[11px] text-text-dim mb-1">{svc.description}</div>
               <div
