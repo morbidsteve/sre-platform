@@ -29,6 +29,13 @@ spec:
       retries: 3
   values:
     server:
+      # Route keycloak.apps.sre.example.com to the nginx proxy that strips
+      # X-Forwarded-Proto, ensuring http:// issuer in OIDC discovery + tokens.
+      # Without this, the Istio gateway redirects HTTP→HTTPS causing issuer mismatch.
+      hostAliases:
+        - ip: "10.43.189.238"  # keycloak-https-proxy.keycloak.svc ClusterIP
+          hostnames:
+            - "keycloak.apps.sre.example.com"
       # Deployment mode (dev/standalone/ha) configured via environment
       # profile ConfigMap (openbao-env-values)
       resources:
