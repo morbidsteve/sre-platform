@@ -10,6 +10,7 @@ import { PodsPanel } from '../cluster/PodsPanel';
 import { EventsPanel } from '../cluster/EventsPanel';
 import { ResourceTopPanel } from '../cluster/ResourceTopPanel';
 import { DeploymentsPanel } from '../cluster/DeploymentsPanel';
+import { DependencyMap } from '../platform/DependencyMap';
 
 interface ServiceInfo {
   name: string;
@@ -34,6 +35,7 @@ interface IngressData {
 
 const OPS_TABS = [
   { id: 'services', label: 'Services' },
+  { id: 'dependencies', label: 'Dependencies' },
   { id: 'nodes', label: 'Nodes' },
   { id: 'pods', label: 'Pods' },
   { id: 'events', label: 'Events' },
@@ -200,6 +202,8 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
           )}
         </div>
       )}
+
+      {subTab === 'dependencies' && <DependencyMap active={active} />}
 
       {subTab === 'nodes' && <NodesPanel active={active} refreshKey={refreshKey} />}
       {subTab === 'pods' && <PodsPanel active={active} refreshKey={refreshKey} />}

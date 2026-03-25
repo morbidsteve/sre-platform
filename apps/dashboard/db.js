@@ -129,6 +129,28 @@ DO $$ BEGIN
   ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS port INTEGER;
 EXCEPTION WHEN others THEN NULL;
 END $$;
+
+-- Admin audit log — separate from pipeline audit log, tracks admin actions (user/tenant CRUD)
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id SERIAL PRIMARY KEY,
+  action TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  target_type TEXT,
+  target_name TEXT,
+  detail TEXT,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit_log(actor);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_action ON admin_audit_log(action);
+
+-- Setup wizard completion tracking
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 `;
 
 // ── Init with retry ─────────────────────────────────────────────────────────
@@ -511,6 +533,70 @@ async function getActiveRuns(team) {
   return runs;
 }
 
+// ── Admin Audit Log ────────────────────────────────────────────────────────
+
+async function adminAuditLog(action, actor, targetType, targetName, detail, metadata) {
+  if (!pool) return null;
+  const { rows } = await query(
+    `INSERT INTO admin_audit_log (action, actor, target_type, target_name, detail, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+     RETURNING *`,
+    [action, actor, targetType || null, targetName || null, detail || null, metadata ? JSON.stringify(metadata) : null]
+  );
+  return rows[0];
+}
+
+async function listAdminAuditLog(filters) {
+  if (!pool) return { entries: [], total: 0 };
+  const limit = Math.min(parseInt(filters.limit) || 50, 200);
+  const offset = parseInt(filters.offset) || 0;
+  let where = [];
+  let params = [];
+  let idx = 1;
+
+  if (filters.action) {
+    where.push(`action = $${idx++}`);
+    params.push(filters.action);
+  }
+  if (filters.actor) {
+    where.push(`actor ILIKE $${idx++}`);
+    params.push(`%${filters.actor}%`);
+  }
+  if (filters.targetType) {
+    where.push(`target_type = $${idx++}`);
+    params.push(filters.targetType);
+  }
+
+  const whereClause = where.length > 0 ? "WHERE " + where.join(" AND ") : "";
+  const countResult = await query(`SELECT COUNT(*) as total FROM admin_audit_log ${whereClause}`, params);
+  const total = parseInt(countResult.rows[0].total);
+
+  const dataParams = [...params, limit, offset];
+  const result = await query(
+    `SELECT * FROM admin_audit_log ${whereClause} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+    dataParams
+  );
+
+  return { entries: result.rows, total, limit, offset };
+}
+
+// ── Platform Settings ─────────────────────────────────────────────────────
+
+async function getSetting(key) {
+  if (!pool) return null;
+  const { rows } = await query("SELECT value FROM platform_settings WHERE key = $1", [key]);
+  return rows.length > 0 ? rows[0].value : null;
+}
+
+async function setSetting(key, value) {
+  if (!pool) return;
+  await query(
+    `INSERT INTO platform_settings (key, value, updated_at) VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+    [key, JSON.stringify(value)]
+  );
+}
+
 module.exports = {
   initDb,
   createRun,
@@ -523,8 +609,12 @@ module.exports = {
   updateFinding,
   createReview,
   auditLog,
+  adminAuditLog,
+  listAdminAuditLog,
   getStats,
   getRunPackage,
   getActiveRuns,
+  getSetting,
+  setSetting,
   pool,
 };

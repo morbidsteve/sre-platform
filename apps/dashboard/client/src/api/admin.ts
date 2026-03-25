@@ -5,6 +5,11 @@ import type {
   CreateUserRequest,
   UpdateUserRequest,
   Credential,
+  Tenant,
+  TenantOverview,
+  AdminAuditResponse,
+  ComponentDependency,
+  SetupStatus,
 } from '../types/api';
 
 export function fetchUsers(): Promise<AdminUser[]> {
@@ -60,4 +65,70 @@ export function deleteGroup(id: string): Promise<{ success: boolean }> {
 
 export function fetchCredentials(): Promise<Credential[]> {
   return apiFetch<Credential[]>('/api/credentials');
+}
+
+// ── Tenant Management ─────────────────────────────────────────────────────
+
+export function fetchTenants(): Promise<Tenant[]> {
+  return apiFetch<Tenant[]>('/api/admin/tenants');
+}
+
+export function fetchTenantOverview(): Promise<TenantOverview> {
+  return apiFetch<TenantOverview>('/api/admin/tenants/overview');
+}
+
+export function createTenant(name: string, tier: string): Promise<{ success: boolean; name: string }> {
+  return apiFetch('/api/admin/tenants', {
+    method: 'POST',
+    body: JSON.stringify({ name, tier }),
+  });
+}
+
+export function updateTenantQuota(name: string, tier: string): Promise<{ success: boolean }> {
+  return apiFetch('/api/admin/tenants/' + encodeURIComponent(name) + '/quota', {
+    method: 'PATCH',
+    body: JSON.stringify({ tier }),
+  });
+}
+
+export function deleteTenant(name: string): Promise<{ success: boolean }> {
+  return apiFetch('/api/admin/tenants/' + encodeURIComponent(name), {
+    method: 'DELETE',
+    body: JSON.stringify({ confirm: name }),
+  });
+}
+
+// ── Admin Audit Log ───────────────────────────────────────────────────────
+
+export function fetchAdminAuditLog(params?: {
+  action?: string;
+  actor?: string;
+  targetType?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<AdminAuditResponse> {
+  const query = new URLSearchParams();
+  if (params?.action) query.set('action', params.action);
+  if (params?.actor) query.set('actor', params.actor);
+  if (params?.targetType) query.set('targetType', params.targetType);
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  const qs = query.toString();
+  return apiFetch<AdminAuditResponse>('/api/admin/audit-log' + (qs ? '?' + qs : ''));
+}
+
+// ── Component Dependencies ────────────────────────────────────────────────
+
+export function fetchComponentDependencies(): Promise<ComponentDependency[]> {
+  return apiFetch<ComponentDependency[]>('/api/platform/dependencies');
+}
+
+// ── Setup Wizard ──────────────────────────────────────────────────────────
+
+export function fetchSetupStatus(): Promise<SetupStatus> {
+  return apiFetch<SetupStatus>('/api/admin/setup-status');
+}
+
+export function completeSetup(): Promise<{ success: boolean }> {
+  return apiFetch('/api/admin/setup-complete', { method: 'POST' });
 }
