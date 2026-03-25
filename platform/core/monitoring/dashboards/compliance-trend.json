@@ -1,0 +1,417 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "SRE Platform compliance trend dashboard — overall score, control status breakdown, per-family analysis over 90 days",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "uid": "sre-compliance-trend",
+  "title": "SRE Compliance Trend",
+  "tags": ["sre", "compliance", "nist", "cato"],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Overall Compliance Status",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 70 },
+              { "color": "yellow", "value": 85 },
+              { "color": "green", "value": 95 }
+            ]
+          },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "title": "Overall Compliance Score",
+      "description": "Percentage of NIST 800-53 controls passing, based on platform component health. 95%+ = green (ATO-ready).",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "(count(gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\"}) / count(gotk_reconcile_condition{type=\"Ready\", kind=\"HelmRelease\"})) * 100",
+          "legendFormat": "Score",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisLabel": "Controls",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": { "mode": "none" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Passing" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Failing" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "min", "max"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "title": "Compliance Score Over Time (90 days)",
+      "description": "Tracks HelmRelease health as a proxy for compliance control status over the past 90 days.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "count(gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\"})",
+          "legendFormat": "Passing",
+          "refId": "A"
+        },
+        {
+          "expr": "count(gotk_reconcile_condition{status=\"False\", type=\"Ready\", kind=\"HelmRelease\"})",
+          "legendFormat": "Failing",
+          "refId": "B"
+        }
+      ],
+      "timeFrom": "90d"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 1 },
+      "id": 3,
+      "options": {
+        "displayLabels": ["name", "value"],
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Controls by Status",
+      "description": "Distribution of NIST 800-53 controls: passing vs failing HelmReleases.",
+      "type": "piechart",
+      "targets": [
+        {
+          "expr": "count(gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\"})",
+          "legendFormat": "Passing",
+          "refId": "A"
+        },
+        {
+          "expr": "count(gotk_reconcile_condition{status=\"False\", type=\"Ready\", kind=\"HelmRelease\"})",
+          "legendFormat": "Failing",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 101,
+      "title": "Security Policy Compliance",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": { "mode": "normal" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "pass" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "fail" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "warn" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "title": "Kyverno Policy Results (90 days)",
+      "description": "Kyverno policy evaluation results over time by outcome.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(increase(kyverno_policy_results_total{rule_result=\"pass\"}[1h]))",
+          "legendFormat": "pass",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(kyverno_policy_results_total{rule_result=\"fail\"}[1h]))",
+          "legendFormat": "fail",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(increase(kyverno_policy_results_total{rule_result=\"warn\"}[1h]))",
+          "legendFormat": "warn",
+          "refId": "C"
+        }
+      ],
+      "timeFrom": "90d"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "title": "Policy Violations by Policy (top 10)",
+      "description": "Top 10 Kyverno policies generating violations.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "topk(10, sum by (policy_name) (increase(kyverno_policy_results_total{rule_result=\"fail\"}[1d])))",
+          "legendFormat": "{{ policy_name }}",
+          "refId": "A"
+        }
+      ],
+      "timeFrom": "90d"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 102,
+      "title": "Platform Component Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "FAILING" }, "1": { "color": "green", "text": "PASSING" } }, "type": "value" }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 19 },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Per-Component Health (NIST Control Families)",
+      "description": "Status of each platform component that implements NIST 800-53 controls. Each component maps to one or more control families.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"istiod\"}",
+          "legendFormat": "Istio (AC, SC)",
+          "refId": "A"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"kyverno\"}",
+          "legendFormat": "Kyverno (AC, CM)",
+          "refId": "B"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"kube-prometheus-stack\"}",
+          "legendFormat": "Monitoring (AU, IR)",
+          "refId": "C"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"loki\"}",
+          "legendFormat": "Logging (AU)",
+          "refId": "D"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"harbor\"}",
+          "legendFormat": "Harbor (RA, SI)",
+          "refId": "E"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"neuvector\"}",
+          "legendFormat": "NeuVector (SI, IR)",
+          "refId": "F"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"keycloak\"}",
+          "legendFormat": "Keycloak (IA, AC)",
+          "refId": "G"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"cert-manager\"}",
+          "legendFormat": "cert-manager (SC, IA)",
+          "refId": "H"
+        },
+        {
+          "expr": "gotk_reconcile_condition{status=\"True\", type=\"Ready\", kind=\"HelmRelease\", name=\"openbao\"}",
+          "legendFormat": "OpenBao (SC, IA)",
+          "refId": "I"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "id": 103,
+      "title": "Certificate & Secrets Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "title": "Certificate Time to Expiry",
+      "description": "Time remaining before each cert-manager certificate expires.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "certmanager_certificate_expiration_timestamp_seconds - time()",
+          "legendFormat": "{{ name }} ({{ namespace }})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "title": "External Secret Sync Status",
+      "description": "External Secrets Operator sync status over time.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "count(externalsecret_status_condition{condition=\"Ready\", status=\"True\"})",
+          "legendFormat": "Synced",
+          "refId": "A"
+        },
+        {
+          "expr": "count(externalsecret_status_condition{condition=\"Ready\", status=\"False\"})",
+          "legendFormat": "Failed",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": { "list": [] },
+  "time": { "from": "now-90d", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "version": 1,
+  "refresh": "5m"
+}

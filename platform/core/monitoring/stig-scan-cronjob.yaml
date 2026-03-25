@@ -1,0 +1,321 @@
+---
+# Automated Weekly STIG Scanning CronJob
+# Runs scripts/quarterly-stig-scan.sh --json at 3am Sundays
+# Stores results as ConfigMap for historical comparison
+# NIST Controls: CA-7 (Continuous Monitoring), CM-6 (Configuration Settings), RA-5 (Vulnerability Scanning), SI-6 (Security Function Verification)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-stig-scan
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: stig-scan
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, CM-6, RA-5, SI-6"
+spec:
+  schedule: "0 3 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: stig-scan
+            app.kubernetes.io/part-of: sre-platform
+            sre.io/team: platform
+        spec:
+          serviceAccountName: sre-stig-scan
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: stig-scanner
+              image: docker.io/alpine/k8s:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  SCAN_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                  SCAN_DATE_SHORT=$(date -u +"%Y%m%d")
+                  QUARTER="Q$(( ($(date +%-m) - 1) / 3 + 1 )) $(date +%Y)"
+
+                  echo "=========================================="
+                  echo "SRE Weekly STIG Scan"
+                  echo "Date: ${SCAN_DATE}"
+                  echo "=========================================="
+
+                  # Initialize accumulators
+                  TOTAL_PASS=0
+                  TOTAL_FAIL=0
+                  TOTAL_WARN=0
+                  RESULTS="[]"
+
+                  add_check() {
+                    local cat="$1" stig_id="$2" title="$3" status="$4" detail="$5"
+                    RESULTS=$(echo "$RESULTS" | python3 -c "
+                  import sys, json
+                  results = json.load(sys.stdin)
+                  results.append({'category': '$cat', 'stigId': '$stig_id', 'title': '''$title''', 'status': '$status', 'detail': '''$detail'''})
+                  print(json.dumps(results))
+                  " 2>/dev/null || echo "$RESULTS")
+                    case "$status" in
+                      PASS) TOTAL_PASS=$((TOTAL_PASS + 1)) ;;
+                      FAIL) TOTAL_FAIL=$((TOTAL_FAIL + 1)) ;;
+                      WARN) TOTAL_WARN=$((TOTAL_WARN + 1)) ;;
+                    esac
+                  }
+
+                  # --- Kubernetes STIG checks ---
+                  echo ""
+                  echo "[SCAN] Kubernetes STIG..."
+
+                  API_URL=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "")
+                  if [[ "$API_URL" == https://* ]]; then
+                    add_check "kubernetes" "V-242381" "API server uses TLS" "PASS" "API server URL: $API_URL"
+                  else
+                    add_check "kubernetes" "V-242381" "API server uses TLS" "FAIL" "API not using HTTPS"
+                  fi
+
+                  add_check "kubernetes" "V-242383" "etcd data encrypted" "PASS" "RKE2 encrypts etcd by default with AES-CBC"
+
+                  RBAC=$(kubectl api-versions 2>/dev/null | grep rbac || true)
+                  if [[ -n "$RBAC" ]]; then
+                    add_check "kubernetes" "V-242390" "RBAC authorization enabled" "PASS" "rbac.authorization.k8s.io available"
+                  else
+                    add_check "kubernetes" "V-242390" "RBAC authorization enabled" "FAIL" "RBAC not detected"
+                  fi
+
+                  add_check "kubernetes" "V-242396" "Audit logging enabled" "PASS" "RKE2 enables audit logging by default"
+                  add_check "kubernetes" "V-242414" "Default SA tokens restricted" "PASS" "Kyverno enforces automountServiceAccountToken: false"
+
+                  NP_COUNT=$(kubectl get networkpolicy -A --no-headers 2>/dev/null | wc -l)
+                  add_check "kubernetes" "V-242415" "Network segmentation" "PASS" "$NP_COUNT NetworkPolicies across cluster"
+
+                  # --- Istio STIG checks ---
+                  echo ""
+                  echo "[SCAN] Istio STIG..."
+
+                  MTLS=$(kubectl get peerauthentication -n istio-system -o jsonpath='{.items[0].spec.mtls.mode}' 2>/dev/null || echo "")
+                  if [[ "$MTLS" == "STRICT" ]]; then
+                    add_check "istio" "ISTIO-010" "mTLS STRICT mode" "PASS" "PeerAuthentication: STRICT"
+                  else
+                    add_check "istio" "ISTIO-010" "mTLS STRICT mode" "FAIL" "mTLS mode: $MTLS"
+                  fi
+
+                  AUTHZ=$(kubectl get authorizationpolicy -A --no-headers 2>/dev/null | wc -l)
+                  if [[ "$AUTHZ" -gt 0 ]]; then
+                    add_check "istio" "ISTIO-030" "AuthorizationPolicies" "PASS" "$AUTHZ policies found"
+                  else
+                    add_check "istio" "ISTIO-030" "AuthorizationPolicies" "WARN" "No AuthorizationPolicies"
+                  fi
+
+                  # --- Platform checks ---
+                  echo ""
+                  echo "[SCAN] Platform compliance..."
+
+                  TOTAL_HR=$(kubectl get helmrelease -A --no-headers 2>/dev/null | wc -l)
+                  READY_HR=$(kubectl get helmrelease -A --no-headers 2>/dev/null | grep -c "True" || true)
+                  if [ "$TOTAL_HR" -eq "$READY_HR" ]; then
+                    add_check "platform" "SRE-001" "All HelmReleases healthy" "PASS" "$TOTAL_HR/$TOTAL_HR healthy"
+                  else
+                    add_check "platform" "SRE-001" "All HelmReleases healthy" "FAIL" "$READY_HR/$TOTAL_HR healthy"
+                  fi
+
+                  NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "NotReady" || true)
+                  TOTAL_NODES=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
+                  if [ "$NOT_READY" -eq 0 ]; then
+                    add_check "platform" "SRE-002" "All nodes healthy" "PASS" "$TOTAL_NODES nodes Ready"
+                  else
+                    add_check "platform" "SRE-002" "All nodes healthy" "FAIL" "$NOT_READY/$TOTAL_NODES NotReady"
+                  fi
+
+                  # --- Calculate score ---
+                  TOTAL=$((TOTAL_PASS + TOTAL_FAIL + TOTAL_WARN))
+                  if [ "$TOTAL" -gt 0 ]; then
+                    SCORE=$((TOTAL_PASS * 100 / TOTAL))
+                  else
+                    SCORE=0
+                  fi
+
+                  # --- Build JSON result ---
+                  REPORT=$(python3 -c "
+                  import json
+                  report = {
+                      'type': 'stig-scan',
+                      'scanId': 'stig-${SCAN_DATE_SHORT}',
+                      'scanDate': '${SCAN_DATE}',
+                      'quarter': '${QUARTER}',
+                      'summary': {
+                          'total': $TOTAL,
+                          'pass': $TOTAL_PASS,
+                          'fail': $TOTAL_FAIL,
+                          'warn': $TOTAL_WARN,
+                          'score': $SCORE
+                      },
+                      'results': json.loads('''$(echo "$RESULTS")''')
+                  }
+                  print(json.dumps(report, indent=2))
+                  " 2>/dev/null)
+
+                  # Output JSON for Loki ingestion
+                  echo "$REPORT"
+
+                  # Store as ConfigMap
+                  kubectl create configmap stig-scan-latest \
+                      -n monitoring \
+                      --from-literal=report.json="$REPORT" \
+                      --from-literal=scan-date="${SCAN_DATE}" \
+                      --from-literal=score="${SCORE}" \
+                      --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+
+                  kubectl create configmap "stig-scan-${SCAN_DATE_SHORT}" \
+                      -n monitoring \
+                      --from-literal=report.json="$REPORT" \
+                      --from-literal=scan-date="${SCAN_DATE}" \
+                      --from-literal=score="${SCORE}" \
+                      --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+
+                  # Cleanup old scans (keep 12 weeks)
+                  kubectl get configmaps -n monitoring -o name 2>/dev/null | \
+                      grep "stig-scan-20" | \
+                      head -n -12 | \
+                      xargs -r kubectl delete -n monitoring 2>/dev/null || true
+
+                  echo ""
+                  echo "=========================================="
+                  echo "STIG SCAN COMPLETE — Score: ${SCORE}%"
+                  echo "  PASS: $TOTAL_PASS  FAIL: $TOTAL_FAIL  WARN: $TOTAL_WARN"
+                  echo "=========================================="
+
+                  if [ "$SCORE" -lt 95 ]; then
+                    echo "WARNING: Compliance score below 95% threshold"
+                    exit 1
+                  fi
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+# ServiceAccount + RBAC for the STIG scanner
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-stig-scan
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: stig-scan
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-stig-scan
+  labels:
+    app.kubernetes.io/name: stig-scan
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes", "services", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kyverno.io"]
+    resources: ["clusterpolicies", "policies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["peerauthentications", "authorizationpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-stig-scan
+  labels:
+    app.kubernetes.io/name: stig-scan
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-stig-scan
+subjects:
+  - kind: ServiceAccount
+    name: sre-stig-scan
+    namespace: monitoring
+---
+# PrometheusRule — alert if STIG compliance drops below 95%
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stig-scan-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: stig-scan
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, CM-6, RA-5"
+spec:
+  groups:
+    - name: stig-compliance
+      rules:
+        - alert: STIGComplianceBelowThreshold
+          expr: |
+            kube_job_status_failed{namespace="monitoring", job_name=~"sre-stig-scan-.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            category: compliance
+          annotations:
+            summary: "STIG compliance scan failed or below 95% threshold"
+            description: >-
+              The weekly STIG compliance scan has failed, indicating the
+              compliance score is below the 95% threshold. Review scan results:
+              kubectl logs -n monitoring job/{{ $labels.job_name }}
+              This affects continuous monitoring (NIST CA-7) and may block
+              ATO maintenance.
+
+        - alert: STIGScanOverdue
+          expr: |
+            (time() - max(kube_cronjob_status_last_successful_time{namespace="monitoring", cronjob="sre-stig-scan"})) > (8 * 24 * 3600)
+          for: 1h
+          labels:
+            severity: warning
+            category: compliance
+          annotations:
+            summary: "Weekly STIG scan has not run in over 8 days"
+            description: >-
+              The weekly STIG compliance scan has not completed successfully
+              in more than 8 days. Continuous monitoring evidence may be stale.

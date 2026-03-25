@@ -9162,7 +9162,7 @@ app.post("/api/apps/:namespace/:name/rollback", mutateLimiter, requireGroups("sr
 });
 
 // ── Task 10.3: Kyverno Policy Violations ──────────────────────────────────
-app.get("/api/security/policy-violations", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+app.get("/api/security/policy-violations", requireGroups("sre-admins", "developers", "issm", "compliance-assessors"), async (req, res) => {
   try {
     const { namespace } = req.query;
     const violations = [];
@@ -10037,6 +10037,564 @@ app.get("/api/compliance/evidence/:controlId", requireGroups("sre-admins", "issm
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// ── Phase 3: Finding Lifecycle ────────────────────────────────────────────────
+
+// GET /api/compliance/findings/lifecycle — list with aging info
+app.get("/api/compliance/findings/lifecycle", requireDb, requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const result = await db.listLifecycleFindings({
+      status: req.query.status,
+      severity: req.query.severity,
+      source: req.query.source,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("Error listing lifecycle findings:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/compliance/findings/lifecycle — create a new tracked finding
+app.post("/api/compliance/findings/lifecycle", mutateLimiter, requireDb, requireGroups("sre-admins", "issm"), async (req, res) => {
+  try {
+    const { source, severity, title, affectedResource, nistControls } = req.body;
+    if (!source || !severity || !title) {
+      return res.status(400).json({ error: "source, severity, and title are required" });
+    }
+    const validSeverities = ["critical", "high", "medium", "low"];
+    if (!validSeverities.includes(severity)) {
+      return res.status(400).json({ error: "severity must be one of: " + validSeverities.join(", ") });
+    }
+    const finding = await db.createLifecycleFinding({ source, severity, title, affectedResource, nistControls });
+    const actor = req.headers["x-auth-request-user"] || "system";
+    await db.auditLog(null, "finding_created", actor, `Finding ${finding.id}: ${title}`, { findingId: finding.id, severity });
+    res.status(201).json(finding);
+  } catch (err) {
+    console.error("Error creating lifecycle finding:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/compliance/findings/:id — update finding status
+app.patch("/api/compliance/findings/:id", mutateLimiter, requireDb, requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowedStatuses = ["open", "in-progress", "mitigated", "risk-accepted", "resolved", "false-positive"];
+    if (req.body.status && !allowedStatuses.includes(req.body.status)) {
+      return res.status(400).json({ error: "Invalid status. Allowed: " + allowedStatuses.join(", ") });
+    }
+    const actor = req.headers["x-auth-request-user"] || "system";
+    const updates = { ...req.body };
+    if (updates.status === "mitigated" && !updates.mitigatedBy) {
+      updates.mitigatedBy = actor;
+    }
+    const finding = await db.updateLifecycleFinding(id, updates);
+    if (!finding) return res.status(404).json({ error: "Finding not found" });
+    await db.auditLog(null, "finding_updated", actor, `Finding ${id} updated: status=${updates.status || "unchanged"}`, { findingId: id, updates });
+    res.json(finding);
+  } catch (err) {
+    console.error("Error updating lifecycle finding:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/compliance/findings/metrics — MTTR, overdue count, aging histogram
+app.get("/api/compliance/findings/metrics", requireDb, requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const metrics = await db.getLifecycleFindingMetrics();
+    if (!metrics) return res.status(503).json({ error: "Database unavailable" });
+    res.json(metrics);
+  } catch (err) {
+    console.error("Error fetching finding metrics:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/compliance/findings/:id/accept-risk — risk acceptance workflow
+app.post("/api/compliance/findings/:id/accept-risk", mutateLimiter, requireDb, requireGroups("sre-admins", "issm"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { justification, compensatingControls, expiryDays } = req.body;
+    if (!justification) {
+      return res.status(400).json({ error: "justification is required" });
+    }
+    const actor = req.headers["x-auth-request-user"] || "system";
+    const finding = await db.acceptRiskFinding(id, {
+      justification,
+      compensatingControls,
+      acceptedBy: actor,
+      expiryDays: expiryDays || 90,
+    });
+    if (!finding) return res.status(404).json({ error: "Finding not found" });
+    await db.auditLog(null, "risk_accepted", actor, `Risk accepted for finding ${id}`, { findingId: id, justification, expiryDays: expiryDays || 90 });
+    res.json(finding);
+  } catch (err) {
+    console.error("Error accepting risk:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 4: RAISE 2.0 Automation ────────────────────────────────────────────
+
+// GET /api/compliance/raise/status — RAISE requirements mapped to live checks
+app.get("/api/compliance/raise/status", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const helmReleases = await getHelmReleases();
+    const helmHealthMap = new Map();
+    helmReleases.forEach((hr) => helmHealthMap.set(hr.name, hr.ready));
+
+    // RPOC requirements — mapped to live component health
+    const rpocRequirements = [
+      { id: "RPOC-1", name: "Container Registry with Scanning", components: ["harbor"], check: () => helmHealthMap.get("harbor") === true },
+      { id: "RPOC-2", name: "Image Signature Verification", components: ["kyverno"], check: () => helmHealthMap.get("kyverno") === true },
+      { id: "RPOC-3", name: "Runtime Security Monitoring", components: ["neuvector"], check: () => helmHealthMap.get("neuvector") === true },
+      { id: "RPOC-4", name: "Service Mesh with mTLS", components: ["istiod"], check: () => helmHealthMap.get("istiod") === true },
+      { id: "RPOC-5", name: "Policy Enforcement Engine", components: ["kyverno"], check: () => helmHealthMap.get("kyverno") === true },
+      { id: "RPOC-6", name: "Centralized Logging", components: ["loki", "alloy"], check: () => helmHealthMap.get("loki") === true },
+      { id: "RPOC-7", name: "Monitoring and Alerting", components: ["kube-prometheus-stack"], check: () => helmHealthMap.get("kube-prometheus-stack") === true },
+      { id: "RPOC-8", name: "Secrets Management", components: ["openbao"], check: () => helmHealthMap.get("openbao") === true },
+    ];
+
+    // GATE requirements — mapped to pipeline pass rates
+    let pipelineStats = null;
+    if (dbAvailable && db.pool) {
+      try {
+        const gatesResult = await db.pool.query(
+          `SELECT short_name,
+                  COUNT(*) as total,
+                  COUNT(*) FILTER (WHERE status = 'passed') as passed
+           FROM pipeline_gates
+           GROUP BY short_name`
+        );
+        pipelineStats = {};
+        for (const row of gatesResult.rows) {
+          pipelineStats[row.short_name] = {
+            total: parseInt(row.total),
+            passed: parseInt(row.passed),
+            rate: parseInt(row.total) > 0 ? parseFloat(((parseInt(row.passed) / parseInt(row.total)) * 100).toFixed(1)) : 0,
+          };
+        }
+      } catch { /* pipeline DB not available */ }
+    }
+
+    const gateRequirements = [
+      { id: "GATE-1", name: "Source Composition Analysis (SCA)", gate: "sca", tool: "Trivy" },
+      { id: "GATE-2", name: "Static Application Security Testing (SAST)", gate: "sast", tool: "Semgrep" },
+      { id: "GATE-3", name: "Container Image Scan", gate: "image-scan", tool: "Trivy" },
+      { id: "GATE-4", name: "SBOM Generation", gate: "sbom", tool: "Syft" },
+      { id: "GATE-5", name: "Image Signing", gate: "sign", tool: "Cosign" },
+      { id: "GATE-6", name: "Secret Detection", gate: "secrets", tool: "Gitleaks" },
+      { id: "GATE-7", name: "Dynamic Application Security Testing (DAST)", gate: "dast", tool: "ZAP" },
+      { id: "GATE-8", name: "Compliance Validation", gate: "compliance", tool: "Kyverno" },
+    ];
+
+    const requirements = [];
+
+    // RPOC requirements
+    for (const req of rpocRequirements) {
+      const passing = req.check();
+      requirements.push({
+        id: req.id,
+        name: req.name,
+        category: "platform",
+        status: passing ? "auto-verified" : "failed",
+        evidence: `Components: ${req.components.join(", ")} — ${passing ? "all healthy" : "one or more unhealthy"}`,
+        components: req.components,
+        lastVerified: new Date().toISOString(),
+      });
+    }
+
+    // GATE requirements
+    for (const gate of gateRequirements) {
+      const stats = pipelineStats ? pipelineStats[gate.gate] : null;
+      let status = "manual";
+      let evidence = "No pipeline data available";
+      if (stats) {
+        status = stats.rate >= 80 ? "auto-verified" : "failed";
+        evidence = `${stats.passed}/${stats.total} runs passed (${stats.rate}%) — Tool: ${gate.tool}`;
+      }
+      requirements.push({
+        id: gate.id,
+        name: gate.name,
+        category: "pipeline",
+        status,
+        evidence,
+        tool: gate.tool,
+        passRate: stats ? stats.rate : null,
+        lastVerified: new Date().toISOString(),
+      });
+    }
+
+    const passing = requirements.filter((r) => r.status === "auto-verified").length;
+    const failing = requirements.filter((r) => r.status === "failed").length;
+    const manual = requirements.filter((r) => r.status === "manual").length;
+
+    res.json({
+      requirements,
+      summary: { total: requirements.length, passing, failing, manual },
+      lastVerified: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Error fetching RAISE status:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/compliance/pipeline/certification — pipeline certification data
+app.get("/api/compliance/pipeline/certification", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    if (!dbAvailable || !db.pool) {
+      return res.json({ available: false, message: "Pipeline database not available" });
+    }
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [totalRuns, gateStats, avgDuration, failureReasons] = await Promise.all([
+      db.pool.query("SELECT COUNT(*) as total FROM pipeline_runs WHERE created_at >= $1", [ninetyDaysAgo]),
+      db.pool.query(
+        `SELECT short_name, tool,
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE status = 'passed') as passed,
+                COUNT(*) FILTER (WHERE status = 'failed') as failed
+         FROM pipeline_gates g
+         JOIN pipeline_runs r ON g.run_id = r.id
+         WHERE r.created_at >= $1
+         GROUP BY short_name, tool
+         ORDER BY short_name`,
+        [ninetyDaysAgo]
+      ),
+      db.pool.query(
+        `SELECT AVG(EXTRACT(EPOCH FROM (r.updated_at - r.created_at))) as avg_seconds
+         FROM pipeline_runs r
+         WHERE r.created_at >= $1 AND r.status IN ('approved', 'deployed', 'rejected')`,
+        [ninetyDaysAgo]
+      ),
+      db.pool.query(
+        `SELECT g.short_name, g.summary, COUNT(*) as count
+         FROM pipeline_gates g
+         JOIN pipeline_runs r ON g.run_id = r.id
+         WHERE r.created_at >= $1 AND g.status = 'failed'
+         GROUP BY g.short_name, g.summary
+         ORDER BY count DESC
+         LIMIT 20`,
+        [ninetyDaysAgo]
+      ),
+    ]);
+
+    const gates = gateStats.rows.map((row) => ({
+      gate: row.short_name,
+      tool: row.tool || "N/A",
+      total: parseInt(row.total),
+      passed: parseInt(row.passed),
+      failed: parseInt(row.failed),
+      passRate: parseInt(row.total) > 0 ? parseFloat(((parseInt(row.passed) / parseInt(row.total)) * 100).toFixed(1)) : 0,
+    }));
+
+    const avgSeconds = avgDuration.rows[0]?.avg_seconds ? Math.round(parseFloat(avgDuration.rows[0].avg_seconds)) : null;
+
+    res.json({
+      available: true,
+      period: { start: ninetyDaysAgo, end: new Date().toISOString(), days: 90 },
+      totalRuns: parseInt(totalRuns.rows[0].total),
+      gates,
+      averagePipelineDuration: {
+        seconds: avgSeconds,
+        human: avgSeconds
+          ? avgSeconds < 3600
+            ? `${Math.round(avgSeconds / 60)}m`
+            : `${(avgSeconds / 3600).toFixed(1)}h`
+          : "N/A",
+      },
+      failureReasons: failureReasons.rows.map((r) => ({
+        gate: r.short_name,
+        reason: r.summary || "No summary",
+        count: parseInt(r.count),
+      })),
+      certificationReady: gates.length > 0 && gates.every((g) => g.passRate >= 80),
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Error fetching pipeline certification:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 5: ISSM Daily Workflow ─────────────────────────────────────────────
+
+// GET /api/issm/digest — daily ISSM summary
+app.get("/api/issm/digest", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const digest = {};
+
+    // 1. Pending pipeline reviews with wait times
+    if (dbAvailable && db.pool) {
+      try {
+        const { rows: pendingReviews } = await db.pool.query(
+          `SELECT id, app_name, team, created_at, status,
+                  EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 as hours_waiting
+           FROM pipeline_runs
+           WHERE status = 'review_pending'
+           ORDER BY created_at ASC`
+        );
+        digest.pendingReviews = {
+          count: pendingReviews.length,
+          items: pendingReviews.map((r) => ({
+            id: r.id,
+            appName: r.app_name,
+            team: r.team,
+            hoursWaiting: parseFloat(parseFloat(r.hours_waiting).toFixed(1)),
+            createdAt: r.created_at,
+          })),
+        };
+      } catch { digest.pendingReviews = { count: 0, items: [] }; }
+    } else {
+      digest.pendingReviews = { count: 0, items: [], dbUnavailable: true };
+    }
+
+    // 2. Compliance score and change from yesterday
+    try {
+      const helmReleases = await getHelmReleases();
+      const helmHealthMap = new Map();
+      helmReleases.forEach((hr) => helmHealthMap.set(hr.name, hr.ready));
+
+      let passing = 0, partial = 0, failing = 0;
+      for (const ctrl of COMPLIANCE_CONTROLS) {
+        const status = getControlStatus(ctrl, helmHealthMap);
+        if (status === "passing") passing++;
+        else if (status === "partial") partial++;
+        else failing++;
+      }
+      const total = COMPLIANCE_CONTROLS.length;
+      const score = total > 0 ? parseFloat(((passing + partial * 0.5) / total * 100).toFixed(1)) : 0;
+
+      // Try to get yesterday's score from ConfigMaps
+      let previousScore = null;
+      try {
+        const cmList = await k8sApi.listNamespacedConfigMap("sre-dashboard");
+        const scoreCms = cmList.body.items
+          .filter((cm) => cm.metadata.name.startsWith("compliance-score-"))
+          .sort((a, b) => new Date(b.metadata.creationTimestamp) - new Date(a.metadata.creationTimestamp));
+        if (scoreCms.length > 0) {
+          const data = JSON.parse(scoreCms[0].data?.snapshot || "{}");
+          previousScore = data.score || null;
+        }
+      } catch { /* no history */ }
+
+      digest.complianceScore = {
+        current: score,
+        previous: previousScore,
+        change: previousScore !== null ? parseFloat((score - previousScore).toFixed(1)) : null,
+        controls: { total, passing, partial, failing },
+      };
+    } catch (err) {
+      digest.complianceScore = { error: err.message };
+    }
+
+    // 3. Open findings by severity with SLA approaching
+    if (dbAvailable && db.pool) {
+      try {
+        const metrics = await db.getLifecycleFindingMetrics();
+        const { rows: slaApproaching } = await db.pool.query(
+          `SELECT id, severity, title, sla_deadline,
+                  EXTRACT(EPOCH FROM (sla_deadline - NOW())) / 86400 as days_remaining
+           FROM finding_lifecycle
+           WHERE status = 'open' AND sla_deadline IS NOT NULL AND sla_deadline < NOW() + INTERVAL '7 days'
+           ORDER BY sla_deadline ASC
+           LIMIT 20`
+        );
+        digest.findings = {
+          ...metrics,
+          slaApproaching: slaApproaching.map((f) => ({
+            id: f.id,
+            severity: f.severity,
+            title: f.title,
+            slaDeadline: f.sla_deadline,
+            daysRemaining: parseFloat(parseFloat(f.days_remaining).toFixed(1)),
+          })),
+        };
+      } catch { digest.findings = { error: "Could not query findings" }; }
+    } else {
+      digest.findings = { dbUnavailable: true };
+    }
+
+    // 4. Active policy exceptions with expiry status
+    try {
+      let exceptions = [];
+      try {
+        const policyExceptions = await customApi.listClusterCustomObject("kyverno.io", "v2", "policyexceptions");
+        exceptions = (policyExceptions.body.items || []).map((pe) => {
+          const expiry = pe.metadata?.annotations?.["sre.io/exception-expiry"] || null;
+          const isExpired = expiry ? new Date(expiry) < now : false;
+          const daysUntilExpiry = expiry ? (new Date(expiry) - now) / (24 * 60 * 60 * 1000) : null;
+          return {
+            name: pe.metadata.name,
+            namespace: pe.metadata.namespace || "cluster",
+            policy: pe.spec?.exceptions?.[0]?.policyName || "unknown",
+            expiry,
+            isExpired,
+            daysUntilExpiry: daysUntilExpiry !== null ? parseFloat(daysUntilExpiry.toFixed(1)) : null,
+          };
+        });
+      } catch { /* Kyverno v2 not available or no exceptions */ }
+      digest.policyExceptions = {
+        total: exceptions.length,
+        expired: exceptions.filter((e) => e.isExpired).length,
+        expiringSoon: exceptions.filter((e) => e.daysUntilExpiry !== null && e.daysUntilExpiry > 0 && e.daysUntilExpiry <= 30).length,
+        items: exceptions,
+      };
+    } catch {
+      digest.policyExceptions = { total: 0, items: [] };
+    }
+
+    // 5. Certificate health
+    try {
+      let certificates = [];
+      try {
+        const certs = await customApi.listClusterCustomObject("cert-manager.io", "v1", "certificates");
+        certificates = (certs.body.items || []).map((cert) => {
+          const readyCondition = (cert.status?.conditions || []).find((c) => c.type === "Ready");
+          const notAfter = cert.status?.notAfter ? new Date(cert.status.notAfter) : null;
+          const daysUntilExpiry = notAfter ? (notAfter - now) / (24 * 60 * 60 * 1000) : null;
+          return {
+            name: cert.metadata.name,
+            namespace: cert.metadata.namespace,
+            ready: readyCondition?.status === "True",
+            notAfter: cert.status?.notAfter || null,
+            daysUntilExpiry: daysUntilExpiry !== null ? parseFloat(daysUntilExpiry.toFixed(0)) : null,
+          };
+        });
+      } catch { /* cert-manager not available */ }
+      const expiringSoon = certificates.filter((c) => c.daysUntilExpiry !== null && c.daysUntilExpiry <= 30);
+      digest.certificates = {
+        total: certificates.length,
+        healthy: certificates.filter((c) => c.ready).length,
+        expiringSoon: expiringSoon.length,
+        expiringItems: expiringSoon,
+      };
+    } catch {
+      digest.certificates = { total: 0, healthy: 0 };
+    }
+
+    // 6. Recent deployments (last 24h)
+    if (dbAvailable && db.pool) {
+      try {
+        const { rows: recentDeploys } = await db.pool.query(
+          `SELECT id, app_name, team, status, created_at, deployed_url
+           FROM pipeline_runs
+           WHERE created_at >= $1
+           ORDER BY created_at DESC`,
+          [yesterday.toISOString()]
+        );
+        digest.recentDeployments = {
+          count: recentDeploys.length,
+          items: recentDeploys.map((d) => ({
+            id: d.id,
+            appName: d.app_name,
+            team: d.team,
+            status: d.status,
+            createdAt: d.created_at,
+            deployedUrl: d.deployed_url,
+          })),
+        };
+      } catch { digest.recentDeployments = { count: 0, items: [] }; }
+    } else {
+      digest.recentDeployments = { count: 0, items: [], dbUnavailable: true };
+    }
+
+    digest.generatedAt = now.toISOString();
+    res.json(digest);
+  } catch (err) {
+    console.error("Error generating ISSM digest:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/compliance/waivers — unified view of all waivers/exceptions
+app.get("/api/compliance/waivers", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const waivers = [];
+
+    // 1. Kyverno PolicyExceptions
+    try {
+      const policyExceptions = await customApi.listClusterCustomObject("kyverno.io", "v2", "policyexceptions");
+      for (const pe of (policyExceptions.body.items || [])) {
+        const expiry = pe.metadata?.annotations?.["sre.io/exception-expiry"] || null;
+        const justification = pe.metadata?.annotations?.["sre.io/exception-justification"] || "";
+        waivers.push({
+          type: "policy-exception",
+          id: pe.metadata.name,
+          scope: pe.metadata.namespace || "cluster",
+          policy: pe.spec?.exceptions?.[0]?.policyName || "unknown",
+          justification,
+          expiry,
+          status: expiry && new Date(expiry) < new Date() ? "expired" : "active",
+          source: "kyverno",
+        });
+      }
+    } catch { /* No PolicyExceptions or Kyverno v2 not available */ }
+
+    // 2. Risk acceptances from finding lifecycle DB
+    if (dbAvailable && db.pool) {
+      try {
+        const { rows } = await db.pool.query(
+          `SELECT id, title, severity, affected_resource, risk_justification,
+                  risk_compensating_controls, risk_accepted_by, risk_accepted_at, risk_expiry
+           FROM finding_lifecycle
+           WHERE risk_accepted = true
+           ORDER BY risk_accepted_at DESC`
+        );
+        for (const row of rows) {
+          waivers.push({
+            type: "risk-acceptance",
+            id: row.id,
+            scope: row.affected_resource || "N/A",
+            policy: row.title,
+            justification: row.risk_justification || "",
+            compensatingControls: row.risk_compensating_controls || "",
+            acceptedBy: row.risk_accepted_by,
+            acceptedAt: row.risk_accepted_at,
+            expiry: row.risk_expiry,
+            status: row.risk_expiry && new Date(row.risk_expiry) < new Date() ? "expired" : "active",
+            severity: row.severity,
+            source: "finding-lifecycle",
+          });
+        }
+      } catch { /* DB query failed */ }
+    }
+
+    const summary = {
+      total: waivers.length,
+      active: waivers.filter((w) => w.status === "active").length,
+      expired: waivers.filter((w) => w.status === "expired").length,
+      byType: {
+        policyExceptions: waivers.filter((w) => w.type === "policy-exception").length,
+        riskAcceptances: waivers.filter((w) => w.type === "risk-acceptance").length,
+      },
+    };
+
+    res.json({ waivers, summary });
+  } catch (err) {
+    console.error("Error fetching waivers:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 6: Assessor Role ───────────────────────────────────────────────────
+// Note: The compliance-assessors group is already added to all /api/compliance/*
+// endpoints above via requireGroups. The assessor role CAN access:
+//   - All /api/compliance/* endpoints (read)
+//   - All /api/security/* read endpoints (policy-violations)
+// The assessor role CANNOT access:
+//   - /api/deploy/* endpoints
+//   - /api/admin/* endpoints
+//   - DELETE endpoints
+//   - POST /api/pipeline/runs (create)
+// This is enforced by NOT including "compliance-assessors" in those route groups.
 
 // SPA catch-all: serve index.html for non-API routes (React Router / client-side nav)
 app.get('*', (req, res) => {

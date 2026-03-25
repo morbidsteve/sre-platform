@@ -42,3 +42,6 @@ configMapGenerator:
   - name: sre-dashboard-cert-manager
     files:
       - cert-manager-dashboard.json
+  - name: sre-dashboard-compliance-trend
+    files:
+      - compliance-trend.json

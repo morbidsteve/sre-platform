@@ -1,0 +1,277 @@
+---
+# Compliance Drift Detection CronJob
+# Hourly check for mTLS mode, Kyverno Enforce status, NetworkPolicy gaps,
+# and unauthorized cluster-admin bindings. Outputs structured JSON to stdout (Loki).
+# NIST Controls: CA-7 (Continuous Monitoring), CM-6 (Configuration Settings), SI-4 (System Monitoring)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-compliance-drift
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-drift
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, CM-6, SI-4"
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 7200
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: compliance-drift
+            app.kubernetes.io/part-of: sre-platform
+            sre.io/team: platform
+        spec:
+          serviceAccountName: sre-compliance-drift
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: drift-checker
+              image: docker.io/alpine/k8s:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  SCAN_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                  DRIFT_FOUND=false
+                  RESULTS="[]"
+
+                  add_result() {
+                    local check="$1" status="$2" detail="$3" severity="$4"
+                    RESULTS=$(echo "$RESULTS" | python3 -c "
+                  import sys, json
+                  results = json.load(sys.stdin)
+                  results.append({'check': '$check', 'status': '$status', 'detail': '''$detail''', 'severity': '$severity'})
+                  print(json.dumps(results))
+                  " 2>/dev/null || echo "$RESULTS")
+                  }
+
+                  # --- Check 1: mTLS STRICT mode ---
+                  MTLS=$(kubectl get peerauthentication -n istio-system default -o jsonpath='{.spec.mtls.mode}' 2>/dev/null || echo "NONE")
+                  if [[ "$MTLS" != "STRICT" ]]; then
+                    add_result "mtls-mode" "DRIFT" "mTLS mode is $MTLS, expected STRICT" "critical"
+                    DRIFT_FOUND=true
+                  else
+                    add_result "mtls-mode" "OK" "mTLS STRICT mode active" "info"
+                  fi
+
+                  # --- Check 2: Kyverno Enforce status ---
+                  AUDIT_POLICIES=$(kubectl get clusterpolicies -o json 2>/dev/null | python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  audit = []
+                  for p in data.get('items', []):
+                      action = p.get('spec', {}).get('validationFailureAction', 'unknown')
+                      if action.lower() == 'audit':
+                          audit.append(p['metadata']['name'])
+                  print(json.dumps(audit))
+                  " 2>/dev/null || echo "[]")
+
+                  AUDIT_COUNT=$(echo "$AUDIT_POLICIES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+                  if [[ "$AUDIT_COUNT" -gt 0 ]]; then
+                    add_result "kyverno-enforce" "DRIFT" "$AUDIT_COUNT policies in Audit mode instead of Enforce" "high"
+                    DRIFT_FOUND=true
+                  else
+                    add_result "kyverno-enforce" "OK" "All policies in Enforce mode" "info"
+                  fi
+
+                  # --- Check 3: NetworkPolicy presence ---
+                  MISSING_NP=""
+                  for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -v "^kube-\|^default$"); do
+                    NP_COUNT=$(kubectl get networkpolicy -n "$ns" --no-headers 2>/dev/null | wc -l)
+                    if [ "$NP_COUNT" -eq 0 ]; then
+                      MISSING_NP="$MISSING_NP $ns"
+                    fi
+                  done
+                  MISSING_NP=$(echo "$MISSING_NP" | xargs)
+                  if [[ -n "$MISSING_NP" ]]; then
+                    add_result "networkpolicy-coverage" "DRIFT" "Namespaces without NetworkPolicies: $MISSING_NP" "medium"
+                    DRIFT_FOUND=true
+                  else
+                    add_result "networkpolicy-coverage" "OK" "All namespaces have NetworkPolicies" "info"
+                  fi
+
+                  # --- Check 4: Unauthorized cluster-admin bindings ---
+                  UNAUTHORIZED_BINDINGS=$(kubectl get clusterrolebindings -o json 2>/dev/null | python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  allowed_subjects = [
+                    'system:admin', 'system:masters', 'system:kube-controller-manager',
+                    'system:kube-scheduler', 'system:node', 'system:cloud-controller-manager',
+                    'rancher', 'helm-controller', 'kustomize-controller',
+                    'cluster-admin', 'sre-compliance-scanner', 'sre-compliance-evidence',
+                    'sre-compliance-drift'
+                  ]
+                  flagged = []
+                  for item in data.get('items', []):
+                      role = item.get('roleRef', {}).get('name', '')
+                      if role != 'cluster-admin':
+                          continue
+                      for subj in item.get('subjects', []):
+                          name = subj.get('name', '')
+                          if name not in allowed_subjects and not name.startswith('system:'):
+                              flagged.append({'binding': item['metadata']['name'], 'subject': name, 'kind': subj.get('kind', '')})
+                  print(json.dumps(flagged))
+                  " 2>/dev/null || echo "[]")
+
+                  UNAUTH_COUNT=$(echo "$UNAUTHORIZED_BINDINGS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+                  if [[ "$UNAUTH_COUNT" -gt 0 ]]; then
+                    add_result "cluster-admin-bindings" "DRIFT" "$UNAUTH_COUNT unauthorized cluster-admin bindings found" "critical"
+                    DRIFT_FOUND=true
+                  else
+                    add_result "cluster-admin-bindings" "OK" "No unauthorized cluster-admin bindings" "info"
+                  fi
+
+                  # --- Check 5: HelmRelease health ---
+                  TOTAL_HR=$(kubectl get helmrelease -A --no-headers 2>/dev/null | wc -l)
+                  UNHEALTHY_HR=$(kubectl get helmrelease -A --no-headers 2>/dev/null | grep -v "True" | wc -l || true)
+                  if [[ "$UNHEALTHY_HR" -gt 0 ]]; then
+                    add_result "helmrelease-health" "DRIFT" "$UNHEALTHY_HR/$TOTAL_HR HelmReleases unhealthy" "high"
+                    DRIFT_FOUND=true
+                  else
+                    add_result "helmrelease-health" "OK" "All $TOTAL_HR HelmReleases healthy" "info"
+                  fi
+
+                  # --- Output structured JSON ---
+                  python3 -c "
+                  import json
+                  report = {
+                      'type': 'compliance-drift-scan',
+                      'timestamp': '$SCAN_DATE',
+                      'drift_detected': $( $DRIFT_FOUND && echo 'True' || echo 'False' ),
+                      'checks': json.loads('''$(echo "$RESULTS")''')
+                  }
+                  print(json.dumps(report))
+                  " 2>/dev/null
+
+                  if $DRIFT_FOUND; then
+                    echo ""
+                    echo "COMPLIANCE DRIFT DETECTED — review findings above"
+                    exit 1
+                  fi
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+---
+# ServiceAccount + RBAC for the compliance drift checker
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-compliance-drift
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-drift
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-compliance-drift
+  labels:
+    app.kubernetes.io/name: compliance-drift
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kyverno.io"]
+    resources: ["clusterpolicies", "policies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["peerauthentications"]
+    verbs: ["get", "list"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-compliance-drift
+  labels:
+    app.kubernetes.io/name: compliance-drift
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-compliance-drift
+subjects:
+  - kind: ServiceAccount
+    name: sre-compliance-drift
+    namespace: monitoring
+---
+# PrometheusRule — alert when drift detection CronJob fails (indicating drift)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: compliance-drift-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-drift
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, CM-6, SI-4"
+spec:
+  groups:
+    - name: compliance-drift
+      rules:
+        - alert: ComplianceDriftDetected
+          expr: |
+            kube_job_status_failed{namespace="monitoring", job_name=~"sre-compliance-drift-.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            category: compliance
+          annotations:
+            summary: "Compliance drift detected by hourly scan"
+            description: >-
+              The hourly compliance drift detection job has failed, indicating
+              one or more compliance checks are not meeting baseline requirements.
+              Check: mTLS mode, Kyverno enforcement, NetworkPolicy coverage,
+              cluster-admin bindings. Review logs:
+              kubectl logs -n monitoring job/{{ $labels.job_name }}
+
+        - alert: ComplianceDriftScanOverdue
+          expr: |
+            (time() - max(kube_cronjob_status_last_successful_time{namespace="monitoring", cronjob="sre-compliance-drift"})) > (3 * 3600)
+          for: 30m
+          labels:
+            severity: warning
+            category: compliance
+          annotations:
+            summary: "Compliance drift scan has not run in over 3 hours"
+            description: >-
+              The hourly compliance drift detection CronJob has not completed
+              successfully in more than 3 hours. Continuous monitoring (NIST CA-7)
+              may be impaired.

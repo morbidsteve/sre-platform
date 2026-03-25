@@ -151,6 +151,33 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   value JSONB NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Finding lifecycle tracking (compliance findings with SLA and risk acceptance)
+CREATE TABLE IF NOT EXISTS finding_lifecycle (
+  id TEXT PRIMARY KEY DEFAULT ('FND-' || replace(gen_random_uuid()::text, '-', '')),
+  source TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  title TEXT NOT NULL,
+  affected_resource TEXT,
+  nist_controls TEXT,
+  discovered_at TIMESTAMPTZ DEFAULT NOW(),
+  sla_deadline TIMESTAMPTZ,
+  status TEXT DEFAULT 'open',
+  mitigated_at TIMESTAMPTZ,
+  mitigated_by TEXT,
+  notes TEXT,
+  risk_accepted BOOLEAN DEFAULT false,
+  risk_justification TEXT,
+  risk_compensating_controls TEXT,
+  risk_accepted_by TEXT,
+  risk_accepted_at TIMESTAMPTZ,
+  risk_expiry TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_status ON finding_lifecycle(status);
+CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_severity ON finding_lifecycle(severity);
+CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_sla ON finding_lifecycle(sla_deadline);
+CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_discovered ON finding_lifecycle(discovered_at DESC);
 `;
 
 // ── Init with retry ─────────────────────────────────────────────────────────
@@ -597,6 +624,165 @@ async function setSetting(key, value) {
   );
 }
 
+// ── Finding Lifecycle ───────────────────────────────────────────────────────
+
+const SLA_DAYS = { critical: 7, high: 30, medium: 90, low: 180 };
+
+async function createLifecycleFinding(data) {
+  if (!pool) return null;
+  const slaDays = SLA_DAYS[data.severity] || 180;
+  const { rows } = await query(
+    `INSERT INTO finding_lifecycle (source, severity, title, affected_resource, nist_controls, sla_deadline, status)
+     VALUES ($1, $2, $3, $4, $5, NOW() + ($6 || ' days')::interval, $7)
+     RETURNING *`,
+    [
+      data.source,
+      data.severity,
+      data.title,
+      data.affectedResource || null,
+      data.nistControls || null,
+      String(slaDays),
+      data.status || "open",
+    ]
+  );
+  return rows[0];
+}
+
+async function listLifecycleFindings(filters = {}) {
+  if (!pool) return { findings: [], total: 0 };
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+
+  if (filters.status) {
+    conditions.push(`status = $${idx++}`);
+    params.push(filters.status);
+  }
+  if (filters.severity) {
+    conditions.push(`severity = $${idx++}`);
+    params.push(filters.severity);
+  }
+  if (filters.source) {
+    conditions.push(`source = $${idx++}`);
+    params.push(filters.source);
+  }
+
+  const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+  const limit = Math.min(parseInt(filters.limit) || 100, 500);
+  const offset = parseInt(filters.offset) || 0;
+
+  const countResult = await query(`SELECT COUNT(*) as total FROM finding_lifecycle ${where}`, params);
+  const total = parseInt(countResult.rows[0].total);
+
+  const dataParams = [...params, limit, offset];
+  const { rows } = await query(
+    `SELECT *,
+       CASE WHEN sla_deadline IS NOT NULL AND status = 'open'
+            THEN EXTRACT(EPOCH FROM (sla_deadline - NOW())) / 86400
+            ELSE NULL END as days_remaining,
+       CASE WHEN mitigated_at IS NOT NULL AND discovered_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (mitigated_at - discovered_at)) / 86400
+            ELSE NULL END as time_to_remediate_days
+     FROM finding_lifecycle ${where} ORDER BY discovered_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+    dataParams
+  );
+
+  return { findings: rows, total, limit, offset };
+}
+
+async function updateLifecycleFinding(id, updates) {
+  if (!pool) return null;
+  const setClauses = ["updated_at = NOW()"];
+  const params = [id];
+  let idx = 2;
+
+  const allowedFields = ["status", "mitigated_at", "mitigated_by", "notes"];
+  for (const [key, value] of Object.entries(updates)) {
+    const snakeKey = key.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
+    if (allowedFields.includes(snakeKey)) {
+      setClauses.push(`${snakeKey} = $${idx++}`);
+      params.push(value);
+    }
+  }
+
+  // Auto-set mitigated_at if status changes to mitigated
+  if (updates.status === "mitigated" && !updates.mitigatedAt) {
+    setClauses.push(`mitigated_at = NOW()`);
+  }
+
+  const { rows } = await query(
+    `UPDATE finding_lifecycle SET ${setClauses.join(", ")} WHERE id = $1 RETURNING *`,
+    params
+  );
+  return rows[0] || null;
+}
+
+async function acceptRiskFinding(id, data) {
+  if (!pool) return null;
+  const { rows } = await query(
+    `UPDATE finding_lifecycle SET
+       status = 'risk-accepted',
+       risk_accepted = true,
+       risk_justification = $2,
+       risk_compensating_controls = $3,
+       risk_accepted_by = $4,
+       risk_accepted_at = NOW(),
+       risk_expiry = NOW() + ($5 || ' days')::interval,
+       updated_at = NOW()
+     WHERE id = $1 RETURNING *`,
+    [
+      id,
+      data.justification,
+      data.compensatingControls || null,
+      data.acceptedBy,
+      String(data.expiryDays || 90),
+    ]
+  );
+  return rows[0] || null;
+}
+
+async function getLifecycleFindingMetrics() {
+  if (!pool) return null;
+
+  const [
+    totalResult,
+    byStatusResult,
+    bySeverityResult,
+    overdueResult,
+    mttrResult,
+    riskResult,
+  ] = await Promise.all([
+    query("SELECT COUNT(*) as total FROM finding_lifecycle"),
+    query("SELECT status, COUNT(*) as count FROM finding_lifecycle GROUP BY status"),
+    query("SELECT severity, COUNT(*) as count FROM finding_lifecycle WHERE status = 'open' GROUP BY severity"),
+    query("SELECT COUNT(*) as count FROM finding_lifecycle WHERE status = 'open' AND sla_deadline < NOW()"),
+    query(`SELECT severity,
+             AVG(EXTRACT(EPOCH FROM (mitigated_at - discovered_at)) / 86400) as avg_days
+           FROM finding_lifecycle
+           WHERE mitigated_at IS NOT NULL
+           GROUP BY severity`),
+    query(`SELECT COUNT(*) as count FROM finding_lifecycle WHERE risk_accepted = true AND (risk_expiry IS NULL OR risk_expiry > NOW())`),
+  ]);
+
+  const byStatus = {};
+  byStatusResult.rows.forEach((r) => { byStatus[r.status] = parseInt(r.count); });
+
+  const openBySeverity = {};
+  bySeverityResult.rows.forEach((r) => { openBySeverity[r.severity] = parseInt(r.count); });
+
+  const mttr = {};
+  mttrResult.rows.forEach((r) => { mttr[r.severity] = parseFloat(parseFloat(r.avg_days).toFixed(1)); });
+
+  return {
+    total: parseInt(totalResult.rows[0].total),
+    byStatus,
+    openBySeverity,
+    overdue: parseInt(overdueResult.rows[0].count),
+    mttr,
+    activeRiskAcceptances: parseInt(riskResult.rows[0].count),
+  };
+}
+
 module.exports = {
   initDb,
   createRun,
@@ -616,5 +802,11 @@ module.exports = {
   getActiveRuns,
   getSetting,
   setSetting,
+  createLifecycleFinding,
+  listLifecycleFindings,
+  updateLifecycleFinding,
+  acceptRiskFinding,
+  getLifecycleFindingMetrics,
+  SLA_DAYS,
   pool,
 };
