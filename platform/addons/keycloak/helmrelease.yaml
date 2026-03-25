@@ -79,35 +79,9 @@ spec:
       - name: KC_HTTP_RELATIVE_PATH
         value: "/"
 
-    # Add hostname-url to keycloak.conf AFTER Bitnami's init generates it.
-    # This forces https:// in ALL OIDC issuer responses (even internal HTTP).
-    # Required for OpenBao OIDC which uses internal HTTP but gets https:// tokens.
-    initContainers:
-      - name: patch-hostname-url
-        image: docker.io/busybox:1.36
-        command:
-          - /bin/sh
-          - -c
-          - |
-            echo "Patching keycloak.conf with hostname-url..."
-            CONF=/opt/bitnami/keycloak/conf/keycloak.conf
-            # Wait for prepare-write-dirs init to create the file
-            for i in $(seq 1 30); do [ -f "$CONF" ] && break; sleep 1; done
-            if [ -f "$CONF" ]; then
-              if ! grep -q "hostname-url" "$CONF"; then
-                echo "" >> "$CONF"
-                echo "hostname-url = https://keycloak.apps.sre.example.com" >> "$CONF"
-                echo "hostname-admin-url = https://keycloak.apps.sre.example.com" >> "$CONF"
-              fi
-              echo "Done:"
-              grep hostname "$CONF"
-            else
-              echo "WARN: keycloak.conf not found, skipping patch"
-            fi
-        volumeMounts:
-          - name: empty-dir
-            mountPath: /opt/bitnami/keycloak/conf
-            subPath: app-conf-dir
+    # Note: OpenBao OIDC uses bound_issuer to handle http/https issuer mismatch.
+    # Keycloak returns http:// issuer on internal requests but https:// on external.
+    # OpenBao's bound_issuer=https:// accepts the browser's https:// tokens.
 
     # ---------------------------------------------------------------
     # Service — ClusterIP (accessed via Istio Gateway + VirtualService)
