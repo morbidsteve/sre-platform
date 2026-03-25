@@ -381,6 +381,16 @@ EOF
 
 success "Created ${APP_FILE#"${REPO_ROOT}/"}"
 
+# Warn if image is not from an approved Harbor registry
+case "$IMAGE_REPO" in
+  harbor.sre.internal/*|harbor.apps.sre.example.com/*|harbor.harbor.svc.cluster.local/*)
+    ;;
+  *)
+    warn "Image repository '${IMAGE_REPO}' is not from an approved Harbor registry."
+    warn "Kyverno policy will reject this deployment. Use harbor.apps.sre.example.com/<project>/<image>"
+    ;;
+esac
+
 # ---------- Register in kustomization.yaml ----------
 
 TEAM_KUSTOMIZATION="${TEAM_DIR}/kustomization.yaml"

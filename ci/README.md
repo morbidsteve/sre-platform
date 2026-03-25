@@ -97,6 +97,36 @@ apps/tenants/<team>/apps/<app-name>.yaml
 
 See the existing `apps/tenants/team-alpha/apps/demo-app.yaml` for a reference.
 
+## Setting Up the ISSM Review Gate
+
+The RAISE 2.0 pipeline includes an ISSM review gate (Gate 6) that pauses the pipeline
+for security officer approval. This requires a GitHub Environment with required reviewers.
+
+### Setup Steps
+
+1. Go to your app repo → **Settings** → **Environments** → **New environment**
+2. Name: `issm-review`
+3. Under **Environment protection rules**, click **Required reviewers**
+4. Add your ISSM or security reviewer's GitHub username
+5. Optionally: under **Deployment branches**, select "Selected branches" and add `main`
+6. Click **Save protection rules**
+
+### How It Works
+
+- The pipeline runs Gates 1-5 automatically (SAST, Secrets, SBOM, CVE, DAST)
+- At Gate 6, GitHub Actions pauses and waits for a required reviewer to approve
+- The reviewer sees the scan results summary in the deployment review
+- After approval, Gate 7 (Image Signing) and Gate 8 (Deployment) proceed
+- If no `issm-review` environment exists, Gate 6 will fail
+
+### For the Reviewer
+
+When notified of a pending review:
+1. Go to the GitHub Actions run
+2. Click "Review deployments"
+3. Review the security scan summaries from previous gates
+4. Approve or reject with a comment
+
 ## Setting Up a New Project
 
 ### Step 1: Create the app manifest in sre-platform
@@ -125,7 +155,7 @@ spec:
       name: "my-app"
       team: "team-alpha"
       image:
-        repository: "harbor.sre.internal/team-alpha/my-app"
+        repository: "harbor.apps.sre.example.com/team-alpha/my-app"
         tag: "v1.0.0"
       port: 8080
       resources:
@@ -165,12 +195,8 @@ Flux will deploy your app within its reconciliation interval (default: 10 minute
 
 ### 5. GitHub Environment for ISSM Review (GATE 6)
 
-Create a GitHub Environment named `issm-review` with required reviewers:
-
-1. Go to your repo Settings > Environments > New environment
-2. Name: `issm-review`
-3. Add required reviewers (your ISSM and/or security team)
-4. The pipeline will pause at the ISSM review step until approved
+Create a GitHub Environment named `issm-review` with required reviewers.
+See [Setting Up the ISSM Review Gate](#setting-up-the-issm-review-gate) for detailed instructions.
 
 ## Workflow Files
 
@@ -276,6 +302,7 @@ This pipeline implements the following NIST 800-53 controls:
 - The pipeline pauses at the `issm-review` job until an authorized reviewer approves
 - Reviewers are configured in GitHub Settings > Environments > `issm-review`
 - The ISSM should review all scan artifacts before approving
+- See [Setting Up the ISSM Review Gate](#setting-up-the-issm-review-gate) for setup instructions
 
 ### Cosign signing fails (GATE 7)
 

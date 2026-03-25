@@ -48,7 +48,7 @@ on:
         description: "Harbor registry hostname"
         required: false
         type: string
-        default: "harbor.sre.internal"
+        default: "harbor.apps.sre.example.com"
     secrets:
       HARBOR_USERNAME:
         description: "Harbor robot account username"

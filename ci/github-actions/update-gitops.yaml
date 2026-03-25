@@ -45,7 +45,7 @@ on:
         description: "Harbor registry hostname"
         required: false
         type: string
-        default: "harbor.sre.internal"
+        default: "harbor.apps.sre.example.com"
     secrets:
       GITOPS_TOKEN:
         description: "GitHub PAT with write access to the GitOps repo"

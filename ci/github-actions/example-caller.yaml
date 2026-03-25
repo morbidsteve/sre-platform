@@ -47,7 +47,7 @@ jobs:
       # dockerfile: "./build/Dockerfile"
       # build-context: "."
       # trivy-severity: "CRITICAL,HIGH"
-      # harbor-registry: "harbor.sre.internal"
+      # harbor-registry: "harbor.apps.sre.example.com"
     secrets: inherit
 
   # ------------------------------------------------------------------
