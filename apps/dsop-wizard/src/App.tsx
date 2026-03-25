@@ -129,6 +129,8 @@ export default function App() {
             isAnalyzing={state.isAnalyzing}
             securityExceptions={state.securityExceptions}
             onUpdateSecurityExceptions={wizard.updateSecurityExceptions}
+            securityCategorization={state.securityCategorization}
+            onUpdateSecurityCategorization={wizard.updateSecurityCategorization}
           />
         );
 

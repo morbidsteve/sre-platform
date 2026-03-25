@@ -19,3 +19,4 @@ resources:
   - compliance-evidence-cronjob.yaml
   - compliance-drift-cronjob.yaml
   - stig-scan-cronjob.yaml
+  - cve-scan-cronjob.yaml

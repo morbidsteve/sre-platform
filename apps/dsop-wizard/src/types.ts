@@ -47,6 +47,17 @@ export interface SecurityException {
 
 export type SourceType = 'git' | 'container' | 'helm';
 
+export type DataType = 'public' | 'cui' | 'pii' | 'phi' | 'financial';
+
+export type FipsLevel = 'low' | 'moderate' | 'high';
+
+export interface SecurityCategorization {
+  dataTypes: DataType[];
+  confidentiality: FipsLevel;
+  integrity: FipsLevel;
+  availability: FipsLevel;
+}
+
 export type DeployStepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export interface AppSource {
@@ -104,4 +115,5 @@ export interface WizardState {
   pipelineRunId: string | null;
   pipelineRun: PipelineRun | null;
   securityExceptions: SecurityException[];
+  securityCategorization: SecurityCategorization;
 }

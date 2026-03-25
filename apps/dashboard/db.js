@@ -178,6 +178,12 @@ CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_status ON finding_lifecycle(sta
 CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_severity ON finding_lifecycle(severity);
 CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_sla ON finding_lifecycle(sla_deadline);
 CREATE INDEX IF NOT EXISTS idx_finding_lifecycle_discovered ON finding_lifecycle(discovered_at DESC);
+
+-- Security categorization for pipeline runs
+DO $$ BEGIN
+  ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS security_categorization JSONB DEFAULT '{}'::jsonb;
+EXCEPTION WHEN others THEN NULL;
+END $$;
 `;
 
 // ── Init with retry ─────────────────────────────────────────────────────────

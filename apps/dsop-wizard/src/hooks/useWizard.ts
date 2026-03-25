@@ -49,6 +49,7 @@ export function useWizard() {
     updateSource: wizardState.updateSource,
     updateAppInfo: wizardState.updateAppInfo,
     updateSecurityExceptions: wizardState.updateSecurityExceptions,
+    updateSecurityCategorization: wizardState.updateSecurityCategorization,
     analyze: wizardState.analyze,
     setDetection: wizardState.setDetection,
     runPipeline,

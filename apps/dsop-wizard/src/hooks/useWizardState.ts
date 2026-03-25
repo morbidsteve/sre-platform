@@ -6,6 +6,7 @@ import type {
   AppInfo,
   Classification,
   SecurityException,
+  SecurityCategorization,
   SecurityGate,
   GateFinding,
   DetectionResult,
@@ -50,6 +51,13 @@ const initialAppInfo: AppInfo = {
   accessLevel: 'everyone',
 };
 
+const initialSecurityCategorization: SecurityCategorization = {
+  dataTypes: [],
+  confidentiality: 'low',
+  integrity: 'low',
+  availability: 'low',
+};
+
 const initialState: WizardState = {
   currentStep: 1,
   source: initialSource,
@@ -65,6 +73,7 @@ const initialState: WizardState = {
   pipelineRunId: null,
   pipelineRun: null,
   securityExceptions: [],
+  securityCategorization: initialSecurityCategorization,
 };
 
 // ── Session persistence ──
@@ -78,6 +87,7 @@ function saveSession(state: WizardState) {
       source: state.source,
       appInfo: state.appInfo,
       securityExceptions: state.securityExceptions,
+      securityCategorization: state.securityCategorization,
       pipelineRunId: state.pipelineRunId,
       deployedUrl: state.deployedUrl,
     }));
@@ -189,6 +199,13 @@ export function useWizardState() {
 
   const updateSecurityExceptions = useCallback((exceptions: SecurityException[]) => {
     setState((prev) => ({ ...prev, securityExceptions: exceptions }));
+  }, []);
+
+  const updateSecurityCategorization = useCallback((categorization: Partial<SecurityCategorization>) => {
+    setState((prev) => ({
+      ...prev,
+      securityCategorization: { ...prev.securityCategorization, ...categorization },
+    }));
   }, []);
 
   // ── Source analysis ──
@@ -612,6 +629,7 @@ export function useWizardState() {
     updateSource,
     updateAppInfo,
     updateSecurityExceptions,
+    updateSecurityCategorization,
     analyze,
     setDetection,
     runPipeline,

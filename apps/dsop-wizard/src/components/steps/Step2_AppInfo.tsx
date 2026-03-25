@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, ShieldAlert, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, ArrowRight, ShieldAlert, ChevronDown, ChevronRight, Loader2, FileWarning } from 'lucide-react';
 import { Input, Select } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { fetchTeams } from '../../api';
-import type { AppInfo, AccessLevel, Classification, SecurityException, SecurityExceptionType } from '../../types';
+import type { AppInfo, AccessLevel, Classification, SecurityException, SecurityExceptionType, SecurityCategorization, DataType, FipsLevel } from '../../types';
 import type { User } from '../../types';
 
 interface Step2Props {
@@ -15,7 +15,23 @@ interface Step2Props {
   isAnalyzing: boolean;
   securityExceptions: SecurityException[];
   onUpdateSecurityExceptions: (exceptions: SecurityException[]) => void;
+  securityCategorization: SecurityCategorization;
+  onUpdateSecurityCategorization: (categorization: Partial<SecurityCategorization>) => void;
 }
+
+const dataTypeDefinitions: { value: DataType; label: string; description: string; impactLevel: FipsLevel }[] = [
+  { value: 'public', label: 'Public Data', description: 'Publicly available information', impactLevel: 'low' },
+  { value: 'cui', label: 'CUI', description: 'Controlled Unclassified Information (NIST 800-171)', impactLevel: 'moderate' },
+  { value: 'pii', label: 'PII', description: 'Personally Identifiable Information', impactLevel: 'moderate' },
+  { value: 'phi', label: 'PHI', description: 'Protected Health Information (HIPAA)', impactLevel: 'high' },
+  { value: 'financial', label: 'Financial', description: 'Financial records or payment data', impactLevel: 'high' },
+];
+
+const fipsLevels: { value: FipsLevel; label: string }[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'high', label: 'High' },
+];
 
 const exceptionDefinitions: { type: SecurityExceptionType; label: string; description: string }[] = [
   { type: 'run_as_root', label: 'Run as Root', description: 'Application requires root (UID 0) to function (e.g., VNC servers, system tools)' },
@@ -55,6 +71,8 @@ export function Step2_AppInfo({
   isAnalyzing,
   securityExceptions,
   onUpdateSecurityExceptions,
+  securityCategorization,
+  onUpdateSecurityCategorization,
 }: Step2Props) {
   const [teamOptions, setTeamOptions] = useState(defaultTeamOptions);
   const [teamsLoading, setTeamsLoading] = useState(true);
@@ -210,6 +228,91 @@ export function Step2_AppInfo({
             </label>
           ))}
         </div>
+      </div>
+
+      {/* Security Categorization (FIPS 199) */}
+      <div className="bg-navy-800 border border-navy-600 rounded-xl p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <FileWarning className="w-4 h-4 text-cyan-400" />
+          <h3 className="text-sm font-semibold text-gray-300">
+            Security Categorization
+            <span className="font-normal text-gray-600 ml-1">(FIPS 199)</span>
+          </h3>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Select the types of data this application processes. Impact levels auto-adjust based on data sensitivity.
+        </p>
+
+        <div className="space-y-2 mb-5">
+          {dataTypeDefinitions.map((dt) => {
+            const selected = securityCategorization.dataTypes.includes(dt.value);
+            return (
+              <label
+                key={dt.value}
+                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                  selected
+                    ? 'bg-cyan-500/10 border border-cyan-500/30'
+                    : 'hover:bg-navy-700 border border-transparent'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => {
+                    const newTypes = selected
+                      ? securityCategorization.dataTypes.filter((t) => t !== dt.value)
+                      : [...securityCategorization.dataTypes, dt.value];
+                    // Auto-set FIPS levels based on highest data sensitivity
+                    const highestImpact: FipsLevel = newTypes.length === 0
+                      ? 'low'
+                      : newTypes.some((t) => dataTypeDefinitions.find((d) => d.value === t)?.impactLevel === 'high')
+                        ? 'high'
+                        : newTypes.some((t) => dataTypeDefinitions.find((d) => d.value === t)?.impactLevel === 'moderate')
+                          ? 'moderate'
+                          : 'low';
+                    onUpdateSecurityCategorization({
+                      dataTypes: newTypes,
+                      confidentiality: highestImpact,
+                      integrity: highestImpact,
+                      availability: highestImpact === 'high' ? 'moderate' : highestImpact,
+                    });
+                  }}
+                  className="w-4 h-4 text-cyan-500 bg-navy-800 border-navy-500 rounded focus:ring-cyan-500"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-gray-200">{dt.label}</span>
+                  <span className="text-xs text-gray-500 ml-2">{dt.description}</span>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded font-mono ${
+                  dt.impactLevel === 'high' ? 'bg-red-500/10 text-red-400' :
+                  dt.impactLevel === 'moderate' ? 'bg-amber-500/10 text-amber-400' :
+                  'bg-green-500/10 text-green-400'
+                }`}>
+                  {dt.impactLevel}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        {securityCategorization.dataTypes.length > 0 && (
+          <div className="grid grid-cols-3 gap-3 pt-3 border-t border-navy-600">
+            {(['confidentiality', 'integrity', 'availability'] as const).map((dim) => (
+              <div key={dim}>
+                <label className="text-xs text-gray-500 block mb-1 capitalize">{dim}</label>
+                <select
+                  value={securityCategorization[dim]}
+                  onChange={(e) => onUpdateSecurityCategorization({ [dim]: e.target.value as FipsLevel })}
+                  className="w-full bg-navy-900/60 border border-navy-600 rounded-lg px-2 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:border-cyan-500/50 focus:ring-cyan-500/30"
+                >
+                  {fipsLevels.map((l) => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Security Exceptions */}
