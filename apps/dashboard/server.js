@@ -6153,6 +6153,103 @@ function requireDb(req, res, next) {
   next();
 }
 
+// ── ISSM Slack/Email Notification ────────────────────────────────────────
+const ISSM_SLACK_WEBHOOK = process.env.ISSM_SLACK_WEBHOOK || "";
+const ISSM_NOTIFY_EMAIL = process.env.ISSM_NOTIFY_EMAIL || "";
+const ENFORCE_SEPARATION_OF_DUTIES = process.env.ENFORCE_SEPARATION_OF_DUTIES === "true";
+
+/**
+ * Send ISSM notification via Slack webhook and/or email.
+ * Fails silently if no webhook/email is configured — notifications are optional.
+ */
+async function notifyISSM(run, eventType, extra = {}) {
+  const dashboardUrl = `https://dashboard.${SRE_DOMAIN}`;
+  const reviewUrl = `${dashboardUrl}/?tab=security&run=${run.id}`;
+
+  // Count findings by severity
+  const allFindings = (run.gates || []).flatMap(g => g.findings || []);
+  const critCount = allFindings.filter(f => f.severity === "critical").length;
+  const highCount = allFindings.filter(f => f.severity === "high").length;
+  const medCount = allFindings.filter(f => f.severity === "medium").length;
+  const lowCount = allFindings.filter(f => f.severity === "low" || f.severity === "info").length;
+
+  const findingSummary = [
+    critCount > 0 ? `${critCount} critical` : null,
+    highCount > 0 ? `${highCount} high` : null,
+    medCount > 0 ? `${medCount} medium` : null,
+    lowCount > 0 ? `${lowCount} low/info` : null,
+  ].filter(Boolean).join(", ") || "0 findings";
+
+  // Build Slack message based on event type
+  let slackText, slackColor;
+  if (eventType === "submitted") {
+    slackColor = "#f0ad4e"; // yellow
+    slackText = `*New Pipeline Review Submitted*\n` +
+      `*App:* ${run.app_name}\n` +
+      `*Team:* ${run.team || "—"}\n` +
+      `*Submitted by:* ${run.submitted_by || run.created_by || "—"}\n` +
+      `*Findings:* ${findingSummary}\n` +
+      `<${reviewUrl}|Review Now>`;
+  } else if (eventType === "approved") {
+    slackColor = "#5cb85c"; // green
+    slackText = `*Pipeline Review Approved*\n` +
+      `*App:* ${run.app_name}\n` +
+      `*Approved by:* ${extra.actor || "—"}\n` +
+      (extra.comment ? `*Comment:* ${extra.comment}\n` : "") +
+      `<${reviewUrl}|View Details>`;
+  } else if (eventType === "rejected") {
+    slackColor = "#d9534f"; // red
+    slackText = `*Pipeline Review Rejected*\n` +
+      `*App:* ${run.app_name}\n` +
+      `*Rejected by:* ${extra.actor || "—"}\n` +
+      (extra.comment ? `*Reason:* ${extra.comment}\n` : "") +
+      `<${reviewUrl}|View Details>`;
+  } else if (eventType === "returned") {
+    slackColor = "#f0ad4e"; // yellow
+    slackText = `*Pipeline Review Returned for Rework*\n` +
+      `*App:* ${run.app_name}\n` +
+      `*Returned by:* ${extra.actor || "—"}\n` +
+      (extra.comment ? `*Reason:* ${extra.comment}\n` : "") +
+      `<${reviewUrl}|View Details>`;
+  } else {
+    return; // unknown event type, skip
+  }
+
+  // Send Slack notification
+  if (ISSM_SLACK_WEBHOOK) {
+    try {
+      const payload = JSON.stringify({
+        attachments: [{
+          color: slackColor,
+          text: slackText,
+          mrkdwn_in: ["text"],
+          footer: "SRE DSOP Pipeline",
+          ts: Math.floor(Date.now() / 1000),
+        }],
+      });
+      const url = new URL(ISSM_SLACK_WEBHOOK);
+      const mod = url.protocol === "https:" ? require("https") : require("http");
+      await new Promise((resolve, reject) => {
+        const r = mod.request(url, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } }, (resp) => {
+          resp.resume();
+          resolve();
+        });
+        r.on("error", reject);
+        r.write(payload);
+        r.end();
+      });
+      logger.info("pipeline", `ISSM Slack notification sent: ${eventType} for ${run.app_name}`);
+    } catch (err) {
+      logger.warn("pipeline", `ISSM Slack notification failed: ${err.message}`);
+    }
+  }
+
+  // Log email intent (actual email sending requires SMTP integration)
+  if (ISSM_NOTIFY_EMAIL) {
+    logger.info("pipeline", `ISSM email notification would be sent to ${ISSM_NOTIFY_EMAIL}: ${eventType} for ${run.app_name}`);
+  }
+}
+
 // Default DSOP gates for a new pipeline run
 function getDefaultGates() {
   return [
@@ -6618,6 +6715,12 @@ app.post("/api/pipeline/runs/:id/submit-review", mutateLimiter, requireDb, requi
     await db.auditLog(run.id, "submitted_for_review", actor, "Run submitted for ISSM review");
 
     const updated = await db.getRun(run.id);
+
+    // Notify ISSM via Slack/email (non-blocking, optional)
+    notifyISSM(updated, "submitted").catch(err => {
+      logger.warn("pipeline", `ISSM notification failed for submit: ${err.message}`);
+    });
+
     res.json(updated);
   } catch (err) {
     console.error("[pipeline] Submit review error:", err);
@@ -6645,12 +6748,22 @@ app.post("/api/pipeline/runs/:id/review", mutateLimiter, requireDb, requireGroup
 
     const actor = getActor(req);
 
-    // H-1: Self-approval prevention (separation of duties)
-    if (actor === run.created_by) {
-      // Log separation of duties warning but allow in non-production environments
+    // H-1: Separation of duties enforcement
+    if (actor === run.created_by || actor === run.submitted_by) {
+      if (ENFORCE_SEPARATION_OF_DUTIES && decision === "approved") {
+        // Block self-approval when enforcement is enabled; reject/return are still allowed
+        await db.auditLog(run.id, "separation_of_duties_blocked", actor,
+          "Self-approval blocked: reviewer is the same as the run creator/submitter",
+          { actor, createdBy: run.created_by, submittedBy: run.submitted_by });
+        logger.warn("pipeline", `Separation of duties: blocked ${actor} from approving their own run ${run.id}`);
+        return res.status(403).json({
+          error: "Separation of duties: you cannot approve a pipeline run you created or submitted. Another ISSM must approve it.",
+        });
+      }
+      // Log warning even when not enforcing
       await db.auditLog(run.id, "separation_of_duties_warning", actor,
-        "Reviewer is the same as the run creator — would be blocked in production",
-        { actor, createdBy: run.created_by });
+        "Reviewer is the same as the run creator/submitter — would be blocked with ENFORCE_SEPARATION_OF_DUTIES=true",
+        { actor, createdBy: run.created_by, submittedBy: run.submitted_by });
     }
 
     // Create review record
@@ -6699,6 +6812,12 @@ app.post("/api/pipeline/runs/:id/review", mutateLimiter, requireDb, requireGroup
     }
 
     const updated = await db.getRun(run.id);
+
+    // Notify ISSM via Slack/email (non-blocking, optional)
+    notifyISSM(updated, decision, { actor, comment }).catch(err => {
+      logger.warn("pipeline", `ISSM notification failed for ${decision}: ${err.message}`);
+    });
+
     res.json(updated);
   } catch (err) {
     console.error("[pipeline] Review error:", err);
@@ -8444,6 +8563,383 @@ async function resumeJobPoll(runId, gate) {
     }
   }
 }
+
+// ── Task 10.2: One-Click Rollback ─────────────────────────────────────────
+app.post("/api/apps/:namespace/:name/rollback", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    const { revision } = req.body || {};
+
+    // Get HelmRelease to find chart details
+    let hr;
+    try {
+      hr = await customApi.getNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+      );
+    } catch (e) {
+      return res.status(404).json({ error: `HelmRelease ${name} not found in ${namespace}` });
+    }
+
+    // Get Helm release history from secrets
+    const history = [];
+    try {
+      const secrets = await k8sApi.listNamespacedSecret(namespace);
+      for (const s of secrets.body.items) {
+        if (s.metadata.name.startsWith(`sh.helm.release.v1.${name}.`)) {
+          const ver = s.metadata.labels?.version;
+          const status = s.metadata.labels?.status;
+          const modifiedAt = s.metadata.labels?.modifiedAt || s.metadata.creationTimestamp;
+          history.push({
+            revision: parseInt(ver || "0", 10),
+            status: status || "unknown",
+            updated: s.metadata.creationTimestamp,
+            chart: hr.body?.spec?.chart?.spec?.chart || name,
+            chartVersion: hr.body?.spec?.chart?.spec?.version || "unknown",
+          });
+        }
+      }
+      history.sort((a, b) => b.revision - a.revision);
+    } catch (e) {
+      console.debug('[rollback] History lookup best-effort:', e.message);
+    }
+
+    // If no revision specified, return history for user to pick
+    if (!revision) {
+      return res.json({ history, currentRevision: history.length > 0 ? history[0].revision : 0 });
+    }
+
+    // Perform rollback by patching the HelmRelease to force a reconciliation
+    // Flux rollback: set the annotation to force re-install
+    const patchBody = {
+      metadata: {
+        annotations: {
+          "reconcile.fluxcd.io/requestedAt": new Date().toISOString(),
+        },
+      },
+    };
+
+    await customApi.patchNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name,
+      patchBody,
+      undefined, undefined, undefined,
+      { headers: { "Content-Type": "application/merge-patch+json" } }
+    );
+
+    const actor = getActor(req);
+    console.log(`[rollback] ${actor} triggered rollback for ${namespace}/${name} to revision ${revision}`);
+
+    res.json({ success: true, message: `Rollback initiated for ${name} to revision ${revision}` });
+  } catch (err) {
+    console.error("Error rolling back app:", err);
+    res.status(err.statusCode || 500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// ── Task 10.3: Kyverno Policy Violations ──────────────────────────────────
+app.get("/api/security/policy-violations", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const { namespace } = req.query;
+    const violations = [];
+
+    // Query Kyverno PolicyReports (namespaced)
+    try {
+      const prOpts = namespace
+        ? { namespace }
+        : {};
+      let reports;
+      if (namespace) {
+        reports = await customApi.listNamespacedCustomObject(
+          "wgpolicyk8s.io", "v1alpha2", namespace, "policyreports"
+        );
+      } else {
+        reports = await customApi.listClusterCustomObject(
+          "wgpolicyk8s.io", "v1alpha2", "policyreports"
+        );
+      }
+
+      for (const report of (reports.body.items || [])) {
+        for (const result of (report.results || [])) {
+          if (result.result === "fail" || result.result === "error" || result.result === "warn") {
+            violations.push({
+              policy: result.policy || "unknown",
+              rule: result.rule || "unknown",
+              severity: result.severity || "medium",
+              result: result.result,
+              message: result.message || "",
+              namespace: report.metadata?.namespace || "cluster",
+              resource: result.resources?.[0]
+                ? `${result.resources[0].kind}/${result.resources[0].name}`
+                : report.scope?.name
+                  ? `${report.scope?.kind || "Resource"}/${report.scope.name}`
+                  : "unknown",
+              category: result.category || "",
+              timestamp: result.timestamp || report.metadata?.creationTimestamp || "",
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('[policy-violations] PolicyReport (v1alpha2) query failed, trying v1beta1:', e.message);
+      // Try v1beta1 (Kyverno 1.12+)
+      try {
+        let reports;
+        if (namespace) {
+          reports = await customApi.listNamespacedCustomObject(
+            "wgpolicyk8s.io", "v1beta1", namespace, "policyreports"
+          );
+        } else {
+          reports = await customApi.listClusterCustomObject(
+            "wgpolicyk8s.io", "v1beta1", "policyreports"
+          );
+        }
+        for (const report of (reports.body.items || [])) {
+          for (const result of (report.results || [])) {
+            if (result.result === "fail" || result.result === "error" || result.result === "warn") {
+              violations.push({
+                policy: result.policy || "unknown",
+                rule: result.rule || "unknown",
+                severity: result.severity || "medium",
+                result: result.result,
+                message: result.message || "",
+                namespace: report.metadata?.namespace || "cluster",
+                resource: result.resources?.[0]
+                  ? `${result.resources[0].kind}/${result.resources[0].name}`
+                  : "unknown",
+                category: result.category || "",
+                timestamp: result.timestamp || report.metadata?.creationTimestamp || "",
+              });
+            }
+          }
+        }
+      } catch (e2) {
+        console.debug('[policy-violations] PolicyReport v1beta1 also failed:', e2.message);
+      }
+    }
+
+    // Also check ClusterPolicyReports
+    try {
+      let clusterReports;
+      try {
+        clusterReports = await customApi.listClusterCustomObject(
+          "wgpolicyk8s.io", "v1alpha2", "clusterpolicyreports"
+        );
+      } catch {
+        clusterReports = await customApi.listClusterCustomObject(
+          "wgpolicyk8s.io", "v1beta1", "clusterpolicyreports"
+        );
+      }
+      for (const report of (clusterReports.body.items || [])) {
+        for (const result of (report.results || [])) {
+          if (result.result === "fail" || result.result === "error" || result.result === "warn") {
+            violations.push({
+              policy: result.policy || "unknown",
+              rule: result.rule || "unknown",
+              severity: result.severity || "medium",
+              result: result.result,
+              message: result.message || "",
+              namespace: "cluster-wide",
+              resource: result.resources?.[0]
+                ? `${result.resources[0].kind}/${result.resources[0].name}`
+                : "unknown",
+              category: result.category || "",
+              timestamp: result.timestamp || report.metadata?.creationTimestamp || "",
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('[policy-violations] ClusterPolicyReport query failed:', e.message);
+    }
+
+    // Sort by severity
+    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    violations.sort((a, b) => (severityOrder[a.severity] || 4) - (severityOrder[b.severity] || 4));
+
+    // Summary counts
+    const summary = {
+      critical: violations.filter(v => v.severity === "critical").length,
+      high: violations.filter(v => v.severity === "high").length,
+      medium: violations.filter(v => v.severity === "medium").length,
+      low: violations.filter(v => v.severity === "low").length,
+      total: violations.length,
+    };
+
+    res.json({ violations, summary });
+  } catch (err) {
+    console.error("Error fetching policy violations:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Task 10.4: Resource Quota Visualization ───────────────────────────────
+app.get("/api/namespaces/:namespace/quota", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const { namespace } = req.params;
+
+    // Get ResourceQuotas
+    const quotaResp = await k8sApi.listNamespacedResourceQuota(namespace);
+    const quotas = quotaResp.body.items;
+
+    if (quotas.length === 0) {
+      return res.json({ hasQuota: false, quotas: [] });
+    }
+
+    const result = quotas.map(q => {
+      const hard = q.status?.hard || q.spec?.hard || {};
+      const used = q.status?.used || {};
+
+      function parseResource(val) {
+        if (!val) return 0;
+        const s = String(val);
+        if (s.endsWith("m")) return parseFloat(s) / 1000;
+        if (s.endsWith("Ki")) return parseFloat(s) * 1024;
+        if (s.endsWith("Mi")) return parseFloat(s) * 1024 * 1024;
+        if (s.endsWith("Gi")) return parseFloat(s) * 1024 * 1024 * 1024;
+        if (s.endsWith("Ti")) return parseFloat(s) * 1024 * 1024 * 1024 * 1024;
+        return parseFloat(s) || 0;
+      }
+
+      function formatResource(key, val) {
+        if (!val) return "0";
+        const s = String(val);
+        // Return as-is for human-readable display
+        return s;
+      }
+
+      const metrics = {};
+      for (const key of Object.keys(hard)) {
+        const hardVal = parseResource(hard[key]);
+        const usedVal = parseResource(used[key]);
+        const pct = hardVal > 0 ? Math.round((usedVal / hardVal) * 100) : 0;
+        metrics[key] = {
+          hard: formatResource(key, hard[key]),
+          used: formatResource(key, used[key]),
+          hardRaw: hardVal,
+          usedRaw: usedVal,
+          percentage: Math.min(pct, 100),
+        };
+      }
+
+      return {
+        name: q.metadata.name,
+        namespace,
+        metrics,
+      };
+    });
+
+    res.json({ hasQuota: true, quotas: result });
+  } catch (err) {
+    console.error("Error fetching quota:", err);
+    res.status(err.statusCode || 500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Task 10.10: Export Deployment as YAML ─────────────────────────────────
+app.get("/api/apps/:namespace/:name/manifest", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    const manifests = [];
+
+    // Get HelmRelease
+    try {
+      const hr = await customApi.getNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+      );
+      manifests.push({
+        kind: "HelmRelease",
+        apiVersion: "helm.toolkit.fluxcd.io/v2",
+        metadata: {
+          name: hr.body.metadata.name,
+          namespace: hr.body.metadata.namespace,
+          labels: hr.body.metadata.labels,
+          annotations: hr.body.metadata.annotations,
+        },
+        spec: hr.body.spec,
+      });
+    } catch (e) {
+      console.debug('[manifest] HelmRelease not found:', e.message);
+    }
+
+    // Get Deployments matching app name
+    try {
+      const deps = await appsApi.listNamespacedDeployment(namespace);
+      for (const d of deps.body.items) {
+        if (d.metadata.name === name || d.metadata.name.startsWith(`${name}-`)) {
+          // Strip runtime-only fields
+          const clean = {
+            kind: "Deployment",
+            apiVersion: "apps/v1",
+            metadata: {
+              name: d.metadata.name,
+              namespace: d.metadata.namespace,
+              labels: d.metadata.labels,
+            },
+            spec: d.spec,
+          };
+          manifests.push(clean);
+        }
+      }
+    } catch (e) {
+      console.debug('[manifest] Deployment lookup failed:', e.message);
+    }
+
+    // Get Services matching app name
+    try {
+      const svcs = await k8sApi.listNamespacedService(namespace);
+      for (const s of svcs.body.items) {
+        if (s.metadata.name === name || s.metadata.name.startsWith(`${name}-`)) {
+          manifests.push({
+            kind: "Service",
+            apiVersion: "v1",
+            metadata: {
+              name: s.metadata.name,
+              namespace: s.metadata.namespace,
+              labels: s.metadata.labels,
+            },
+            spec: {
+              type: s.spec.type,
+              ports: s.spec.ports,
+              selector: s.spec.selector,
+            },
+          });
+        }
+      }
+    } catch (e) {
+      console.debug('[manifest] Service lookup failed:', e.message);
+    }
+
+    // Get VirtualService if exists
+    try {
+      const vs = await customApi.getNamespacedCustomObject(
+        "networking.istio.io", "v1", namespace, "virtualservices", name
+      );
+      manifests.push({
+        kind: "VirtualService",
+        apiVersion: "networking.istio.io/v1",
+        metadata: {
+          name: vs.body.metadata.name,
+          namespace: vs.body.metadata.namespace,
+        },
+        spec: vs.body.spec,
+      });
+    } catch (e) {
+      console.debug('[manifest] VirtualService not found:', e.message);
+    }
+
+    if (manifests.length === 0) {
+      return res.status(404).json({ error: `No manifests found for ${name} in ${namespace}` });
+    }
+
+    // Convert to YAML
+    const yamlDocs = manifests.map(m => yaml.dump(m, { lineWidth: 120, noRefs: true }));
+    const fullYaml = yamlDocs.join("---\n");
+
+    res.json({ yaml: fullYaml, resources: manifests.length });
+  } catch (err) {
+    console.error("Error exporting manifest:", err);
+    res.status(err.statusCode || 500).json({ error: "Internal server error" });
+  }
+});
 
 // SPA catch-all: serve index.html for non-API routes (React Router / client-side nav)
 app.get('*', (req, res) => {

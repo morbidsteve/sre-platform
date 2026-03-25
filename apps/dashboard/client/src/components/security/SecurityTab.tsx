@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Shield, CheckCircle, Clock, Trash2 } from 'lucide-react';
+import { Shield, CheckCircle, Clock, Trash2, AlertTriangle } from 'lucide-react';
 import { SkeletonCard } from '../ui/Skeleton';
 import { PipelineStatsCards } from '../pipeline/PipelineStatsCards';
 import { PipelineFilters } from '../pipeline/PipelineFilters';
@@ -177,9 +177,9 @@ export function SecurityTab({ active }: SecurityTabProps) {
                 const passed = gates.filter((g) => g.status === 'passed' || g.status === 'warning').length;
                 const failed = gates.filter((g) => g.status === 'failed').length;
                 const total = gates.length || 8;
-                const timeWaiting = run.updated_at
-                  ? formatTimeAgo(run.updated_at)
-                  : '--';
+
+                // SLA timer based on created_at (when run entered review_pending)
+                const sla = getSlaMeta(run.created_at);
 
                 // Aggregate finding counts by severity for priority indication
                 const allFindings = gates.flatMap((g) => g.findings || []);
@@ -238,12 +238,21 @@ export function SecurityTab({ active }: SecurityTabProps) {
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/10 text-green border border-green/20">0 findings</span>
                       </div>
                     )}
+                    {/* SLA Timer */}
+                    <div className={`flex items-center gap-1.5 mb-2 px-2 py-1 rounded text-[11px] font-medium ${
+                      sla.color === 'red' ? 'bg-red/10 text-red border border-red/20' :
+                      sla.color === 'yellow' ? 'bg-yellow/10 text-yellow border border-yellow/20' :
+                      'bg-green/10 text-green border border-green/20'
+                    }`}>
+                      {sla.color === 'red' ? (
+                        <AlertTriangle className="w-3 h-3" />
+                      ) : (
+                        <Clock className="w-3 h-3" />
+                      )}
+                      {sla.label}
+                    </div>
                     <div className="flex items-center justify-between text-[11px] text-text-dim">
                       <span>By {run.submitted_by || '--'}</span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {timeWaiting}
-                      </span>
                     </div>
                     <div className="flex gap-2 mt-3">
                       <button
@@ -405,4 +414,22 @@ function formatTimeAgo(dateStr: string): string {
   if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
   if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
   return Math.floor(diff / 86400) + 'd ago';
+}
+
+/** SLA thresholds in hours */
+const SLA_WARN_HOURS = 4;
+const SLA_CRIT_HOURS = 8;
+
+/** Returns SLA status for a review queue item based on created_at timestamp */
+function getSlaMeta(dateStr: string | undefined): { color: 'green' | 'yellow' | 'red'; elapsed: string; label: string } {
+  if (!dateStr) return { color: 'green', elapsed: '--', label: 'Unknown' };
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const diffH = diffMs / 3_600_000;
+  const hours = Math.floor(diffH);
+  const minutes = Math.floor((diffMs % 3_600_000) / 60_000);
+  const elapsed = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+  if (diffH >= SLA_CRIT_HOURS) return { color: 'red', elapsed, label: `Waiting ${elapsed} (SLA breached)` };
+  if (diffH >= SLA_WARN_HOURS) return { color: 'yellow', elapsed, label: `Waiting ${elapsed} (SLA warning)` };
+  return { color: 'green', elapsed, label: `Waiting ${elapsed}` };
 }

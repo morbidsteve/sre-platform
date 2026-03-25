@@ -321,6 +321,40 @@ function FormattedToolOutput({ shortName, rawOutput }: { shortName: string; rawO
   return null;
 }
 
+/* ---------- NIST 800-53 Control Mapping ---------- */
+
+/** Maps gate short names to the NIST 800-53 controls they satisfy */
+const GATE_NIST_CONTROLS: Record<string, { controls: string[]; family: string }> = {
+  SAST:          { controls: ['SA-11', 'SI-10'], family: 'System & Info Integrity' },
+  SECRETS:       { controls: ['IA-5', 'SC-28'],  family: 'Identification & Auth' },
+  CVE:           { controls: ['RA-5', 'SI-2'],   family: 'Risk Assessment' },
+  DAST:          { controls: ['SA-11', 'SC-7'],   family: 'System & Comms Protection' },
+  IMAGE_SIGNING: { controls: ['SI-7', 'SA-10'],  family: 'System & Info Integrity' },
+  SBOM:          { controls: ['CM-8', 'SA-11'],  family: 'Configuration Mgmt' },
+  CONTAINER_BUILD: { controls: ['SA-10', 'CM-2'], family: 'Config & Acquisition' },
+  BUILD:         { controls: ['SA-10', 'CM-2'],  family: 'Config & Acquisition' },
+  ISSM_REVIEW:   { controls: ['CA-7', 'CA-2'],   family: 'Assessment & Authorization' },
+};
+
+function NistControlBadges({ shortName }: { shortName: string }) {
+  const sn = (shortName || '').toUpperCase().replace(/\s+/g, '_');
+  const mapping = GATE_NIST_CONTROLS[sn];
+  if (!mapping) return null;
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {mapping.controls.map((ctrl) => (
+        <span
+          key={ctrl}
+          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20"
+          title={`NIST 800-53: ${ctrl} (${mapping.family})`}
+        >
+          {ctrl}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /* ---------- Main components ---------- */
 
 interface GateEvidenceRowProps {
@@ -384,6 +418,7 @@ export function GateEvidenceRow({ gate, isReview = false, runId, defaultExpanded
           <Badge variant={gateStatusColor(gate.status)}>
             {(gate.status || 'pending').toUpperCase()}
           </Badge>
+          <NistControlBadges shortName={gate.short_name} />
         </div>
         <div className="flex items-center gap-3">
           {/* Inline summary for quick scanning */}

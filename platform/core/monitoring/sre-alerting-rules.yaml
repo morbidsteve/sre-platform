@@ -234,3 +234,131 @@ spec:
           annotations:
             summary: "Node {{ $labels.instance }} CPU usage above 90%"
             description: "CPU utilization on {{ $labels.instance }} is {{ $value | humanizePercentage }}."
+
+    # -----------------------------------------------------------------
+    # Etcd Health Alerts
+    # -----------------------------------------------------------------
+    - name: sre-etcd
+      rules:
+        - alert: EtcdLeaderChanges
+          expr: increase(etcd_server_leader_changes_seen_total[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            category: cluster
+          annotations:
+            summary: "Etcd leader changed {{ $value }} times in the last hour"
+            description: "Frequent etcd leader changes can indicate network instability or resource contention among control plane nodes."
+            runbook_url: "https://docs.sre.example.com/runbooks/etcd-leader-changes"
+
+    # -----------------------------------------------------------------
+    # Kubernetes API Server Alerts
+    # -----------------------------------------------------------------
+    - name: sre-apiserver
+      rules:
+        - alert: KubernetesAPIServerHighLatency
+          expr: histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{verb!="WATCH"}[5m])) by (le, verb, resource)) > 3
+          for: 10m
+          labels:
+            severity: warning
+            category: cluster
+          annotations:
+            summary: "API server p99 latency above 3s for {{ $labels.verb }} {{ $labels.resource }}"
+            description: "The Kubernetes API server is responding slowly. p99 latency for {{ $labels.verb }} {{ $labels.resource }} is {{ $value }}s."
+            runbook_url: "https://docs.sre.example.com/runbooks/apiserver-high-latency"
+
+    # -----------------------------------------------------------------
+    # CoreDNS Alerts
+    # -----------------------------------------------------------------
+    - name: sre-coredns
+      rules:
+        - alert: CoreDNSHighErrorRate
+          expr: sum(rate(coredns_dns_responses_total{rcode="SERVFAIL"}[5m])) / sum(rate(coredns_dns_responses_total[5m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            category: networking
+          annotations:
+            summary: "CoreDNS SERVFAIL rate above 5%"
+            description: "CoreDNS is returning SERVFAIL for {{ $value | humanizePercentage }} of DNS queries. This may cause service discovery failures."
+            runbook_url: "https://docs.sre.example.com/runbooks/coredns-high-error-rate"
+
+    # -----------------------------------------------------------------
+    # External Secrets Alerts
+    # -----------------------------------------------------------------
+    - name: sre-external-secrets
+      rules:
+        - alert: ExternalSecretSyncFailure
+          expr: externalsecret_status_condition{condition="Ready", status="False"} == 1
+          for: 15m
+          labels:
+            severity: warning
+            category: secrets
+          annotations:
+            summary: "ExternalSecret {{ $labels.name }} in {{ $labels.namespace }} sync failing"
+            description: "ExternalSecret {{ $labels.name }} has been failing to sync from the secret store for 15+ minutes. Applications may be using stale secrets."
+            runbook_url: "https://docs.sre.example.com/runbooks/externalsecret-sync-failure"
+
+    # -----------------------------------------------------------------
+    # Velero Backup Alerts
+    # -----------------------------------------------------------------
+    - name: sre-velero
+      rules:
+        - alert: VeleroBackupMissed
+          expr: time() - velero_backup_last_successful_timestamp{schedule!=""} > 86400 * 2
+          for: 1h
+          labels:
+            severity: critical
+            category: backup
+          annotations:
+            summary: "Velero scheduled backup {{ $labels.schedule }} has not succeeded in 48+ hours"
+            description: "The Velero backup schedule {{ $labels.schedule }} last succeeded {{ $value | humanizeDuration }} ago. Disaster recovery capability may be impaired."
+            runbook_url: "https://docs.sre.example.com/runbooks/velero-backup-missed"
+
+    # -----------------------------------------------------------------
+    # Istio Sidecar Injection Alerts
+    # -----------------------------------------------------------------
+    - name: sre-istio-injection
+      rules:
+        - alert: IstioSidecarInjectionFailure
+          expr: increase(sidecar_injection_failure_total[10m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+            category: service-mesh
+          annotations:
+            summary: "Istio sidecar injection failures detected"
+            description: "{{ $value }} Istio sidecar injection failures in the last 10 minutes. New pods in mesh-enabled namespaces may not have the Envoy proxy."
+            runbook_url: "https://docs.sre.example.com/runbooks/istio-sidecar-injection-failure"
+
+    # -----------------------------------------------------------------
+    # Harbor Replication Alerts
+    # -----------------------------------------------------------------
+    - name: sre-harbor-replication
+      rules:
+        - alert: HarborReplicationFailure
+          expr: harbor_replication_status{status="failed"} > 0
+          for: 30m
+          labels:
+            severity: warning
+            category: registry
+          annotations:
+            summary: "Harbor replication task failed for policy {{ $labels.policy }}"
+            description: "A Harbor image replication task has been failing for 30+ minutes. Upstream images may not be available in the internal registry."
+            runbook_url: "https://docs.sre.example.com/runbooks/harbor-replication-failure"
+
+    # -----------------------------------------------------------------
+    # Container Runtime Alerts
+    # -----------------------------------------------------------------
+    - name: sre-containerd
+      rules:
+        - alert: ContainerdRestart
+          expr: increase(process_start_time_seconds{job="containerd"}[15m]) > 1
+          for: 0m
+          labels:
+            severity: critical
+            category: runtime
+          annotations:
+            summary: "Containerd runtime restarted on {{ $labels.instance }}"
+            description: "The containerd runtime on {{ $labels.instance }} has restarted. Running containers may have been disrupted."
+            runbook_url: "https://docs.sre.example.com/runbooks/containerd-restart"
