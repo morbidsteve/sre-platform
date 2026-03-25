@@ -13,7 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
-import { useConfig, serviceUrl } from '../../context/ConfigContext';
+import { useConfig } from '../../context/ConfigContext';
+import { deepLink } from '../../utils/deepLinks';
 import { fetchPipelineStats } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
 import { Skeleton } from '../ui/Skeleton';
@@ -334,7 +335,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           <button
             className="btn text-[13px] !px-5 flex items-center gap-1.5"
             onClick={() =>
-              window.open(serviceUrl(config, 'grafana'), '_blank')
+              window.open(deepLink(config, 'grafana:cluster-overview'), '_blank')
             }
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -343,7 +344,7 @@ export function OverviewTab({ user, onSwitchTab, onOpenApp }: OverviewTabProps) 
           <button
             className="btn text-[13px] !px-5 flex items-center gap-1.5"
             onClick={() =>
-              window.open(serviceUrl(config, 'harbor'), '_blank')
+              window.open(deepLink(config, 'harbor:projects'), '_blank')
             }
           >
             <ExternalLink className="w-3.5 h-3.5" />

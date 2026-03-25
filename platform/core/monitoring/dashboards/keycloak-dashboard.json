@@ -527,6 +527,6 @@
   "timepicker": {},
   "timezone": "utc",
   "title": "SRE / Keycloak Identity",
-  "uid": "sre-keycloak-dashboard",
+  "uid": "sre-keycloak",
   "version": 1
 }

@@ -566,6 +566,6 @@
   "timepicker": {},
   "timezone": "utc",
   "title": "SRE / cert-manager Certificates",
-  "uid": "sre-cert-manager-dashboard",
+  "uid": "sre-cert-manager",
   "version": 1
 }

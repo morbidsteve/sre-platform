@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs } from '../ui/Tabs';
 import { SkeletonCard } from '../ui/Skeleton';
 import { useConfig } from '../../context/ConfigContext';
+import { deepLink } from '../../utils/deepLinks';
 import { ServiceHealthGrid } from '../platform/ServiceHealthGrid';
 import { DNSSetup } from '../platform/DNSSetup';
 import { NodesPanel } from '../cluster/NodesPanel';
@@ -98,6 +99,30 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
 
   const handleOpenService = (url: string, name: string) => {
     const lname = name.toLowerCase();
+
+    // Grafana — deep-link to cluster overview dashboard
+    if (lname.includes('grafana')) {
+      window.open(deepLink(config, 'grafana:cluster-overview'), '_blank', 'noopener');
+      return;
+    }
+
+    // Prometheus — open targets page
+    if (lname.includes('prometheus')) {
+      window.open(url + '/targets', '_blank', 'noopener');
+      return;
+    }
+
+    // AlertManager — open alerts page
+    if (lname.includes('alertmanager')) {
+      window.open(url + '/#/alerts', '_blank', 'noopener');
+      return;
+    }
+
+    // Harbor — open projects page
+    if (lname.includes('harbor')) {
+      window.open(deepLink(config, 'harbor:projects'), '_blank', 'noopener');
+      return;
+    }
 
     // Keycloak admin console uses separate master realm credentials
     if (lname.includes('keycloak')) {

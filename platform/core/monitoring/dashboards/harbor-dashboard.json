@@ -748,6 +748,6 @@
   "timepicker": {},
   "timezone": "utc",
   "title": "SRE / Harbor Registry",
-  "uid": "sre-harbor-dashboard",
+  "uid": "sre-harbor",
   "version": 1
 }

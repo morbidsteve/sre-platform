@@ -621,6 +621,6 @@
   "timepicker": {},
   "timezone": "utc",
   "title": "SRE / OpenBao Secrets",
-  "uid": "sre-openbao-dashboard",
+  "uid": "sre-openbao",
   "version": 1
 }
