@@ -24,3 +24,15 @@ To view logs from the latest job:
 
 To trigger a job manually:
   kubectl create job --from=cronjob/{{ include "sre-cronjob.fullname" . }} {{ .Values.app.name }}-manual -n {{ .Release.Namespace }}
+
+== Troubleshooting ==
+
+If your deployment is blocked by a Kyverno policy, check the error message for details.
+Common fixes:
+  - Ensure your container runs as non-root (USER directive in Dockerfile)
+  - Add liveness and readiness probes
+  - Use a pinned image tag (not :latest)
+  - Pull images from harbor.apps.sre.example.com
+
+If you need a policy exception: see policies/custom/policy-exceptions/README.md
+Full runbook: docs/runbooks/pod-security-violation.md

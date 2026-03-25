@@ -588,3 +588,618 @@ The pipeline will:
 4. Sign with Cosign
 5. Push to Harbor
 6. Update the GitOps repo (Flux auto-deploys)
+
+---
+
+## Cross-Namespace Service Communication
+
+When your service in one namespace (e.g., `team-alpha`) needs to call an API in another namespace (e.g., `team-beta`), you need three things: DNS resolution, a NetworkPolicy allowing egress/ingress, and an Istio AuthorizationPolicy granting access.
+
+### DNS
+
+Kubernetes provides cross-namespace DNS automatically. Use the fully qualified service name:
+
+```
+http://<service-name>.<namespace>.svc.cluster.local:<port>
+```
+
+For example, team-alpha calling team-beta's API:
+
+```bash
+curl http://order-api.team-beta.svc.cluster.local:8080/api/orders
+```
+
+### NetworkPolicy
+
+Both sides need explicit rules. On the **caller** side (team-alpha), allow egress to team-beta:
+
+```yaml
+# apps/tenants/team-alpha/network-policies/allow-egress-team-beta.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-team-beta
+  namespace: team-alpha
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: my-frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: team-beta
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: order-api
+      ports:
+        - port: 8080
+          protocol: TCP
+```
+
+On the **target** side (team-beta), allow ingress from team-alpha:
+
+```yaml
+# apps/tenants/team-beta/network-policies/allow-ingress-team-alpha.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-team-alpha
+  namespace: team-beta
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: order-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: team-alpha
+      ports:
+        - port: 8080
+          protocol: TCP
+```
+
+### Istio AuthorizationPolicy
+
+Grant team-alpha's service account access to team-beta's API:
+
+```yaml
+# apps/tenants/team-beta/istio/authz-allow-team-alpha.yaml
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-team-alpha-to-order-api
+  namespace: team-beta
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: order-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/team-alpha/sa/my-frontend"
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            paths: ["/api/orders*"]
+```
+
+Both the NetworkPolicy and AuthorizationPolicy changes require a PR reviewed by the platform team. See also the [Structured Logging Guide](logging-guide.md) for correlating traces across namespaces.
+
+---
+
+## Canary Deployments
+
+The platform supports canary deployments using [Flagger](https://flagger.app/) with Istio. Flagger progressively shifts traffic to a new version and automatically rolls back if metrics degrade.
+
+### Enable canary in your HelmRelease
+
+Add the canary block to your app values:
+
+```yaml
+  values:
+    app:
+      name: "my-app"
+      team: "team-alpha"
+      image:
+        repository: "harbor.apps.sre.example.com/team-alpha/my-app"
+        tag: "v2.0.0"
+    canary:
+      enabled: true
+      analysis:
+        interval: 30s           # How often to check metrics
+        threshold: 5            # Max failed checks before rollback
+        maxWeight: 50           # Max traffic percentage to canary
+        stepWeight: 10          # Traffic increment per interval
+      metrics:
+        - name: request-success-rate
+          thresholdRange:
+            min: 99             # Rollback if success rate drops below 99%
+          interval: 30s
+        - name: request-duration
+          thresholdRange:
+            max: 500            # Rollback if p99 latency exceeds 500ms
+          interval: 30s
+```
+
+### Monitor canary progress
+
+```bash
+# Watch canary status
+kubectl get canary -n team-alpha -w
+
+# View Flagger events
+kubectl describe canary my-app -n team-alpha
+
+# Check traffic weight distribution
+kubectl get virtualservice my-app -n team-alpha -o yaml | grep -A5 weight
+
+# Grafana: filter the Istio dashboard by destination_workload="my-app-primary"
+# vs destination_workload="my-app-canary" to compare metrics side-by-side
+```
+
+### Manual approval gate (optional)
+
+To require manual approval before promoting beyond 50%:
+
+```yaml
+    canary:
+      analysis:
+        webhooks:
+          - name: approval-gate
+            type: confirm-promotion
+            url: http://flagger-loadtester.flagger-system/
+```
+
+Approve with: `kubectl annotate canary my-app -n team-alpha flagger.app/approve=true`
+
+---
+
+## Preview Environments
+
+Preview environments give each pull request its own isolated deployment for testing before merging.
+
+### How it works
+
+1. A PR is opened against your app's repo
+2. The GitHub Actions workflow calls `scripts/preview-env.sh` to create a temporary namespace
+3. Your app is deployed into `preview-<pr-number>` with its own ingress URL
+4. When the PR is closed or merged, the preview environment is automatically deleted
+
+### Manual preview creation
+
+```bash
+# Create a preview for PR #42
+./scripts/preview-env.sh create \
+  --pr 42 \
+  --team team-alpha \
+  --image harbor.apps.sre.example.com/team-alpha/my-app \
+  --tag pr-42-abc1234
+
+# Output:
+# Preview deployed to namespace: preview-42
+# URL: https://pr-42.preview.apps.sre.example.com
+
+# Delete when done
+./scripts/preview-env.sh delete --pr 42
+```
+
+### GitHub Actions workflow
+
+Add to your app repository at `.github/workflows/preview.yaml`:
+
+```yaml
+name: Preview Environment
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: <org>/sre-platform
+
+      - name: Create or Update Preview
+        if: github.event.action != 'closed'
+        run: |
+          ./scripts/preview-env.sh create \
+            --pr ${{ github.event.pull_request.number }} \
+            --team ${{ vars.TEAM_NAME }} \
+            --image ${{ vars.HARBOR_REGISTRY }}/${{ vars.APP_NAME }} \
+            --tag pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+
+      - name: Delete Preview
+        if: github.event.action == 'closed'
+        run: |
+          ./scripts/preview-env.sh delete \
+            --pr ${{ github.event.pull_request.number }}
+```
+
+Preview namespaces have the same security policies as production but with reduced resource quotas (1 CPU, 1Gi memory). They are automatically cleaned up after 72 hours if the PR is not closed.
+
+---
+
+## Environment Promotion
+
+The platform uses Flux CD value overlays to manage configuration differences across dev, staging, and production environments. The same Git repo and chart are used everywhere -- only the values change.
+
+### Directory structure
+
+```
+apps/tenants/team-alpha/
+  apps/
+    my-app.yaml                    # Base HelmRelease (used in dev)
+  overlays/
+    staging/
+      my-app-values.yaml           # Staging overrides
+    production/
+      my-app-values.yaml           # Production overrides
+```
+
+### Base HelmRelease (dev)
+
+The base HelmRelease in `apps/my-app.yaml` contains dev defaults. Staging and production override specific values using Flux `valuesFrom`:
+
+```yaml
+# apps/tenants/team-alpha/apps/my-app.yaml
+spec:
+  values:
+    app:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    autoscaling:
+      enabled: false
+  valuesFrom:
+    - kind: ConfigMap
+      name: my-app-env-values
+      optional: true
+```
+
+### Staging overlay
+
+```yaml
+# apps/tenants/team-alpha/overlays/staging/my-app-values.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-app-env-values
+  namespace: team-alpha
+data:
+  values.yaml: |
+    app:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+```
+
+### Production overlay
+
+```yaml
+# apps/tenants/team-alpha/overlays/production/my-app-values.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-app-env-values
+  namespace: team-alpha
+data:
+  values.yaml: |
+    app:
+      replicas: 3
+      resources:
+        requests:
+          cpu: 250m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: "1Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 20
+```
+
+### Promotion workflow
+
+1. **Dev**: Merge to `main` -- Flux applies base values automatically
+2. **Staging**: Apply the staging ConfigMap, verify metrics in Grafana for 24 hours
+3. **Production**: Apply the production ConfigMap after staging sign-off
+
+```bash
+# Promote to staging
+kubectl apply -f apps/tenants/team-alpha/overlays/staging/my-app-values.yaml
+flux reconcile kustomization sre-tenants --with-source
+
+# After staging validation, promote to production
+kubectl apply -f apps/tenants/team-alpha/overlays/production/my-app-values.yaml
+flux reconcile kustomization sre-tenants --with-source
+```
+
+---
+
+## Resource Right-Sizing
+
+Choosing the right CPU and memory requests/limits prevents wasted resources and avoids OOMKills. Use actual usage data from Prometheus to tune your values.
+
+### Check current usage vs requests
+
+```bash
+# See resource usage for your pods
+kubectl top pods -n team-alpha
+
+# See resource requests and limits
+kubectl describe pod -n team-alpha -l app.kubernetes.io/name=my-app | grep -A3 "Requests\|Limits"
+```
+
+### PromQL queries for right-sizing
+
+Open Grafana and run these queries against your app's namespace.
+
+**CPU -- actual usage vs request:**
+
+```promql
+# Average CPU usage over 7 days (what you actually use)
+avg_over_time(rate(container_cpu_usage_seconds_total{namespace="team-alpha", container="my-app"}[5m])[7d:5m])
+
+# CPU request (what you reserved)
+kube_pod_container_resource_requests{namespace="team-alpha", container="my-app", resource="cpu"}
+```
+
+**Memory -- actual usage vs request:**
+
+```promql
+# Peak memory usage over 7 days
+max_over_time(container_memory_working_set_bytes{namespace="team-alpha", container="my-app"}[7d])
+
+# Memory request
+kube_pod_container_resource_requests{namespace="team-alpha", container="my-app", resource="memory"}
+```
+
+### Sizing guidelines
+
+| Metric | Recommendation |
+|--------|---------------|
+| CPU request | Set to the p95 of actual CPU usage over 7 days |
+| CPU limit | Set to 2-5x the request (allows burst) |
+| Memory request | Set to the peak (max) usage + 20% headroom |
+| Memory limit | Set to 1.5x the request (OOMKill safety margin) |
+
+If `kubectl top` shows your pod consistently using less than 30% of its CPU request or less than 50% of its memory request, reduce the requests. If you see OOMKilled events, increase the memory limit.
+
+---
+
+## Rollback
+
+When a deployment goes wrong, you have three rollback methods depending on urgency.
+
+### Method 1: Git revert (recommended)
+
+The safest approach. Reverts to the previous version through the same GitOps pipeline:
+
+```bash
+# Find the commit that bumped the image tag
+git log --oneline apps/tenants/team-alpha/apps/my-app.yaml
+
+# Revert it
+git revert <commit-hash>
+git push
+
+# Flux auto-deploys the previous version (within 10 minutes)
+# Or force immediate reconciliation:
+flux reconcile kustomization sre-tenants --with-source
+```
+
+### Method 2: Tag update (fast)
+
+Edit the image tag back to the known-good version and push:
+
+```bash
+# Edit the tag in apps/tenants/team-alpha/apps/my-app.yaml
+#   tag: "v1.0.0"  # revert from v1.1.0
+
+git add apps/tenants/team-alpha/apps/my-app.yaml
+git commit -m "fix(apps): rollback my-app to v1.0.0"
+git push
+```
+
+### Method 3: Emergency Helm rollback (immediate)
+
+For critical incidents where you cannot wait for Flux reconciliation. This bypasses GitOps and applies immediately:
+
+```bash
+# List Helm release history
+helm history my-app -n team-alpha
+
+# Rollback to previous revision
+helm rollback my-app <revision-number> -n team-alpha
+
+# IMPORTANT: After the emergency, update Git to match the rollback state.
+# Otherwise Flux will re-deploy the broken version on next reconciliation.
+```
+
+After using Method 3, you **must** update the HelmRelease YAML in Git to reflect the rolled-back version. Otherwise, the next Flux reconciliation will redeploy the broken version.
+
+---
+
+## Health Check Configuration
+
+Kubernetes uses probes to know when your app is ready to serve traffic and when it needs to be restarted. Misconfigured probes are the most common cause of unnecessary restarts and deployment failures.
+
+### Probe types
+
+| Probe | Purpose | When it fails |
+|-------|---------|---------------|
+| `livenessProbe` | Is the process alive? | Pod is killed and restarted |
+| `readinessProbe` | Is the app ready to serve traffic? | Pod is removed from Service endpoints (no traffic) |
+| `startupProbe` | Has the app finished starting? | Liveness/readiness checks are delayed |
+
+### HTTP probe (most common)
+
+```yaml
+app:
+  probes:
+    liveness:
+      path: /healthz           # Should return 200 if process is alive
+      initialDelaySeconds: 15  # Wait before first check
+      periodSeconds: 10        # Check every 10 seconds
+      timeoutSeconds: 3        # Timeout per check
+      failureThreshold: 3     # Restart after 3 consecutive failures
+    readiness:
+      path: /readyz            # Should return 200 when ready to serve
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+```
+
+### TCP probe (for non-HTTP services)
+
+For services that do not expose HTTP endpoints (e.g., gRPC, database proxies):
+
+```yaml
+app:
+  probes:
+    liveness:
+      tcpSocket:
+        port: 5432
+      initialDelaySeconds: 15
+      periodSeconds: 10
+    readiness:
+      tcpSocket:
+        port: 5432
+      initialDelaySeconds: 5
+      periodSeconds: 5
+```
+
+### Exec probe (for custom checks)
+
+Run a command inside the container:
+
+```yaml
+app:
+  probes:
+    liveness:
+      exec:
+        command:
+          - /bin/sh
+          - -c
+          - pg_isready -U postgres
+      initialDelaySeconds: 30
+      periodSeconds: 10
+```
+
+### Tuning guidance
+
+- **Slow-starting apps** (JVM, large Node.js): increase `initialDelaySeconds` to 30-60 seconds, or use a `startupProbe` with a high `failureThreshold` (e.g., 30 checks at 10s intervals = 5-minute startup window)
+- **Liveness path** should be lightweight (no DB calls, no downstream checks). Return 200 if the process is alive.
+- **Readiness path** should verify dependencies (DB connection, cache warmth). Return 503 until ready.
+- Do **not** set `timeoutSeconds` lower than your endpoint's typical response time.
+- If pods are being killed during deployments, increase `initialDelaySeconds` or add a startup probe.
+
+---
+
+## Secret Rotation
+
+Secrets should be rotated regularly. The platform supports automatic rotation through OpenBao and External Secrets Operator.
+
+### How rotation works
+
+1. A secret is updated in OpenBao (manually or via OpenBao's auto-rotation for dynamic secrets)
+2. External Secrets Operator detects the change on its next `refreshInterval` (default: 1 hour)
+3. ESO updates the Kubernetes Secret in your namespace
+4. Your application picks up the new value
+
+### Configure refresh interval
+
+For secrets that rotate frequently, reduce the ESO refresh interval:
+
+```yaml
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: my-app-db-creds
+  namespace: team-alpha
+spec:
+  refreshInterval: 15m     # Check for updates every 15 minutes
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: my-app-db-creds
+  data:
+    - secretKey: password
+      remoteRef:
+        key: team-alpha/my-app
+        property: db-password
+```
+
+### Auto-restart on secret change
+
+Your application must be restarted to pick up new secret values. Two approaches:
+
+**Option A: Reloader annotation (recommended)**
+
+Add the [Stakater Reloader](https://github.com/stakater/Reloader) annotation to your Deployment. It watches for Secret changes and triggers a rolling restart:
+
+```yaml
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+```
+
+**Option B: Checksum annotation in Helm**
+
+Include a checksum of the secret data in the pod template so Kubernetes triggers a rolling update when the secret changes:
+
+```yaml
+spec:
+  template:
+    metadata:
+      annotations:
+        checksum/secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+```
+
+### Verify rotation
+
+```bash
+# Check when ESO last synced
+kubectl get externalsecret -n team-alpha my-app-db-creds -o jsonpath='{.status.conditions}'
+
+# View secret update timestamp
+kubectl get secret -n team-alpha my-app-db-creds -o jsonpath='{.metadata.resourceVersion}'
+```
+
+### Rotation schedule recommendations
+
+| Secret type | Rotation frequency | Method |
+|------------|-------------------|--------|
+| Database credentials | 30 days | OpenBao dynamic secrets (auto) |
+| API keys | 90 days | Manual rotation in OpenBao |
+| TLS certificates | Auto (cert-manager) | cert-manager handles renewal |
+| SSH keys | 180 days | Manual rotation in OpenBao |
+
+See also [Secrets Management](#secrets-management) for initial secret setup, and the [Structured Logging Guide](logging-guide.md) for auditing secret access.

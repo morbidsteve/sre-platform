@@ -589,14 +589,42 @@ if [ "$SUMMARY_ONLY" = false ] && [ "$JSON_OUTPUT" = false ]; then
   echo ""
   echo -e "${CYAN}${BOLD}Policy Exceptions${NC}"
   echo "------------------------------------------------------------------------------"
-  EXCEPTIONS=$(kubectl get policyexceptions -A --no-headers 2>/dev/null || echo "")
-  if [ -n "$EXCEPTIONS" ]; then
-    echo "$EXCEPTIONS" | while read -r line; do
-      echo "  $line"
-    done
-  else
-    echo "  No active policy exceptions"
-  fi
+  echo ""
+  echo -e "  ${BOLD}=== PolicyException Status ===${NC}"
+  kubectl get policyexceptions -A -o json 2>/dev/null | python3 -c "
+import sys, json
+from datetime import datetime, timedelta
+data = json.load(sys.stdin)
+now = datetime.now()
+warn_date = now + timedelta(days=14)
+items = data.get('items', [])
+if not items:
+    print('  No PolicyExceptions found')
+    sys.exit(0)
+for item in items:
+    name = item['metadata']['name']
+    ns = item['metadata'].get('namespace', 'cluster-scoped')
+    annotations = item['metadata'].get('annotations', {})
+    expiry = annotations.get('sre.io/exception-expiry', 'none')
+    reason = annotations.get('sre.io/exception-reason', 'no reason provided')
+    team = item['metadata'].get('labels', {}).get('sre.io/team', 'unknown')
+    if expiry == 'none':
+        print(f'  WARNING: {ns}/{name} (team={team}) has no expiry date — {reason}')
+        continue
+    try:
+        exp_date = datetime.strptime(expiry, '%Y-%m-%d')
+        if exp_date < now:
+            print(f'  EXPIRED: {ns}/{name} (team={team}) expired on {expiry} — {reason}')
+        elif exp_date < warn_date:
+            days_left = (exp_date - now).days
+            print(f'  EXPIRING SOON: {ns}/{name} (team={team}) expires on {expiry} ({days_left} days left) — {reason}')
+        else:
+            days_left = (exp_date - now).days
+            print(f'  OK: {ns}/{name} (team={team}) expires on {expiry} ({days_left} days left) — {reason}')
+    except ValueError:
+        print(f'  WARNING: {ns}/{name} (team={team}) has invalid expiry: {expiry}')
+" 2>/dev/null || echo "  No PolicyExceptions found or kubectl not available"
+  echo ""
 fi
 
 # ============================================================================

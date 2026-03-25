@@ -1,0 +1,46 @@
+---
+# EXAMPLE: PolicyException for a legacy application migration
+# This file shows how a tenant team would request an exception for a legacy
+# app that cannot run as non-root during migration. Copy this template,
+# remove the .example suffix, fill in your details, and submit as a PR.
+#
+# Scenario: team-alpha is migrating a legacy Java app that writes to /opt/app
+# and runs as root. The team is actively working on refactoring the app to
+# support non-root execution and read-only filesystem. The migration is
+# tracked in JIRA-456 with a target completion date of 60 days.
+#
+# Compensating controls:
+#   - NetworkPolicy restricts the pod to only talk to its database
+#   - NeuVector runtime monitoring is enabled for this namespace
+#   - The pod has resource limits and no host path mounts
+#   - Weekly progress check on the migration tracked in JIRA-456
+apiVersion: kyverno.io/v2beta1
+kind: PolicyException
+metadata:
+  name: team-alpha-legacy-app-migration
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: "team-alpha"
+  annotations:
+    sre.io/exception-reason: "Legacy Java app requires root user and writable filesystem during migration. Actively refactoring — see JIRA-456."
+    sre.io/exception-approver: "PENDING-REVIEW"
+    sre.io/exception-expiry: "2026-06-23"
+    sre.io/ticket: "https://jira.example.com/browse/JIRA-456"
+spec:
+  exceptions:
+    - policyName: require-run-as-nonroot
+      ruleNames:
+        - run-as-non-root
+    - policyName: require-security-context
+      ruleNames:
+        - require-read-only-rootfs
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - team-alpha
+          names:
+            - "legacy-app-*"

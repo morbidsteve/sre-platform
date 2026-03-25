@@ -149,6 +149,8 @@ export default function App() {
             onOverrideGate={wizard.overrideGate}
             isAdmin={wizard.isAdmin}
             username={user?.name || 'operator'}
+            appName={state.appInfo.name || 'my-app'}
+            teamName={state.appInfo.team || 'team-alpha'}
             onBack={() => wizard.setStep(3)}
             onNext={() => wizard.setStep(5)}
             pipelineRunId={state.pipelineRunId}

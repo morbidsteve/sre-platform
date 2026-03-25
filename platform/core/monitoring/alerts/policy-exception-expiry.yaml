@@ -1,0 +1,55 @@
+---
+# PrometheusRule for alerting on Kyverno PolicyException expiry
+# NIST Controls: CA-7, CM-6, SI-4
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: policy-exception-expiry
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, CM-6, SI-4"
+spec:
+  groups:
+    - name: sre-policy-exceptions
+      rules:
+        # Alert when a PolicyException is expiring within 14 days.
+        # Kyverno exports metrics on policy exceptions — this rule uses
+        # the kyverno_policy_exception_total metric to detect active
+        # exceptions and correlates with the expiry annotation scraped
+        # by the compliance-report CronJob.
+        - alert: PolicyExceptionExpiringSoon
+          expr: |
+            kyverno_policy_exception_total > 0
+          for: 1h
+          labels:
+            severity: warning
+            category: compliance
+          annotations:
+            summary: "Active PolicyExceptions exist — review expiry dates"
+            description: >-
+              There are active Kyverno PolicyExceptions in the cluster.
+              Run 'scripts/compliance-report.sh' or check the Policy Exceptions
+              section of the compliance dashboard to verify none are expired
+              or expiring within 14 days. Expired exceptions must be renewed
+              or the workload must be brought into compliance.
+            runbook_url: "https://docs.sre.example.com/runbooks/pod-security-violation"
+
+        # Alert for high volume of policy exceptions (potential compliance drift)
+        - alert: PolicyExceptionCountHigh
+          expr: |
+            count(kyverno_policy_exception_total) > 5
+          for: 30m
+          labels:
+            severity: warning
+            category: compliance
+          annotations:
+            summary: "More than 5 active PolicyExceptions detected"
+            description: >-
+              The cluster has more than 5 active PolicyExceptions, which may
+              indicate compliance drift. Review all exceptions and their
+              expiry dates with 'scripts/compliance-report.sh'. Each exception
+              must have a valid justification, tracking ticket, and expiry
+              date within 90 days.

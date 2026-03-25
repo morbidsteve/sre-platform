@@ -11,6 +11,7 @@ resources:
   - network-policies/allow-monitoring.yaml
   - dashboards/
   - sre-alerting-rules.yaml
+  - alerts/policy-exception-expiry.yaml
   - compliance-scan-cronjob.yaml
   - network-policies/allow-grafana-keycloak.yaml
   - network-policies/allow-kube-system-scraping.yaml

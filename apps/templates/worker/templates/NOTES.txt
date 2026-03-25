@@ -27,3 +27,15 @@ To check pod status:
 
 To view logs:
   kubectl logs -l app.kubernetes.io/name={{ .Values.app.name }} -n {{ .Release.Namespace }} -f
+
+== Troubleshooting ==
+
+If your deployment is blocked by a Kyverno policy, check the error message for details.
+Common fixes:
+  - Ensure your container runs as non-root (USER directive in Dockerfile)
+  - Add liveness and readiness probes
+  - Use a pinned image tag (not :latest)
+  - Pull images from harbor.apps.sre.example.com
+
+If you need a policy exception: see policies/custom/policy-exceptions/README.md
+Full runbook: docs/runbooks/pod-security-violation.md

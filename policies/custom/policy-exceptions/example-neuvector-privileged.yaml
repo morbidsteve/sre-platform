@@ -1,0 +1,45 @@
+---
+# PolicyException: NeuVector enforcer requires privileged access
+# NeuVector's enforcer DaemonSet needs privileged containers and host
+# networking to perform runtime security monitoring, network segmentation,
+# and process/file activity detection across all pods on each node.
+#
+# This is a permanent platform exception — NeuVector cannot function without
+# these capabilities. The exception is scoped only to the neuvector namespace
+# and only to the enforcer pods.
+#
+# Compensating controls:
+#   - NeuVector itself IS the runtime security control (NIST SI-3, SI-4)
+#   - NetworkPolicies restrict neuvector namespace egress
+#   - NeuVector pods are managed by Flux CD (no manual changes)
+#   - Platform team monitors NeuVector health via Prometheus
+apiVersion: kyverno.io/v2beta1
+kind: PolicyException
+metadata:
+  name: neuvector-enforcer-privileged
+  namespace: neuvector
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: "platform"
+  annotations:
+    sre.io/exception-reason: "NeuVector enforcer requires privileged access for runtime security monitoring, network DLP/WAF, and process profiling"
+    sre.io/exception-approver: "platform-team"
+    sre.io/exception-expiry: "2027-01-01"
+    sre.io/ticket: "https://github.com/morbidsteve/sre-platform/issues/platform-exception-neuvector"
+spec:
+  exceptions:
+    - policyName: disallow-privileged-containers
+      ruleNames:
+        - disallow-privileged
+    - policyName: require-run-as-nonroot
+      ruleNames:
+        - run-as-non-root
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - neuvector
+          names:
+            - "neuvector-enforcer-*"
