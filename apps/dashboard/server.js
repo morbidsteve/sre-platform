@@ -461,6 +461,24 @@ app.post("/api/deploy", mutateLimiter, requireGroups("sre-admins", "developers")
     // Auto-create namespace if it doesn't exist
     await ensureNamespace(nsName, teamName);
 
+    // Pre-deployment compliance gate check
+    try {
+      const gateResult = await complianceGate(nsName, `${image}:${tag}`);
+      if (!gateResult.passed) {
+        return res.status(422).json({
+          error: "Compliance gate failed — deployment blocked",
+          blockers: gateResult.blockers,
+          warnings: gateResult.warnings,
+          checks: gateResult.checks,
+        });
+      }
+      if (gateResult.warnings.length > 0) {
+        console.log(`[compliance-gate] Warnings for ${safeName} in ${nsName}: ${gateResult.warnings.map(w => w.message).join(", ")}`);
+      }
+    } catch (gateErr) {
+      console.debug("[compliance-gate] Non-blocking error:", gateErr.message);
+    }
+
     const manifest = generateHelmRelease({
       name: safeName,
       team: nsName,
@@ -10584,6 +10602,61 @@ app.get("/api/compliance/waivers", requireGroups("sre-admins", "issm", "complian
   }
 });
 
+// GET /api/compliance/assessment-worksheet — Export all controls as CSV for assessors
+app.get("/api/compliance/assessment-worksheet", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const helmReleases = await getHelmReleases();
+    const helmHealthMap = new Map();
+    helmReleases.forEach((hr) => helmHealthMap.set(hr.name, hr.ready));
+
+    const controlMapping = loadControlMapping();
+
+    // CSV helper
+    const escapeCsv = (val) => {
+      const str = String(val || "");
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    // CSV header
+    const csvRows = [
+      ["Control ID", "Title", "Family", "Implementation Status", "Platform Evidence", "Assessor Notes", "Assessment Result"].join(","),
+    ];
+
+    for (const ctrl of COMPLIANCE_CONTROLS) {
+      const status = getControlStatus(ctrl, helmHealthMap);
+      const mapping = controlMapping[ctrl.id] || {};
+      const evidenceFiles = (mapping.evidence || []).join("; ");
+      const implementation = (mapping.implementation || "");
+      const platformEvidence = evidenceFiles
+        ? `${implementation} | Files: ${evidenceFiles}`
+        : implementation;
+
+      csvRows.push([
+        escapeCsv(ctrl.id),
+        escapeCsv(ctrl.title),
+        escapeCsv(`${ctrl.family} - ${ctrl.familyName}`),
+        escapeCsv(status),
+        escapeCsv(platformEvidence),
+        "",  // Assessor Notes — blank for assessor to fill
+        "",  // Assessment Result — blank for assessor to fill
+      ].join(","));
+    }
+
+    const csvContent = csvRows.join("\n");
+    const timestamp = new Date().toISOString().split("T")[0];
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="sre-assessment-worksheet-${timestamp}.csv"`);
+    res.send(csvContent);
+  } catch (err) {
+    console.error("Error generating assessment worksheet:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── Phase 6: Assessor Role ───────────────────────────────────────────────────
 // Note: The compliance-assessors group is already added to all /api/compliance/*
 // endpoints above via requireGroups. The assessor role CAN access:
@@ -10595,6 +10668,713 @@ app.get("/api/compliance/waivers", requireGroups("sre-admins", "issm", "complian
 //   - DELETE endpoints
 //   - POST /api/pipeline/runs (create)
 // This is enforced by NOT including "compliance-assessors" in those route groups.
+
+// ── Phase 7: CCB Change Workflow ─────────────────────────────────────────────
+// NIST Controls: CM-3, CM-5 — Configuration Change Control
+
+// GET /api/compliance/changes — list recent platform changes from Flux HelmRelease history
+app.get("/api/compliance/changes", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    const changes = [];
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+
+    // Collect HelmRelease version changes across all namespaces
+    try {
+      const allNs = await k8sApi.listNamespace();
+      for (const ns of allNs.body.items) {
+        try {
+          const hrResp = await customApi.listNamespacedCustomObject(
+            "helm.toolkit.fluxcd.io", "v2", ns.metadata.name, "helmreleases"
+          );
+          for (const hr of (hrResp.body.items || [])) {
+            const conditions = hr.status?.conditions || [];
+            const readyCond = conditions.find(c => c.type === "Ready");
+            const lastApplied = hr.status?.lastAppliedRevision || null;
+            const lastAttempted = hr.status?.lastAttemptedRevision || null;
+            const chartVersion = hr.spec?.chart?.spec?.version || "unknown";
+
+            changes.push({
+              id: `${hr.metadata.namespace}/${hr.metadata.name}`,
+              component: hr.metadata.name,
+              namespace: hr.metadata.namespace,
+              type: "helmrelease-update",
+              chartVersion,
+              appliedRevision: lastApplied,
+              attemptedRevision: lastAttempted,
+              status: readyCond?.status === "True" ? "applied" : "pending",
+              message: readyCond?.message || "",
+              timestamp: readyCond?.lastTransitionTime || hr.metadata.creationTimestamp,
+              approvalStatus: "auto-approved",
+              approvedBy: null,
+              approvedAt: null,
+            });
+          }
+        } catch { /* namespace may not have HelmReleases */ }
+      }
+    } catch (err) {
+      console.debug("[ccb] Error listing HelmReleases:", err.message);
+    }
+
+    // Collect Flux Kustomization changes
+    try {
+      const ksResp = await customApi.listNamespacedCustomObject(
+        "kustomize.toolkit.fluxcd.io", "v1", "flux-system", "kustomizations"
+      );
+      for (const ks of (ksResp.body.items || [])) {
+        const conditions = ks.status?.conditions || [];
+        const readyCond = conditions.find(c => c.type === "Ready");
+        changes.push({
+          id: `flux-system/${ks.metadata.name}`,
+          component: ks.metadata.name,
+          namespace: "flux-system",
+          type: "kustomization-update",
+          chartVersion: null,
+          appliedRevision: ks.status?.lastAppliedRevision || null,
+          attemptedRevision: ks.status?.lastAttemptedRevision || null,
+          status: readyCond?.status === "True" ? "applied" : "pending",
+          message: readyCond?.message || "",
+          timestamp: readyCond?.lastTransitionTime || ks.metadata.creationTimestamp,
+          approvalStatus: "auto-approved",
+          approvedBy: null,
+          approvedAt: null,
+        });
+      }
+    } catch { /* Kustomizations not available */ }
+
+    // Sort by timestamp descending and limit
+    changes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const limited = changes.slice(0, limit);
+
+    // Check DB for manual approvals
+    if (dbAvailable && db.pool) {
+      try {
+        const { rows } = await db.pool.query(
+          "SELECT * FROM admin_audit_log WHERE action = 'ccb-approve' ORDER BY created_at DESC LIMIT 100"
+        );
+        const approvals = {};
+        for (const row of rows) {
+          approvals[row.target_name] = { by: row.actor, at: row.created_at, comment: row.detail };
+        }
+        for (const change of limited) {
+          if (approvals[change.id]) {
+            change.approvalStatus = "ccb-approved";
+            change.approvedBy = approvals[change.id].by;
+            change.approvedAt = approvals[change.id].at;
+          }
+        }
+      } catch { /* DB query failed */ }
+    }
+
+    res.json({
+      changes: limited,
+      total: changes.length,
+      summary: {
+        applied: changes.filter(c => c.status === "applied").length,
+        pending: changes.filter(c => c.status === "pending").length,
+        ccbApproved: limited.filter(c => c.approvalStatus === "ccb-approved").length,
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching CCB changes:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/compliance/changes/:id/approve — CCB approval for a change
+app.post("/api/compliance/changes/:id/approve", mutateLimiter, requireGroups("sre-admins", "issm"), async (req, res) => {
+  try {
+    const changeId = decodeURIComponent(req.params.id);
+    const actor = getActor(req);
+    const { comment } = req.body || {};
+
+    if (dbAvailable && db.pool) {
+      await db.adminAuditLog("ccb-approve", actor, "change", changeId, comment || "CCB approval granted", { changeId });
+    }
+
+    res.json({
+      success: true,
+      changeId,
+      approvedBy: actor,
+      approvedAt: new Date().toISOString(),
+      comment: comment || null,
+    });
+  } catch (err) {
+    console.error("Error approving change:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 7: Personnel Security Tracker ──────────────────────────────────────
+// NIST Controls: AT-2, PS-6, PS-7 — Security Awareness Training, Personnel Security
+
+// GET /api/admin/users/:id/compliance — user compliance metadata
+app.get("/api/admin/users/:id/compliance", requireGroups("sre-admins", "issm"), async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Fetch user from Keycloak
+    let user;
+    try {
+      user = await keycloakApi("GET", `/users/${userId}`);
+    } catch (err) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Get compliance attributes from Keycloak user attributes
+    const attrs = user.attributes || {};
+    const compliance = {
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      securityTrainingDate: attrs.securityTrainingDate?.[0] || null,
+      securityTrainingExpiry: attrs.securityTrainingExpiry?.[0] || null,
+      lastAccessReview: attrs.lastAccessReview?.[0] || null,
+      nextAccessReview: attrs.nextAccessReview?.[0] || null,
+      robAcknowledgedAt: attrs.robAcknowledgedAt?.[0] || null,
+      clearanceLevel: attrs.clearanceLevel?.[0] || null,
+      nda: {
+        signed: attrs.ndaSigned?.[0] === "true",
+        signedAt: attrs.ndaSignedAt?.[0] || null,
+      },
+      status: "compliant",
+      issues: [],
+    };
+
+    // Check compliance status
+    const now = new Date();
+    if (compliance.securityTrainingExpiry) {
+      if (new Date(compliance.securityTrainingExpiry) < now) {
+        compliance.status = "non-compliant";
+        compliance.issues.push("Security training expired");
+      }
+    } else if (!compliance.securityTrainingDate) {
+      compliance.status = "non-compliant";
+      compliance.issues.push("Security training not completed");
+    }
+
+    if (compliance.nextAccessReview) {
+      if (new Date(compliance.nextAccessReview) < now) {
+        compliance.status = "non-compliant";
+        compliance.issues.push("Access review overdue");
+      }
+    } else if (!compliance.lastAccessReview) {
+      compliance.issues.push("No access review on record");
+    }
+
+    if (!compliance.robAcknowledgedAt) {
+      compliance.issues.push("Rules of Behavior not acknowledged");
+    }
+
+    if (compliance.issues.length > 0 && compliance.status === "compliant") {
+      compliance.status = "attention-needed";
+    }
+
+    res.json(compliance);
+  } catch (err) {
+    console.error("Error fetching user compliance:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/admin/users/:id/compliance — update training/review dates
+app.patch("/api/admin/users/:id/compliance", mutateLimiter, requireGroups("sre-admins", "issm"), async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const actor = getActor(req);
+    const updates = req.body;
+
+    if (!updates || Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No updates provided" });
+    }
+
+    // Map allowed fields to Keycloak user attributes
+    const allowedFields = {
+      securityTrainingDate: "securityTrainingDate",
+      securityTrainingExpiry: "securityTrainingExpiry",
+      lastAccessReview: "lastAccessReview",
+      nextAccessReview: "nextAccessReview",
+      robAcknowledgedAt: "robAcknowledgedAt",
+      clearanceLevel: "clearanceLevel",
+      ndaSigned: "ndaSigned",
+      ndaSignedAt: "ndaSignedAt",
+    };
+
+    // Fetch current user
+    let user;
+    try {
+      user = await keycloakApi("GET", `/users/${userId}`);
+    } catch (err) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const attrs = user.attributes || {};
+    for (const [field, attrName] of Object.entries(allowedFields)) {
+      if (updates[field] !== undefined) {
+        attrs[attrName] = [String(updates[field])];
+      }
+    }
+
+    // Update user in Keycloak
+    await keycloakApi("PUT", `/users/${userId}`, { ...user, attributes: attrs });
+
+    // Audit log
+    if (dbAvailable && db.pool) {
+      await db.adminAuditLog("update-user-compliance", actor, "user", user.username, JSON.stringify(updates), { userId, updates });
+    }
+
+    res.json({ success: true, userId, updated: Object.keys(updates) });
+  } catch (err) {
+    console.error("Error updating user compliance:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/compliance/personnel/summary — aggregate personnel compliance stats
+app.get("/api/compliance/personnel/summary", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    // Fetch all users from Keycloak
+    let users;
+    try {
+      users = await keycloakApi("GET", "/users?max=500");
+    } catch (err) {
+      return res.status(503).json({ error: "Cannot connect to Keycloak" });
+    }
+
+    const now = new Date();
+    let totalUsers = users.length;
+    let trainingCurrent = 0;
+    let trainingExpired = 0;
+    let trainingMissing = 0;
+    let accessReviewCurrent = 0;
+    let accessReviewOverdue = 0;
+    let accessReviewMissing = 0;
+    let robSigned = 0;
+    let robUnsigned = 0;
+    const nonCompliantUsers = [];
+
+    for (const user of users) {
+      // Skip service accounts
+      if (user.username?.startsWith("service-account-")) continue;
+
+      const attrs = user.attributes || {};
+      let issues = [];
+
+      // Training check
+      const trainingExpiry = attrs.securityTrainingExpiry?.[0];
+      if (trainingExpiry) {
+        if (new Date(trainingExpiry) < now) {
+          trainingExpired++;
+          issues.push("training-expired");
+        } else {
+          trainingCurrent++;
+        }
+      } else if (attrs.securityTrainingDate?.[0]) {
+        trainingCurrent++;
+      } else {
+        trainingMissing++;
+        issues.push("no-training");
+      }
+
+      // Access review check
+      const nextReview = attrs.nextAccessReview?.[0];
+      if (nextReview) {
+        if (new Date(nextReview) < now) {
+          accessReviewOverdue++;
+          issues.push("review-overdue");
+        } else {
+          accessReviewCurrent++;
+        }
+      } else if (attrs.lastAccessReview?.[0]) {
+        accessReviewCurrent++;
+      } else {
+        accessReviewMissing++;
+      }
+
+      // RoB check
+      if (attrs.robAcknowledgedAt?.[0]) {
+        robSigned++;
+      } else {
+        robUnsigned++;
+        issues.push("rob-unsigned");
+      }
+
+      if (issues.length > 0) {
+        nonCompliantUsers.push({
+          username: user.username,
+          email: user.email,
+          issues,
+        });
+      }
+    }
+
+    res.json({
+      generatedAt: now.toISOString(),
+      totalUsers,
+      training: {
+        current: trainingCurrent,
+        expired: trainingExpired,
+        missing: trainingMissing,
+        complianceRate: totalUsers > 0 ? Math.round(trainingCurrent / totalUsers * 100) : 0,
+      },
+      accessReview: {
+        current: accessReviewCurrent,
+        overdue: accessReviewOverdue,
+        missing: accessReviewMissing,
+        complianceRate: totalUsers > 0 ? Math.round(accessReviewCurrent / totalUsers * 100) : 0,
+      },
+      rulesOfBehavior: {
+        signed: robSigned,
+        unsigned: robUnsigned,
+        complianceRate: totalUsers > 0 ? Math.round(robSigned / totalUsers * 100) : 0,
+      },
+      nonCompliantUsers: nonCompliantUsers.slice(0, 50),
+      overallComplianceRate: totalUsers > 0
+        ? Math.round(
+            ((trainingCurrent + accessReviewCurrent + robSigned) / (totalUsers * 3)) * 100
+          )
+        : 0,
+    });
+  } catch (err) {
+    console.error("Error fetching personnel summary:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 7: Compliance Gate for Deployments ─────────────────────────────────
+// NIST Controls: CM-3, CM-5, SA-11, RA-5
+
+// complianceGate — checks namespace readiness and image scan status before deploy
+async function complianceGate(namespace, image) {
+  const results = { passed: true, checks: [], warnings: [], blockers: [] };
+
+  // Check 1: Namespace has NetworkPolicies
+  try {
+    const npResp = await k8sApi.listNamespacedNetworkPolicy(namespace);
+    if ((npResp.body.items || []).length === 0) {
+      results.warnings.push({ check: "network-policies", message: `Namespace ${namespace} has no NetworkPolicies` });
+    } else {
+      results.checks.push({ check: "network-policies", status: "pass", message: `${npResp.body.items.length} NetworkPolicies found` });
+    }
+  } catch {
+    results.warnings.push({ check: "network-policies", message: "Unable to verify NetworkPolicies" });
+  }
+
+  // Check 2: Namespace has required labels
+  try {
+    const nsResp = await k8sApi.readNamespace(namespace);
+    const labels = nsResp.body.metadata?.labels || {};
+    if (!labels["istio-injection"]) {
+      results.warnings.push({ check: "istio-injection", message: `Namespace ${namespace} missing istio-injection label` });
+    } else {
+      results.checks.push({ check: "istio-injection", status: "pass", message: "Istio sidecar injection enabled" });
+    }
+  } catch {
+    results.warnings.push({ check: "namespace-labels", message: "Unable to verify namespace labels" });
+  }
+
+  // Check 3: Image scan status from Harbor (if image is from Harbor)
+  if (image && image.includes("harbor")) {
+    try {
+      const repoTag = image.replace(/.*harbor[^/]*\//, "");
+      const repo = repoTag.split(":")[0];
+      const tag = repoTag.split(":")[1] || "latest";
+      const project = repo.split("/")[0];
+      const repoPath = repo.split("/").slice(1).join("/");
+
+      const scanResp = await fetch(
+        `https://${HARBOR_REGISTRY_EXT}/api/v2.0/projects/${project}/repositories/${encodeURIComponent(repoPath)}/artifacts/${tag}?with_scan_overview=true`,
+        {
+          headers: { Authorization: "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64") },
+        }
+      );
+
+      if (scanResp.ok) {
+        const artifact = await scanResp.json();
+        const scanOverview = artifact.scan_overview || {};
+        const report = Object.values(scanOverview)[0];
+
+        if (report) {
+          const summary = report.summary || {};
+          const criticals = summary.Critical || summary.critical || 0;
+          const highs = summary.High || summary.high || 0;
+
+          if (criticals > 0) {
+            results.blockers.push({
+              check: "image-scan",
+              message: `Image has ${criticals} critical vulnerabilities — deployment blocked`,
+              severity: "critical",
+            });
+            results.passed = false;
+          } else if (highs > 0) {
+            results.warnings.push({
+              check: "image-scan",
+              message: `Image has ${highs} high vulnerabilities`,
+              severity: "high",
+            });
+          } else {
+            results.checks.push({ check: "image-scan", status: "pass", message: "Image scan clean" });
+          }
+        } else {
+          results.warnings.push({ check: "image-scan", message: "Image has not been scanned" });
+        }
+      }
+    } catch {
+      results.warnings.push({ check: "image-scan", message: "Unable to verify image scan status" });
+    }
+  }
+
+  // Check 4: ResourceQuota exists in namespace
+  try {
+    const quotaResp = await k8sApi.listNamespacedResourceQuota(namespace);
+    if ((quotaResp.body.items || []).length === 0) {
+      results.warnings.push({ check: "resource-quota", message: `Namespace ${namespace} has no ResourceQuota` });
+    } else {
+      results.checks.push({ check: "resource-quota", status: "pass", message: "ResourceQuota configured" });
+    }
+  } catch {
+    results.warnings.push({ check: "resource-quota", message: "Unable to verify ResourceQuota" });
+  }
+
+  return results;
+}
+
+// ── Phase 7: Rules of Behavior Acknowledgment ────────────────────────────────
+// NIST Controls: PL-4, PS-6
+
+// GET /api/compliance/rob/status — count of users who have/haven't signed RoB
+app.get("/api/compliance/rob/status", requireGroups("sre-admins", "issm", "compliance-assessors"), async (req, res) => {
+  try {
+    let users;
+    try {
+      users = await keycloakApi("GET", "/users?max=500");
+    } catch {
+      return res.status(503).json({ error: "Cannot connect to Keycloak" });
+    }
+
+    let signed = 0;
+    let unsigned = 0;
+    const unsignedUsers = [];
+
+    for (const user of users) {
+      if (user.username?.startsWith("service-account-")) continue;
+      const attrs = user.attributes || {};
+      if (attrs.robAcknowledgedAt?.[0]) {
+        signed++;
+      } else {
+        unsigned++;
+        unsignedUsers.push({ username: user.username, email: user.email });
+      }
+    }
+
+    const total = signed + unsigned;
+    res.json({
+      total,
+      signed,
+      unsigned,
+      complianceRate: total > 0 ? Math.round((signed / total) * 100) : 0,
+      unsignedUsers: unsignedUsers.slice(0, 50),
+    });
+  } catch (err) {
+    console.error("Error fetching RoB status:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 8: App Compliance Profile (Inherited Controls) ─────────────────────
+// NIST Controls: CA-2, CA-6, SA-11
+
+// GET /api/apps/:namespace/:name/compliance-profile — inherited/shared/app-owned controls
+app.get("/api/apps/:namespace/:name/compliance-profile", requireGroups("sre-admins", "issm", "compliance-assessors", "developers"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+
+    // Platform-inherited controls (provided by SRE platform to all apps)
+    const inheritedControls = [
+      { id: "AC-2", family: "AC", title: "Account Management", provider: "Keycloak SSO" },
+      { id: "AC-3", family: "AC", title: "Access Enforcement", provider: "Kubernetes RBAC + Istio" },
+      { id: "AC-4", family: "AC", title: "Information Flow Enforcement", provider: "Istio mTLS + NetworkPolicy" },
+      { id: "AC-14", family: "AC", title: "Permitted Actions Without Identification", provider: "Istio PeerAuthentication STRICT" },
+      { id: "AU-2", family: "AU", title: "Audit Events", provider: "Loki + K8s Audit Logging" },
+      { id: "AU-3", family: "AU", title: "Content of Audit Records", provider: "Structured JSON Logging" },
+      { id: "AU-6", family: "AU", title: "Audit Review and Reporting", provider: "Grafana Dashboards" },
+      { id: "AU-12", family: "AU", title: "Audit Generation", provider: "Alloy Log Collector" },
+      { id: "CA-7", family: "CA", title: "Continuous Monitoring", provider: "Prometheus + Grafana" },
+      { id: "CM-2", family: "CM", title: "Baseline Configuration", provider: "GitOps via Flux CD" },
+      { id: "CM-3", family: "CM", title: "Configuration Change Control", provider: "Git PR Workflow + Flux" },
+      { id: "CM-6", family: "CM", title: "Configuration Settings", provider: "Kyverno Policies" },
+      { id: "IA-2", family: "IA", title: "Identification and Authentication", provider: "Keycloak MFA" },
+      { id: "IA-3", family: "IA", title: "Device Identification", provider: "Istio mTLS SPIFFE" },
+      { id: "RA-5", family: "RA", title: "Vulnerability Scanning", provider: "Harbor Trivy + NeuVector" },
+      { id: "SC-7", family: "SC", title: "Boundary Protection", provider: "Istio Gateway + NetworkPolicy" },
+      { id: "SC-8", family: "SC", title: "Transmission Confidentiality", provider: "Istio mTLS STRICT" },
+      { id: "SC-13", family: "SC", title: "Cryptographic Protection", provider: "FIPS 140-2 (RKE2)" },
+      { id: "SC-28", family: "SC", title: "Protection of Information at Rest", provider: "K8s Secrets Encryption" },
+      { id: "SI-2", family: "SI", title: "Flaw Remediation", provider: "Harbor Scan Alerts" },
+      { id: "SI-4", family: "SI", title: "System Monitoring", provider: "NeuVector Runtime + Prometheus" },
+      { id: "SI-7", family: "SI", title: "Software Integrity", provider: "Cosign Image Signing" },
+    ];
+
+    // Shared controls (app participates by using platform features)
+    const sharedControls = [
+      { id: "AC-6", family: "AC", title: "Least Privilege", requirement: "Container runs as non-root with dropped capabilities" },
+      { id: "CM-7", family: "CM", title: "Least Functionality", requirement: "Read-only root filesystem, minimal base image" },
+      { id: "IR-4", family: "IR", title: "Incident Handling", requirement: "App exposes /metrics and structured logs" },
+      { id: "SA-10", family: "SA", title: "Developer Configuration Management", requirement: "App deployed via GitOps" },
+    ];
+
+    // App-owned controls (app team must implement)
+    const appOwnedControls = [
+      { id: "SA-11", family: "SA", title: "Developer Testing", requirement: "App has unit/integration tests in CI" },
+      { id: "SI-10", family: "SI", title: "Information Input Validation", requirement: "App validates and sanitizes all input" },
+      { id: "SC-18", family: "SC", title: "Mobile Code", requirement: "Frontend has CSP headers, no eval()" },
+    ];
+
+    // Check actual namespace status
+    let namespaceChecks = {};
+    try {
+      const nsResp = await k8sApi.readNamespace(namespace);
+      const labels = nsResp.body.metadata?.labels || {};
+      namespaceChecks.istioInjection = labels["istio-injection"] === "enabled";
+    } catch { namespaceChecks.istioInjection = false; }
+
+    try {
+      const npResp = await k8sApi.listNamespacedNetworkPolicy(namespace);
+      namespaceChecks.hasNetworkPolicies = (npResp.body.items || []).length > 0;
+    } catch { namespaceChecks.hasNetworkPolicies = false; }
+
+    try {
+      const quotaResp = await k8sApi.listNamespacedResourceQuota(namespace);
+      namespaceChecks.hasResourceQuota = (quotaResp.body.items || []).length > 0;
+    } catch { namespaceChecks.hasResourceQuota = false; }
+
+    res.json({
+      app: { namespace, name },
+      inherited: {
+        count: inheritedControls.length,
+        controls: inheritedControls,
+        description: "Controls fully provided by the SRE platform. No app-level action needed.",
+      },
+      shared: {
+        count: sharedControls.length,
+        controls: sharedControls,
+        description: "Controls shared between platform and app. App must follow platform conventions.",
+      },
+      appOwned: {
+        count: appOwnedControls.length,
+        controls: appOwnedControls,
+        description: "Controls the app team is responsible for implementing.",
+      },
+      namespaceStatus: namespaceChecks,
+      totalControls: inheritedControls.length + sharedControls.length + appOwnedControls.length,
+    });
+  } catch (err) {
+    console.error("Error fetching compliance profile:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 8: App Decommissioning Workflow ────────────────────────────────────
+// NIST Controls: CM-3, PS-4, SA-10
+
+// POST /api/apps/:namespace/:name/decommission — decommission an application
+app.post("/api/apps/:namespace/:name/decommission", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    const actor = getActor(req);
+    const { reason, acknowledgedChecklist } = req.body || {};
+
+    if (!reason) {
+      return res.status(400).json({ error: "Decommission reason is required" });
+    }
+
+    if (!acknowledgedChecklist) {
+      return res.status(400).json({
+        error: "Decommission checklist acknowledgment required",
+        checklist: [
+          "Application data has been backed up or archived",
+          "Application users have been notified",
+          "DNS records will be cleaned up",
+          "Secrets and credentials will be revoked",
+          "Monitoring alerts will be removed",
+          "POA&M findings will be closed",
+        ],
+      });
+    }
+
+    const auditEntries = [];
+
+    // Step 1: Close POA&M findings for this app
+    if (dbAvailable && db.pool) {
+      try {
+        const { rowCount } = await db.pool.query(
+          `UPDATE finding_lifecycle SET status = 'closed', notes = COALESCE(notes, '') || ' [Auto-closed: app decommissioned by ' || $1 || ']', updated_at = NOW()
+           WHERE affected_resource LIKE $2 AND status IN ('open', 'risk-accepted')`,
+          [actor, `%${namespace}/${name}%`]
+        );
+        auditEntries.push(`Closed ${rowCount || 0} POA&M findings`);
+      } catch { auditEntries.push("POA&M closure skipped (DB error)"); }
+    }
+
+    // Step 2: Delete PolicyExceptions for this app
+    try {
+      const peResp = await customApi.listNamespacedCustomObject("kyverno.io", "v2", namespace, "policyexceptions");
+      for (const pe of (peResp.body.items || [])) {
+        if (pe.metadata.name.includes(name)) {
+          await customApi.deleteNamespacedCustomObject("kyverno.io", "v2", namespace, "policyexceptions", pe.metadata.name);
+          auditEntries.push(`Revoked PolicyException: ${pe.metadata.name}`);
+        }
+      }
+    } catch { auditEntries.push("PolicyException cleanup skipped"); }
+
+    // Step 3: Remove from app registry
+    const registryIdx = appRegistry.findIndex(a => a.name === name && (a.namespace === namespace || a.team === namespace));
+    if (registryIdx >= 0) {
+      appRegistry.splice(registryIdx, 1);
+      await saveAppRegistry();
+      auditEntries.push("Removed from app registry");
+    }
+
+    // Step 4: Mark pipeline runs as decommissioned
+    if (dbAvailable && db.pool) {
+      try {
+        await db.pool.query(
+          "UPDATE pipeline_runs SET status = 'undeployed', updated_at = NOW() WHERE app_name = $1 AND status = 'deployed'",
+          [name]
+        );
+        auditEntries.push("Pipeline runs marked as undeployed");
+      } catch { auditEntries.push("Pipeline run update skipped"); }
+    }
+
+    // Step 5: Delete HelmRelease (triggers Flux cleanup)
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+      );
+      auditEntries.push("HelmRelease deleted (Flux will clean up resources)");
+    } catch (err) {
+      auditEntries.push(`HelmRelease deletion: ${err.message}`);
+    }
+
+    // Step 6: Audit log
+    if (dbAvailable && db.pool) {
+      await db.adminAuditLog("decommission-app", actor, "application", `${namespace}/${name}`, reason, {
+        namespace, name, reason, acknowledgedChecklist, auditEntries,
+      });
+    }
+
+    res.json({
+      success: true,
+      decommissioned: `${namespace}/${name}`,
+      by: actor,
+      at: new Date().toISOString(),
+      reason,
+      actions: auditEntries,
+    });
+  } catch (err) {
+    console.error("Error decommissioning app:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // SPA catch-all: serve index.html for non-API routes (React Router / client-side nav)
 app.get('*', (req, res) => {

@@ -1,0 +1,215 @@
+name: Compliance Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'policies/**'
+      - 'platform/**/network-policies/**'
+      - 'compliance/**'
+      - 'apps/**/network-policies/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  compliance-checks:
+    name: Compliance Policy Checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout base branch for diff
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+
+      - name: Check for Kyverno Enforce-to-Audit downgrades
+        id: kyverno-check
+        run: |
+          echo "## Kyverno Policy Enforcement Check" >> "$GITHUB_STEP_SUMMARY"
+          FAILURES=0
+
+          # Get changed policy files
+          CHANGED_POLICIES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'policies/**/*.yaml' 'policies/**/*.yml')
+
+          if [ -z "$CHANGED_POLICIES" ]; then
+            echo "No policy files changed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            for file in $CHANGED_POLICIES; do
+              if [ ! -f "$file" ]; then
+                continue
+              fi
+
+              # Check if validationFailureAction was changed from Enforce to Audit
+              BASE_ACTION=$(git show "origin/${{ github.base_ref }}:$file" 2>/dev/null | grep -E '^\s+validationFailureAction:' | head -1 | awk '{print $2}' || echo "")
+              PR_ACTION=$(grep -E '^\s+validationFailureAction:' "$file" | head -1 | awk '{print $2}' || echo "")
+
+              if [ "$BASE_ACTION" = "Enforce" ] && [ "$PR_ACTION" = "Audit" ]; then
+                echo "::error file=$file::Kyverno policy downgraded from Enforce to Audit"
+                echo "- **BLOCKED**: \`$file\` — validationFailureAction changed from Enforce to Audit" >> "$GITHUB_STEP_SUMMARY"
+                FAILURES=$((FAILURES + 1))
+              fi
+            done
+          fi
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "enforce_downgrade=true" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$FAILURES policy downgrade(s) detected. This requires ISSM approval.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enforce_downgrade=false" >> "$GITHUB_OUTPUT"
+            echo "No Enforce-to-Audit downgrades detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check for deleted NetworkPolicies
+        id: netpol-check
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## NetworkPolicy Deletion Check" >> "$GITHUB_STEP_SUMMARY"
+          FAILURES=0
+
+          # Get deleted files that look like NetworkPolicies
+          DELETED_FILES=$(git diff --name-only --diff-filter=D origin/${{ github.base_ref }}...HEAD -- '**/*network-polic*' '**/*networkpolic*' '**/*netpol*')
+
+          if [ -z "$DELETED_FILES" ]; then
+            echo "No NetworkPolicy files deleted." >> "$GITHUB_STEP_SUMMARY"
+          else
+            for file in $DELETED_FILES; do
+              echo "::error::NetworkPolicy deleted: $file"
+              echo "- **BLOCKED**: \`$file\` — NetworkPolicy deleted" >> "$GITHUB_STEP_SUMMARY"
+              FAILURES=$((FAILURES + 1))
+            done
+          fi
+
+          # Also check for NetworkPolicy kind removal from existing files
+          CHANGED_YAMLS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.yaml' '*.yml' | head -100)
+          for file in $CHANGED_YAMLS; do
+            if [ ! -f "$file" ]; then
+              continue
+            fi
+            # Check if NetworkPolicy kind was removed from the file
+            HAD_NETPOL=$(git show "origin/${{ github.base_ref }}:$file" 2>/dev/null | grep -c 'kind: NetworkPolicy' || echo "0")
+            HAS_NETPOL=$(grep -c 'kind: NetworkPolicy' "$file" 2>/dev/null || echo "0")
+
+            if [ "$HAD_NETPOL" -gt "0" ] && [ "$HAS_NETPOL" -eq "0" ]; then
+              echo "::error file=$file::NetworkPolicy kind removed from file"
+              echo "- **BLOCKED**: \`$file\` — NetworkPolicy kind was removed" >> "$GITHUB_STEP_SUMMARY"
+              FAILURES=$((FAILURES + 1))
+            fi
+          done
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "netpol_deleted=true" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$FAILURES NetworkPolicy deletion(s) detected. Deleting NetworkPolicies weakens security posture.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "netpol_deleted=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for policies without tests
+        id: policy-test-check
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Policy Test Coverage Check" >> "$GITHUB_STEP_SUMMARY"
+          FAILURES=0
+
+          # Get new or changed policy files (not in tests/ directory)
+          NEW_POLICIES=$(git diff --name-only --diff-filter=A origin/${{ github.base_ref }}...HEAD -- 'policies/baseline/*.yaml' 'policies/restricted/*.yaml' 'policies/custom/*.yaml')
+
+          if [ -z "$NEW_POLICIES" ]; then
+            echo "No new policy files added." >> "$GITHUB_STEP_SUMMARY"
+          else
+            for file in $NEW_POLICIES; do
+              # Extract policy name from filename
+              policy_name=$(basename "$file" .yaml)
+
+              # Check if a test directory exists for this policy
+              if [ ! -d "policies/tests/$policy_name" ]; then
+                echo "::error file=$file::New policy $policy_name has no test suite in policies/tests/$policy_name/"
+                echo "- **BLOCKED**: \`$file\` — No test suite found at \`policies/tests/$policy_name/\`" >> "$GITHUB_STEP_SUMMARY"
+                FAILURES=$((FAILURES + 1))
+              else
+                # Check test directory has required files
+                MISSING_FILES=""
+                [ ! -f "policies/tests/$policy_name/kyverno-test.yaml" ] && MISSING_FILES="kyverno-test.yaml"
+                [ ! -f "policies/tests/$policy_name/resource-pass.yaml" ] && MISSING_FILES="$MISSING_FILES resource-pass.yaml"
+                [ ! -f "policies/tests/$policy_name/resource-fail.yaml" ] && MISSING_FILES="$MISSING_FILES resource-fail.yaml"
+
+                if [ -n "$MISSING_FILES" ]; then
+                  echo "::warning file=$file::Policy test suite incomplete. Missing: $MISSING_FILES"
+                  echo "- **WARNING**: \`$file\` — Test suite incomplete, missing: $MISSING_FILES" >> "$GITHUB_STEP_SUMMARY"
+                fi
+              fi
+            done
+          fi
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "missing_tests=true" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$FAILURES policy file(s) added without test suites. Every policy must have tests.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "missing_tests=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate compliance document references
+        id: refs-check
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Compliance Document Reference Check" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -x "scripts/validate-compliance-refs.sh" ]; then
+            if scripts/validate-compliance-refs.sh 2>&1 | tee /tmp/refs-output.txt; then
+              echo "refs_broken=false" >> "$GITHUB_OUTPUT"
+              echo "All compliance document references are valid." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "refs_broken=true" >> "$GITHUB_OUTPUT"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              cat /tmp/refs-output.txt >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "refs_broken=false" >> "$GITHUB_OUTPUT"
+            echo "Reference validation script not found, skipping." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Gate result
+        if: always()
+        run: |
+          FAILED=false
+
+          if [ "${{ steps.kyverno-check.outputs.enforce_downgrade }}" = "true" ]; then
+            echo "::error::Compliance gate failed: Kyverno policy Enforce->Audit downgrade detected"
+            FAILED=true
+          fi
+
+          if [ "${{ steps.netpol-check.outputs.netpol_deleted }}" = "true" ]; then
+            echo "::error::Compliance gate failed: NetworkPolicy deletion detected"
+            FAILED=true
+          fi
+
+          if [ "${{ steps.policy-test-check.outputs.missing_tests }}" = "true" ]; then
+            echo "::error::Compliance gate failed: New policies without test suites"
+            FAILED=true
+          fi
+
+          if [ "${{ steps.refs-check.outputs.refs_broken }}" = "true" ]; then
+            echo "::warning::Compliance document references are broken (non-blocking)"
+          fi
+
+          if [ "$FAILED" = "true" ]; then
+            echo ""
+            echo "============================================"
+            echo "  COMPLIANCE GATE FAILED"
+            echo "  See job summary for details."
+            echo "  Policy downgrades require ISSM approval."
+            echo "============================================"
+            exit 1
+          fi
+
+          echo ""
+          echo "============================================"
+          echo "  COMPLIANCE GATE PASSED"
+          echo "============================================"
