@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Shield, CheckCircle, Clock, Trash2, AlertTriangle } from 'lucide-react';
+import { Shield, CheckCircle, Clock, Trash2, AlertTriangle, Filter } from 'lucide-react';
 import { SkeletonCard } from '../ui/Skeleton';
 import { PipelineStatsCards } from '../pipeline/PipelineStatsCards';
 import { PipelineFilters } from '../pipeline/PipelineFilters';
@@ -8,10 +8,11 @@ import { PipelinePagination } from '../pipeline/PipelinePagination';
 import { RunDetailOverlay } from '../pipeline/RunDetailOverlay';
 import { fetchPipelineStats, fetchPipelineRuns, deletePipelineRun } from '../../api/pipeline';
 import { fetchAuditEvents } from '../../api/audit';
+import { fetchPolicyViolations } from '../../api/apps';
 import { useUserContext } from '../../context/UserContext';
 import { useModal } from '../../context/ModalContext';
 import { useToast } from '../../context/ToastContext';
-import type { PipelineStats, PipelineRun, AuditEvent } from '../../types/api';
+import type { PipelineStats, PipelineRun, AuditEvent, PolicyViolation, PolicyViolationSummary } from '../../types/api';
 
 const PAGE_LIMIT = 20;
 
@@ -35,6 +36,9 @@ export function SecurityTab({ active }: SecurityTabProps) {
   const [isReviewMode, setIsReviewMode] = useState(false);
   const [pendingRuns, setPendingRuns] = useState<PipelineRun[]>([]);
   const [securityEvents, setSecurityEvents] = useState<AuditEvent[]>([]);
+  const [policyViolations, setPolicyViolations] = useState<PolicyViolation[]>([]);
+  const [violationSummary, setViolationSummary] = useState<PolicyViolationSummary>({ critical: 0, high: 0, medium: 0, low: 0, total: 0 });
+  const [violationNsFilter, setViolationNsFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
@@ -82,11 +86,21 @@ export function SecurityTab({ active }: SecurityTabProps) {
     }
   }, []);
 
+  const loadPolicyViolations = useCallback(async () => {
+    try {
+      const data = await fetchPolicyViolations();
+      setPolicyViolations(data.violations || []);
+      setViolationSummary(data.summary || { critical: 0, high: 0, medium: 0, low: 0, total: 0 });
+    } catch {
+      // non-critical — Kyverno PolicyReports may not be available
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setError(null);
-    await Promise.all([loadStats(), loadRuns(), loadPendingReviews(), loadSecurityEvents()]);
+    await Promise.all([loadStats(), loadRuns(), loadPendingReviews(), loadSecurityEvents(), loadPolicyViolations()]);
     setInitialLoading(false);
-  }, [loadStats, loadRuns, loadPendingReviews, loadSecurityEvents]);
+  }, [loadStats, loadRuns, loadPendingReviews, loadSecurityEvents, loadPolicyViolations]);
 
   useEffect(() => {
     if (!active) return;
@@ -308,8 +322,20 @@ export function SecurityTab({ active }: SecurityTabProps) {
             </div>
             <div className="card-base p-4 text-center">
               <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Policy Violations</h3>
-              <div className="text-2xl font-bold text-text-dim">0</div>
-              <div className="text-[10px] text-text-dim mt-0.5">Kyverno integration coming</div>
+              <div className={`text-2xl font-bold ${
+                violationSummary.total === 0 ? 'text-green' :
+                violationSummary.critical > 0 || violationSummary.high > 0 ? 'text-red' : 'text-yellow'
+              }`}>
+                {violationSummary.total}
+              </div>
+              {violationSummary.total > 0 && (
+                <div className="text-[10px] text-text-dim mt-0.5">
+                  {violationSummary.critical > 0 && <span className="text-red">{violationSummary.critical}C </span>}
+                  {violationSummary.high > 0 && <span className="text-red">{violationSummary.high}H </span>}
+                  {violationSummary.medium > 0 && <span className="text-yellow">{violationSummary.medium}M </span>}
+                  {violationSummary.low > 0 && <span className="text-text-dim">{violationSummary.low}L</span>}
+                </div>
+              )}
             </div>
             <div className="card-base p-4 text-center">
               <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Gate Failure Rate</h3>
@@ -320,6 +346,73 @@ export function SecurityTab({ active }: SecurityTabProps) {
           </div>
         )}
       </div>
+
+      {/* Section 2b: Kyverno Policy Violations */}
+      {violationSummary.total > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Kyverno Policy Violations
+            </h2>
+            <div className="flex items-center gap-2">
+              <Filter className="w-3.5 h-3.5 text-text-dim" />
+              <select
+                value={violationNsFilter}
+                onChange={(e) => setViolationNsFilter(e.target.value)}
+                className="appearance-none bg-surface border border-border rounded px-2 py-1 text-xs text-text-primary font-mono cursor-pointer hover:border-accent focus:border-accent focus:outline-none"
+              >
+                <option value="">All Namespaces</option>
+                {[...new Set(policyViolations.map(v => v.namespace))].sort().map(ns => (
+                  <option key={ns} value={ns}>{ns}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="bg-card border border-border rounded-[var(--radius)] overflow-hidden">
+            <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-[1] bg-card">
+                  <tr className="border-b border-border text-left">
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Severity</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Policy</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Rule</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Namespace</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Resource</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {policyViolations
+                    .filter(v => !violationNsFilter || v.namespace === violationNsFilter)
+                    .map((v, idx) => {
+                      const sevClass =
+                        v.severity === 'critical' ? 'bg-red/15 text-red border-red/20' :
+                        v.severity === 'high' ? 'bg-red/10 text-red border-red/20' :
+                        v.severity === 'medium' ? 'bg-yellow/15 text-yellow border-yellow/20' :
+                        'bg-text-dim/10 text-text-dim border-text-dim/20';
+
+                      return (
+                        <tr key={idx} className="border-b border-border last:border-0 hover:bg-surface/50 transition-colors">
+                          <td className="py-2 px-3">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sevClass}`}>
+                              {v.severity}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-xs text-text-primary font-mono">{v.policy}</td>
+                          <td className="py-2 px-3 text-xs text-text-dim font-mono">{v.rule}</td>
+                          <td className="py-2 px-3 text-xs text-text-dim">{v.namespace}</td>
+                          <td className="py-2 px-3 text-xs text-text-primary truncate max-w-[150px]">{v.resource}</td>
+                          <td className="py-2 px-3 text-xs text-text-dim truncate max-w-[300px]">{v.message}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Section 3: Pipeline Runs */}
       <div className="mb-6">

@@ -5915,6 +5915,7 @@ app.post("/api/admin/users", mutateLimiter, requireGroups("sre-admins"), async (
       }
     }
 
+    await adminAuditLog(req, "user_created", "user", username, `Created user ${username}`, { groups: groups || [] });
     res.json({ success: true, id: userId });
   } catch (err) {
     console.error("Failed to create user:", err.message);
@@ -5934,6 +5935,7 @@ app.patch("/api/admin/users/:id", mutateLimiter, requireGroups("sre-admins"), as
     if (enabled !== undefined) update.enabled = enabled;
     if (attributes !== undefined) update.attributes = attributes;
     await keycloakApi("PUT", `/users/${id}`, update);
+    await adminAuditLog(req, "user_updated", "user", id, `Updated user ${id}`, update);
     res.json({ success: true });
   } catch (err) {
     console.error("Failed to update user:", err.message);
@@ -5961,6 +5963,7 @@ app.put("/api/admin/users/:id/password", mutateLimiter, requireGroups("sre-admin
 app.delete("/api/admin/users/:id", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
   try {
     await keycloakApi("DELETE", `/users/${req.params.id}`);
+    await adminAuditLog(req, "user_deleted", "user", req.params.id, `Deleted user ${req.params.id}`, {});
     res.json({ success: true });
   } catch (err) {
     console.error("Failed to delete user:", err.message);
@@ -6027,6 +6030,529 @@ app.delete("/api/admin/groups/:id", mutateLimiter, requireGroups("sre-admins"), 
   } catch (err) {
     console.error("Failed to delete group:", err.message);
     res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Admin Audit Trail ─────────────────────────────────────────────────────────
+
+async function adminAuditLog(req, action, targetType, targetName, detail, metadata) {
+  const actor = getActor(req);
+  logger.info("admin", `${action}: ${targetType}/${targetName} by ${actor}`, { action, targetType, targetName, detail });
+  if (dbAvailable && db.pool) {
+    try {
+      await db.adminAuditLog(action, actor, targetType, targetName, detail, metadata);
+    } catch (err) {
+      console.debug("[admin] Audit log write non-critical:", err.message);
+    }
+  }
+}
+
+// GET /api/admin/audit-log — List admin audit log entries
+app.get("/api/admin/audit-log", requireGroups("sre-admins"), async (req, res) => {
+  if (!dbAvailable) return res.json({ entries: [], total: 0, limit: 50, offset: 0 });
+  try {
+    const result = await db.listAdminAuditLog({
+      action: req.query.action,
+      actor: req.query.actor,
+      targetType: req.query.targetType,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("Failed to list admin audit log:", err.message);
+    res.status(500).json({ error: "Failed to retrieve audit log" });
+  }
+});
+
+// ── Tenant Lifecycle Management ──────────────────────────────────────────────
+
+const TENANT_TIERS = {
+  small:  { pods: "10",  reqCpu: "2",  reqMem: "4Gi",  limCpu: "4",   limMem: "8Gi",  services: "5",  pvcs: "5" },
+  medium: { pods: "20",  reqCpu: "4",  reqMem: "8Gi",  limCpu: "8",   limMem: "16Gi", services: "10", pvcs: "10" },
+  large:  { pods: "40",  reqCpu: "8",  reqMem: "16Gi", limCpu: "16",  limMem: "32Gi", services: "20", pvcs: "20" },
+};
+
+// GET /api/admin/tenants — List all tenants with resource usage
+app.get("/api/admin/tenants", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const namespaces = await k8sApi.listNamespace();
+    const tenantNs = namespaces.body.items.filter(ns => {
+      const labels = ns.metadata.labels || {};
+      return labels["sre.io/team"] || ns.metadata.name.startsWith("team-");
+    });
+
+    const tenants = [];
+    for (const ns of tenantNs) {
+      const name = ns.metadata.name;
+      const labels = ns.metadata.labels || {};
+      try {
+        // Get pods
+        const pods = await k8sApi.listNamespacedPod(name);
+        const podItems = pods.body.items || [];
+        const runningPods = podItems.filter(p => p.status.phase === "Running").length;
+
+        // Get resource quota
+        const quotas = await k8sApi.listNamespacedResourceQuota(name);
+        let quota = null;
+        if (quotas.body.items.length > 0) {
+          const q = quotas.body.items[0];
+          quota = {
+            name: q.metadata.name,
+            hard: q.spec.hard || {},
+            used: q.status.used || {},
+          };
+        }
+
+        // Get deployments count
+        const deps = await appsApi.listNamespacedDeployment(name);
+        const appCount = (deps.body.items || []).length;
+
+        // Calculate CPU/memory usage
+        let cpuUsed = 0, memUsed = 0;
+        try {
+          const podMetrics = await metricsClient.getPodMetrics(name);
+          for (const pm of podMetrics.items || []) {
+            for (const c of pm.containers || []) {
+              cpuUsed += parseCpu(c.usage?.cpu || "0");
+              memUsed += parseMem(c.usage?.memory || "0");
+            }
+          }
+        } catch (e) {
+          // Metrics may not be available
+        }
+
+        // Determine health
+        const problemPods = podItems.filter(p =>
+          p.status.phase !== "Running" && p.status.phase !== "Succeeded"
+        ).length;
+        const health = problemPods === 0 ? "healthy" : problemPods < podItems.length ? "degraded" : "unhealthy";
+
+        tenants.push({
+          name,
+          team: labels["sre.io/team"] || name,
+          status: ns.status.phase,
+          createdAt: ns.metadata.creationTimestamp,
+          podCount: podItems.length,
+          runningPods,
+          appCount,
+          health,
+          cpu: { used: fmtCpu(cpuUsed), usedRaw: cpuUsed },
+          memory: { used: fmtMem(memUsed), usedRaw: memUsed },
+          quota,
+        });
+      } catch (err) {
+        tenants.push({
+          name,
+          team: labels["sre.io/team"] || name,
+          status: ns.status.phase,
+          createdAt: ns.metadata.creationTimestamp,
+          podCount: 0, runningPods: 0, appCount: 0, health: "unknown",
+          cpu: { used: "0m", usedRaw: 0 },
+          memory: { used: "0 Mi", usedRaw: 0 },
+          quota: null,
+        });
+      }
+    }
+
+    res.json(tenants);
+  } catch (err) {
+    console.error("Failed to list tenants:", err.message);
+    res.status(500).json({ error: "Failed to list tenants" });
+  }
+});
+
+// GET /api/admin/tenants/overview — Per-tenant health overview
+app.get("/api/admin/tenants/overview", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const namespaces = await k8sApi.listNamespace();
+    const tenantNs = namespaces.body.items.filter(ns => {
+      const labels = ns.metadata.labels || {};
+      return labels["sre.io/team"] || ns.metadata.name.startsWith("team-");
+    });
+
+    let totalPods = 0, healthyTenants = 0, degradedTenants = 0, totalApps = 0;
+    const tenantHealthMap = [];
+
+    for (const ns of tenantNs) {
+      const name = ns.metadata.name;
+      try {
+        const pods = await k8sApi.listNamespacedPod(name);
+        const podItems = pods.body.items || [];
+        const running = podItems.filter(p => p.status.phase === "Running").length;
+        const problem = podItems.filter(p => p.status.phase !== "Running" && p.status.phase !== "Succeeded").length;
+        const deps = await appsApi.listNamespacedDeployment(name);
+        const depCount = (deps.body.items || []).length;
+        const health = problem === 0 ? "healthy" : "degraded";
+
+        totalPods += podItems.length;
+        totalApps += depCount;
+        if (health === "healthy") healthyTenants++;
+        else degradedTenants++;
+
+        tenantHealthMap.push({ name, health, pods: podItems.length, running, problem, apps: depCount });
+      } catch (err) {
+        degradedTenants++;
+        tenantHealthMap.push({ name, health: "unknown", pods: 0, running: 0, problem: 0, apps: 0 });
+      }
+    }
+
+    res.json({
+      totalTenants: tenantNs.length,
+      healthyTenants,
+      degradedTenants,
+      totalPods,
+      totalApps,
+      tenants: tenantHealthMap,
+    });
+  } catch (err) {
+    console.error("Failed to get tenant overview:", err.message);
+    res.status(500).json({ error: "Failed to get tenant overview" });
+  }
+});
+
+// POST /api/admin/tenants — Create a new tenant
+app.post("/api/admin/tenants", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { name, tier } = req.body;
+    if (!name) return res.status(400).json({ error: "Tenant name is required" });
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      return res.status(400).json({ error: "Name must be lowercase, start with a letter, and contain only letters, numbers, and hyphens" });
+    }
+    const tenantName = name.startsWith("team-") ? name : `team-${name}`;
+    const quotaTier = TENANT_TIERS[tier] || TENANT_TIERS.medium;
+
+    // Check if namespace already exists
+    try {
+      await k8sApi.readNamespace(tenantName);
+      return res.status(409).json({ error: `Tenant ${tenantName} already exists` });
+    } catch (err) {
+      if (err.statusCode !== 404) throw err;
+    }
+
+    // Create namespace
+    await k8sApi.createNamespace({
+      metadata: {
+        name: tenantName,
+        labels: {
+          "istio-injection": "enabled",
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": tenantName,
+          "sre.io/network-policy-configured": "true",
+          "pod-security.kubernetes.io/enforce": "privileged",
+          "pod-security.kubernetes.io/audit": "restricted",
+          "pod-security.kubernetes.io/warn": "restricted",
+        },
+      },
+    });
+
+    // Create ResourceQuota
+    await k8sApi.createNamespacedResourceQuota(tenantName, {
+      metadata: { name: `${tenantName}-quota`, namespace: tenantName },
+      spec: {
+        hard: {
+          pods: quotaTier.pods,
+          "requests.cpu": quotaTier.reqCpu,
+          "requests.memory": quotaTier.reqMem,
+          "limits.cpu": quotaTier.limCpu,
+          "limits.memory": quotaTier.limMem,
+          services: quotaTier.services,
+          persistentvolumeclaims: quotaTier.pvcs,
+        },
+      },
+    });
+
+    // Create LimitRange
+    await k8sApi.createNamespacedLimitRange(tenantName, {
+      metadata: { name: `${tenantName}-limits`, namespace: tenantName },
+      spec: {
+        limits: [{
+          type: "Container",
+          default: { cpu: "200m", memory: "256Mi" },
+          defaultRequest: { cpu: "100m", memory: "128Mi" },
+          max: { cpu: "2", memory: "4Gi" },
+          min: { cpu: "50m", memory: "64Mi" },
+        }],
+      },
+    });
+
+    // Create default-deny NetworkPolicy
+    const networkingApi = kc.makeApiClient(k8s.NetworkingV1Api);
+    await networkingApi.createNamespacedNetworkPolicy(tenantName, {
+      metadata: { name: "default-deny-all", namespace: tenantName },
+      spec: { podSelector: {}, policyTypes: ["Ingress", "Egress"] },
+    });
+
+    // Create RBAC — RoleBinding for team group
+    const rbacApi = kc.makeApiClient(k8s.RbacAuthorizationV1Api);
+    await rbacApi.createNamespacedRoleBinding(tenantName, {
+      metadata: { name: `${tenantName}-admin`, namespace: tenantName },
+      subjects: [{ kind: "Group", name: tenantName, apiGroup: "rbac.authorization.k8s.io" }],
+      roleRef: { kind: "ClusterRole", name: "admin", apiGroup: "rbac.authorization.k8s.io" },
+    });
+
+    // Create Harbor project
+    try {
+      const harborAuth = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
+      await fetch(`http://harbor-core.harbor.svc.cluster.local/api/v2.0/projects`, {
+        method: "POST",
+        headers: { "Authorization": harborAuth, "Content-Type": "application/json" },
+        body: JSON.stringify({ project_name: tenantName, public: false }),
+      });
+    } catch (harborErr) {
+      logger.warn("admin", `Harbor project creation skipped: ${harborErr.message}`);
+    }
+
+    await adminAuditLog(req, "tenant_created", "tenant", tenantName, `Created tenant with ${tier || "medium"} tier`, { tier: tier || "medium", quota: quotaTier });
+    res.status(201).json({ success: true, name: tenantName, tier: tier || "medium" });
+  } catch (err) {
+    console.error("Failed to create tenant:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/tenants/:name/quota — Update tenant ResourceQuota
+app.patch("/api/admin/tenants/:name/quota", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { tier } = req.body;
+    if (!tier || !TENANT_TIERS[tier]) {
+      return res.status(400).json({ error: "Invalid tier. Must be: small, medium, or large" });
+    }
+    const quotaTier = TENANT_TIERS[tier];
+
+    // Find existing quota
+    const quotas = await k8sApi.listNamespacedResourceQuota(name);
+    if (quotas.body.items.length === 0) {
+      return res.status(404).json({ error: `No ResourceQuota found in namespace ${name}` });
+    }
+    const quotaName = quotas.body.items[0].metadata.name;
+
+    await k8sApi.patchNamespacedResourceQuota(quotaName, name, {
+      spec: {
+        hard: {
+          pods: quotaTier.pods,
+          "requests.cpu": quotaTier.reqCpu,
+          "requests.memory": quotaTier.reqMem,
+          "limits.cpu": quotaTier.limCpu,
+          "limits.memory": quotaTier.limMem,
+          services: quotaTier.services,
+          persistentvolumeclaims: quotaTier.pvcs,
+        },
+      },
+    }, undefined, undefined, undefined, undefined, undefined, {
+      headers: { "Content-Type": "application/strategic-merge-patch+json" },
+    });
+
+    await adminAuditLog(req, "tenant_quota_updated", "tenant", name, `Updated quota to ${tier} tier`, { tier, quota: quotaTier });
+    res.json({ success: true, tier });
+  } catch (err) {
+    console.error("Failed to update tenant quota:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/tenants/:name — Delete a tenant
+app.delete("/api/admin/tenants/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { confirm } = req.body;
+    if (confirm !== name) {
+      return res.status(400).json({ error: "Confirmation required: send { confirm: '<tenant-name>' } to delete" });
+    }
+
+    // Safety: prevent deleting system namespaces
+    const protectedNs = ["default", "kube-system", "kube-public", "kube-node-lease",
+      "flux-system", "istio-system", "monitoring", "logging", "cert-manager",
+      "harbor", "keycloak", "openbao", "neuvector", "sre-dashboard", "sre-builds"];
+    if (protectedNs.includes(name)) {
+      return res.status(403).json({ error: `Cannot delete protected namespace: ${name}` });
+    }
+
+    await k8sApi.deleteNamespace(name);
+    await adminAuditLog(req, "tenant_deleted", "tenant", name, `Deleted tenant namespace`, {});
+    res.json({ success: true, message: `Tenant ${name} deletion initiated` });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `Tenant ${name} not found` });
+    }
+    console.error("Failed to delete tenant:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Component Dependency Map ─────────────────────────────────────────────────
+
+const COMPONENT_DEPENDENCIES = [
+  {
+    name: "Istio",
+    criticality: "critical",
+    impact: "All mTLS, ingress, and service-to-service communication stops. All external traffic blocked.",
+    dependsOn: ["cert-manager"],
+    dependedOnBy: ["All applications", "Keycloak", "Grafana", "Harbor", "NeuVector", "OpenBao", "Dashboard"],
+    namespace: "istio-system",
+  },
+  {
+    name: "cert-manager",
+    criticality: "high",
+    impact: "TLS certificate issuance and renewal stops. Istio and ingress may lose certificates on rotation.",
+    dependsOn: [],
+    dependedOnBy: ["Istio", "Harbor", "Keycloak", "OpenBao"],
+    namespace: "cert-manager",
+  },
+  {
+    name: "Kyverno",
+    criticality: "high",
+    impact: "Policy enforcement stops. New pods deploy without security validation. Image signature checks disabled.",
+    dependsOn: ["Istio", "cert-manager"],
+    dependedOnBy: ["All tenant namespaces"],
+    namespace: "kyverno",
+  },
+  {
+    name: "Prometheus / Grafana",
+    criticality: "medium",
+    impact: "Monitoring and alerting stops. No visibility into cluster health or resource usage. Dashboards unavailable.",
+    dependsOn: ["Istio"],
+    dependedOnBy: ["AlertManager", "Grafana dashboards", "SRE Dashboard metrics"],
+    namespace: "monitoring",
+  },
+  {
+    name: "Loki / Alloy",
+    criticality: "medium",
+    impact: "Log aggregation stops. Historical logs unavailable. Audit trail gaps for compliance.",
+    dependsOn: ["Istio", "Prometheus / Grafana"],
+    dependedOnBy: ["Grafana log dashboards", "Audit compliance"],
+    namespace: "logging",
+  },
+  {
+    name: "Keycloak",
+    criticality: "high",
+    impact: "SSO and authentication for all platform UIs stops. Users cannot log in to Grafana, Harbor, Dashboard.",
+    dependsOn: ["Istio", "cert-manager", "OpenBao"],
+    dependedOnBy: ["OAuth2 Proxy", "Grafana SSO", "Harbor OIDC", "Dashboard SSO"],
+    namespace: "keycloak",
+  },
+  {
+    name: "OpenBao",
+    criticality: "high",
+    impact: "Secret delivery stops. External Secrets Operator cannot sync. New deployments needing secrets will fail.",
+    dependsOn: ["Istio"],
+    dependedOnBy: ["External Secrets Operator", "Keycloak DB creds", "All apps using secrets"],
+    namespace: "openbao",
+  },
+  {
+    name: "Harbor",
+    criticality: "high",
+    impact: "Container image pulls from internal registry fail. CI/CD pipelines cannot push images. New deployments blocked.",
+    dependsOn: ["Istio", "cert-manager"],
+    dependedOnBy: ["All deployments using Harbor images", "DSOP Pipeline builds"],
+    namespace: "harbor",
+  },
+  {
+    name: "NeuVector",
+    criticality: "medium",
+    impact: "Runtime security monitoring stops. No container behavioral analysis. Network DLP/WAF disabled.",
+    dependsOn: ["Istio"],
+    dependedOnBy: ["Security dashboards", "Compliance runtime controls"],
+    namespace: "neuvector",
+  },
+  {
+    name: "Velero",
+    criticality: "low",
+    impact: "Backup and disaster recovery unavailable. No new backups created. Existing backups remain in storage.",
+    dependsOn: ["Istio"],
+    dependedOnBy: [],
+    namespace: "velero",
+  },
+  {
+    name: "Tempo",
+    criticality: "low",
+    impact: "Distributed tracing stops. No new traces collected. Existing traces in storage remain queryable.",
+    dependsOn: ["Istio", "Prometheus / Grafana"],
+    dependedOnBy: ["Grafana trace dashboards"],
+    namespace: "tempo",
+  },
+  {
+    name: "MetalLB",
+    criticality: "critical",
+    impact: "LoadBalancer services lose external IPs. Istio gateway becomes unreachable. All external traffic blocked.",
+    dependsOn: [],
+    dependedOnBy: ["Istio gateway", "All externally-accessible services"],
+    namespace: "metallb-system",
+  },
+];
+
+// GET /api/platform/dependencies — Component dependency map
+app.get("/api/platform/dependencies", async (req, res) => {
+  res.json(COMPONENT_DEPENDENCIES);
+});
+
+// ── Setup Wizard ─────────────────────────────────────────────────────────────
+
+// GET /api/admin/setup-status — Check first-run setup status
+app.get("/api/admin/setup-status", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    // Check completion flag
+    let completed = false;
+    if (dbAvailable) {
+      const setting = await db.getSetting("setup_wizard_completed");
+      completed = setting === true;
+    }
+
+    // Check current state
+    const namespaces = await k8sApi.listNamespace();
+    const tenantNs = namespaces.body.items.filter(ns => {
+      const labels = ns.metadata.labels || {};
+      return labels["sre.io/team"] || (ns.metadata.name.startsWith("team-") && !["team-alpha", "team-beta"].includes(ns.metadata.name));
+    });
+
+    const defaultPasswords = [];
+    // Check known default credentials
+    const defaults = [
+      { service: "Harbor", expected: "Harbor12345" },
+      { service: "Grafana", expected: "prom-operator" },
+    ];
+    if (HARBOR_ADMIN_PASS === "Harbor12345") defaultPasswords.push("Harbor");
+
+    const slackConfigured = !!ISSM_SLACK_WEBHOOK;
+
+    let userCount = 0;
+    try {
+      const users = await keycloakApi("GET", "/users?max=100");
+      userCount = users.length;
+    } catch (e) {
+      // Keycloak may not be available
+    }
+
+    res.json({
+      completed,
+      checks: {
+        hasCustomTenants: tenantNs.length > 0,
+        tenantCount: tenantNs.length,
+        defaultPasswordsRemaining: defaultPasswords,
+        hasDefaultPasswords: defaultPasswords.length > 0,
+        slackConfigured,
+        userCount,
+        hasUsers: userCount > 1, // More than just sre-admin
+      },
+    });
+  } catch (err) {
+    console.error("Failed to check setup status:", err.message);
+    res.status(500).json({ error: "Failed to check setup status" });
+  }
+});
+
+// POST /api/admin/setup-complete — Mark setup wizard as complete
+app.post("/api/admin/setup-complete", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  try {
+    if (dbAvailable) {
+      await db.setSetting("setup_wizard_completed", true);
+    }
+    await adminAuditLog(req, "setup_wizard_completed", "platform", "setup", "First-run setup wizard completed", {});
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to mark setup complete:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

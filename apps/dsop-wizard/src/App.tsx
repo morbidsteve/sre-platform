@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useMemo } from 'react';
 import { WizardLayout } from './components/WizardLayout';
 import { Step1_AppSource } from './components/steps/Step1_AppSource';
 import { Step2_AppInfo } from './components/steps/Step2_AppInfo';
@@ -16,6 +16,20 @@ export default function App() {
   const { user, loading: userLoading } = useUser();
   const wizard = useWizard();
   const { state } = wizard;
+
+  // ── Theme sync from dashboard ──────────────────────────────────
+  const dashboardTheme = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('theme');
+  }, []);
+
+  useEffect(() => {
+    if (dashboardTheme === 'light') {
+      document.documentElement.classList.add('theme-light');
+    } else {
+      document.documentElement.classList.remove('theme-light');
+    }
+  }, [dashboardTheme]);
 
   // ── Enter key advances to next step ──────────────────────────────
   const handleKeyDown = useCallback(

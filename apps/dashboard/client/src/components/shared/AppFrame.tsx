@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, ExternalLink } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
+import { useThemeContext } from '../../context/ThemeContext';
 
 interface AppFrameProps {
   url: string | null;
@@ -10,6 +11,7 @@ interface AppFrameProps {
 
 export function AppFrame({ url, title, onClose }: AppFrameProps) {
   const [loading, setLoading] = useState(true);
+  const { theme } = useThemeContext();
 
   // Reset loading when URL changes
   useEffect(() => { setLoading(true); }, [url]);
@@ -27,6 +29,19 @@ export function AppFrame({ url, title, onClose }: AppFrameProps) {
   if (!url) return null;
 
   const cleanUrl = url.replace(/[?&]new=\d+/, '');
+
+  // Append theme param to iframe URL for DSOP wizard theme sync
+  const iframeUrl = useMemo(() => {
+    try {
+      const u = new URL(url, window.location.origin);
+      u.searchParams.set('theme', theme);
+      return u.toString();
+    } catch {
+      // If URL parsing fails, append manually
+      const sep = url.includes('?') ? '&' : '?';
+      return `${url}${sep}theme=${theme}`;
+    }
+  }, [url, theme]);
 
   return (
     <div
@@ -75,7 +90,7 @@ export function AppFrame({ url, title, onClose }: AppFrameProps) {
             </div>
           )}
           <iframe
-            src={url}
+            src={iframeUrl}
             className="w-full h-full border-none"
             style={{ background: 'var(--bg)' }}
             onLoad={() => setLoading(false)}

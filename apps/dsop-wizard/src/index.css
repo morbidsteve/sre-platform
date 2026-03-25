@@ -92,6 +92,32 @@
   }
 }
 
+/* Light theme overrides (synced from dashboard via ?theme=light) */
+.theme-light {
+  --color-navy-900: #f8fafc;
+  --color-navy-800: #f1f5f9;
+  --color-navy-700: #e2e8f0;
+}
+.theme-light body {
+  background: #f8fafc;
+  color: #1e293b;
+}
+.theme-light .bg-navy-900 { background-color: #f8fafc !important; }
+.theme-light .bg-navy-800 { background-color: #f1f5f9 !important; }
+.theme-light .bg-navy-800\/80 { background-color: rgba(241, 245, 249, 0.8) !important; }
+.theme-light .bg-navy-800\/40 { background-color: rgba(241, 245, 249, 0.4) !important; }
+.theme-light .bg-navy-700 { background-color: #e2e8f0 !important; }
+.theme-light .border-navy-700 { border-color: #cbd5e1 !important; }
+.theme-light .border-navy-600 { border-color: #cbd5e1 !important; }
+.theme-light .text-gray-100 { color: #1e293b !important; }
+.theme-light .text-gray-200 { color: #334155 !important; }
+.theme-light .text-gray-300 { color: #475569 !important; }
+.theme-light .text-gray-400 { color: #64748b !important; }
+.theme-light .text-gray-500 { color: #94a3b8 !important; }
+.theme-light .text-white { color: #1e293b !important; }
+.theme-light ::-webkit-scrollbar-track { background: #f1f5f9; }
+.theme-light ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+
 /* Animations for pipeline gates */
 @keyframes scanline {
   0% { transform: translateY(-100%); }

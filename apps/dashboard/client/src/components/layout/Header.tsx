@@ -1,9 +1,8 @@
 import React from 'react';
-import { Shield, Moon, Sun, Menu, X, LogOut } from 'lucide-react';
+import { Shield, Moon, Sun, Menu, X, LogOut, ChevronDown } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useUserContext } from '../../context/UserContext';
 import { useData } from '../../context/DataContext';
-import { StatusDot } from '../ui/StatusDot';
 import { Badge } from '../ui/Badge';
 
 interface HeaderProps {
@@ -14,7 +13,7 @@ interface HeaderProps {
 
 export function Header({ onToggleMobileNav, mobileNavOpen, onOpenCommandPalette }: HeaderProps) {
   const { theme, toggleTheme } = useThemeContext();
-  const { user, isAdmin, isDeveloper, loading } = useUserContext();
+  const { user, isAdmin, isDeveloper, loading, teams, selectedTeam, setSelectedTeam } = useUserContext();
   const { health } = useData();
   const { summary } = health;
 
@@ -34,6 +33,8 @@ export function Header({ onToggleMobileNav, mobileNavOpen, onOpenCommandPalette 
     });
   }
 
+  const showTeamSelector = user?.email && (teams.length > 0 || isAdmin);
+
   return (
     <header
       className="bg-bg-secondary border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 z-[100] md:sticky md:top-0 relative"
@@ -51,6 +52,29 @@ export function Header({ onToggleMobileNav, mobileNavOpen, onOpenCommandPalette 
           <Shield size={18} style={{ color: 'var(--accent)' }} />
           SRE Platform
         </h1>
+
+        {/* Team/Namespace selector */}
+        {showTeamSelector && (
+          <div className="hidden sm:flex items-center ml-2">
+            <span className="text-border mx-2">|</span>
+            <div className="relative">
+              <select
+                value={selectedTeam}
+                onChange={(e) => setSelectedTeam(e.target.value)}
+                className="appearance-none bg-surface border border-border rounded px-3 py-1 pr-7 text-xs text-text-primary font-mono cursor-pointer hover:border-accent focus:border-accent focus:outline-none transition-colors"
+                title="Filter by team namespace"
+              >
+                {isAdmin && <option value="">All Namespaces</option>}
+                {teams.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.displayName}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-dim pointer-events-none" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Right */}

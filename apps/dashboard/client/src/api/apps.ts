@@ -12,6 +12,11 @@ import type {
   BuildStatus,
   DatabaseRequest,
   Database,
+  RollbackHistoryResponse,
+  RollbackResponse,
+  PolicyViolationsResponse,
+  QuotaResponse,
+  ManifestResponse,
 } from '../types/api';
 
 export function fetchApps(): Promise<AppsResponse> {
@@ -79,4 +84,39 @@ export function fetchDatabases(): Promise<Database[]> {
 
 export function deleteDatabase(namespace: string, name: string): Promise<{ success: boolean }> {
   return apiFetch('/api/databases/' + namespace + '/' + name, { method: 'DELETE' });
+}
+
+// ── Rollback ───────────────────────────────────────────────────────────────
+
+export function fetchRollbackHistory(namespace: string, name: string): Promise<RollbackHistoryResponse> {
+  return apiFetch<RollbackHistoryResponse>('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name) + '/rollback', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function rollbackApp(namespace: string, name: string, revision: number): Promise<RollbackResponse> {
+  return apiFetch<RollbackResponse>('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name) + '/rollback', {
+    method: 'POST',
+    body: JSON.stringify({ revision }),
+  });
+}
+
+// ── Policy Violations ──────────────────────────────────────────────────────
+
+export function fetchPolicyViolations(namespace?: string): Promise<PolicyViolationsResponse> {
+  const query = namespace ? '?namespace=' + encodeURIComponent(namespace) : '';
+  return apiFetch<PolicyViolationsResponse>('/api/security/policy-violations' + query);
+}
+
+// ── Resource Quota ─────────────────────────────────────────────────────────
+
+export function fetchNamespaceQuota(namespace: string): Promise<QuotaResponse> {
+  return apiFetch<QuotaResponse>('/api/namespaces/' + encodeURIComponent(namespace) + '/quota');
+}
+
+// ── Manifest Export ────────────────────────────────────────────────────────
+
+export function fetchAppManifest(namespace: string, name: string): Promise<ManifestResponse> {
+  return apiFetch<ManifestResponse>('/api/apps/' + encodeURIComponent(namespace) + '/' + encodeURIComponent(name) + '/manifest');
 }

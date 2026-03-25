@@ -586,3 +586,162 @@ export interface IngressResponse {
   nodeIp: string;
   httpsPort: number;
 }
+
+// ── Rollback ───────────────────────────────────────────────────────────────
+
+export interface RollbackHistoryEntry {
+  revision: number;
+  status: string;
+  updated: string;
+  chart: string;
+  chartVersion: string;
+}
+
+export interface RollbackHistoryResponse {
+  history: RollbackHistoryEntry[];
+  currentRevision: number;
+}
+
+export interface RollbackResponse {
+  success: boolean;
+  message: string;
+}
+
+// ── Policy Violations ──────────────────────────────────────────────────────
+
+export interface PolicyViolation {
+  policy: string;
+  rule: string;
+  severity: string;
+  result: string;
+  message: string;
+  namespace: string;
+  resource: string;
+  category: string;
+  timestamp: string;
+}
+
+export interface PolicyViolationSummary {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+}
+
+export interface PolicyViolationsResponse {
+  violations: PolicyViolation[];
+  summary: PolicyViolationSummary;
+}
+
+// ── Resource Quota ─────────────────────────────────────────────────────────
+
+export interface QuotaMetric {
+  hard: string;
+  used: string;
+  hardRaw: number;
+  usedRaw: number;
+  percentage: number;
+}
+
+export interface NamespaceQuota {
+  name: string;
+  namespace: string;
+  metrics: Record<string, QuotaMetric>;
+}
+
+export interface QuotaResponse {
+  hasQuota: boolean;
+  quotas: NamespaceQuota[];
+}
+
+// ── Manifest Export ────────────────────────────────────────────────────────
+
+export interface ManifestResponse {
+  yaml: string;
+  resources: number;
+}
+
+// ── Team Selector ──────────────────────────────────────────────────────────
+
+export interface TeamInfo {
+  name: string;
+  displayName: string;
+}
+
+// ── Tenant Management ─────────────────────────────────────────────────────
+
+export interface TenantQuota {
+  name: string;
+  hard: Record<string, string>;
+  used: Record<string, string>;
+}
+
+export interface Tenant {
+  name: string;
+  team: string;
+  status: string;
+  createdAt: string;
+  podCount: number;
+  runningPods: number;
+  appCount: number;
+  health: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+  cpu: { used: string; usedRaw: number };
+  memory: { used: string; usedRaw: number };
+  quota: TenantQuota | null;
+}
+
+export interface TenantOverview {
+  totalTenants: number;
+  healthyTenants: number;
+  degradedTenants: number;
+  totalPods: number;
+  totalApps: number;
+  tenants: { name: string; health: string; pods: number; running: number; problem: number; apps: number }[];
+}
+
+// ── Admin Audit Log ───────────────────────────────────────────────────────
+
+export interface AdminAuditEntry {
+  id: number;
+  action: string;
+  actor: string;
+  target_type: string | null;
+  target_name: string | null;
+  detail: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdminAuditResponse {
+  entries: AdminAuditEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ── Component Dependencies ────────────────────────────────────────────────
+
+export interface ComponentDependency {
+  name: string;
+  criticality: 'critical' | 'high' | 'medium' | 'low';
+  impact: string;
+  dependsOn: string[];
+  dependedOnBy: string[];
+  namespace: string;
+}
+
+// ── Setup Wizard ──────────────────────────────────────────────────────────
+
+export interface SetupStatus {
+  completed: boolean;
+  checks: {
+    hasCustomTenants: boolean;
+    tenantCount: number;
+    defaultPasswordsRemaining: string[];
+    hasDefaultPasswords: boolean;
+    slackConfigured: boolean;
+    userCount: number;
+    hasUsers: boolean;
+  };
+}

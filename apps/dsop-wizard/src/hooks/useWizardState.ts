@@ -314,6 +314,15 @@ export function useWizardState() {
         pipelineRun: run,
       }));
 
+      // Update browser URL with runId for shareable link
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('runId', run.id);
+        window.history.replaceState({}, '', url.toString());
+      } catch {
+        // Ignore URL update failures
+      }
+
       // Submit security exceptions if any are enabled
       const enabledExceptions = state.securityExceptions.filter((e) => e.enabled);
       if (enabledExceptions.length > 0) {
@@ -582,6 +591,12 @@ export function useWizardState() {
   const reset = useCallback(() => {
     setState(initialState);
     try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    // Clear runId from URL
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('runId');
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
   }, []);
 
   // ── Expose setState for sub-hooks ──

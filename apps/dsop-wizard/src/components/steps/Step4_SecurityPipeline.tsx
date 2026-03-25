@@ -325,10 +325,41 @@ export function Step4_SecurityPipeline({
     }
   };
 
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const handleCopyLink = () => {
+    if (!pipelineRunId) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('runId', pipelineRunId);
+      // Remove transient params
+      url.searchParams.delete('new');
+      url.searchParams.delete('theme');
+      navigator.clipboard.writeText(url.toString()).then(() => {
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      });
+    } catch {
+      // Ignore clipboard failures
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Pipeline Progress Header */}
-      <PipelineProgress gates={gates} />
+      <div className="flex items-center justify-between">
+        <PipelineProgress gates={gates} />
+        {pipelineRunId && (
+          <button
+            onClick={handleCopyLink}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-navy-600 bg-navy-800 text-gray-300 hover:border-cyan-500/40 hover:text-cyan-400 transition-all shrink-0 ml-4"
+            title="Copy shareable link to this pipeline run"
+          >
+            {linkCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {linkCopied ? 'Copied' : 'Copy Link'}
+          </button>
+        )}
+      </div>
 
       {/* Gate Cards — expand inline, no modal */}
       <div className="space-y-3">
