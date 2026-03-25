@@ -1,0 +1,94 @@
+---
+# PrometheusRule for synthetic probe failure alerts
+# Fires when platform endpoints become unreachable
+# NIST Controls: CA-7, IR-4, IR-5, SI-4, SI-5
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: synthetic-probe-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: synthetic-probes
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, IR-4, IR-5, SI-4, SI-5"
+spec:
+  groups:
+    - name: synthetic-probes
+      rules:
+        - alert: EndpointDown
+          expr: probe_success{job="probe/monitoring/synthetic-http-probes"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            category: availability
+          annotations:
+            summary: "Endpoint {{ $labels.instance }} is down"
+            description: >-
+              Synthetic probe to {{ $labels.instance }} has been failing
+              for more than 3 minutes. The service may be unreachable.
+            runbook_url: "https://docs.sre.example.com/runbooks/"
+
+        - alert: EndpointSlowResponse
+          expr: probe_duration_seconds{job="probe/monitoring/synthetic-http-probes"} > 5
+          for: 5m
+          labels:
+            severity: warning
+            category: performance
+          annotations:
+            summary: "Endpoint {{ $labels.instance }} responding slowly ({{ $value }}s)"
+            description: >-
+              Synthetic probe to {{ $labels.instance }} is taking more than
+              5 seconds to respond. Investigate for performance degradation.
+
+        - alert: SSLCertificateExpiringSoon
+          expr: probe_ssl_earliest_cert_expiry{job="probe/monitoring/synthetic-http-probes"} - time() < 30 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+            category: certificates
+          annotations:
+            summary: "SSL certificate for {{ $labels.instance }} expires in < 30 days"
+            description: >-
+              The SSL certificate presented by {{ $labels.instance }} expires
+              in {{ $value | humanizeDuration }}. Renew before expiry.
+            runbook_url: "https://docs.sre.example.com/runbooks/certificate-expiry"
+
+        - alert: SSLCertificateExpiryCritical
+          expr: probe_ssl_earliest_cert_expiry{job="probe/monitoring/synthetic-http-probes"} - time() < 7 * 24 * 3600
+          for: 1h
+          labels:
+            severity: critical
+            category: certificates
+          annotations:
+            summary: "SSL certificate for {{ $labels.instance }} expires in < 7 days"
+            description: >-
+              The SSL certificate for {{ $labels.instance }} is about to expire.
+              Immediate renewal required.
+
+        - alert: ProbeFailureRateHigh
+          expr: >-
+            (1 - avg_over_time(probe_success{job="probe/monitoring/synthetic-http-probes"}[30m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            category: availability
+          annotations:
+            summary: "Endpoint {{ $labels.instance }} has >10% probe failure rate"
+            description: >-
+              More than 10% of synthetic probes to {{ $labels.instance }}
+              have failed over the last 30 minutes. Intermittent connectivity issues.
+
+        - alert: AllProbesDown
+          expr: count(probe_success{job="probe/monitoring/synthetic-http-probes"} == 0) == count(probe_success{job="probe/monitoring/synthetic-http-probes"})
+          for: 2m
+          labels:
+            severity: critical
+            category: availability
+          annotations:
+            summary: "All synthetic probes are failing"
+            description: >-
+              Every monitored endpoint is unreachable. This may indicate
+              a cluster-wide networking issue, Istio gateway failure, or
+              a probe infrastructure problem.

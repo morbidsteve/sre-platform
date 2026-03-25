@@ -1,0 +1,224 @@
+---
+# Grafana dashboard for synthetic probe status
+# Displays endpoint availability, response times, and SSL certificate expiry
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-synthetic-probes
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: synthetic-probes
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    grafana_folder: "SRE Platform"
+data:
+  synthetic-probes.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "title": "Endpoint Status Overview",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "count(probe_success{job=\"probe/monitoring/synthetic-http-probes\"} == 1)",
+              "legendFormat": "UP"
+            },
+            {
+              "expr": "count(probe_success{job=\"probe/monitoring/synthetic-http-probes\"} == 0)",
+              "legendFormat": "DOWN"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "DOWN" },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "green", "value": null },
+                        { "color": "red", "value": 1 }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"] }
+          }
+        },
+        {
+          "title": "Endpoint Availability",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "expr": "probe_success{job=\"probe/monitoring/synthetic-http-probes\"}",
+              "legendFormat": "{{ instance }}",
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "job": true, "namespace": true },
+                "renameByName": {
+                  "instance": "Endpoint",
+                  "Value": "Status"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "align": "auto" },
+              "mappings": [
+                { "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }
+              ]
+            }
+          }
+        },
+        {
+          "title": "Probe Response Time",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "probe_duration_seconds{job=\"probe/monitoring/synthetic-http-probes\"}",
+              "legendFormat": "{{ instance }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 2 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Probe Success Rate (30m)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "expr": "avg_over_time(probe_success{job=\"probe/monitoring/synthetic-http-probes\"}[30m]) * 100",
+              "legendFormat": "{{ instance }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 90 },
+                  { "color": "green", "value": 99 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "SSL Certificate Days Until Expiry",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "(probe_ssl_earliest_cert_expiry{job=\"probe/monitoring/synthetic-http-probes\"} - time()) / 86400",
+              "legendFormat": "{{ instance }}",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "d",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 14 },
+                  { "color": "green", "value": 30 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "reduceOptions": { "calcs": ["lastNotNull"] }
+          }
+        },
+        {
+          "title": "HTTP Status Codes",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "expr": "probe_http_status_code{job=\"probe/monitoring/synthetic-http-probes\"}",
+              "legendFormat": "{{ instance }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 300 },
+                  { "color": "red", "value": 500 }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["sre", "synthetic", "probes", "availability"],
+      "templating": { "list": [] },
+      "time": { "from": "now-6h", "to": "now" },
+      "title": "SRE Synthetic Probes",
+      "uid": "sre-synthetic-probes"
+    }

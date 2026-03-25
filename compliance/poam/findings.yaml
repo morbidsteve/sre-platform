@@ -1,0 +1,133 @@
+# ============================================================================
+# SRE Platform — Plan of Action and Milestones (POA&M) Findings
+# ============================================================================
+# This file tracks known security findings, risk acceptances, and remediation
+# plans. Each finding maps to a NIST 800-53 control and has a target
+# resolution date.
+#
+# Statuses: open | in-progress | resolved | risk-accepted
+# Severities: critical | high | medium | low
+#
+# Run `scripts/poam-check.sh` to check for overdue findings.
+#
+# NIST Controls: CA-5 (Plan of Action and Milestones), PM-4 (POA&M Process)
+# ============================================================================
+
+findings:
+  - id: "POAM-001"
+    title: "NeuVector enforcer requires privileged DaemonSet"
+    description: >-
+      The NeuVector enforcer DaemonSet requires privileged access to perform
+      runtime security monitoring, process inspection, and network segmentation.
+      This is a documented security exception required for the tool to function.
+    severity: medium
+    status: risk-accepted
+    nist_controls:
+      - "CM-7"
+      - "AC-6"
+    component: neuvector
+    date_identified: "2025-06-15"
+    target_resolution: "2026-06-15"
+    assignee: platform-team
+    risk_justification: >-
+      NeuVector requires privileged access to inspect container processes and
+      network traffic. The security benefit (runtime protection, DLP, network
+      segmentation) outweighs the risk of running a privileged DaemonSet.
+      NeuVector itself is a security tool with a strong security posture.
+    mitigations:
+      - "NeuVector is restricted to the neuvector namespace"
+      - "Kyverno PolicyException documents the exception"
+      - "NeuVector pods are monitored by Prometheus"
+    evidence: "policies/custom/neuvector-exception.yaml"
+
+  - id: "POAM-002"
+    title: "Velero node-agent requires privileged access for volume snapshots"
+    description: >-
+      The Velero node-agent DaemonSet requires privileged access to perform
+      filesystem-level backup of PersistentVolumes using restic/kopia.
+    severity: medium
+    status: risk-accepted
+    nist_controls:
+      - "CM-7"
+      - "CP-9"
+    component: velero
+    date_identified: "2025-06-15"
+    target_resolution: "2026-06-15"
+    assignee: platform-team
+    risk_justification: >-
+      Velero's node-agent needs host filesystem access to back up
+      PersistentVolume data. Without this, PV backup is not possible.
+      The backup capability (CP-9) outweighs the risk.
+    mitigations:
+      - "Velero is restricted to the velero namespace"
+      - "node-agent pods only mount necessary paths"
+    evidence: "platform/core/backup/helmrelease.yaml"
+
+  - id: "POAM-003"
+    title: "Self-signed TLS certificates in lab environment"
+    description: >-
+      The lab environment uses self-signed TLS certificates issued by an
+      internal CA. Production deployments should use certificates from a
+      trusted CA or DoD PKI chain.
+    severity: low
+    status: open
+    nist_controls:
+      - "SC-8"
+      - "SC-12"
+      - "IA-5"
+    component: cert-manager
+    date_identified: "2025-07-01"
+    target_resolution: "2026-03-01"
+    assignee: platform-team
+    remediation_plan: >-
+      Configure cert-manager with a trusted CA issuer (Let's Encrypt for
+      commercial, DoD PKI for government deployments) before production.
+    mitigations:
+      - "mTLS is still enforced via Istio STRICT mode"
+      - "Internal CA certificates are rotated automatically by cert-manager"
+    evidence: "platform/core/cert-manager/clusterissuer-internal.yaml"
+
+  - id: "POAM-004"
+    title: "Harbor registry uses insecure_skip_verify on RKE2 nodes"
+    description: >-
+      RKE2 nodes are configured with insecure_skip_verify for the Harbor
+      registry because the internal CA certificate is not in the node trust
+      store. This skips TLS certificate verification for image pulls.
+    severity: medium
+    status: open
+    nist_controls:
+      - "SC-8"
+      - "SI-7"
+    component: harbor
+    date_identified: "2025-08-01"
+    target_resolution: "2026-04-01"
+    assignee: platform-team
+    remediation_plan: >-
+      Install the internal CA certificate on all RKE2 nodes via Ansible
+      and remove insecure_skip_verify from registries.yaml.
+    mitigations:
+      - "Harbor is only accessible within the cluster network"
+      - "Cosign image signature verification is enforced by Kyverno"
+    evidence: "infrastructure/ansible/roles/rke2-common/templates/registries.yaml.j2"
+
+  - id: "POAM-005"
+    title: "Keycloak PostgreSQL lacks persistent storage"
+    description: >-
+      Keycloak's PostgreSQL database uses ephemeral storage. Data survives
+      pod restarts but is lost if the PVC is deleted or the node is replaced.
+    severity: high
+    status: in-progress
+    nist_controls:
+      - "CP-9"
+      - "AC-2"
+    component: keycloak
+    date_identified: "2025-09-01"
+    target_resolution: "2026-02-01"
+    assignee: platform-team
+    remediation_plan: >-
+      Migrate Keycloak PostgreSQL to CNPG (CloudNativePG) with persistent
+      storage and automated backups.
+    mitigations:
+      - "Keycloak configuration is exported and version-controlled"
+      - "SSO clients can be recreated via configure-keycloak-sso.sh"
+    evidence: "platform/addons/keycloak/helmrelease.yaml"

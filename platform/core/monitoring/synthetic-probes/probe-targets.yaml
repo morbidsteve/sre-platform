@@ -1,0 +1,58 @@
+---
+# ConfigMap defining synthetic probe targets for Blackbox Exporter
+# These targets are scraped by Prometheus via the ServiceMonitor below
+# NIST Controls: CA-7 (Continuous Monitoring), SI-4 (System Monitoring)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synthetic-probe-targets
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: synthetic-probes
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+data:
+  targets.json: |
+    [
+      {
+        "labels": {
+          "service": "sre-dashboard",
+          "component": "apps",
+          "criticality": "high"
+        },
+        "targets": ["https://dashboard.apps.sre.example.com"]
+      },
+      {
+        "labels": {
+          "service": "grafana",
+          "component": "monitoring",
+          "criticality": "high"
+        },
+        "targets": ["https://grafana.apps.sre.example.com"]
+      },
+      {
+        "labels": {
+          "service": "harbor",
+          "component": "registry",
+          "criticality": "high"
+        },
+        "targets": ["https://harbor.apps.sre.example.com"]
+      },
+      {
+        "labels": {
+          "service": "keycloak",
+          "component": "identity",
+          "criticality": "high"
+        },
+        "targets": ["https://keycloak.apps.sre.example.com"]
+      },
+      {
+        "labels": {
+          "service": "kubernetes-api",
+          "component": "control-plane",
+          "criticality": "critical"
+        },
+        "targets": ["https://kubernetes.default.svc.cluster.local:443"]
+      }
+    ]

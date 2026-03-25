@@ -1,0 +1,335 @@
+---
+# Daily compliance evidence collection CronJob
+# Runs the compliance-report.sh script and stores results as a ConfigMap
+# Provides continuous monitoring evidence for ATO/cATO assessors
+# NIST Controls: CA-7 (Continuous Monitoring), CA-2 (Security Assessments), PM-4 (POA&M)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-compliance-evidence
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-evidence
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, CA-2, PM-4"
+spec:
+  # Daily at 5:00 AM UTC (before morning health check)
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 172800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: compliance-evidence
+            app.kubernetes.io/part-of: sre-platform
+            sre.io/team: platform
+        spec:
+          serviceAccountName: sre-compliance-evidence
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: evidence-collector
+              image: docker.io/alpine/k8s:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  SCAN_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                  SCAN_DATE_SHORT=$(date -u +"%Y%m%d")
+
+                  echo "=========================================="
+                  echo "SRE Compliance Evidence Collection"
+                  echo "Date: ${SCAN_DATE}"
+                  echo "=========================================="
+
+                  # ── Collect HelmRelease versions ──
+                  echo ""
+                  echo "[COLLECT] Platform component versions..."
+                  HR_JSON=$(kubectl get helmreleases.helm.toolkit.fluxcd.io -A -o json 2>/dev/null | python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  result = []
+                  for item in data.get('items', []):
+                      name = item['metadata']['name']
+                      ns = item['metadata']['namespace']
+                      chart = item.get('spec', {}).get('chart', {}).get('spec', {}).get('chart', 'unknown')
+                      version = item.get('spec', {}).get('chart', {}).get('spec', {}).get('version', 'unknown')
+                      conditions = item.get('status', {}).get('conditions', [])
+                      ready = 'Unknown'
+                      for c in conditions:
+                          if c.get('type') == 'Ready':
+                              ready = c.get('status', 'Unknown')
+                              break
+                      result.append({'name': name, 'namespace': ns, 'chart': chart, 'version': version, 'ready': ready})
+                  print(json.dumps(result))
+                  " 2>/dev/null || echo "[]")
+                  echo "  Collected $(echo "$HR_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0) HelmRelease records"
+
+                  # ── Collect Kyverno policy status ──
+                  echo ""
+                  echo "[COLLECT] Kyverno policy status..."
+                  POLICY_JSON=$(kubectl get clusterpolicies -o json 2>/dev/null | python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  result = []
+                  for item in data.get('items', []):
+                      name = item['metadata']['name']
+                      action = item.get('spec', {}).get('validationFailureAction', 'unknown')
+                      nist = item['metadata'].get('annotations', {}).get('sre.io/nist-controls', '')
+                      conditions = item.get('status', {}).get('conditions', [])
+                      ready = 'Unknown'
+                      for c in conditions:
+                          if c.get('type') == 'Ready':
+                              ready = c.get('status', 'Unknown')
+                              break
+                      result.append({'name': name, 'action': action, 'nist_controls': nist, 'ready': ready})
+                  print(json.dumps(result))
+                  " 2>/dev/null || echo "[]")
+                  echo "  Collected $(echo "$POLICY_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0) policy records"
+
+                  # ── Collect certificate status ──
+                  echo ""
+                  echo "[COLLECT] Certificate status..."
+                  CERT_JSON=$(kubectl get certificates -A -o json 2>/dev/null | python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  result = []
+                  for item in data.get('items', []):
+                      name = item['metadata']['name']
+                      ns = item['metadata']['namespace']
+                      not_after = item.get('status', {}).get('notAfter', '')
+                      conditions = item.get('status', {}).get('conditions', [])
+                      ready = 'Unknown'
+                      for c in conditions:
+                          if c.get('type') == 'Ready':
+                              ready = c.get('status', 'Unknown')
+                              break
+                      result.append({'name': name, 'namespace': ns, 'not_after': not_after, 'ready': ready})
+                  print(json.dumps(result))
+                  " 2>/dev/null || echo "[]")
+                  echo "  Collected $(echo "$CERT_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0) certificate records"
+
+                  # ── Collect mTLS status ──
+                  echo ""
+                  echo "[COLLECT] Istio mTLS status..."
+                  MTLS_MODE=$(kubectl get peerauthentication -n istio-system default -o jsonpath='{.spec.mtls.mode}' 2>/dev/null || echo "NONE")
+                  echo "  mTLS mode: ${MTLS_MODE}"
+
+                  # ── Collect NetworkPolicy coverage ──
+                  echo ""
+                  echo "[COLLECT] NetworkPolicy coverage..."
+                  NS_TOTAL=0
+                  NS_COVERED=0
+                  for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -v "^kube-\|^default$"); do
+                      NS_TOTAL=$((NS_TOTAL + 1))
+                      NP=$(kubectl get networkpolicy -n "$ns" --no-headers 2>/dev/null | wc -l)
+                      if [ "$NP" -gt 0 ]; then
+                          NS_COVERED=$((NS_COVERED + 1))
+                      fi
+                  done
+                  echo "  ${NS_COVERED}/${NS_TOTAL} namespaces have NetworkPolicies"
+
+                  # ── Collect node health ──
+                  echo ""
+                  echo "[COLLECT] Node health..."
+                  NODE_JSON=$(kubectl get nodes -o json 2>/dev/null | python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  result = []
+                  for item in data.get('items', []):
+                      name = item['metadata']['name']
+                      info = item.get('status', {}).get('nodeInfo', {})
+                      conditions = item.get('status', {}).get('conditions', [])
+                      ready = 'Unknown'
+                      for c in conditions:
+                          if c.get('type') == 'Ready':
+                              ready = c.get('status', 'Unknown')
+                              break
+                      result.append({'name': name, 'kubelet_version': info.get('kubeletVersion', ''), 'os_image': info.get('osImage', ''), 'ready': ready})
+                  print(json.dumps(result))
+                  " 2>/dev/null || echo "[]")
+
+                  # ── Build evidence report ──
+                  echo ""
+                  echo "[BUILD] Creating evidence ConfigMap..."
+
+                  EVIDENCE_JSON=$(python3 -c "
+                  import json
+                  report = {
+                      'scan_date': '${SCAN_DATE}',
+                      'components': json.loads('${HR_JSON}'),
+                      'policies': json.loads('${POLICY_JSON}'),
+                      'certificates': json.loads('${CERT_JSON}'),
+                      'mtls_mode': '${MTLS_MODE}',
+                      'network_policy_coverage': {
+                          'total_namespaces': ${NS_TOTAL},
+                          'covered_namespaces': ${NS_COVERED},
+                          'coverage_pct': round(${NS_COVERED} / max(${NS_TOTAL}, 1) * 100, 1)
+                      },
+                      'nodes': json.loads('${NODE_JSON}')
+                  }
+                  print(json.dumps(report, indent=2))
+                  " 2>/dev/null)
+
+                  # Store as ConfigMap (overwrite previous)
+                  kubectl create configmap compliance-evidence-latest \
+                      -n monitoring \
+                      --from-literal=report.json="${EVIDENCE_JSON}" \
+                      --from-literal=scan-date="${SCAN_DATE}" \
+                      --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+
+                  # Also store a dated copy (retain last 30 days)
+                  kubectl create configmap "compliance-evidence-${SCAN_DATE_SHORT}" \
+                      -n monitoring \
+                      --from-literal=report.json="${EVIDENCE_JSON}" \
+                      --from-literal=scan-date="${SCAN_DATE}" \
+                      --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+
+                  # Clean up evidence ConfigMaps older than 30 days
+                  kubectl get configmaps -n monitoring -o name 2>/dev/null | \
+                      grep "compliance-evidence-20" | \
+                      head -n -30 | \
+                      xargs -r kubectl delete -n monitoring 2>/dev/null || true
+
+                  echo ""
+                  echo "=========================================="
+                  echo "EVIDENCE COLLECTION COMPLETE"
+                  echo "=========================================="
+                  echo "  ConfigMap: compliance-evidence-latest (monitoring namespace)"
+                  echo "  ConfigMap: compliance-evidence-${SCAN_DATE_SHORT} (monitoring namespace)"
+                  echo "  Date: ${SCAN_DATE}"
+                  echo "=========================================="
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+# ServiceAccount + RBAC for the compliance evidence collector
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-compliance-evidence
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-evidence
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-compliance-evidence
+  labels:
+    app.kubernetes.io/name: compliance-evidence
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes", "services", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kyverno.io"]
+    resources: ["clusterpolicies", "policies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources: ["policyreports", "clusterpolicyreports"]
+    verbs: ["get", "list"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "clusterissuers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["peerauthentications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-compliance-evidence
+  labels:
+    app.kubernetes.io/name: compliance-evidence
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-compliance-evidence
+subjects:
+  - kind: ServiceAccount
+    name: sre-compliance-evidence
+    namespace: monitoring
+---
+# Alert if evidence collection has not run in 2 days
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: compliance-evidence-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: compliance-evidence
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, PM-4"
+spec:
+  groups:
+    - name: compliance-evidence
+      rules:
+        - alert: ComplianceEvidenceCollectionOverdue
+          expr: |
+            (time() - max(kube_cronjob_status_last_successful_time{namespace="monitoring", cronjob="sre-compliance-evidence"})) > (2 * 24 * 3600)
+          for: 1h
+          labels:
+            severity: warning
+            category: compliance
+          annotations:
+            summary: "Compliance evidence collection has not run in over 2 days"
+            description: >-
+              The daily compliance evidence collection CronJob has not completed
+              successfully in more than 2 days. This affects continuous monitoring
+              evidence for ATO/cATO. NIST CA-7 requires continuous monitoring.
+
+        - alert: ComplianceEvidenceCollectionFailed
+          expr: |
+            kube_job_status_failed{namespace="monitoring", job_name=~"sre-compliance-evidence-.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            category: compliance
+          annotations:
+            summary: "Compliance evidence collection job failed"
+            description: >-
+              The latest compliance evidence collection job failed. Check logs:
+              kubectl logs -n monitoring job/{{ $labels.job_name }}

@@ -1,0 +1,277 @@
+---
+# Scheduled Disaster Recovery test CronJob
+# Runs a monthly DR validation using the dr-test.sh backup-only mode
+# Verifies that Velero backups can be created successfully
+# NIST Controls: CP-4 (Contingency Plan Testing), CP-9 (System Backup), CP-10 (System Recovery)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-dr-test
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: dr-test
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CP-4, CP-9, CP-10"
+spec:
+  # Monthly at 2:00 AM UTC on the 1st
+  schedule: "0 2 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: dr-test
+            app.kubernetes.io/part-of: sre-platform
+            sre.io/team: platform
+        spec:
+          serviceAccountName: sre-dr-test
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: dr-test
+              image: docker.io/alpine/k8s:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                  BACKUP_NAME="dr-test-monthly-${TIMESTAMP}"
+                  TIMEOUT=600
+                  RESULT="PASS"
+
+                  echo "=========================================="
+                  echo "SRE DR Test - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  echo "=========================================="
+
+                  # --- Check 1: Velero is healthy ---
+                  echo ""
+                  echo "[CHECK] Velero deployment health..."
+                  VELERO_READY=$(kubectl get deployment velero -n velero -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                  if [ "${VELERO_READY}" -ge 1 ]; then
+                    echo "  PASS: Velero has ${VELERO_READY} ready replica(s)"
+                  else
+                    echo "  FAIL: Velero has 0 ready replicas"
+                    RESULT="FAIL"
+                  fi
+
+                  # --- Check 2: Backup storage location available ---
+                  echo ""
+                  echo "[CHECK] Backup storage location..."
+                  BSL_PHASE=$(kubectl get backupstoragelocation -n velero default -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                  if [ "${BSL_PHASE}" = "Available" ]; then
+                    echo "  PASS: Backup storage location is Available"
+                  else
+                    echo "  WARN: Backup storage location status: ${BSL_PHASE}"
+                  fi
+
+                  # --- Check 3: Create an on-demand backup ---
+                  echo ""
+                  echo "[CHECK] Creating on-demand backup: ${BACKUP_NAME}..."
+                  kubectl apply -f - <<EOF2
+                  apiVersion: velero.io/v1
+                  kind: Backup
+                  metadata:
+                    name: ${BACKUP_NAME}
+                    namespace: velero
+                    labels:
+                      sre.io/dr-test: "true"
+                  spec:
+                    excludedNamespaces:
+                      - kube-system
+                      - flux-system
+                    includeClusterResources: true
+                    storageLocation: default
+                    ttl: 72h
+                  EOF2
+
+                  # Wait for backup to complete
+                  ELAPSED=0
+                  while [ ${ELAPSED} -lt ${TIMEOUT} ]; do
+                    PHASE=$(kubectl get backup -n velero ${BACKUP_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+                    case "${PHASE}" in
+                      Completed)
+                        echo "  PASS: Backup completed successfully"
+                        break
+                        ;;
+                      PartiallyFailed)
+                        echo "  WARN: Backup partially failed"
+                        break
+                        ;;
+                      Failed)
+                        echo "  FAIL: Backup failed"
+                        RESULT="FAIL"
+                        break
+                        ;;
+                    esac
+                    sleep 10
+                    ELAPSED=$((ELAPSED + 10))
+                  done
+
+                  if [ ${ELAPSED} -ge ${TIMEOUT} ]; then
+                    echo "  FAIL: Backup timed out after ${TIMEOUT}s"
+                    RESULT="FAIL"
+                  fi
+
+                  # --- Check 4: Verify last scheduled backup ---
+                  echo ""
+                  echo "[CHECK] Last scheduled backup status..."
+                  LAST_BACKUP=$(kubectl get backups -n velero --sort-by=.metadata.creationTimestamp -o json 2>/dev/null | \
+                    python3 -c "
+                  import sys, json
+                  data = json.load(sys.stdin)
+                  items = [i for i in data.get('items', []) if 'daily-backup' in i['metadata']['name'] or 'weekly-backup' in i['metadata']['name']]
+                  if items:
+                      last = items[-1]
+                      print(f\"{last['metadata']['name']}: {last.get('status', {}).get('phase', 'Unknown')}\")
+                  else:
+                      print('No scheduled backups found')
+                  " 2>/dev/null || echo "Unable to check")
+                  echo "  INFO: ${LAST_BACKUP}"
+
+                  # --- Check 5: Node agent (restic/kopia) health ---
+                  echo ""
+                  echo "[CHECK] Velero node-agent DaemonSet..."
+                  NA_DESIRED=$(kubectl get daemonset -n velero node-agent -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
+                  NA_READY=$(kubectl get daemonset -n velero node-agent -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
+                  if [ "${NA_DESIRED}" -gt 0 ] && [ "${NA_DESIRED}" = "${NA_READY}" ]; then
+                    echo "  PASS: Node agent DaemonSet healthy (${NA_READY}/${NA_DESIRED})"
+                  elif [ "${NA_DESIRED}" -gt 0 ]; then
+                    echo "  WARN: Node agent DaemonSet: ${NA_READY}/${NA_DESIRED} ready"
+                  else
+                    echo "  INFO: Node agent DaemonSet not deployed (PV backups not available)"
+                  fi
+
+                  # --- Cleanup test backup ---
+                  echo ""
+                  echo "[CLEANUP] Removing test backup ${BACKUP_NAME}..."
+                  kubectl delete backup -n velero ${BACKUP_NAME} --ignore-not-found=true 2>/dev/null || true
+
+                  # --- Summary ---
+                  echo ""
+                  echo "=========================================="
+                  echo "DR TEST SUMMARY"
+                  echo "=========================================="
+                  echo "  Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  echo "  Result: ${RESULT}"
+                  echo "=========================================="
+
+                  if [ "${RESULT}" = "FAIL" ]; then
+                    echo ""
+                    echo "DR TEST FAILED — review failures above"
+                    exit 1
+                  fi
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+---
+# ServiceAccount + RBAC for the DR test job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-dr-test
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: dr-test
+    app.kubernetes.io/part-of: sre-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-dr-test
+  labels:
+    app.kubernetes.io/name: dr-test
+    app.kubernetes.io/part-of: sre-platform
+rules:
+  - apiGroups: ["velero.io"]
+    resources: ["backups", "backupstoragellocations", "restores"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["velero.io"]
+    resources: ["backupstoragelocations"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-dr-test
+  labels:
+    app.kubernetes.io/name: dr-test
+    app.kubernetes.io/part-of: sre-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-dr-test
+subjects:
+  - kind: ServiceAccount
+    name: sre-dr-test
+    namespace: velero
+---
+# PrometheusRule alert if DR test has not run in 35 days
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dr-test-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: dr-test
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CP-4, CP-9"
+spec:
+  groups:
+    - name: dr-test
+      rules:
+        - alert: DRTestOverdue
+          expr: |
+            (time() - max(kube_cronjob_status_last_successful_time{namespace="velero", cronjob="sre-dr-test"})) > (35 * 24 * 3600)
+          for: 1h
+          labels:
+            severity: warning
+            category: backup
+          annotations:
+            summary: "DR test has not run successfully in over 35 days"
+            description: >-
+              The monthly disaster recovery test CronJob (sre-dr-test) has not
+              completed successfully in more than 35 days. This may indicate
+              the CronJob is suspended, failing, or the Velero backup storage
+              is misconfigured. NIST CP-4 requires periodic contingency plan testing.
+            runbook_url: "https://docs.sre.example.com/runbooks/backup-restore"
+
+        - alert: DRTestFailed
+          expr: |
+            kube_job_status_failed{namespace="velero", job_name=~"sre-dr-test-.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            category: backup
+          annotations:
+            summary: "DR test job failed"
+            description: >-
+              The latest disaster recovery test job failed. Review the job logs
+              to determine the cause: kubectl logs -n velero job/{{ $labels.job_name }}

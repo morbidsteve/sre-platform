@@ -15,3 +15,5 @@ resources:
   - compliance-scan-cronjob.yaml
   - network-policies/allow-grafana-keycloak.yaml
   - network-policies/allow-kube-system-scraping.yaml
+  - synthetic-probes/
+  - compliance-evidence-cronjob.yaml

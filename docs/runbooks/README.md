@@ -17,6 +17,11 @@ Operational runbooks for the Secure Runtime Environment (SRE) platform. Each run
 | [backup-restore.md](backup-restore.md) | Critical | Velero | Backup verification and restore procedures |
 | [keycloak-sso-failure.md](keycloak-sso-failure.md) | Critical | Keycloak | OIDC/SSO troubleshooting |
 | [loki-ingestion-failure.md](loki-ingestion-failure.md) | Warning | Logging | Loki log pipeline debugging |
+| [pod-oomkilled.md](pod-oomkilled.md) | Warning | Kubernetes | OOMKill investigation and memory limit tuning |
+| [image-pull-failure.md](image-pull-failure.md) | Warning | Harbor / Registry | Image pull error diagnosis and credential refresh |
+| [dns-resolution-failure.md](dns-resolution-failure.md) | Critical | CoreDNS | DNS resolution debugging and CoreDNS recovery |
+| [etcd-health.md](etcd-health.md) | Critical | RKE2 / etcd | etcd health, defragmentation, and disk I/O diagnosis |
+| [external-secrets-sync-failure.md](external-secrets-sync-failure.md) | Warning | External Secrets | ESO sync failure and OpenBao connectivity debugging |
 
 ## Conventions
 

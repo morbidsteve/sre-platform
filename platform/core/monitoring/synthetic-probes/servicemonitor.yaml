@@ -1,0 +1,49 @@
+---
+# ServiceMonitor for Blackbox Exporter probe metrics
+# Prometheus scrapes the blackbox exporter's probe endpoint for each target
+# NIST Controls: CA-7 (Continuous Monitoring), SI-4 (System Monitoring)
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: synthetic-http-probes
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: synthetic-probes
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+spec:
+  interval: 60s
+  module: http_2xx
+  prober:
+    url: prometheus-blackbox-exporter.monitoring.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels:
+        probe_type: synthetic
+      static:
+        - https://dashboard.apps.sre.example.com
+        - https://grafana.apps.sre.example.com
+        - https://harbor.apps.sre.example.com
+        - https://keycloak.apps.sre.example.com
+        - https://kubernetes.default.svc.cluster.local:443
+---
+# ServiceMonitor for the blackbox exporter's own metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: blackbox-exporter-self
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+    app.kubernetes.io/part-of: sre-platform
+    release: kube-prometheus-stack
+spec:
+  endpoints:
+    - port: http
+      interval: 30s
+      path: /metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus-blackbox-exporter

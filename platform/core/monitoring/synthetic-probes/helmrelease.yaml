@@ -1,0 +1,90 @@
+---
+# Prometheus Blackbox Exporter for synthetic endpoint monitoring
+# Probes platform service endpoints and reports availability metrics
+# NIST Controls: CA-7 (Continuous Monitoring), SI-4 (System Monitoring)
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: prometheus-blackbox-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: prometheus-blackbox-exporter
+      version: "9.4.0"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  dependsOn:
+    - name: kube-prometheus-stack
+      namespace: monitoring
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    config:
+      modules:
+        http_2xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+            valid_status_codes: [200, 301, 302, 303, 401, 403]
+            method: GET
+            follow_redirects: true
+            preferred_ip_protocol: ip4
+            tls_config:
+              insecure_skip_verify: true
+        http_strict_2xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+            valid_status_codes: [200]
+            method: GET
+            follow_redirects: true
+            preferred_ip_protocol: ip4
+            tls_config:
+              insecure_skip_verify: true
+        tcp_connect:
+          prober: tcp
+          timeout: 5s
+        dns_resolve:
+          prober: dns
+          timeout: 5s
+          dns:
+            query_name: kubernetes.default.svc.cluster.local
+            query_type: A
+            transport_protocol: udp
+    serviceMonitor:
+      enabled: false
