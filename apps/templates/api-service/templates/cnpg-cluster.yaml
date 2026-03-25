@@ -1,0 +1,20 @@
+{{- if .Values.database.enabled }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "sre-api-service.fullname" . }}-db
+  labels:
+    {{- include "sre-api-service.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.database.instances | default 1 }}
+  storage:
+    storageClass: local-path
+    size: {{ .Values.database.size | default "5Gi" }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.database.database | default (replace "-" "_" .Values.app.name) }}
+      owner: {{ .Values.database.owner | default (replace "-" "_" .Values.app.name) }}
+  monitoring:
+    enablePodMonitor: true
+{{- end }}

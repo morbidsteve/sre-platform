@@ -140,6 +140,16 @@
               }
             }
           }
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seconds the pod needs to gracefully shut down"
+        },
+        "preStopCommand": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Command to run before pod termination for graceful shutdown"
         }
       }
     },
@@ -221,6 +231,82 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "minAvailable": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "database": {
+      "type": "object",
+      "description": "CNPG PostgreSQL database provisioning",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Enable CNPG PostgreSQL database" },
+        "type": {
+          "type": "string",
+          "enum": ["postgresql"],
+          "description": "Database type"
+        },
+        "instances": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of PostgreSQL instances"
+        },
+        "size": {
+          "type": "string",
+          "description": "Storage size for the database (e.g. 5Gi)"
+        },
+        "database": {
+          "type": "string",
+          "description": "Database name. Defaults to app.name with dashes replaced by underscores"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Database owner. Defaults to app.name with dashes replaced by underscores"
+        }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "description": "Redis sidecar provisioning",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Enable Redis instance" },
+        "size": {
+          "type": "string",
+          "description": "PVC size for Redis persistence (e.g. 1Gi)"
+        }
+      }
+    },
+    "migrations": {
+      "type": "object",
+      "description": "Database migration init container",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Enable migration init container" },
+        "image": {
+          "type": "string",
+          "description": "Container image for running migrations"
+        },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Command to run for migrations"
+        }
+      }
+    },
+    "externalServices": {
+      "type": "array",
+      "description": "Istio ServiceEntry resources for external API access",
+      "items": {
+        "type": "object",
+        "required": ["host"],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "External service hostname (e.g. api.stripe.com)"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "External service port (default: 443)"
+          }
+        }
       }
     },
     "podSecurityContext": {

@@ -1,0 +1,18 @@
+{{- range .Values.externalServices }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: {{ include "sre-web-app.fullname" $ }}-{{ .host | replace "." "-" }}
+  labels:
+    {{- include "sre-web-app.labels" $ | nindent 4 }}
+spec:
+  hosts:
+    - {{ .host | quote }}
+  location: MESH_EXTERNAL
+  ports:
+    - number: {{ .port | default 443 }}
+      name: {{ if eq (int (.port | default 443)) 443 }}https{{ else }}tcp-{{ .port }}{{ end }}
+      protocol: {{ if eq (int (.port | default 443)) 443 }}TLS{{ else }}TCP{{ end }}
+  resolution: DNS
+{{- end }}

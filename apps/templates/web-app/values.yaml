@@ -37,6 +37,10 @@ app:
       path: /readyz
       initialDelaySeconds: 5
       periodSeconds: 5
+  # Graceful shutdown
+  terminationGracePeriodSeconds: 30
+  # preStopCommand: ["/bin/sh", "-c", "sleep 5"]
+  preStopCommand: []
 
 # -- Ingress (Istio VirtualService) --
 ingress:
@@ -91,3 +95,41 @@ canary:
     successRate: 99
     # Maximum request duration (milliseconds)
     latencyMax: 500
+
+# -- Database provisioning (CNPG PostgreSQL) --
+database:
+  enabled: false
+  type: postgresql
+  instances: 1
+  size: 5Gi
+  database: ""
+  owner: ""
+
+# -- Redis provisioning --
+redis:
+  enabled: false
+  size: 1Gi
+
+# -- Database migration init container --
+migrations:
+  enabled: false
+  image: ""
+  command: []
+
+# -- External service entries (Istio ServiceEntry) --
+externalServices: []
+# - host: api.stripe.com
+#   port: 443
+
+# -- WebSocket support --
+websocket:
+  enabled: false
+  routes: []
+  # - uri: /ws
+  # - uri: /socket.io
+
+# -- API rate limiting (Istio EnvoyFilter) --
+rateLimit:
+  enabled: false
+  requestsPerSecond: 100
+  burst: 200

@@ -19,12 +19,31 @@ spec:
     spec:
       serviceAccountName: {{ include "sre-web-app.serviceAccountName" . }}
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.app.terminationGracePeriodSeconds | default 30 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
         {{- include "sre-lib.podSecurityContext" . | nindent 8 }}
+      {{- if and (hasKey .Values "migrations") .Values.migrations.enabled }}
+      initContainers:
+        - name: migrations
+          image: {{ .Values.migrations.image | quote }}
+          {{- with .Values.migrations.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- include "sre-lib.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- include "sre-lib.resources" . | nindent 12 }}
+          env:
+            {{- include "sre-lib.env" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
       containers:
         - name: {{ .Values.app.name }}
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
@@ -37,6 +56,13 @@ spec:
             {{- include "sre-lib.containerSecurityContext" . | nindent 12 }}
           resources:
             {{- include "sre-lib.resources" . | nindent 12 }}
+          {{- if .Values.app.preStopCommand }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  {{- toYaml .Values.app.preStopCommand | nindent 18 }}
+          {{- end }}
           livenessProbe:
             {{- if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
             tcpSocket:

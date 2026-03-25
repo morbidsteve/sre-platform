@@ -12,6 +12,22 @@ spec:
   gateways:
     - {{ .Values.ingress.gateway }}
   http:
+    {{- if and (hasKey .Values "websocket") .Values.websocket.enabled }}
+    {{- range .Values.websocket.routes }}
+    - match:
+        - uri:
+            prefix: {{ .uri }}
+          headers:
+            upgrade:
+              exact: websocket
+      route:
+        - destination:
+            host: {{ include "sre-web-app.fullname" $ }}
+            port:
+              number: {{ $.Values.app.port }}
+      timeout: 0s
+    {{- end }}
+    {{- end }}
     - match:
         - uri:
             prefix: /

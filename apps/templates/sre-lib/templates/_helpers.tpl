@@ -85,6 +85,8 @@ capabilities:
 {{/*
 Environment variables from .Values.app.env, supporting both
 plain values and secretRef (for ExternalSecrets/OpenBao).
+Automatically injects DATABASE_URL when .Values.database.enabled is true.
+Automatically injects REDIS_URL when .Values.redis.enabled is true.
 */}}
 {{- define "sre-lib.env" -}}
 {{- range .Values.app.env }}
@@ -99,6 +101,17 @@ plain values and secretRef (for ExternalSecrets/OpenBao).
       name: {{ .secretRef }}
       key: value
 {{- end }}
+{{- end }}
+{{- if and (hasKey .Values "database") .Values.database.enabled }}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "sre-lib.fullname" . }}-db-app
+      key: uri
+{{- end }}
+{{- if and (hasKey .Values "redis") .Values.redis.enabled }}
+- name: REDIS_URL
+  value: {{ printf "redis://%s-redis:6379" (include "sre-lib.fullname" .) | quote }}
 {{- end }}
 {{- end }}
 

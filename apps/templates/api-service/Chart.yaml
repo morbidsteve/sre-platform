@@ -3,7 +3,7 @@ apiVersion: v2
 name: sre-api-service
 description: SRE standard Helm chart for internal API services with Istio AuthorizationPolicy
 type: application
-version: 0.3.0
+version: 0.4.0
 appVersion: "1.0.0"
 keywords:
   - sre
@@ -14,5 +14,5 @@ maintainers:
   - name: SRE Platform Team
 dependencies:
   - name: sre-lib
-    version: "0.1.0"
+    version: "0.3.0"
     repository: "file://../sre-lib"
