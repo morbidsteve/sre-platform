@@ -4501,6 +4501,10 @@ app.post("/api/cluster/nodes/:name/cordon", mutateLimiter, requireGroups("sre-ad
 // GET /api/config — Dashboard configuration
 app.get("/api/config", (req, res) => {
   res.json({
+    domain: SRE_DOMAIN,
+    registryUrl: HARBOR_REGISTRY_EXT,
+    keycloakUrl: KEYCLOAK_EXTERNAL_URL,
+    clusterName: process.env.SRE_CLUSTER_NAME || "sre-lab",
     baseUrl: `https://{service}.${SRE_DOMAIN}`,
     loginUrl: "/oauth2/start",
     logoutUrl: "/oauth2/sign_out",
