@@ -37,8 +37,12 @@ spec:
               - /oauth2/*
               - /ui/vault/auth/oidc/oidc/callback*
             notHosts:
-              # Only Keycloak is excluded — it IS the identity provider
+              # Keycloak — IS the identity provider
               - "keycloak.${SRE_DOMAIN}"
+              # Harbor — Docker registry API uses Bearer tokens, not browser cookies
+              - "harbor.${SRE_DOMAIN}"
+              # NeuVector — has its own auth system (OIDC configured separately)
+              - "neuvector.${SRE_DOMAIN}"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
