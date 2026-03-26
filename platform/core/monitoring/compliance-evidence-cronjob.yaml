@@ -175,37 +175,49 @@ spec:
                   echo ""
                   echo "[BUILD] Creating evidence ConfigMap..."
 
+                  # Write collected JSON to temp files to avoid bash-in-python quoting issues
+                  echo "${HR_JSON}" > /tmp/hr.json
+                  echo "${POLICY_JSON}" > /tmp/policy.json
+                  echo "${CERT_JSON}" > /tmp/cert.json
+                  echo "${NODE_JSON}" > /tmp/node.json
+
                   EVIDENCE_JSON=$(python3 -c "
                   import json
+                  with open('/tmp/hr.json') as f: components = json.load(f)
+                  with open('/tmp/policy.json') as f: policies = json.load(f)
+                  with open('/tmp/cert.json') as f: certs = json.load(f)
+                  with open('/tmp/node.json') as f: nodes = json.load(f)
+                  ns_total = ${NS_TOTAL}
+                  ns_covered = ${NS_COVERED}
                   report = {
                       'scan_date': '${SCAN_DATE}',
-                      'components': json.loads('${HR_JSON}'),
-                      'policies': json.loads('${POLICY_JSON}'),
-                      'certificates': json.loads('${CERT_JSON}'),
+                      'components': components,
+                      'policies': policies,
+                      'certificates': certs,
                       'mtls_mode': '${MTLS_MODE}',
                       'network_policy_coverage': {
-                          'total_namespaces': ${NS_TOTAL},
-                          'covered_namespaces': ${NS_COVERED},
-                          'coverage_pct': round(${NS_COVERED} / max(${NS_TOTAL}, 1) * 100, 1)
+                          'total_namespaces': ns_total,
+                          'covered_namespaces': ns_covered,
+                          'coverage_pct': round(ns_covered / max(ns_total, 1) * 100, 1)
                       },
-                      'nodes': json.loads('${NODE_JSON}')
+                      'nodes': nodes
                   }
                   print(json.dumps(report, indent=2))
-                  " 2>/dev/null)
+                  ")
 
                   # Store as ConfigMap (overwrite previous)
                   kubectl create configmap compliance-evidence-latest \
                       -n monitoring \
                       --from-literal=report.json="${EVIDENCE_JSON}" \
                       --from-literal=scan-date="${SCAN_DATE}" \
-                      --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+                      --dry-run=client -o yaml | kubectl apply -f -
 
                   # Also store a dated copy (retain last 30 days)
                   kubectl create configmap "compliance-evidence-${SCAN_DATE_SHORT}" \
                       -n monitoring \
                       --from-literal=report.json="${EVIDENCE_JSON}" \
                       --from-literal=scan-date="${SCAN_DATE}" \
-                      --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+                      --dry-run=client -o yaml | kubectl apply -f -
 
                   # Clean up evidence ConfigMaps older than 30 days
                   kubectl get configmaps -n monitoring -o name 2>/dev/null | \

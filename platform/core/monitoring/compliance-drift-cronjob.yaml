@@ -120,8 +120,9 @@ spec:
                     'system:kube-scheduler', 'system:node', 'system:cloud-controller-manager',
                     'rancher', 'helm-controller', 'kustomize-controller',
                     'cluster-admin', 'sre-compliance-scanner', 'sre-compliance-evidence',
-                    'sre-compliance-drift'
+                    'sre-compliance-drift', 'velero-server',
                   ]
+                  allowed_prefixes = ['helm-rke2-', 'helm-kube-system-rke2-']
                   flagged = []
                   for item in data.get('items', []):
                       role = item.get('roleRef', {}).get('name', '')
@@ -129,8 +130,11 @@ spec:
                           continue
                       for subj in item.get('subjects', []):
                           name = subj.get('name', '')
-                          if name not in allowed_subjects and not name.startswith('system:'):
-                              flagged.append({'binding': item['metadata']['name'], 'subject': name, 'kind': subj.get('kind', '')})
+                          if name in allowed_subjects or name.startswith('system:'):
+                              continue
+                          if any(name.startswith(p) for p in allowed_prefixes):
+                              continue
+                          flagged.append({'binding': item['metadata']['name'], 'subject': name, 'kind': subj.get('kind', '')})
                   print(json.dumps(flagged))
                   " 2>/dev/null || echo "[]")
 

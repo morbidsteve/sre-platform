@@ -8,7 +8,10 @@ metadata:
   annotations:
     policies.kyverno.io/title: Require Security Categorization Label
     policies.kyverno.io/description: >-
-      Ensures all tenant namespaces have a security categorization label.
+      Ensures all tenant namespaces have a security categorization label
+      (sre.io/security-categorization) per FIPS 199 and RAISE 2.0 RPOC-18.
+      The RPOC is categorized at Moderate — hosted applications must be
+      at Moderate or below.
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: high
     sre.io/nist-controls: "RA-2, SC-2"
@@ -25,17 +28,36 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
+              names:
                 - kube-system
-                - kube-public
                 - kube-node-lease
+                - kube-public
                 - default
-                - istio-system
                 - flux-system
+                - istio-system
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - runtime-security
+                - backup
                 - kyverno
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-portal
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
                 - sre-builds
                 - tekton-pipelines
                 - tekton-pipelines-resolvers
+                - cnpg-system
+                - sre-compliance
           - resources:
               selector:
                 matchLabels:
@@ -43,7 +65,9 @@ spec:
       validate:
         message: >-
           Tenant namespaces must have a security categorization label.
-          Add: sre.io/security-categorization: "moderate" (or "low").
+          Add the label: sre.io/security-categorization: "moderate"
+          (or "low" if the application is categorized below Moderate).
+          The RPOC is categorized at Moderate — applications cannot exceed this level.
         pattern:
           metadata:
             labels:

@@ -8,6 +8,7 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
     istio-injection: enabled
     sre.io/network-policy-configured: "true"
+    sre.io/security-categorization: moderate
 ---
 apiVersion: v1
 kind: ServiceAccount

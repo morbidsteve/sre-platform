@@ -28,7 +28,7 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
+              names:
                 - kube-system
                 - kube-node-lease
                 - kube-public
@@ -56,6 +56,8 @@ spec:
                 - sre-builds
                 - tekton-pipelines
                 - tekton-pipelines-resolvers
+                - cnpg-system
+                - sre-compliance
           - resources:
               selector:
                 matchLabels:

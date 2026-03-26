@@ -16,3 +16,8 @@ spec:
   dependsOn:
     - name: sre-metallb
   timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: sre-domain-config
+        optional: false

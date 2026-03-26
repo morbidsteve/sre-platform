@@ -10,6 +10,9 @@ metadata:
     policies.kyverno.io/title: Require Istio Sidecar Injection
     policies.kyverno.io/description: >-
       Ensures all non-system namespaces have Istio sidecar injection enabled.
+      Namespaces must include the label `istio-injection: enabled` to be part
+      of the service mesh. System namespaces (kube-system, kube-public,
+      kube-node-lease, istio-system, flux-system) are excluded.
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: high
     sre.io/nist-controls: "SC-8, AC-4"
@@ -26,17 +29,36 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
+              names:
                 - kube-system
-                - kube-public
                 - kube-node-lease
+                - kube-public
                 - default
-                - istio-system
                 - flux-system
+                - istio-system
+                - cert-manager
+                - monitoring
+                - logging
+                - tempo
+                - openbao
+                - external-secrets
+                - runtime-security
+                - backup
                 - kyverno
+                - neuvector
+                - harbor
+                - velero
+                - keycloak
+                - sre-portal
+                - sre-dashboard
+                - oauth2-proxy
+                - local-path-storage
+                - metallb-system
                 - sre-builds
                 - tekton-pipelines
                 - tekton-pipelines-resolvers
+                - cnpg-system
+                - sre-compliance
           - resources:
               selector:
                 matchLabels:
@@ -45,6 +67,7 @@ spec:
         message: >-
           Namespace {{request.object.metadata.name}} must have the label
           `istio-injection: enabled` to participate in the service mesh.
+          Add the label: kubectl label namespace {{request.object.metadata.name}} istio-injection=enabled
         pattern:
           metadata:
             labels:
