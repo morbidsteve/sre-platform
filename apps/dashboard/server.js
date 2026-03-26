@@ -8686,28 +8686,50 @@ async function executePipelineDeploy(run, actor) {
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
     const domain = SRE_DOMAIN;
 
-    // Check if run has security exceptions requiring privileged mode
+    // Check if run has security exceptions requiring privileged mode.
+    // Only ISSM-approved exceptions (approved === true) affect the deployment.
     let needsPrivileged = false;
     let parsedExceptions = [];
     try {
       parsedExceptions = typeof run.security_exceptions === "string" ? JSON.parse(run.security_exceptions || "[]") : (run.security_exceptions || []);
-      const privilegedTypes = ["run_as_root", "writable_filesystem", "privileged_container", "host_networking"];
-      needsPrivileged = parsedExceptions.some(e => privilegedTypes.includes(e.type));
+      const approvedPrivilegedTypes = ["run_as_root", "writable_filesystem", "privileged_container", "host_networking"];
+      needsPrivileged = parsedExceptions.some(e => e.approved === true && approvedPrivilegedTypes.includes(e.type));
       if (needsPrivileged) {
-        logger.info('pipeline', `Run ${run.id} has security exceptions requiring privileged mode`, { runId: run.id, exceptions: parsedExceptions.map(e => e.type) });
-        await db.auditLog(run.id, "privileged_deploy", actor, `Deploying with privileged security context due to approved exceptions: ${parsedExceptions.map(e => e.type).join(", ")}`);
+        const approvedNames = parsedExceptions.filter(e => e.approved === true).map(e => e.type);
+        logger.info('pipeline', `Run ${run.id} has ISSM-approved exceptions requiring privileged mode`, { runId: run.id, exceptions: approvedNames });
+        await db.auditLog(run.id, "privileged_deploy", actor, `Deploying with privileged security context due to ISSM-approved exceptions: ${approvedNames.join(", ")}`);
       }
     } catch (e) {
       console.debug('[pipeline] Security exception check for deploy best-effort:', e.message);
     }
 
     // Extract security context from run metadata (set during pipeline creation)
+    // If metadata doesn't have one, derive it from approved security exceptions.
     let pipelineSecurityContext = null;
     try {
       const runMeta = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {});
       if (runMeta.securityContext) {
         pipelineSecurityContext = runMeta.securityContext;
         logger.info('pipeline', `Run ${run.id} has security context from pipeline creation`, { runId: run.id, sc: pipelineSecurityContext });
+      } else if (parsedExceptions.length > 0) {
+        // Derive a granular securityContext from ISSM-approved exceptions so that
+        // generateHelmRelease can apply precise pod/container-level overrides
+        // (podSecurityContext, containerSecurityContext) instead of falling back
+        // to the coarse boolean `privileged` flag.
+        const approvedEx = parsedExceptions.filter(e => e.approved === true);
+        if (approvedEx.length > 0) {
+          const sc = {};
+          const exTypes = approvedEx.map(e => e.type);
+          if (exTypes.includes("run_as_root"))          sc.runAsRoot = true;
+          if (exTypes.includes("writable_filesystem"))  sc.writableFilesystem = true;
+          if (exTypes.includes("privileged_container")) { sc.runAsRoot = true; sc.allowPrivilegeEscalation = true; }
+          if (exTypes.includes("host_networking"))      sc.hostNetworking = true;
+          if (exTypes.includes("custom_capability"))    sc.capabilities = (sc.capabilities || []);
+          if (Object.keys(sc).length > 0) {
+            pipelineSecurityContext = sc;
+            logger.info('pipeline', `Run ${run.id}: derived securityContext from ISSM-approved exceptions`, { runId: run.id, sc });
+          }
+        }
       }
     } catch (e) {
       console.debug('[pipeline] Security context metadata read best-effort:', e.message);
@@ -8739,13 +8761,15 @@ async function executePipelineDeploy(run, actor) {
         securityContext: pipelineSecurityContext,
       });
 
-      // Generate Kyverno PolicyException for ISSM-approved security exceptions
-      const policyException = parsedExceptions.length > 0
-        ? generatePolicyException(safeName, nsName, parsedExceptions, actor)
+      // Generate Kyverno PolicyException for ISSM-approved security exceptions only.
+      // Exceptions must have approved === true (set by the ISSM review endpoint).
+      const approvedExceptions = parsedExceptions.filter(e => e.approved === true);
+      const policyException = approvedExceptions.length > 0
+        ? generatePolicyException(safeName, nsName, approvedExceptions, actor)
         : null;
       if (policyException) {
         await db.auditLog(run.id, "policy_exception_generated", actor,
-          `Generated Kyverno PolicyException for ${parsedExceptions.map(e => e.type).join(", ")}`);
+          `Generated Kyverno PolicyException for ${approvedExceptions.map(e => e.type).join(", ")}`);
       }
 
       await deployViaGitOps(manifest, nsName, safeName, actor, policyException);

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -10,6 +10,7 @@ import {
   Clock,
   Wifi,
   WifiOff,
+  ChevronsDown,
 } from 'lucide-react';
 import { usePipelineStream, type GateStreamState } from '../../hooks/usePipelineStream';
 import type { SecurityGate } from '../../types';
@@ -65,25 +66,114 @@ function severityColor(severity: string): string {
   }
 }
 
-// ── Auto-scrolling log viewer ─────────────────────────────────────────────────
+/**
+ * Formats an elapsed duration (in milliseconds) to a compact human string.
+ * e.g. 45000 → "45s", 125000 → "2m 5s"
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+}
+
+// ── Log line coloriser ────────────────────────────────────────────────────────
+
+/** Returns a Tailwind text-color class for a raw log line. */
+function logLineColor(line: string): string {
+  const lower = line.toLowerCase();
+  if (/error|fatal|fail/.test(lower)) return 'text-red-400';
+  if (/\bwarn(ing)?\b/.test(lower))    return 'text-amber-400';
+  if (/--- scan complete ---|passed/.test(lower)) return 'text-emerald-400';
+  // git-clone / kaniko step prefix
+  if (/^\[git-clone\]|^\[kaniko\]/.test(line))   return ''; // handled separately
+  // Timestamp-looking prefix (ISO-ish or HH:MM:SS)
+  if (/^\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}/.test(line)) return 'text-gray-500';
+  return 'text-gray-300';
+}
+
+/**
+ * Renders a single log line, handling the special [git-clone] / [kaniko]
+ * prefix colour separately from the rest of the text.
+ */
+function LogLine({ line, index }: { line: string; index: number }) {
+  const prefixMatch = line.match(/^(\[(git-clone|kaniko)\])\s*/);
+
+  return (
+    <div className="flex gap-2 min-w-0">
+      {/* Line number */}
+      <span className="select-none text-gray-600 shrink-0 w-8 text-right">{index + 1}</span>
+      {/* Content */}
+      {prefixMatch ? (
+        <span className="min-w-0 break-all whitespace-pre-wrap">
+          <span className="text-cyan-400 font-semibold">{prefixMatch[1]}</span>
+          <span className="text-gray-200">{line.slice(prefixMatch[0].length)}</span>
+        </span>
+      ) : (
+        <span className={`min-w-0 break-all whitespace-pre-wrap ${logLineColor(line)}`}>
+          {line}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Auto-scrolling terminal log viewer ───────────────────────────────────────
 
 function LogViewer({ lines }: { lines: string[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
 
+  // Scroll to bottom when new lines arrive, unless user scrolled up
   useEffect(() => {
+    if (!userScrolledUp) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [lines.length, userScrolledUp]);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    setUserScrolledUp(!atBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [lines.length]);
+    setUserScrolledUp(false);
+  }, []);
 
   if (lines.length === 0) return null;
 
   return (
-    <div className="mt-2 bg-[#0d1117] border border-gray-700/50 rounded-lg p-3 max-h-40 overflow-y-auto font-mono text-xs text-gray-300 leading-relaxed">
-      {lines.map((line, i) => (
-        <div key={i} className="whitespace-pre-wrap break-all">
-          {line}
-        </div>
-      ))}
-      <div ref={bottomRef} />
+    <div className="relative mt-2">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="bg-[#0d1117] border border-gray-700/50 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs leading-relaxed space-y-0.5"
+      >
+        {lines.map((line, i) => (
+          <LogLine key={i} line={line} index={i} />
+        ))}
+        <div ref={bottomRef} />
+      </div>
+      {/* Scroll-to-bottom button — only shown when user has scrolled up */}
+      {userScrolledUp && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-2 right-2 flex items-center gap-1 bg-navy-700 border border-navy-500 text-cyan-400 hover:text-cyan-300 text-xs px-2 py-1 rounded-full shadow-lg transition-colors"
+        >
+          <ChevronsDown className="w-3 h-3" />
+          bottom
+        </button>
+      )}
+      {/* Line count */}
+      <p className="text-right text-[10px] text-gray-600 mt-0.5 font-mono">
+        {lines.length} line{lines.length !== 1 ? 's' : ''}
+      </p>
     </div>
   );
 }
@@ -104,6 +194,46 @@ function ProgressBar({ value, status }: { value: number; status: string }) {
         style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
       />
     </div>
+  );
+}
+
+// ── Live elapsed timer ─────────────────────────────────────────────────────
+
+/**
+ * Shows elapsed time for a running gate, ticking every second.
+ * For completed gates, shows a static final duration.
+ */
+function GateTiming({
+  status,
+  startedAt,
+  completedAt,
+}: {
+  status: string;
+  startedAt: number | null;
+  completedAt: number | null;
+}) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (status !== 'running' || !startedAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [status, startedAt]);
+
+  if (!startedAt) return null;
+
+  const elapsed = status === 'running'
+    ? now - startedAt
+    : completedAt
+    ? completedAt - startedAt
+    : null;
+
+  if (elapsed === null) return null;
+
+  return (
+    <span className="text-xs text-gray-500 font-mono tabular-nums shrink-0">
+      {formatDuration(elapsed)}
+    </span>
   );
 }
 
@@ -129,6 +259,8 @@ function GateStreamRow({
     streamState?.progress ?? staticGate?.progress ?? 0;
   const logs = streamState?.logs ?? [];
   const streamFindings = streamState?.findings ?? [];
+  const startedAt = streamState?.startedAt ?? null;
+  const completedAt = streamState?.completedAt ?? null;
 
   // Use stream findings when present; fall back to gate findings from polling
   const displayFindings =
@@ -172,6 +304,8 @@ function GateStreamRow({
         >
           {label}
         </span>
+        {/* Timing */}
+        <GateTiming status={status} startedAt={startedAt} completedAt={completedAt} />
         {displayFindings.length > 0 && (
           <span className="text-xs text-gray-500">
             {displayFindings.length} finding{displayFindings.length !== 1 ? 's' : ''}
@@ -189,7 +323,7 @@ function GateStreamRow({
         )}
       </button>
 
-      {/* Progress bar */}
+      {/* Progress bar (running or partially done) */}
       {(status === 'running' || (status !== 'pending' && progress > 0 && progress < 100)) && (
         <div className="px-3 pb-1">
           <ProgressBar value={progress} status={status} />
@@ -263,7 +397,7 @@ export function PipelineStream({ runId, gates }: PipelineStreamProps) {
 
   return (
     <div className="bg-navy-900 border border-navy-600 rounded-xl overflow-hidden">
-      {/* Header */}
+      {/* Terminal chrome header */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-navy-800/80 border-b border-navy-700">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-red-500/80" />
@@ -271,6 +405,7 @@ export function PipelineStream({ runId, gates }: PipelineStreamProps) {
           <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
           <span className="ml-2 text-xs font-mono text-gray-400">pipeline live feed</span>
         </div>
+        {/* Connection status indicator */}
         <div className="flex items-center gap-1.5">
           {stream.done ? (
             <span className="text-xs text-gray-500 flex items-center gap-1">
@@ -279,15 +414,23 @@ export function PipelineStream({ runId, gates }: PipelineStreamProps) {
             </span>
           ) : stream.connected ? (
             <span className="text-xs text-emerald-400 flex items-center gap-1">
-              <Wifi className="w-3 h-3" />
-              live
+              <span className="relative flex w-2 h-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              connected
             </span>
           ) : runId ? (
             <span className="text-xs text-gray-500 flex items-center gap-1">
               <WifiOff className="w-3 h-3" />
               connecting...
             </span>
-          ) : null}
+          ) : (
+            <span className="text-xs text-gray-600 flex items-center gap-1">
+              <Wifi className="w-3 h-3" />
+              disconnected
+            </span>
+          )}
         </div>
       </div>
 

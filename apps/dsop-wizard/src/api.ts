@@ -450,6 +450,9 @@ export async function createPipelineRun(data: {
   team: string;
   classification: string;
   contact?: string;
+  /** Granular pod/container security context overrides (e.g. from the Deploy tab securityContext UI). */
+  securityContext?: Record<string, unknown>;
+  port?: number;
 }): Promise<PipelineRun> {
   return apiFetch('/pipeline/runs', {
     method: 'POST',
