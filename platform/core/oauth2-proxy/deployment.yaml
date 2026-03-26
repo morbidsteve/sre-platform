@@ -63,9 +63,11 @@ spec:
             # TODO: Restrict to organization domain in production
             - --email-domain=*
             - --set-xauthrequest=true
-            - --set-authorization-header=true
-            - --pass-access-token=true
-            - --pass-authorization-header=true
+            - --set-authorization-header=false
+            - --pass-access-token=false
+            - --pass-authorization-header=false
+            # Cookie size: disable token passthrough to keep session cookie < 4KB.
+            # The dashboard only needs X-Auth-Request-User/Email/Groups headers.
             - --skip-auth-route=^/healthz$
             - --skip-auth-route=^/api/health$
             - --whitelist-domain=.${SRE_DOMAIN}
