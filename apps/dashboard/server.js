@@ -1595,7 +1595,7 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
 // Auto-detects repo type (compose, helm, dockerfile, kustomize) and routes to the right strategy
 app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { url, branch, team, name, securityContext } = req.body;
+    const { url, branch, team, name, securityContext, securityExceptions } = req.body;
 
     if (!url || !isValidGitUrl(url)) {
       return res.status(400).json({ error: "Missing or invalid required field: url (must be a valid Git URL)" });
@@ -1615,6 +1615,12 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
     const teamName = team.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     const nsName = normalizeTeamName(team);
     const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
+
+    // Pre-generate Kyverno PolicyException if security exceptions are present
+    const deployExceptions = Array.isArray(securityExceptions) ? securityExceptions : [];
+    const deployPolicyException = deployExceptions.length > 0
+      ? generatePolicyException(safeName, nsName, deployExceptions, getActor(req))
+      : null;
 
     // Phase 1: Analyze the repo to detect project type
     console.log(`[deploy-git] Analyzing repo ${url} (branch: ${safeBranch}) for app "${safeName}"`);
@@ -1984,7 +1990,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
             env: svc.environment || [],
           });
           const actor = getActor(req);
-          await deployViaGitOps(manifest, nsName, svcAppName, actor);
+          await deployViaGitOps(manifest, nsName, svcAppName, actor, deployPolicyException);
 
           // Auto-create DestinationRule for HTTPS backend detection
           const composeSvcName = `${svcAppName}-${svcAppName}`;
@@ -2104,7 +2110,7 @@ app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "develope
       };
 
       const actor = getActor(req);
-      await deployViaGitOps(helmRelease, nsName, safeName, actor);
+      await deployViaGitOps(helmRelease, nsName, safeName, actor, deployPolicyException);
 
       // Auto-create DestinationRule for HTTPS backend detection
       await createBackendTLSRule(safeName, nsName, `${safeName}-${safeName}`);
@@ -5187,6 +5193,93 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
   return hr;
 }
 
+/**
+ * Generates a Kyverno PolicyException resource for ISSM-approved security exceptions.
+ * Maps DSOP security exception types to the Kyverno policies they need to bypass.
+ *
+ * @param {string} name - Application name
+ * @param {string} team - Namespace
+ * @param {Array} securityExceptions - Array of {type, justification} from ISSM review
+ * @param {string} reviewer - ISSM reviewer identity
+ * @returns {object|null} PolicyException manifest or null if no exceptions needed
+ */
+function generatePolicyException(name, team, securityExceptions, reviewer) {
+  const policyMap = {
+    run_as_root: [
+      { policyName: "require-security-context", ruleNames: ["require-run-as-non-root", "require-drop-all-capabilities"] },
+    ],
+    privileged_container: [
+      { policyName: "disallow-privileged-containers", ruleNames: ["disallow-privileged"] },
+      { policyName: "require-security-context", ruleNames: ["require-run-as-non-root", "require-drop-all-capabilities"] },
+    ],
+    host_networking: [
+      { policyName: "disallow-host-namespaces", ruleNames: ["deny-host-namespaces"] },
+    ],
+    custom_capability: [
+      { policyName: "require-security-context", ruleNames: ["require-drop-all-capabilities"] },
+    ],
+    // writable_filesystem: no PolicyException needed — Helm values override is sufficient
+  };
+
+  // Collect all policy exceptions, deduplicating by policyName
+  const seen = new Map();
+  for (const exc of securityExceptions) {
+    const mappings = policyMap[exc.type] || [];
+    for (const m of mappings) {
+      if (seen.has(m.policyName)) {
+        const existing = seen.get(m.policyName);
+        existing.ruleNames = [...new Set([...existing.ruleNames, ...m.ruleNames])];
+      } else {
+        seen.set(m.policyName, { policyName: m.policyName, ruleNames: [...m.ruleNames] });
+      }
+    }
+  }
+
+  const exceptions = Array.from(seen.values());
+  if (exceptions.length === 0) return null;
+
+  // 90-day expiry from today
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + 90);
+  const expiryStr = expiry.toISOString().split("T")[0];
+
+  const justifications = securityExceptions
+    .map(e => `${e.type}: ${e.justification || "Approved by ISSM"}`)
+    .join("; ");
+
+  return {
+    apiVersion: "kyverno.io/v2beta1",
+    kind: "PolicyException",
+    metadata: {
+      name: `${name}-security-exception`,
+      namespace: team,
+      labels: {
+        "app.kubernetes.io/part-of": "sre-platform",
+        "sre.io/team": team,
+        "sre.io/managed-by": "dsop-pipeline",
+      },
+      annotations: {
+        "sre.io/exception-reason": justifications,
+        "sre.io/exception-approver": reviewer || "issm-review",
+        "sre.io/exception-expiry": expiryStr,
+        "sre.io/pipeline-generated": "true",
+      },
+    },
+    spec: {
+      exceptions,
+      match: {
+        any: [{
+          resources: {
+            kinds: ["Pod"],
+            namespaces: [team],
+            names: [`${name}-*`],
+          },
+        }],
+      },
+    },
+  };
+}
+
 async function ensureNamespace(nsName, teamLabel) {
   try {
     await k8sApi.readNamespace(nsName);
@@ -5304,13 +5397,24 @@ async function applyManifest(manifest, namespace) {
 
 // ── GitOps Deploy/Undeploy Helpers ───────────────────────────────────────────
 
-async function deployViaGitOps(manifest, nsName, appName, actor) {
+async function deployViaGitOps(manifest, nsName, appName, actor, policyException) {
   if (gitops.isEnabled()) {
     await gitops.ensureTenantInGit(nsName);
-    await gitops.deployApp(nsName, appName, manifest, actor);
+    const extraFiles = [];
+    if (policyException) {
+      extraFiles.push({
+        filename: `${appName}-policy-exception.yaml`,
+        manifest: policyException,
+      });
+      logger.info("deploy", `Generated PolicyException for ${appName} in ${nsName}`, { app: appName, namespace: nsName });
+    }
+    await gitops.deployApp(nsName, appName, manifest, actor, extraFiles);
     await gitops.triggerFluxReconcile();
   } else {
     await applyManifest(manifest, nsName);
+    if (policyException) {
+      await applyManifest(policyException, nsName);
+    }
   }
 }
 
@@ -8278,13 +8382,14 @@ async function executePipelineDeploy(run, actor) {
 
     // Check if run has security exceptions requiring privileged mode
     let needsPrivileged = false;
+    let parsedExceptions = [];
     try {
-      const exceptions = typeof run.security_exceptions === "string" ? JSON.parse(run.security_exceptions || "[]") : (run.security_exceptions || []);
+      parsedExceptions = typeof run.security_exceptions === "string" ? JSON.parse(run.security_exceptions || "[]") : (run.security_exceptions || []);
       const privilegedTypes = ["run_as_root", "writable_filesystem", "privileged_container", "host_networking"];
-      needsPrivileged = exceptions.some(e => privilegedTypes.includes(e.type));
+      needsPrivileged = parsedExceptions.some(e => privilegedTypes.includes(e.type));
       if (needsPrivileged) {
-        logger.info('pipeline', `Run ${run.id} has security exceptions requiring privileged mode`, { runId: run.id, exceptions: exceptions.map(e => e.type) });
-        await db.auditLog(run.id, "privileged_deploy", actor, `Deploying with privileged security context due to approved exceptions: ${exceptions.map(e => e.type).join(", ")}`);
+        logger.info('pipeline', `Run ${run.id} has security exceptions requiring privileged mode`, { runId: run.id, exceptions: parsedExceptions.map(e => e.type) });
+        await db.auditLog(run.id, "privileged_deploy", actor, `Deploying with privileged security context due to approved exceptions: ${parsedExceptions.map(e => e.type).join(", ")}`);
       }
     } catch (e) {
       console.debug('[pipeline] Security exception check for deploy best-effort:', e.message);
@@ -8328,7 +8433,16 @@ async function executePipelineDeploy(run, actor) {
         securityContext: pipelineSecurityContext,
       });
 
-      await deployViaGitOps(manifest, nsName, safeName, actor);
+      // Generate Kyverno PolicyException for ISSM-approved security exceptions
+      const policyException = parsedExceptions.length > 0
+        ? generatePolicyException(safeName, nsName, parsedExceptions, actor)
+        : null;
+      if (policyException) {
+        await db.auditLog(run.id, "policy_exception_generated", actor,
+          `Generated Kyverno PolicyException for ${parsedExceptions.map(e => e.type).join(", ")}`);
+      }
+
+      await deployViaGitOps(manifest, nsName, safeName, actor, policyException);
 
       // Monitor HelmRelease status — auto-retry on max retry failure
       const hrStatus = await waitForHelmRelease(nsName, safeName, 180);
@@ -8377,6 +8491,7 @@ async function executePipelineDeploy(run, actor) {
       };
       if (needsPrivileged) deployPayload.privileged = true;
       if (pipelineSecurityContext) deployPayload.securityContext = pipelineSecurityContext;
+      if (parsedExceptions.length > 0) deployPayload.securityExceptions = parsedExceptions;
       const deployResult = await new Promise((resolve, reject) => {
         const postData = JSON.stringify(deployPayload);
         const req = http.request({
@@ -8478,7 +8593,16 @@ async function executePipelineDeploy(run, actor) {
         securityContext: pipelineSecurityContext,
       });
 
-      await deployViaGitOps(manifest, nsName, safeName, actor);
+      // Generate Kyverno PolicyException for ISSM-approved security exceptions
+      const policyException2 = parsedExceptions.length > 0
+        ? generatePolicyException(safeName, nsName, parsedExceptions, actor)
+        : null;
+      if (policyException2) {
+        await db.auditLog(run.id, "policy_exception_generated", actor,
+          `Generated Kyverno PolicyException for ${parsedExceptions.map(e => e.type).join(", ")}`);
+      }
+
+      await deployViaGitOps(manifest, nsName, safeName, actor, policyException2);
 
       // Monitor HelmRelease status — auto-retry on max retry failure
       const hrStatus2 = await waitForHelmRelease(nsName, safeName, 180);

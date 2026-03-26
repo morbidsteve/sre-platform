@@ -430,17 +430,17 @@ async function updateKustomization(teamDir) {
  * @param {object} manifestObj - HelmRelease manifest object (JS object, not YAML)
  * @param {string} actor - User who triggered the deploy (for audit trail)
  */
-async function deployApp(team, appName, manifestObj, actor) {
+async function deployApp(team, appName, manifestObj, actor, extraFiles = []) {
   requireEnabled();
 
-  console.log(`[gitops] Deploying ${appName} to ${team} (by ${actor})`);
+  console.log(`[gitops] Deploying ${appName} to ${team} (by ${actor})${extraFiles.length ? ` with ${extraFiles.length} extra file(s)` : ""}`);
 
   // Serialize the manifest to YAML
   const manifestYaml = "---\n" + yaml.dump(manifestObj, { lineWidth: -1, noRefs: true });
 
-  // Build the updated kustomization that includes this app
-  // First, get the current kustomization content to know existing entries
-  const kustomizationContent = await buildKustomizationWithApp(team, appName);
+  // Build the updated kustomization that includes this app and any extra files
+  const allNames = [appName, ...extraFiles.map(f => f.filename.replace(/\.yaml$/, ""))];
+  const kustomizationContent = await buildKustomizationWithApps(team, allNames);
 
   const files = [
     {
@@ -451,12 +451,16 @@ async function deployApp(team, appName, manifestObj, actor) {
       path: `apps/tenants/${team}/apps/kustomization.yaml`,
       content: kustomizationContent,
     },
+    ...extraFiles.map(f => ({
+      path: `apps/tenants/${team}/apps/${f.filename}`,
+      content: "---\n" + yaml.dump(f.manifest, { lineWidth: -1, noRefs: true }),
+    })),
   ];
 
   const commitMessage = `deploy(${team}): ${appName}\n\nDeployed by: ${actor}`;
 
   const result = await createMultipleFiles(files, commitMessage);
-  console.log(`[gitops] Deploy complete: ${appName} in ${team}`);
+  console.log(`[gitops] Deploy complete: ${appName} in ${team} (${files.length} files)`);
   return result;
 }
 
@@ -506,6 +510,13 @@ async function undeployApp(team, appName, actor) {
     // Delete the app manifest
     {
       path: `apps/tenants/${team}/apps/${appName}.yaml`,
+      mode: "100644",
+      type: "blob",
+      sha: null,
+    },
+    // Delete the policy exception file if it exists (best-effort)
+    {
+      path: `apps/tenants/${team}/apps/${appName}-policy-exception.yaml`,
       mode: "100644",
       type: "blob",
       sha: null,
@@ -681,8 +692,9 @@ async function buildKustomizationWithApps(team, appNames) {
 async function buildKustomizationWithoutApp(team, appName) {
   const existing = await getCurrentAppResources(team);
   const filename = appName.endsWith(".yaml") ? appName : `${appName}.yaml`;
+  const exceptionFilename = `${appName}-policy-exception.yaml`;
 
-  const resources = existing.filter((r) => r !== filename);
+  const resources = existing.filter((r) => r !== filename && r !== exceptionFilename);
 
   const kustomization = {
     apiVersion: "kustomize.config.k8s.io/v1beta1",
