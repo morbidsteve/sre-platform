@@ -1,12 +1,33 @@
 import React, { useState, useCallback } from 'react';
 import { Shield, Rocket, Box, Database, ChevronLeft } from 'lucide-react';
 import { useConfig, serviceUrl } from '../../context/ConfigContext';
+import { useToast } from '../../context/ToastContext';
 import { QuickStartPanel } from '../applications/QuickStartPanel';
 import { HelmDeployForm } from '../applications/HelmDeployForm';
 import { DatabaseForm } from '../applications/DatabaseForm';
 import { DeployProgress } from '../applications/DeployProgress';
 import { SecurityContextSection } from './SecurityContextSection';
+import { ComplianceGateResult } from './ComplianceGateResult';
 import type { SecurityContextOptions } from '../../types/api';
+
+interface ComplianceBlocker {
+  check: string;
+  severity: string;
+  message: string;
+}
+
+interface ComplianceCheck {
+  check: string;
+  status: string;
+  message: string;
+}
+
+interface ComplianceGateResponse {
+  blockers: ComplianceBlocker[];
+  warnings: ComplianceCheck[];
+  checks: ComplianceCheck[];
+  error: string;
+}
 
 type DeployMethod = 'none' | 'dsop' | 'quick' | 'helm' | 'database';
 
@@ -58,10 +79,12 @@ const DEPLOY_METHODS = [
 
 export function DeployTab({ user, onOpenApp }: DeployTabProps) {
   const config = useConfig();
+  const { showToast } = useToast();
   const [method, setMethod] = useState<DeployMethod>('none');
   const [deployItems, setDeployItems] = useState<DeployItem[]>([]);
   const [showProgress, setShowProgress] = useState(false);
   const [securityContext, setSecurityContext] = useState<SecurityContextOptions>({});
+  const [complianceResult, setComplianceResult] = useState<ComplianceGateResponse | null>(null);
 
   const handleOpenDsopWizard = useCallback(() => {
     // Append timestamp to force a fresh wizard session (no cached state from previous run)
@@ -69,8 +92,7 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
   }, [onOpenApp, config]);
 
   const handleQuickDeploy = useCallback(async (item: DeployItem) => {
-    setDeployItems([item]);
-    setShowProgress(true);
+    setComplianceResult(null);
     const hasSecCtx = securityContext.runAsRoot || securityContext.writableFilesystem ||
       securityContext.allowPrivilegeEscalation || (securityContext.capabilities && securityContext.capabilities.length > 0);
     try {
@@ -90,12 +112,20 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
       });
       const data = await resp.json();
       if (!data.success) {
-        console.error('Deploy failed:', data.error);
+        if (data.blockers && data.blockers.length > 0) {
+          setComplianceResult(data as ComplianceGateResponse);
+        } else {
+          showToast(`Deploy failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+        return;
       }
+      setDeployItems([item]);
+      setShowProgress(true);
+      showToast(`Deploying ${item.name} to ${item.team}...`, 'info');
     } catch (err) {
-      console.error('Deploy error:', err);
+      showToast(`Deploy error: ${err instanceof Error ? err.message : 'Network error'}`, 'error');
     }
-  }, [securityContext]);
+  }, [securityContext, showToast]);
 
   const handleHelmDeploy = useCallback(async (payload: {
     repoUrl: string;
@@ -116,6 +146,10 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
           ...(hasSecCtx ? { securityContext } : {}),
         }),
       });
+      if (resp.status === 400) {
+        showToast('Invalid YAML in values field. Check syntax.', 'error');
+        return;
+      }
       const data = await resp.json();
       if (data.success) {
         setDeployItems([
@@ -130,11 +164,14 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
           },
         ]);
         setShowProgress(true);
+        showToast('Helm release created. Flux will reconcile shortly.', 'success');
+      } else {
+        showToast(`Helm deploy failed: ${data.error || 'Unknown error'}`, 'error');
       }
-    } catch {
-      // handle silently
+    } catch (err) {
+      showToast(`Helm deploy failed: ${err instanceof Error ? err.message : 'Network error'}`, 'error');
     }
-  }, [securityContext]);
+  }, [securityContext, showToast]);
 
   const handleCreateDatabase = useCallback(async (payload: {
     name: string;
@@ -143,15 +180,21 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
     instances: number;
   }) => {
     try {
-      await fetch('/api/databases', {
+      const resp = await fetch('/api/databases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-    } catch {
-      // handle silently
+      const data = await resp.json();
+      if (resp.ok && data.success !== false) {
+        showToast('Database provisioning started.', 'success');
+      } else {
+        showToast(`Database creation failed: ${data.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Database creation failed: ${err instanceof Error ? err.message : 'Network error'}`, 'error');
     }
-  }, []);
+  }, [showToast]);
 
   return (
     <div>
@@ -171,6 +214,14 @@ export function DeployTab({ user, onOpenApp }: DeployTabProps) {
           setDeployItems([]);
         }}
       />
+
+      {/* Compliance Gate Result */}
+      {complianceResult && (
+        <ComplianceGateResult
+          result={complianceResult}
+          onDismiss={() => setComplianceResult(null)}
+        />
+      )}
 
       {/* Method Selector */}
       {method === 'none' && (

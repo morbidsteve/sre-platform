@@ -1,4 +1,28 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import type { DeployStatus } from '../../types/api';
+
+// Policy name → fix guidance
+const POLICY_FIXES: Record<string, string> = {
+  'require-run-as-nonroot': 'Add `USER 1000` to your Dockerfile, or set `securityContext.runAsNonRoot: true`.',
+  'require-security-context': 'Set `allowPrivilegeEscalation: false` and `capabilities.drop: ["ALL"]`.',
+  'restrict-image-registries': 'Push your image to `harbor.apps.sre.example.com` first.',
+  'disallow-latest-tag': 'Pin your image to a specific version tag (e.g., `:v1.2.3`).',
+  'require-resource-limits': 'Set `resources.requests` and `resources.limits` in your values.',
+  'require-probes': 'Add `livenessProbe` and `readinessProbe` to your container spec.',
+  'require-labels': 'Add required labels: `app.kubernetes.io/name`, `sre.io/team`.',
+  'verify-image-signatures': 'Sign your image with Cosign before pushing to Harbor.',
+  'disallow-privileged-containers': 'Remove `privileged: true` from your securityContext.',
+  'disallow-privilege-escalation': 'Set `allowPrivilegeEscalation: false`.',
+  'require-drop-all-capabilities': 'Add `capabilities.drop: [ALL]` to your securityContext.',
+};
+
+function getPolicyFix(message: string): string | null {
+  const lower = message.toLowerCase();
+  for (const [key, fix] of Object.entries(POLICY_FIXES)) {
+    if (lower.includes(key.toLowerCase())) return fix;
+  }
+  return null;
+}
 
 interface DeployItem {
   name: string;
@@ -17,6 +41,8 @@ interface DeployStep {
   isDone: boolean;
   isError: boolean;
   podStatuses: ('pending' | 'running' | 'error')[];
+  errorDetail?: string;
+  policyFix?: string;
 }
 
 interface DeployProgressProps {
@@ -28,6 +54,59 @@ interface DeployProgressProps {
 export function DeployProgress({ items, visible, onDismiss }: DeployProgressProps) {
   const [steps, setSteps] = useState<DeployStep[]>([]);
   const pollTimers = useRef<number[]>([]);
+
+  const diagnoseFailure = useCallback(async (namespace: string, name: string, idx: number) => {
+    try {
+      const resp = await fetch(`/api/deploy/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/status`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const status: DeployStatus = await resp.json();
+
+      let errorMsg = '';
+      let policyFix: string | undefined;
+
+      // Check for policy violations first
+      if (status.policyViolations && status.policyViolations.length > 0) {
+        const pv = status.policyViolations[0];
+        errorMsg = `Blocked by policy: ${pv.message}`;
+        const fix = getPolicyFix(pv.message);
+        if (fix) policyFix = fix;
+      } else if (status.helmRelease?.reason && ['InstallFailed', 'UpgradeFailed', 'ReconciliationFailed'].includes(status.helmRelease.reason)) {
+        const detail = status.helmRelease.errorDetail || status.helmRelease.message || '';
+        errorMsg = `Helm install failed: ${detail.substring(0, 200)}`;
+      } else if (status.pods && status.pods.some((p) => p.phase === 'Failed' || p.containers?.some((c) => c.reason))) {
+        const failedPod = status.pods.find((p) => p.phase === 'Failed' || p.containers?.some((c) => c.reason));
+        if (failedPod) {
+          const failingContainer = failedPod.containers?.find((c) => c.reason);
+          const reason = failingContainer?.reason || failedPod.phase;
+          const msg = failingContainer ? ` — check pod logs for details` : '';
+          errorMsg = `Pod failed: ${reason}${msg}`;
+        }
+      } else if (status.events && status.events.some((e) => e.type === 'Warning')) {
+        const warningEvent = status.events.find((e) => e.type === 'Warning');
+        if (warningEvent) {
+          errorMsg = `Warning: ${warningEvent.message.substring(0, 150)}`;
+        }
+      } else {
+        errorMsg = 'Deploy is taking longer than expected. Check the Applications tab for live status.';
+      }
+
+      setSteps((prev) =>
+        prev.map((s, i) =>
+          i === idx && !s.isDone
+            ? { ...s, progress: 90, status: errorMsg, isError: true, errorDetail: errorMsg, policyFix }
+            : s
+        )
+      );
+    } catch {
+      setSteps((prev) =>
+        prev.map((s, i) =>
+          i === idx && !s.isDone
+            ? { ...s, progress: 90, status: 'Deploy is taking longer than expected. Check the Applications tab.', isError: true }
+            : s
+        )
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (!visible || items.length === 0) return;
@@ -64,13 +143,15 @@ export function DeployProgress({ items, visible, onDismiss }: DeployProgressProp
         attempts++;
         if (attempts > 60) {
           clearInterval(timer);
+          // Instead of "check status manually", diagnose the actual failure
           setSteps((prev) =>
             prev.map((s, i) =>
               i === idx && !s.isDone
-                ? { ...s, progress: 90, status: 'Timeout - check status manually' }
+                ? { ...s, progress: 85, status: 'Diagnosing...' }
                 : s
             )
           );
+          await diagnoseFailure(ns, item.name, idx);
           return;
         }
 
@@ -137,7 +218,7 @@ export function DeployProgress({ items, visible, onDismiss }: DeployProgressProp
       pollTimers.current.forEach((t) => clearInterval(t));
       pollTimers.current = [];
     };
-  }, [visible, items]);
+  }, [visible, items, diagnoseFailure]);
 
   if (!visible || items.length === 0) return null;
 
@@ -169,13 +250,14 @@ export function DeployProgress({ items, visible, onDismiss }: DeployProgressProp
                 </code>
               </span>
               <span
-                className={`text-xs font-mono ${
+                className={`text-xs font-mono max-w-[200px] truncate text-right ${
                   step.isDone && !step.isError
                     ? 'text-green'
                     : step.isError
                     ? 'text-red'
                     : 'text-text-dim'
                 }`}
+                title={step.status}
               >
                 {step.status}
               </span>
@@ -192,6 +274,17 @@ export function DeployProgress({ items, visible, onDismiss }: DeployProgressProp
                 style={{ width: `${step.progress}%` }}
               />
             </div>
+            {/* Error detail panel */}
+            {step.isError && step.errorDetail && (
+              <div className="mt-2 px-3 py-2 rounded bg-red/5 border border-red/20 text-xs text-red">
+                <div className="font-mono leading-relaxed">{step.errorDetail}</div>
+                {step.policyFix && (
+                  <div className="mt-1.5 text-text-primary font-mono bg-bg rounded px-2 py-1 leading-relaxed">
+                    Fix: {step.policyFix}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex gap-1 mt-1.5">
               {step.podStatuses.map((ps, pi) => (
                 <span

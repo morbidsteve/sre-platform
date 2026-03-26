@@ -913,6 +913,41 @@ app.get("/api/apps", async (req, res) => {
             }
           }
 
+          // Fetch policy violation events for failed apps
+          let policyViolations = [];
+          if (status === "failed" || status === "deploying") {
+            try {
+              const evResp = await k8sApi.listNamespacedEvent(ns.metadata.name);
+              const appName = hr.metadata.name;
+              policyViolations = evResp.body.items
+                .filter((e) => {
+                  const objName = e.involvedObject?.name || "";
+                  const matchesApp = objName === appName || objName.startsWith(`${appName}-`);
+                  if (!matchesApp) return false;
+                  const msg = (e.message || "").toLowerCase();
+                  const reason = (e.reason || "").toLowerCase();
+                  return (
+                    reason === "policyviolation" ||
+                    msg.includes("kyverno") ||
+                    msg.includes("policy") ||
+                    msg.includes("denied by") ||
+                    msg.includes("admission webhook") ||
+                    msg.includes("blocked")
+                  );
+                })
+                .sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0))
+                .slice(0, 5)
+                .map((e) => ({
+                  reason: e.reason || "",
+                  message: e.message || "",
+                  time: e.lastTimestamp || e.eventTime || "",
+                  type: e.type || "Normal",
+                }));
+            } catch (evErr) {
+              // best-effort
+            }
+          }
+
           apps.push({
             name: hr.metadata.name,
             namespace: ns.metadata.name,
@@ -920,6 +955,7 @@ app.get("/api/apps", async (req, res) => {
             ready: status === "running",
             status: status,
             statusReason: statusReason,
+            policyViolations: policyViolations,
             image: appValues.image?.repository || "",
             tag: appValues.image?.tag || "",
             port: appValues.port || 8080,
@@ -1553,13 +1589,15 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
     }
 
     // Step 3: List events for this app in the namespace
+    let policyViolations = [];
     try {
       const evResp = await k8sApi.listNamespacedEvent(namespace);
-      events = evResp.body.items
-        .filter((e) => {
-          const objName = e.involvedObject?.name || "";
-          return objName === name || objName.startsWith(`${name}-`);
-        })
+      const allEvents = evResp.body.items.filter((e) => {
+        const objName = e.involvedObject?.name || "";
+        return objName === name || objName.startsWith(`${name}-`);
+      });
+
+      events = allEvents
         .sort((a, b) => {
           const ta = new Date(a.lastTimestamp || a.eventTime || 0);
           const tb = new Date(b.lastTimestamp || b.eventTime || 0);
@@ -1570,6 +1608,34 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
           time: e.lastTimestamp || e.eventTime || "",
           reason: e.reason || "",
           message: e.message || "",
+          type: e.type || "Normal",
+        }));
+
+      // Extract policy violation events (Kyverno admissions, denied webhooks)
+      policyViolations = allEvents
+        .filter((e) => {
+          const msg = (e.message || "").toLowerCase();
+          const reason = (e.reason || "").toLowerCase();
+          return (
+            reason === "policyviolation" ||
+            reason === "failed" && (msg.includes("kyverno") || msg.includes("policy") || msg.includes("denied") || msg.includes("blocked") || msg.includes("admission webhook")) ||
+            msg.includes("kyverno") ||
+            msg.includes("policy") ||
+            msg.includes("denied by") ||
+            msg.includes("admission webhook") ||
+            msg.includes("blocked")
+          );
+        })
+        .sort((a, b) => {
+          const ta = new Date(a.lastTimestamp || a.eventTime || 0);
+          const tb = new Date(b.lastTimestamp || b.eventTime || 0);
+          return tb - ta;
+        })
+        .slice(0, 10)
+        .map((e) => ({
+          reason: e.reason || "",
+          message: e.message || "",
+          time: e.lastTimestamp || e.eventTime || "",
           type: e.type || "Normal",
         }));
     } catch (err) {
@@ -1583,6 +1649,7 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
       helmRelease,
       pods,
       events,
+      policyViolations,
       progress,
     });
   } catch (err) {

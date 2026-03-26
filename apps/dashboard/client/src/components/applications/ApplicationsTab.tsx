@@ -1,11 +1,70 @@
 import React, { useState, useCallback } from 'react';
-import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2, RotateCcw, FileCode, X, Copy, Download, Clock, Check } from 'lucide-react';
+import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2, RotateCcw, FileCode, X, Copy, Download, Clock, Check, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { useUserContext } from '../../context/UserContext';
+import { useToast } from '../../context/ToastContext';
 import { SkeletonCard } from '../ui/Skeleton';
 import { fetchRollbackHistory, rollbackApp, fetchAppManifest } from '../../api/apps';
-import type { RollbackHistoryEntry } from '../../types/api';
+import type { RollbackHistoryEntry, App } from '../../types/api';
+
+// Policy name → fix guidance (sourced from error-knowledge-base.js)
+const POLICY_FIXES: Record<string, string> = {
+  'require-run-as-nonroot': 'Add `USER 1000` to your Dockerfile, or set `securityContext.runAsNonRoot: true` in your Helm values.',
+  'require-security-context': 'Ensure your deployment has `securityContext.allowPrivilegeEscalation: false` and `capabilities.drop: ["ALL"]`.',
+  'restrict-image-registries': 'Pull your image from `harbor.apps.sre.example.com`, not Docker Hub.',
+  'disallow-latest-tag': 'Pin your image to a specific version tag (e.g., `:v1.2.3`), not `:latest`.',
+  'require-resource-limits': 'Set `resources.requests` and `resources.limits` for CPU and memory.',
+  'require-probes': 'Add `livenessProbe` and `readinessProbe` to your container spec.',
+  'require-labels': 'Add required labels: `app.kubernetes.io/name`, `app.kubernetes.io/part-of`, `sre.io/team`.',
+  'verify-image-signatures': 'Sign your image with Cosign before pushing to Harbor.',
+  'disallow-privileged-containers': 'Remove `privileged: true` from your container securityContext.',
+  'disallow-host-namespaces': 'Remove hostPID, hostIPC, and hostNetwork from your pod spec.',
+  'disallow-privilege-escalation': 'Set `allowPrivilegeEscalation: false` in your container securityContext.',
+  'require-drop-all-capabilities': 'Add `capabilities.drop: [ALL]` to your container securityContext.',
+  'disallow-default-namespace': 'Deploy to your team namespace instead of "default".',
+  'require-network-policies': 'Contact your platform admin. Run `./scripts/onboard-tenant.sh <team-name>`.',
+};
+
+function getPolicyFixFromMessage(message: string): string | null {
+  for (const [policyName, fix] of Object.entries(POLICY_FIXES)) {
+    if (message.toLowerCase().includes(policyName.toLowerCase())) {
+      return fix;
+    }
+  }
+  return null;
+}
+
+type AppStatusLabel = 'Running' | 'Deploying' | 'Failed' | 'Policy Denied';
+
+interface AppStatus {
+  label: AppStatusLabel;
+  color: 'green' | 'yellow' | 'red';
+  reason: string | null;
+}
+
+function getAppStatus(app: App): AppStatus {
+  const hasPolicyViolation = app.policyViolations && app.policyViolations.length > 0;
+  if (hasPolicyViolation) {
+    return { label: 'Policy Denied', color: 'red', reason: app.statusReason || null };
+  }
+  const reason = app.statusReason || '';
+  if (
+    app.status === 'failed' ||
+    reason.includes('CrashLoop') ||
+    reason.includes('Error') ||
+    reason.includes('BackOff') ||
+    reason.includes('ImagePull') ||
+    reason.includes('OOMKilled') ||
+    reason.includes('Failed')
+  ) {
+    return { label: 'Failed', color: 'red', reason: reason || null };
+  }
+  if (app.ready) {
+    return { label: 'Running', color: 'green', reason: null };
+  }
+  return { label: 'Deploying', color: 'yellow', reason: reason || 'Waiting for pods...' };
+}
 
 interface ApplicationsTabProps {
   user: { user: string; email: string; role: string; isAdmin: boolean };
@@ -18,6 +77,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
   const { apps: appsData } = useData();
   const { apps, loading, refreshApps } = appsData;
   const { selectedTeam, isAdmin: isAdminUser } = useUserContext();
+  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [deletedKeys, setDeletedKeys] = useState<Set<string>>(new Set());
 
@@ -54,14 +114,17 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
     setRollbackError(null);
     try {
       await rollbackApp(rollbackTarget.namespace, rollbackTarget.name, revision);
+      showToast(`Rolled back ${rollbackTarget.name} to revision ${revision}`, 'success');
       setRollbackTarget(null);
       setTimeout(refreshApps, 3000);
     } catch (err) {
-      setRollbackError(err instanceof Error ? err.message : 'Rollback failed');
+      const message = err instanceof Error ? err.message : 'Rollback failed';
+      setRollbackError(message);
+      showToast(`Rollback failed: ${message}`, 'error');
     } finally {
       setRollbackInProgress(false);
     }
-  }, [rollbackTarget, refreshApps]);
+  }, [rollbackTarget, refreshApps, showToast]);
 
   const handleOpenYaml = useCallback(async (namespace: string, name: string) => {
     setYamlTarget({ namespace, name });
@@ -97,10 +160,13 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
     URL.revokeObjectURL(url);
   }, [yamlContent, yamlTarget]);
 
-  const handleDelete = async (namespace: string, name: string) => {
-    if (!confirm(`Delete ${name} from ${namespace}? This removes all pods, services, and resources.`)) {
-      return;
-    }
+  const [deleteTarget, setDeleteTarget] = useState<{ namespace: string; name: string } | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    const { namespace, name } = deleteTarget;
+    setDeleteInProgress(true);
     try {
       const resp = await fetch(
         `/api/apps/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
@@ -108,12 +174,19 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
       );
       if (resp.ok) {
         setDeletedKeys((prev) => new Set(prev).add(`${namespace}/${name}`));
+        showToast(`Deleted ${name}`, 'success');
         setTimeout(refreshApps, 3000);
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        showToast(`Delete failed: ${data.error || `HTTP ${resp.status}`}`, 'error');
       }
-    } catch {
-      // handle silently
+    } catch (err) {
+      showToast(`Delete failed: ${err instanceof Error ? err.message : 'Network error'}`, 'error');
+    } finally {
+      setDeleteInProgress(false);
+      setDeleteTarget(null);
     }
-  };
+  }, [deleteTarget, refreshApps, showToast]);
 
   const handleOpenService = (url: string) => {
     if (url.includes(`dsop.${config.domain}`)) {
@@ -147,11 +220,15 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
       })
     : teamFiltered;
 
-  const runningCount = filtered.filter((a) => a.ready).length;
-  const deployingCount = filtered.filter((a) => !a.ready).length;
+  const runningCount = filtered.filter((a) => getAppStatus(a).label === 'Running').length;
+  const deployingCount = filtered.filter((a) => getAppStatus(a).label === 'Deploying').length;
+  const failedCount = filtered.filter((a) => {
+    const s = getAppStatus(a).label;
+    return s === 'Failed' || s === 'Policy Denied';
+  }).length;
   const countText =
     filtered.length > 0
-      ? `${runningCount} running${deployingCount > 0 ? `, ${deployingCount} deploying` : ''}`
+      ? `${runningCount} running${deployingCount > 0 ? `, ${deployingCount} deploying` : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}`
       : '';
 
   return (
@@ -218,29 +295,36 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
           {filtered.map((app) => {
             const hasUrl = !!(app.url && app.host);
             const grafanaUrl = `${serviceUrl(config, 'grafana')}/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bnamespace%3D%5C%22${encodeURIComponent(app.namespace)}%5C%22%7D%22%7D%5D%7D`;
+            const appStatus = getAppStatus(app);
+            const isFailed = appStatus.color === 'red';
+
+            const borderColor = isFailed
+              ? 'border-l-red'
+              : appStatus.color === 'green'
+              ? 'border-l-green'
+              : 'border-l-yellow';
+
+            const badgeClass = isFailed
+              ? 'bg-[rgba(239,68,68,0.15)] text-red'
+              : appStatus.color === 'green'
+              ? 'bg-[rgba(64,192,87,0.15)] text-green'
+              : 'bg-[rgba(250,176,5,0.15)] text-yellow';
 
             return (
               <div
                 key={`${app.namespace}/${app.name}`}
-                className={`bg-card border border-border border-l-[3px] rounded-[var(--radius)] p-4 transition-all ${
-                  app.ready ? 'border-l-green' : 'border-l-yellow'
-                } ${
-                  hasUrl ? 'cursor-pointer hover:border-border-hover hover:bg-surface-hover' : ''
+                className={`bg-card border border-border border-l-[3px] rounded-[var(--radius)] p-4 transition-all ${borderColor} ${
+                  hasUrl && !isFailed ? 'cursor-pointer hover:border-border-hover hover:bg-surface-hover' : ''
                 }`}
-                onClick={hasUrl ? () => handleOpenService(app.url!) : undefined}
+                onClick={hasUrl && !isFailed ? () => handleOpenService(app.url!) : undefined}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-1.5">
+                    {isFailed && <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0" />}
                     <span className="font-semibold text-sm text-text-bright">{app.name}</span>
                   </div>
-                  <span
-                    className={`text-[11px] font-mono px-2 py-0.5 rounded ${
-                      app.ready
-                        ? 'bg-[rgba(64,192,87,0.15)] text-green'
-                        : 'bg-[rgba(250,176,5,0.15)] text-yellow'
-                    }`}
-                  >
-                    {app.ready ? 'Running' : 'Deploying'}
+                  <span className={`text-[11px] font-mono px-2 py-0.5 rounded ${badgeClass}`}>
+                    {appStatus.label}
                   </span>
                 </div>
 
@@ -248,7 +332,43 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                   {app.image ? `${app.image}:${app.tag}` : 'unknown'}
                 </div>
 
-                {hasUrl ? (
+                {/* Failure reason */}
+                {isFailed && appStatus.reason && (
+                  <div className="mb-2 px-2 py-1.5 rounded bg-red/5 border border-red/20 text-xs text-red font-mono">
+                    {appStatus.reason}
+                  </div>
+                )}
+
+                {/* Policy violations */}
+                {app.policyViolations && app.policyViolations.length > 0 && (
+                  <div className="mb-2 space-y-1.5">
+                    {app.policyViolations.slice(0, 2).map((pv, idx) => {
+                      const policyNameMatch = pv.message.match(/policy\s+([\w-]+)/i);
+                      const policyName = policyNameMatch ? policyNameMatch[1] : '';
+                      const fix = getPolicyFixFromMessage(pv.message);
+                      return (
+                        <div key={idx} className="px-2 py-1.5 rounded bg-red/5 border border-red/20">
+                          <div className="flex items-start gap-1.5">
+                            <ShieldAlert className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              {policyName && (
+                                <div className="text-[11px] font-mono text-red font-semibold">{policyName}</div>
+                              )}
+                              <div className="text-[11px] text-text-dim leading-tight">{pv.message.substring(0, 120)}</div>
+                              {fix && (
+                                <div className="mt-1 text-[11px] text-text-primary font-mono bg-bg rounded px-1.5 py-1 leading-relaxed">
+                                  Fix: {fix}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {hasUrl && !isFailed ? (
                   <a
                     className="text-xs text-accent hover:underline block mb-2 truncate"
                     href={app.url}
@@ -258,9 +378,9 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                   >
                     {app.host}
                   </a>
-                ) : (
+                ) : !isFailed ? (
                   <span className="text-xs text-text-dim block mb-2">Cluster-internal only</span>
-                )}
+                ) : null}
 
                 <div className="flex items-center gap-3 text-[11px] text-text-dim mb-3">
                   <span>{app.team || app.namespace}</span>
@@ -296,7 +416,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                       Rollback
                     </button>
                   )}
-                  {hasUrl && (
+                  {hasUrl && !isFailed && (
                     <a
                       className="btn btn-primary text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 no-underline"
                       href={app.url}
@@ -310,7 +430,7 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                   {user.isAdmin && (
                     <button
                       className="btn btn-danger text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1"
-                      onClick={() => handleDelete(app.namespace, app.name)}
+                      onClick={() => setDeleteTarget({ namespace: app.namespace, name: app.name })}
                     >
                       <Trash2 className="w-3 h-3" />
                       Delete
@@ -437,6 +557,60 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                   {yamlContent}
                 </pre>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget && !deleteInProgress) setDeleteTarget(null); }}
+        >
+          <div
+            className="bg-card border border-border rounded-xl w-full max-w-sm mx-4 overflow-hidden shadow-2xl"
+            style={{ animation: 'confirmIn 0.2s ease-out' }}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+              <h3 className="text-sm font-semibold text-text-bright flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-red" />
+                Confirm Delete
+              </h3>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteInProgress}
+                className="text-text-dim hover:text-text-primary"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-text-primary mb-1">
+                Delete <span className="font-semibold text-text-bright">{deleteTarget.name}</span>?
+              </p>
+              <p className="text-xs text-text-dim mb-4">
+                This removes all pods, services, and resources from{' '}
+                <span className="font-mono">{deleteTarget.namespace}</span>. This cannot be undone.
+              </p>
+              <div className="flex items-center gap-2 justify-end">
+                <button
+                  className="btn text-xs !py-1.5 !px-3 !min-h-0"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleteInProgress}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-danger text-xs !py-1.5 !px-3 !min-h-0 flex items-center gap-1"
+                  onClick={handleDeleteConfirm}
+                  disabled={deleteInProgress}
+                >
+                  <Trash2 className="w-3 h-3" />
+                  {deleteInProgress ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

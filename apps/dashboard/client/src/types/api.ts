@@ -70,11 +70,21 @@ export interface Alert {
 
 // ── Apps ─────────────────────────────────────────────────────────────────────
 
+export interface PolicyEvent {
+  reason: string;
+  message: string;
+  time: string;
+  type: string;
+}
+
 export interface App {
   name: string;
   namespace: string;
   team: string;
   ready: boolean;
+  status?: string;
+  statusReason?: string;
+  policyViolations?: PolicyEvent[];
   image: string;
   tag: string;
   port: number;
@@ -188,9 +198,10 @@ export interface DeployStatus {
   name: string;
   namespace: string;
   phase: 'pending' | 'creating' | 'running' | 'failed';
-  helmRelease: { ready: boolean; message: string; lastTransition: string };
+  helmRelease: { ready: boolean; message: string; lastTransition: string; reason?: string; errorDetail?: string; retriesExhausted?: boolean };
   pods: DeployStatusPod[];
   events: DeployStatusEvent[];
+  policyViolations?: PolicyEvent[];
   progress: number;
 }
 
