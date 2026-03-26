@@ -30,12 +30,19 @@ spec:
           All application containers in Pod {{request.object.metadata.name}}
           must define livenessProbe and readinessProbe. Istio sidecar
           (istio-proxy) is excluded from this check.
-        deny:
-          conditions:
-            any:
-              - key: "{{ request.object.spec.containers[?livenessProbe == null && name != `istio-proxy`] | length(@) }}"
-                operator: GreaterThan
-                value: "0"
-              - key: "{{ request.object.spec.containers[?readinessProbe == null && name != `istio-proxy`] | length(@) }}"
-                operator: GreaterThan
-                value: "0"
+        foreach:
+          - list: "request.object.spec.containers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: NotEquals
+                  value: "istio-proxy"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.livenessProbe || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.readinessProbe || '' }}"
+                    operator: Equals
+                    value: ""

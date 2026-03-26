@@ -59,25 +59,23 @@ spec:
                 - tekton-pipelines-resolvers
       validate:
         message: >-
-          All containers in Pod {{request.object.metadata.name}} must define
-          livenessProbe and readinessProbe. Add probes to each container spec
-          using at least one of httpGet, tcpSocket, or exec. Example:
-            livenessProbe:
-              httpGet:
-                path: /healthz
-                port: 8080
-              initialDelaySeconds: 10
-            readinessProbe:
-              httpGet:
-                path: /readyz
-                port: 8080
-              initialDelaySeconds: 5
-        deny:
-          conditions:
-            any:
-              - key: "{{ request.object.spec.containers[?livenessProbe == null && name != `istio-proxy`] | length(@) }}"
-                operator: GreaterThan
-                value: "0"
-              - key: "{{ request.object.spec.containers[?readinessProbe == null && name != `istio-proxy`] | length(@) }}"
-                operator: GreaterThan
-                value: "0"
+          All application containers in Pod {{request.object.metadata.name}}
+          must define livenessProbe and readinessProbe. Istio sidecar
+          (istio-proxy) is excluded from this check. Add probes to each
+          container spec using at least one of httpGet, tcpSocket, or exec.
+        foreach:
+          - list: "request.object.spec.containers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: NotEquals
+                  value: "istio-proxy"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.livenessProbe || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.readinessProbe || '' }}"
+                    operator: Equals
+                    value: ""
