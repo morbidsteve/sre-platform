@@ -8,6 +8,7 @@ const yaml = require("js-yaml");
 const db = require("./db");
 const gitops = require("./gitops");
 const logger = require("./logger");
+const { matchError, POLICY_FIXES } = require("./error-knowledge-base");
 
 const app = express();
 app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
@@ -11563,6 +11564,609 @@ app.post("/api/apps/:namespace/:name/decommission", mutateLimiter, requireGroups
     });
   } catch (err) {
     console.error("Error decommissioning app:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Phase 2 Pre-flight & Diagnostics ─────────────────────────────────────────
+
+// ── Task 2.1: Image Existence Check ──────────────────────────────────────────
+// GET /api/registry/check?image=<full-image-ref>
+// Checks Harbor for image existence, scan status, and vulnerability summary.
+app.get("/api/registry/check", requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { image } = req.query;
+  if (!image || typeof image !== "string") {
+    return res.status(400).json({ error: "image parameter required" });
+  }
+
+  // Only check images in our Harbor registry
+  if (!image.includes("harbor")) {
+    return res.json({ exists: false, reason: "Not a Harbor image — cannot check" });
+  }
+
+  // Parse: registry/project/repo:tag  (repo may contain slashes)
+  // e.g. harbor.apps.sre.example.com/team-alpha/myapp:v1.2.3
+  try {
+    const withoutTag = image.lastIndexOf(":") > image.lastIndexOf("/") ? image.substring(0, image.lastIndexOf(":")) : image;
+    const rawTag = image.lastIndexOf(":") > image.lastIndexOf("/") ? image.substring(image.lastIndexOf(":") + 1) : "latest";
+
+    const slashIdx = withoutTag.indexOf("/");
+    if (slashIdx === -1) return res.json({ exists: false, reason: "Cannot parse image reference" });
+
+    const registry = withoutTag.substring(0, slashIdx);
+    const remainder = withoutTag.substring(slashIdx + 1); // project/repo or project/a/b
+
+    const secondSlash = remainder.indexOf("/");
+    if (secondSlash === -1) return res.json({ exists: false, reason: "Cannot parse project/repository" });
+
+    const project = remainder.substring(0, secondSlash);
+    const repoPath = remainder.substring(secondSlash + 1); // may contain slashes
+
+    const harborAuth = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
+
+    // Try internal Harbor URL first (in-cluster), then external
+    const harborHosts = [
+      "http://harbor-core.harbor.svc.cluster.local:80",
+      `https://${registry}`,
+    ];
+
+    let artifactData = null;
+    for (const host of harborHosts) {
+      try {
+        const apiUrl = `${host}/api/v2.0/projects/${encodeURIComponent(project)}/repositories/${encodeURIComponent(repoPath)}/artifacts/${encodeURIComponent(rawTag)}?with_scan_overview=true`;
+        const resp = await httpRequest(apiUrl, {
+          headers: { Authorization: harborAuth },
+          timeout: 8000,
+        });
+        if (resp.status === 200) {
+          artifactData = JSON.parse(resp.body);
+          break;
+        }
+        if (resp.status === 404) {
+          return res.json({ exists: false });
+        }
+      } catch { /* try next host */ }
+    }
+
+    if (!artifactData) {
+      return res.json({ exists: false, reason: "Could not reach Harbor API" });
+    }
+
+    // Extract scan overview (Trivy report key)
+    const scanKey = "application/vnd.security.vulnerability.report; version=1.1";
+    const scanOverview = artifactData.scan_overview?.[scanKey];
+    const scanStatus = scanOverview?.scan_status || "not_scanned";
+    const vulnSummary = scanOverview?.summary || {};
+
+    return res.json({
+      exists: true,
+      digest: artifactData.digest || null,
+      scanned: scanStatus === "Success",
+      scanStatus,
+      vulnerabilities: {
+        critical: vulnSummary.Critical || 0,
+        high: vulnSummary.High || 0,
+        medium: vulnSummary.Medium || 0,
+        low: vulnSummary.Low || 0,
+        fixable: vulnSummary.fixable || 0,
+      },
+    });
+  } catch (err) {
+    console.error("[registry/check] Error:", err.message);
+    return res.json({ exists: false, reason: err.message });
+  }
+});
+
+// ── Task 2.2: Kyverno Policy Dry-Run (Preflight) ─────────────────────────────
+// POST /api/deploy/preflight
+// Renders a minimal Pod spec and dry-runs it against the API server to catch
+// Kyverno admission denials before the actual deploy.
+app.post("/api/deploy/preflight", requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { name, team, image, tag, port, securityContext } = req.body;
+    if (!name || !team || !image || !tag) {
+      return res.status(400).json({ error: "Missing required fields: name, team, image, tag" });
+    }
+
+    const nsName = normalizeTeamName(team);
+    const safeName = sanitizeName(name);
+    const sc = securityContext || {};
+
+    // Build a minimal Pod spec that mirrors what the SRE Helm chart would create.
+    const podSpec = {
+      apiVersion: "v1",
+      kind: "Pod",
+      metadata: {
+        name: `${safeName}-preflight-${crypto.randomBytes(3).toString("hex")}`,
+        namespace: nsName,
+        labels: {
+          "app.kubernetes.io/name": safeName,
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": team.toLowerCase(),
+        },
+        annotations: { "sidecar.istio.io/inject": "false" },
+      },
+      spec: {
+        restartPolicy: "Never",
+        automountServiceAccountToken: false,
+        securityContext: sc.runAsRoot
+          ? { runAsNonRoot: false, runAsUser: 0, seccompProfile: { type: "RuntimeDefault" } }
+          : { runAsNonRoot: true, seccompProfile: { type: "RuntimeDefault" } },
+        containers: [{
+          name: safeName,
+          image: `${image}:${tag}`,
+          ports: [{ containerPort: port || 8080 }],
+          resources: {
+            requests: { cpu: "50m", memory: "64Mi" },
+            limits: { cpu: "200m", memory: "256Mi" },
+          },
+          securityContext: {
+            allowPrivilegeEscalation: !!(sc.allowPrivilegeEscalation || sc.runAsRoot),
+            readOnlyRootFilesystem: !(sc.writableFilesystem || sc.runAsRoot),
+            runAsNonRoot: !sc.runAsRoot,
+            capabilities: sc.capabilities && sc.capabilities.length > 0
+              ? { add: sc.capabilities, drop: [] }
+              : { drop: ["ALL"] },
+            ...(sc.runAsRoot ? { runAsUser: 0 } : {}),
+          },
+        }],
+      },
+    };
+
+    const violations = [];
+    const warnings = [];
+
+    // Dry-run via K8s API: createNamespacedPod with dryRun=All
+    try {
+      await k8sApi.createNamespacedPod(nsName, podSpec, undefined, "All");
+      // If we get here: dry-run passed — no admission violations
+    } catch (err) {
+      const statusBody = err.body || {};
+      const errMsg = statusBody.message || err.message || String(err);
+
+      // Parse Kyverno / admission denials
+      const matches = matchError(errMsg);
+      if (matches.length > 0) {
+        for (const m of matches) {
+          violations.push({
+            policy: m.key,
+            message: m.what,
+            fix: POLICY_FIXES[m.key] || m.fix || "Contact platform admin.",
+          });
+        }
+      } else if (errMsg.toLowerCase().includes("admission")) {
+        violations.push({
+          policy: "admission-webhook",
+          message: errMsg.substring(0, 300),
+          fix: "Check Kyverno ClusterPolicies for your namespace.",
+        });
+      } else if (err.statusCode && err.statusCode !== 409) {
+        // Non-conflict errors: quota, namespace not found, etc.
+        const quotaMatches = matchError(errMsg);
+        for (const m of quotaMatches) {
+          violations.push({ policy: m.key, message: m.what, fix: POLICY_FIXES[m.key] || m.fix || "" });
+        }
+        if (quotaMatches.length === 0) {
+          warnings.push({ type: "api-error", message: errMsg.substring(0, 200) });
+        }
+      }
+      // 409 Conflict = dry-run object already exists stub — treat as pass
+    }
+
+    // Check resource quota availability
+    let resourceQuota = null;
+    try {
+      const quotaResp = await k8sApi.listNamespacedResourceQuota(nsName);
+      const quotaItems = quotaResp.body.items || [];
+      if (quotaItems.length > 0) {
+        const q = quotaItems[0];
+        const hard = q.status?.hard || {};
+        const used = q.status?.used || {};
+
+        const cpuHard = parseCpu(hard["requests.cpu"] || hard.cpu || "0");
+        const cpuUsed = parseCpu(used["requests.cpu"] || used.cpu || "0");
+        const memHard = parseMem(hard["requests.memory"] || hard.memory || "0");
+        const memUsed = parseMem(used["requests.memory"] || used.memory || "0");
+
+        resourceQuota = {
+          cpuAvailable: fmtCpu(Math.max(0, cpuHard - cpuUsed)),
+          cpuRequested: "50m",
+          memoryAvailable: fmtMem(Math.max(0, memHard - memUsed)),
+          memoryRequested: "64Mi",
+          withinQuota: (cpuHard - cpuUsed) >= parseCpu("50m") && (memHard - memUsed) >= parseMem("64Mi"),
+        };
+
+        if (resourceQuota && !resourceQuota.withinQuota) {
+          violations.push({
+            policy: "resource-quota",
+            message: `Namespace ${nsName} is near its resource quota. Available: ${resourceQuota.cpuAvailable} CPU, ${resourceQuota.memoryAvailable} memory.`,
+            fix: "Scale down or delete unused deployments, or ask the platform admin to increase quota.",
+          });
+        }
+      }
+    } catch { /* quota check is best-effort */ }
+
+    return res.json({
+      passed: violations.length === 0,
+      violations,
+      warnings,
+      resourceQuota,
+    });
+  } catch (err) {
+    console.error("[preflight] Error:", err.message);
+    res.status(500).json({ error: "Internal server error during preflight check" });
+  }
+});
+
+// ── Task 2.3: Dockerfile Lint ─────────────────────────────────────────────────
+// Shared function used by both POST /api/build/lint-dockerfile and the analysis flow.
+function lintDockerfile(dockerfileContent) {
+  const issues = [];
+  if (!dockerfileContent || typeof dockerfileContent !== "string") return issues;
+  const lines = dockerfileContent.split("\n");
+
+  // FROM :latest
+  lines.forEach((line, idx) => {
+    if (/^FROM\s+\S+:latest(\s|$)/i.test(line.trim())) {
+      issues.push({
+        severity: "error",
+        line: idx + 1,
+        message: "FROM uses :latest tag — unpinned base images make builds unpredictable.",
+        fix: "Pin to a specific version: e.g. FROM node:20.11-alpine3.19",
+      });
+    }
+  });
+
+  // No USER directive
+  if (!/^USER\s+/im.test(dockerfileContent)) {
+    issues.push({
+      severity: "warning",
+      line: null,
+      message: "No USER directive — container will run as root, which violates the require-run-as-nonroot policy.",
+      fix: 'Add "USER 1000" before the CMD/ENTRYPOINT instruction',
+    });
+  }
+
+  // No HEALTHCHECK
+  if (!/^HEALTHCHECK\s+/im.test(dockerfileContent)) {
+    issues.push({
+      severity: "info",
+      line: null,
+      message: "No HEALTHCHECK directive — Kubernetes probe auto-detection will fall back to defaults.",
+      fix: "Add: HEALTHCHECK CMD curl -f http://localhost:8080/healthz || exit 1",
+    });
+  }
+
+  // No EXPOSE
+  if (!/^EXPOSE\s+/im.test(dockerfileContent)) {
+    issues.push({
+      severity: "info",
+      line: null,
+      message: "No EXPOSE directive — the platform needs to know which port your app listens on.",
+      fix: "Add: EXPOSE 8080  (or your app port)",
+    });
+  }
+
+  // ADD instead of COPY (local files, not URLs)
+  lines.forEach((line, idx) => {
+    if (/^ADD\s+(?!https?:\/\/)/i.test(line.trim())) {
+      issues.push({
+        severity: "info",
+        line: idx + 1,
+        message: "Using ADD instead of COPY for a local path — COPY is more explicit and preferred.",
+        fix: "Replace ADD with COPY unless you need automatic tar extraction",
+      });
+    }
+  });
+
+  return issues;
+}
+
+// POST /api/build/lint-dockerfile
+// Accepts raw Dockerfile content and returns lint issues.
+app.post("/api/build/lint-dockerfile", requireGroups("sre-admins", "developers"), (req, res) => {
+  const { content } = req.body;
+  if (!content || typeof content !== "string") {
+    return res.status(400).json({ error: "content field required" });
+  }
+  const issues = lintDockerfile(content);
+  const hasErrors = issues.some((i) => i.severity === "error");
+  res.json({ issues, hasErrors });
+});
+
+// ── Task 2.4: App Diagnostics Endpoint ───────────────────────────────────────
+// GET /api/apps/:namespace/:name/diagnostics
+// Returns aggregated diagnostic info for a single app: HelmRelease status, pods,
+// events, logs, policy violations, resource usage, probe status, and suggested actions.
+app.get("/api/apps/:namespace/:name/diagnostics", requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const { namespace, name } = req.params;
+    if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+      return res.status(400).json({ error: "Invalid namespace or name" });
+    }
+
+    const result = {
+      app: { name, namespace, image: "", tag: "" },
+      helmRelease: null,
+      pods: [],
+      recentEvents: [],
+      recentLogs: [],
+      policyViolations: [],
+      resources: null,
+      probes: null,
+      suggestedActions: [],
+    };
+
+    // Step 1: HelmRelease status
+    try {
+      const hrResp = await customApi.getNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+      );
+      const hr = hrResp.body;
+      const readyCondition = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+      const appVals = hr.spec?.values?.app || {};
+      result.app.image = appVals.image?.repository || "";
+      result.app.tag = appVals.image?.tag || "";
+
+      result.helmRelease = {
+        ready: readyCondition?.status === "True",
+        reason: readyCondition?.reason || "",
+        message: readyCondition?.message || "",
+        lastTransition: readyCondition?.lastTransitionTime || "",
+        installFailures: hr.status?.installFailures || 0,
+        upgradeFailures: hr.status?.upgradeFailures || 0,
+      };
+
+      // Extract probe config from Helm values for display
+      const probeVals = appVals.probes || {};
+      if (probeVals.liveness || probeVals.readiness) {
+        result.probes = {
+          liveness: probeVals.liveness
+            ? { configured: true, path: probeVals.liveness.path || "/", passing: null, lastFailure: null }
+            : { configured: false, path: null, passing: null, lastFailure: null },
+          readiness: probeVals.readiness
+            ? { configured: true, path: probeVals.readiness.path || "/", passing: null, lastFailure: null }
+            : { configured: false, path: null, passing: null, lastFailure: null },
+        };
+      }
+    } catch (err) {
+      if (err.statusCode === 404) {
+        return res.status(404).json({ error: "Application not found" });
+      }
+    }
+
+    // Step 2: Pod status + resource usage
+    try {
+      const podResp = await k8sApi.listNamespacedPod(
+        namespace, undefined, undefined, undefined, undefined,
+        `app.kubernetes.io/name=${name}`
+      );
+      const podItems = podResp.body.items || [];
+
+      // Fetch pod metrics (best-effort)
+      let podMetricsMap = {};
+      try {
+        const metricsRaw = await customApi.listNamespacedCustomObject(
+          "metrics.k8s.io", "v1beta1", namespace, "pods"
+        );
+        for (const pm of metricsRaw.body?.items || []) {
+          let cpu = 0, mem = 0;
+          for (const c of pm.containers || []) {
+            cpu += parseCpu(c.usage?.cpu || "0");
+            mem += parseMem(c.usage?.memory || "0");
+          }
+          podMetricsMap[pm.metadata.name] = { cpu, mem };
+        }
+      } catch { /* metrics may not be available */ }
+
+      result.pods = podItems.map((pod) => {
+        const cs = pod.status?.containerStatuses || [];
+        const containers = cs.map((c) => {
+          let state = "running";
+          let reason = "";
+          let message = "";
+          if (c.state?.waiting) { state = "waiting"; reason = c.state.waiting.reason || ""; message = c.state.waiting.message || ""; }
+          else if (c.state?.terminated) { state = "terminated"; reason = c.state.terminated.reason || ""; message = c.state.terminated.message || ""; }
+          return { name: c.name, ready: c.ready || false, state, reason, message, restartCount: c.restartCount || 0 };
+        });
+
+        const podMetrics = podMetricsMap[pod.metadata.name];
+        return {
+          name: pod.metadata.name,
+          phase: pod.status?.phase || "Unknown",
+          ready: (pod.status?.conditions || []).some((c) => c.type === "Ready" && c.status === "True"),
+          restartCount: cs.reduce((s, c) => s + (c.restartCount || 0), 0),
+          containers,
+          cpuUsed: podMetrics ? fmtCpu(podMetrics.cpu) : null,
+          memUsed: podMetrics ? fmtMem(podMetrics.mem) : null,
+        };
+      });
+
+      // Aggregate resource usage and limits
+      if (podItems.length > 0) {
+        let cpuReq = 0, cpuLim = 0, memReq = 0, memLim = 0, cpuUsed = 0, memUsed = 0;
+        for (const pod of podItems) {
+          for (const c of pod.spec?.containers || []) {
+            cpuReq += parseCpu(c.resources?.requests?.cpu || "0");
+            cpuLim += parseCpu(c.resources?.limits?.cpu || "0");
+            memReq += parseMem(c.resources?.requests?.memory || "0");
+            memLim += parseMem(c.resources?.limits?.memory || "0");
+          }
+        }
+        for (const m of Object.values(podMetricsMap)) {
+          cpuUsed += m.cpu;
+          memUsed += m.mem;
+        }
+        result.resources = {
+          cpu: { requested: fmtCpu(cpuReq), limit: fmtCpu(cpuLim), used: cpuUsed > 0 ? fmtCpu(cpuUsed) : null },
+          memory: { requested: fmtMem(memReq), limit: fmtMem(memLim), used: memUsed > 0 ? fmtMem(memUsed) : null },
+        };
+      }
+    } catch (err) {
+      console.debug("[diagnostics] Pod lookup failed:", err.message);
+    }
+
+    // Step 3: Events
+    try {
+      const evResp = await k8sApi.listNamespacedEvent(namespace);
+      const allEvents = evResp.body.items.filter((e) => {
+        const objName = e.involvedObject?.name || "";
+        return objName === name || objName.startsWith(`${name}-`);
+      });
+
+      result.recentEvents = allEvents
+        .sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0))
+        .slice(0, 15)
+        .map((e) => ({
+          type: e.type || "Normal",
+          reason: e.reason || "",
+          message: e.message || "",
+          age: age(e.lastTimestamp || e.eventTime || ""),
+          source: e.source?.component || "",
+        }));
+
+      // Extract policy violations from events
+      result.policyViolations = allEvents
+        .filter((e) => {
+          const msg = (e.message || "").toLowerCase();
+          const reason = (e.reason || "").toLowerCase();
+          return (
+            reason === "policyviolation" ||
+            msg.includes("kyverno") || msg.includes("denied by") ||
+            msg.includes("admission webhook") || msg.includes("blocked")
+          );
+        })
+        .slice(0, 5)
+        .map((e) => {
+          const matches = matchError(e.message || "");
+          const best = matches[0];
+          return {
+            policy: best ? best.key : "unknown",
+            message: e.message || "",
+            fix: best ? (POLICY_FIXES[best.key] || best.fix || "") : "",
+            time: e.lastTimestamp || e.eventTime || "",
+          };
+        });
+    } catch (err) {
+      console.debug("[diagnostics] Event lookup failed:", err.message);
+    }
+
+    // Step 4: Recent logs from the first running pod (last 20 lines)
+    try {
+      const runningPods = result.pods.filter((p) => p.phase === "Running" || p.containers.some((c) => c.state !== "waiting"));
+      const targetPod = runningPods[0] || result.pods[0];
+      if (targetPod) {
+        const appContainer = targetPod.containers.find((c) => c.name === name) || targetPod.containers[0];
+        if (appContainer) {
+          try {
+            const logResp = await k8sApi.readNamespacedPodLog(
+              targetPod.name, namespace, appContainer.name,
+              false, undefined, undefined, undefined, false, undefined, 20
+            );
+            result.recentLogs = (logResp.body || "").split("\n").filter(Boolean).slice(-20);
+          } catch { /* pod may not have logs yet */ }
+        }
+      }
+    } catch (err) {
+      console.debug("[diagnostics] Log fetch failed:", err.message);
+    }
+
+    // Step 5: Probe pass/fail status — update from events
+    if (result.probes) {
+      const probeFailEvents = result.recentEvents.filter((e) =>
+        e.reason === "Unhealthy" || e.reason === "ProbeWarning" || e.message?.toLowerCase().includes("probe failed")
+      );
+      for (const pfe of probeFailEvents) {
+        const msg = pfe.message || "";
+        if (msg.toLowerCase().includes("liveness") && result.probes.liveness?.configured) {
+          result.probes.liveness.passing = false;
+          result.probes.liveness.lastFailure = msg.substring(0, 120);
+        }
+        if (msg.toLowerCase().includes("readiness") && result.probes.readiness?.configured) {
+          result.probes.readiness.passing = false;
+          result.probes.readiness.lastFailure = msg.substring(0, 120);
+        }
+      }
+    }
+
+    // Step 6: Generate suggested actions (priority-ordered)
+    const actions = [];
+
+    // Policy violations — highest priority
+    for (const v of result.policyViolations) {
+      actions.push({
+        priority: 1,
+        action: POLICY_FIXES[v.policy] || `Fix policy violation: ${v.policy}`,
+        reason: v.message.substring(0, 120),
+      });
+    }
+
+    // HelmRelease failures
+    if (result.helmRelease && !result.helmRelease.ready) {
+      const hrMsg = result.helmRelease.message || "";
+      const hrMatches = matchError(hrMsg);
+      for (const m of hrMatches) {
+        actions.push({
+          priority: 1,
+          action: POLICY_FIXES[m.key] || m.fix || `Fix: ${m.key}`,
+          reason: hrMsg.substring(0, 120),
+        });
+      }
+      if (hrMatches.length === 0 && hrMsg) {
+        actions.push({ priority: 2, action: "Review HelmRelease failure message", reason: hrMsg.substring(0, 120) });
+      }
+    }
+
+    // CrashLoopBackOff
+    if (result.pods.some((p) => p.containers?.some((c) => c.reason === "CrashLoopBackOff"))) {
+      actions.push({
+        priority: 2,
+        action: "Check application logs for startup errors — container is crash-looping",
+        reason: "Container is restarting repeatedly (CrashLoopBackOff)",
+      });
+    }
+
+    // ImagePullBackOff
+    if (result.pods.some((p) => p.containers?.some((c) => c.reason === "ImagePullBackOff" || c.reason === "ErrImagePull"))) {
+      actions.push({
+        priority: 1,
+        action: "Verify image exists in Harbor and credentials are correct",
+        reason: "Image cannot be pulled from registry",
+      });
+    }
+
+    // OOMKilled
+    if (result.pods.some((p) => p.containers?.some((c) => c.reason === "OOMKilled"))) {
+      actions.push({
+        priority: 2,
+        action: "Increase memory limit in your deployment values (resources.limits.memory)",
+        reason: "Container exceeded memory limit (OOMKilled)",
+      });
+    }
+
+    // Probe failures
+    if (result.probes?.liveness?.configured && result.probes.liveness.passing === false) {
+      actions.push({
+        priority: 3,
+        action: `Fix liveness probe — endpoint ${result.probes.liveness.path} is not responding`,
+        reason: result.probes.liveness.lastFailure || "Liveness probe failing",
+      });
+    }
+    if (result.probes?.readiness?.configured && result.probes.readiness.passing === false) {
+      actions.push({
+        priority: 3,
+        action: `Fix readiness probe — endpoint ${result.probes.readiness.path} is not responding`,
+        reason: result.probes.readiness.lastFailure || "Readiness probe failing",
+      });
+    }
+
+    result.suggestedActions = actions
+      .sort((a, b) => a.priority - b.priority)
+      .slice(0, 8);
+
+    res.json(result);
+  } catch (err) {
+    console.error("[diagnostics] Error:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });

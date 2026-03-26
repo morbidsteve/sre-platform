@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
-import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2, RotateCcw, FileCode, X, Copy, Download, Clock, Check, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2, RotateCcw, FileCode, X, Copy, Download, Clock, Check, AlertTriangle, ShieldAlert, Stethoscope } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { useUserContext } from '../../context/UserContext';
 import { useToast } from '../../context/ToastContext';
 import { SkeletonCard } from '../ui/Skeleton';
 import { fetchRollbackHistory, rollbackApp, fetchAppManifest } from '../../api/apps';
+import { AppDiagnostics } from './AppDiagnostics';
 import type { RollbackHistoryEntry, App } from '../../types/api';
 
 // Policy name → fix guidance (sourced from error-knowledge-base.js)
@@ -87,6 +88,9 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [rollbackInProgress, setRollbackInProgress] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
+
+  // Diagnostics panel state
+  const [diagTarget, setDiagTarget] = useState<{ namespace: string; name: string } | null>(null);
 
   // YAML export modal state
   const [yamlTarget, setYamlTarget] = useState<{ namespace: string; name: string } | null>(null);
@@ -389,6 +393,14 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className={`btn text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 ${isFailed ? 'btn-danger' : ''}`}
+                    onClick={() => setDiagTarget({ namespace: app.namespace, name: app.name })}
+                    title="Open diagnostics panel"
+                  >
+                    <Stethoscope className="w-3 h-3" />
+                    Diagnose
+                  </button>
                   <a
                     className="btn text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 no-underline"
                     href={grafanaUrl}
@@ -441,6 +453,15 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
             );
           })}
         </div>
+      )}
+
+      {/* Diagnostics Panel */}
+      {diagTarget && (
+        <AppDiagnostics
+          namespace={diagTarget.namespace}
+          name={diagTarget.name}
+          onClose={() => setDiagTarget(null)}
+        />
       )}
 
       {/* Rollback Modal */}
