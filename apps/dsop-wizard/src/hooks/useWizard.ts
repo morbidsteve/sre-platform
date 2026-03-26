@@ -39,6 +39,14 @@ export function useWizard() {
     wizardState.reset();
   }, [polling.stopPolling, exceptions.resetExceptions, wizardState.reset]);
 
+  // ── discardAndStartNew also stops polling ──
+
+  const discardAndStartNew = useCallback(() => {
+    polling.stopPolling();
+    exceptions.resetExceptions();
+    wizardState.discardAndStartNew();
+  }, [polling.stopPolling, exceptions.resetExceptions, wizardState.discardAndStartNew]);
+
   // ── Return the exact same interface as the original useWizard ──
 
   return {
@@ -65,7 +73,11 @@ export function useWizard() {
     deploy: wizardState.deploy,
     downloadPackage: wizardState.downloadPackage,
     reset,
-    // Security exception state (new, for Step4 security exception UI)
+    // Resume / start-new prompt
+    resumePrompt: wizardState.resumePrompt,
+    confirmResume: wizardState.confirmResume,
+    discardAndStartNew,
+    // Security exception state (for Step4 security exception UI)
     exceptionJustification: exceptions.exceptionJustification,
     setExceptionJustification: exceptions.setExceptionJustification,
     exceptionRequested: exceptions.exceptionRequested,

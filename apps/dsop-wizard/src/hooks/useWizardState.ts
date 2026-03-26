@@ -102,7 +102,62 @@ function loadSession(): Partial<WizardState> | null {
   } catch { return null; }
 }
 
+function clearSession() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+}
+
+// ── Run recoverability ──
+
+/**
+ * A run is NOT recoverable (should never be auto-resumed) when:
+ *  - status is 'failed' AND at least one gate has the "no job reference" message
+ *    (meaning the dashboard restarted mid-scan and lost all K8s job references)
+ *  - status is 'rejected' (ISSM rejected — the user must start fresh)
+ *
+ * A run IS resumable (offer a Resume / Start New choice) when:
+ *  - status is 'scanning', 'review_pending', 'approved', 'deploying', or 'returned'
+ *
+ * A run is treated as "completed history" (just show fresh wizard) when:
+ *  - status is 'deployed' or 'undeployed'
+ */
+export function classifyStoredRun(run: { status: string; gates?: Array<{ summary?: string | null }> }): 'unrecoverable' | 'resumable' | 'completed' | 'fresh' {
+  const { status, gates = [] } = run;
+
+  // Terminal failure — dashboard restarted and lost job refs
+  const hasNoJobRef = gates.some(
+    (g) => typeof g.summary === 'string' && g.summary.includes('no job reference to recover')
+  );
+  if (status === 'failed' && hasNoJobRef) return 'unrecoverable';
+
+  // ISSM rejected — must start fresh
+  if (status === 'rejected') return 'unrecoverable';
+
+  // Already deployed or explicitly undeployed — nothing to resume, start fresh
+  if (status === 'deployed' || status === 'undeployed') return 'completed';
+
+  // Active / in-progress states worth offering a resume for
+  if (
+    status === 'scanning' ||
+    status === 'review_pending' ||
+    status === 'approved' ||
+    status === 'deploying' ||
+    status === 'returned' ||
+    status === 'failed'   // failed but NOT the no-job-ref case — may be retryable
+  ) return 'resumable';
+
+  // pending or anything else — treat as resumable
+  return 'resumable';
+}
+
 // ── Hook ──
+
+/** Shape of a pending resume prompt shown to the user */
+export interface ResumePromptData {
+  runId: string;
+  appName: string;
+  status: string;
+  createdAt: string;
+}
 
 export function useWizardState() {
   const [state, setState] = useState<WizardState>(() => {
@@ -113,6 +168,8 @@ export function useWizardState() {
     return initialState;
   });
   const [user, setUser] = useState<{ name: string; email: string; groups: string[] } | null>(null);
+  // Holds run metadata while we ask the user "Resume or Start New?"
+  const [resumePrompt, setResumePrompt] = useState<ResumePromptData | null>(null);
 
   // Fetch user info on mount
   useEffect(() => {
@@ -130,43 +187,121 @@ export function useWizardState() {
     const urlRunId = params.get('runId');
     const runIdToLoad = urlRunId || state.pipelineRunId;
 
-    if (runIdToLoad) {
-      getPipelineRun(runIdToLoad).then((run) => {
+    if (!runIdToLoad) return;
+
+    getPipelineRun(runIdToLoad).then((run) => {
+      const classification = classifyStoredRun(run);
+
+      // ── Unrecoverable: clear session and start fresh silently ──
+      if (classification === 'unrecoverable') {
+        clearSession();
+        setState(initialState);
+        if (urlRunId) window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
+      // ── Completed: clear session and start fresh (nothing to resume) ──
+      if (classification === 'completed') {
+        clearSession();
+        setState(initialState);
+        if (urlRunId) window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
+      // ── URL-linked run: auto-resume without prompting (shared link) ──
+      if (urlRunId) {
         const mappedGates = run.gates.map((g: PipelineGate) =>
           mapPipelineGateToSecurityGate(g, run.findings, getInitialGates())
         );
-        // Determine which step to show based on run status
         const step = run.status === 'deployed' ? 7 :
                      run.status === 'deploying' ? 6 :
                      run.status === 'approved' || run.status === 'review_pending' || run.status === 'rejected' ? 5 :
-                     run.status === 'scanning' || run.status === 'failed' ? 4 : 4;
+                     4;
         setState((prev) => ({
           ...prev,
           pipelineRunId: run.id,
           pipelineRun: run,
           gates: mappedGates,
-          currentStep: urlRunId ? step : prev.currentStep,
-          appInfo: urlRunId ? {
+          currentStep: step,
+          appInfo: {
             ...prev.appInfo,
             name: run.app_name || prev.appInfo.name,
             team: run.team || prev.appInfo.team,
             classification: (run.classification || prev.appInfo.classification) as Classification,
-          } : prev.appInfo,
-          source: urlRunId ? {
+          },
+          source: {
             ...prev.source,
             gitUrl: run.git_url || prev.source.gitUrl,
             branch: run.branch || prev.source.branch,
             imageUrl: run.image_url || prev.source.imageUrl,
             type: run.source_type === 'image' ? 'container' : 'git',
-          } : prev.source,
+          },
         }));
-        // Clean URL parameter without reload
-        if (urlRunId) {
-          window.history.replaceState({}, '', window.location.pathname);
-        }
-      }).catch(() => { /* run may have been deleted */ });
-    }
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
+      // ── Resumable session run: ask the user what to do ──
+      setResumePrompt({
+        runId: run.id,
+        appName: run.app_name || 'Unknown app',
+        status: run.status,
+        createdAt: run.created_at,
+      });
+    }).catch(() => {
+      // Run was deleted or API unreachable — clear stale session and start fresh
+      clearSession();
+      setState(initialState);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** User chose to resume the previous run */
+  const confirmResume = useCallback(async () => {
+    if (!resumePrompt) return;
+    try {
+      const run = await getPipelineRun(resumePrompt.runId);
+      const mappedGates = run.gates.map((g: PipelineGate) =>
+        mapPipelineGateToSecurityGate(g, run.findings, getInitialGates())
+      );
+      const step = run.status === 'deployed' ? 7 :
+                   run.status === 'deploying' ? 6 :
+                   run.status === 'approved' || run.status === 'review_pending' || run.status === 'rejected' ? 5 :
+                   4;
+      setState((prev) => ({
+        ...prev,
+        pipelineRunId: run.id,
+        pipelineRun: run,
+        gates: mappedGates,
+        currentStep: step,
+        appInfo: {
+          ...prev.appInfo,
+          name: run.app_name || prev.appInfo.name,
+          team: run.team || prev.appInfo.team,
+          classification: (run.classification || prev.appInfo.classification) as Classification,
+        },
+        source: {
+          ...prev.source,
+          gitUrl: run.git_url || prev.source.gitUrl,
+          branch: run.branch || prev.source.branch,
+          imageUrl: run.image_url || prev.source.imageUrl,
+          type: run.source_type === 'image' ? 'container' : 'git',
+        },
+      }));
+    } catch {
+      // Run gone — start fresh
+      clearSession();
+      setState(initialState);
+    } finally {
+      setResumePrompt(null);
+    }
+  }, [resumePrompt]);
+
+  /** User chose to discard the previous run and start fresh */
+  const discardAndStartNew = useCallback(() => {
+    clearSession();
+    setState(initialState);
+    setResumePrompt(null);
   }, []);
 
   const isAdmin = user
@@ -606,8 +741,9 @@ export function useWizardState() {
   // ── Reset ──
 
   const reset = useCallback(() => {
+    clearSession();
     setState(initialState);
-    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    setResumePrompt(null);
     // Clear runId from URL
     try {
       const url = new URL(window.location.href);
@@ -642,5 +778,9 @@ export function useWizardState() {
     refreshPipelineRun,
     downloadPackage,
     reset,
+    // Resume / start-new prompt
+    resumePrompt,
+    confirmResume,
+    discardAndStartNew,
   };
 }

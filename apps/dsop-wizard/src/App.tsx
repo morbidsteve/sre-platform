@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useMemo } from 'react';
 import { WizardLayout } from './components/WizardLayout';
+import { ResumePrompt } from './components/ResumePrompt';
 import { Step1_AppSource } from './components/steps/Step1_AppSource';
 import { Step2_AppInfo } from './components/steps/Step2_AppInfo';
 import { Step3_Detection } from './components/steps/Step3_Detection';
@@ -233,37 +234,49 @@ export default function App() {
   };
 
   return (
-    <WizardLayout
-      currentStep={state.currentStep}
-      classification={state.appInfo.classification}
-      onStepClick={(step) => {
-        // Allow navigating to completed steps or to step 4 if pipeline exists
-        if (state.isDeploying || state.isAnalyzing) return;
-        if (step < state.currentStep) {
-          wizard.setStep(step);
-        } else if (step === 4 && state.pipelineRunId && !state.isPipelineRunning) {
-          wizard.setStep(4);
-        } else if (step <= state.currentStep) {
-          wizard.setStep(step);
-        }
-      }}
-    >
-      {/* Error Banner */}
-      {state.error && state.currentStep !== 6 && (
-        <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center justify-between">
-          <p className="text-sm text-red-400">{state.error}</p>
-          <button
-            onClick={() =>
-              wizard.updateAppInfo({} as never)
-            }
-            className="text-xs text-red-300 hover:text-red-200 underline"
-          >
-            Dismiss
-          </button>
-        </div>
+    <>
+      {/* Resume / Start New prompt — shown when a previous session run is found */}
+      {wizard.resumePrompt && (
+        <ResumePrompt
+          prompt={wizard.resumePrompt}
+          onResume={wizard.confirmResume}
+          onStartNew={wizard.discardAndStartNew}
+        />
       )}
 
-      {renderStep()}
-    </WizardLayout>
+      <WizardLayout
+        currentStep={state.currentStep}
+        classification={state.appInfo.classification}
+        onStepClick={(step) => {
+          // Allow navigating to completed steps or to step 4 if pipeline exists
+          if (state.isDeploying || state.isAnalyzing) return;
+          if (step < state.currentStep) {
+            wizard.setStep(step);
+          } else if (step === 4 && state.pipelineRunId && !state.isPipelineRunning) {
+            wizard.setStep(4);
+          } else if (step <= state.currentStep) {
+            wizard.setStep(step);
+          }
+        }}
+        onReset={wizard.reset}
+      >
+        {/* Error Banner */}
+        {state.error && state.currentStep !== 6 && (
+          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center justify-between">
+            <p className="text-sm text-red-400">{state.error}</p>
+            <button
+              onClick={() =>
+                wizard.updateAppInfo({} as never)
+              }
+              className="text-xs text-red-300 hover:text-red-200 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {renderStep()}
+      </WizardLayout>
+    </>
   );
 }

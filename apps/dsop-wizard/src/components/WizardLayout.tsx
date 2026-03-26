@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, ArrowLeft } from 'lucide-react';
+import { Shield, ArrowLeft, RotateCcw } from 'lucide-react';
 import { ClassificationBanner, ClassificationBannerBottom } from './ClassificationBanner';
 import { StepIndicator } from './StepIndicator';
 import { svcUrl } from '../config';
@@ -9,6 +9,7 @@ interface WizardLayoutProps {
   currentStep: number;
   classification: Classification;
   onStepClick?: (step: number) => void;
+  onReset?: () => void;
   children: React.ReactNode;
 }
 
@@ -22,7 +23,7 @@ const stepLabels = [
   'Complete',
 ];
 
-export function WizardLayout({ currentStep, classification, onStepClick, children }: WizardLayoutProps) {
+export function WizardLayout({ currentStep, classification, onStepClick, onReset, children }: WizardLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-navy-900">
       <ClassificationBanner classification={classification} />
@@ -53,9 +54,21 @@ export function WizardLayout({ currentStep, classification, onStepClick, childre
               </div>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-4 text-xs text-gray-500">
-            <span className="font-mono">SRE PLATFORM</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Platform Healthy" />
+          <div className="flex items-center gap-4">
+            {onReset && currentStep > 1 && (
+              <button
+                onClick={onReset}
+                title="Start Over"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 hover:bg-navy-700 border border-transparent hover:border-navy-600 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Start Over</span>
+              </button>
+            )}
+            <div className="hidden md:flex items-center gap-4 text-xs text-gray-500">
+              <span className="font-mono">SRE PLATFORM</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Platform Healthy" />
+            </div>
           </div>
         </div>
       </header>
