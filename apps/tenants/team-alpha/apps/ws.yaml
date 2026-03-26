@@ -39,21 +39,37 @@ spec:
       replicas: 2
       resources:
         requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
+          cpu: 100m
           memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
       probes:
         liveness:
+          type: tcp
           path: /
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          failureThreshold: 10
         readiness:
+          type: tcp
           path: /
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 10
       env: []
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+      fsGroup: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: true
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      runAsUser: 0
     ingress:
       enabled: true
       host: ws.apps.sre.example.com
