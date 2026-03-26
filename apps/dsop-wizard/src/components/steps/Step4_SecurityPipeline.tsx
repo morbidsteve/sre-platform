@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, ArrowRight, ShieldAlert, FileCheck, Loader2, RotateCcw, Rocket, CheckCircle2, XCircle, RotateCw, AlertTriangle, Copy, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ShieldAlert, FileCheck, Loader2, RotateCcw, Rocket, CheckCircle2, XCircle, RotateCw, AlertTriangle, Copy, Check, Tv2, LayoutList } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { PipelineProgress } from '../pipeline/PipelineProgress';
 import { GateCard } from '../pipeline/GateCard';
+import { PipelineStream } from '../pipeline/PipelineStream';
 import { TermWithHelp } from '../HelpTooltip';
 import type { SecurityGate, GateFinding, PipelineRunStatus, PipelineRun } from '../../types';
 
@@ -274,6 +275,7 @@ export function Step4_SecurityPipeline({
 }: Step4Props) {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [showLiveFeed, setShowLiveFeed] = useState(false);
 
   // Automated gates = everything except ISSM_REVIEW and IMAGE_SIGNING
   const automatedGates = gates.filter(
@@ -362,21 +364,58 @@ export function Step4_SecurityPipeline({
         )}
       </div>
 
+      {/* View toggle (only shown when a pipeline run is active or recently completed) */}
+      {pipelineRunId && (
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-navy-600 overflow-hidden text-xs font-medium">
+            <button
+              onClick={() => setShowLiveFeed(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                !showLiveFeed
+                  ? 'bg-navy-600 text-white'
+                  : 'bg-navy-800 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+              Gate Cards
+            </button>
+            <button
+              onClick={() => setShowLiveFeed(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                showLiveFeed
+                  ? 'bg-navy-600 text-white'
+                  : 'bg-navy-800 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Tv2 className="w-3.5 h-3.5" />
+              Live Feed
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Gate Cards — expand inline, no modal */}
-      <div className="space-y-3">
-        {gates.map((gate) => (
-          <GateCard
-            key={gate.id}
-            gate={gate}
-            pipelineRunId={pipelineRunId}
-            onAcknowledge={handleAcknowledge}
-            onUpdateFinding={onUpdateFinding}
-            onOverrideGate={onOverrideGate}
-            isAdmin={isAdmin}
-            username={username}
-          />
-        ))}
-      </div>
+      {!showLiveFeed && (
+        <div className="space-y-3">
+          {gates.map((gate) => (
+            <GateCard
+              key={gate.id}
+              gate={gate}
+              pipelineRunId={pipelineRunId}
+              onAcknowledge={handleAcknowledge}
+              onUpdateFinding={onUpdateFinding}
+              onOverrideGate={onOverrideGate}
+              isAdmin={isAdmin}
+              username={username}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Live Feed — SSE stream view */}
+      {showLiveFeed && (
+        <PipelineStream runId={pipelineRunId} gates={gates} />
+      )}
 
       {/* Security Exception Prompt */}
       <SecurityExceptionPrompt

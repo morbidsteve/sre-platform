@@ -3,12 +3,51 @@ const k8s = require("@kubernetes/client-node");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { EventEmitter } = require("events");
 const rateLimit = require("express-rate-limit");
 const yaml = require("js-yaml");
 const db = require("./db");
 const gitops = require("./gitops");
 const logger = require("./logger");
 const { matchError, POLICY_FIXES } = require("./error-knowledge-base");
+
+// ── Pipeline SSE Event Bus ────────────────────────────────────────────────────
+// One EventEmitter per active pipeline run. Cleaned up when the pipeline finishes
+// or after 30 minutes (safety timeout).
+const pipelineEvents = new Map(); // runId -> { emitter, history: [], createdAt, cleanupTimer }
+
+function getPipelineEmitter(runId) {
+  return pipelineEvents.get(runId);
+}
+
+function getOrCreatePipelineEmitter(runId) {
+  if (pipelineEvents.has(runId)) return pipelineEvents.get(runId).emitter;
+  const emitter = new EventEmitter();
+  emitter.setMaxListeners(50); // allow many SSE clients per run
+  const cleanupTimer = setTimeout(() => {
+    cleanupPipelineEmitter(runId);
+  }, 30 * 60 * 1000); // 30 minutes
+  pipelineEvents.set(runId, { emitter, history: [], createdAt: Date.now(), cleanupTimer });
+  return emitter;
+}
+
+function emitPipelineEvent(runId, eventType, data) {
+  const entry = pipelineEvents.get(runId);
+  if (!entry) return;
+  const event = { type: eventType, ...data, ts: new Date().toISOString() };
+  // Keep a bounded history so late SSE subscribers can catch up
+  entry.history.push(event);
+  if (entry.history.length > 500) entry.history.shift();
+  entry.emitter.emit("event", event);
+}
+
+function cleanupPipelineEmitter(runId) {
+  const entry = pipelineEvents.get(runId);
+  if (!entry) return;
+  clearTimeout(entry.cleanupTimer);
+  entry.emitter.removeAllListeners();
+  pipelineEvents.delete(runId);
+}
 
 const app = express();
 app.set("trust proxy", 1); // Trust first proxy (Istio sidecar / gateway)
@@ -7713,6 +7752,118 @@ app.post("/api/pipeline/runs/:id/deploy", mutateLimiter, requireDb, requireGroup
   }
 });
 
+// GET /api/pipeline/runs/:id/stream — SSE stream of live pipeline gate events
+app.get("/api/pipeline/runs/:id/stream", requireDb, requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  const runId = req.params.id;
+  if (!runId) return res.status(400).json({ error: "Invalid run ID" });
+
+  // Verify run exists and user has access
+  let run;
+  try {
+    run = await db.getRun(runId);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+    // Team-based access control
+    const groupsHeader = req.headers["x-auth-request-groups"] || "";
+    const userGroups = groupsHeader.split(/[,\s]+/).map(g => g.trim().replace(/^\//, "")).filter(Boolean);
+    const isAdmin = userGroups.some(g => ["sre-admins", "issm"].includes(g));
+    if (!isAdmin) {
+      const userTeam = userGroups.find(g => g.startsWith("team-"));
+      if (userTeam && run.team !== userTeam) {
+        return res.status(404).json({ error: "Pipeline run not found" });
+      }
+    }
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering
+  res.flushHeaders();
+
+  let closed = false;
+  req.on("close", () => { closed = true; });
+
+  const sendSSE = (eventType, data) => {
+    if (closed) return;
+    res.write(`event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // If the run is already in a terminal state, send current state and close
+  const terminalStatuses = ["deployed", "rejected", "returned", "failed", "undeployed"];
+  if (terminalStatuses.includes(run.status)) {
+    // Replay any stored history
+    const entry = getPipelineEmitter(runId);
+    if (entry) {
+      for (const ev of entry.history) {
+        if (closed) break;
+        sendSSE(ev.type, ev);
+      }
+    }
+    // Send final state from DB
+    if (run.gates) {
+      for (const gate of run.gates) {
+        sendSSE("gate_status", {
+          gate: gate.short_name,
+          status: gate.status,
+          summary: gate.summary || "",
+          progress: gate.progress || 0,
+        });
+      }
+    }
+    sendSSE("pipeline_status", { status: run.status, message: `Pipeline ${run.status}` });
+    sendSSE("done", { status: run.status });
+    res.end();
+    return;
+  }
+
+  // Get or create the emitter for this run
+  const emitter = getOrCreatePipelineEmitter(runId);
+
+  // Replay history so a late subscriber catches up
+  const entry = getPipelineEmitter(runId);
+  if (entry && entry.history.length > 0) {
+    for (const ev of entry.history) {
+      if (closed) break;
+      sendSSE(ev.type, ev);
+    }
+  }
+
+  // Also send current gate state from DB so client has baseline
+  if (run.gates) {
+    for (const gate of run.gates) {
+      if (gate.status !== "pending") {
+        sendSSE("gate_status", {
+          gate: gate.short_name,
+          status: gate.status,
+          summary: gate.summary || "",
+          progress: gate.progress || 0,
+        });
+      }
+    }
+  }
+
+  // Keep-alive ping every 25s to prevent proxy timeouts
+  const pingInterval = setInterval(() => {
+    if (closed) { clearInterval(pingInterval); return; }
+    res.write(": ping\n\n");
+  }, 25000);
+
+  // Forward events from the emitter to this SSE response
+  const onEvent = (ev) => {
+    if (closed) return;
+    sendSSE(ev.type, ev);
+  };
+  emitter.on("event", onEvent);
+
+  // Clean up when client disconnects
+  req.on("close", () => {
+    clearInterval(pingInterval);
+    emitter.off("event", onEvent);
+  });
+});
+
 // ── Input Validation for Pipeline Scans ─────────────────────────────────────
 
 function validateGitUrl(url) {
@@ -7741,6 +7892,7 @@ function validateUrl(url) {
 async function runScanGate(runId, gate, scanFn) {
   try {
     await db.updateGate(gate.id, { status: "running", startedAt: new Date().toISOString(), progress: 10 });
+    emitPipelineEvent(runId, "gate_status", { gate: gate.short_name, status: "running", summary: "Starting...", progress: 10 });
     const result = await scanFn();
     const gateStatus = result.status === "failed" ? "failed" : result.status === "warning" ? "warning" : "passed";
 
@@ -7766,16 +7918,31 @@ async function runScanGate(runId, gate, scanFn) {
       rawOutput: rawOutput,
     });
 
-    // Create findings in DB
+    // Emit gate completion status
+    emitPipelineEvent(runId, "gate_status", {
+      gate: gate.short_name,
+      status: gateStatus,
+      summary: result.summary || gateStatus,
+      progress: 100,
+    });
+
+    // Create findings in DB and emit each finding
     if (result.findings && result.findings.length > 0) {
       for (const finding of result.findings) {
+        const mappedSeverity = finding.severity === "ERROR" ? "critical" : finding.severity === "WARNING" ? "high" : (finding.severity || "info").toLowerCase();
         await db.createFinding({
           runId,
           gateId: gate.id,
-          severity: finding.severity === "ERROR" ? "critical" : finding.severity === "WARNING" ? "high" : (finding.severity || "info").toLowerCase(),
+          severity: mappedSeverity,
           title: finding.title,
           description: finding.description,
           location: finding.location,
+        });
+        emitPipelineEvent(runId, "gate_finding", {
+          gate: gate.short_name,
+          severity: mappedSeverity,
+          title: finding.title,
+          location: finding.location || "",
         });
       }
     }
@@ -7835,6 +8002,7 @@ async function runScanGate(runId, gate, scanFn) {
         progress: 15,
         summary: "Retrying with more memory after OOM...",
       });
+      emitPipelineEvent(runId, "gate_status", { gate: gate.short_name, status: "running", summary: "Retrying with more memory after OOM...", progress: 15 });
       await db.auditLog(runId, "gate_oom_retry", null, `Gate ${gate.short_name} OOMKilled, retrying with 2x memory`, { gateId: gate.id });
       try {
         const retryResult = await scanFn(2); // pass memoryMultiplier=2
@@ -7865,6 +8033,7 @@ async function runScanGate(runId, gate, scanFn) {
       summary: failureReason,
       rawOutput: { gate: gate.short_name, error: failureReason, failedAt: new Date().toISOString() },
     });
+    emitPipelineEvent(runId, "gate_status", { gate: gate.short_name, status: "failed", summary: failureReason, progress: 100 });
     await db.auditLog(runId, "gate_failed", null, `Gate ${gate.short_name} failed: ${failureReason}`, { gateId: gate.id });
     return "failed";
   }
@@ -8220,7 +8389,11 @@ async function orchestratePipelineScan(runId) {
   const run = await db.getRun(runId);
   if (!run) return;
 
+  // Ensure the event emitter is ready before scanning starts
+  getOrCreatePipelineEmitter(runId);
+
   await db.updateRunStatus(runId, "scanning");
+  emitPipelineEvent(runId, "pipeline_status", { status: "scanning", message: "Pipeline started" });
 
   // Helper: check if the pipeline has exceeded the timeout
   function checkPipelineTimeout() {
@@ -8241,15 +8414,23 @@ async function orchestratePipelineScan(runId) {
   if (run.git_url) {
     if (gateMap.SAST) {
       await db.updateGate(gateMap.SAST.id, { status: "running", summary: "Cloning repo and running Semgrep scan...", startedAt: new Date().toISOString(), progress: 10 });
+      emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "running", summary: "Cloning repo and running Semgrep scan...", progress: 10 });
       sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult, gateMap.SAST.id)));
     }
     if (gateMap.SECRETS) {
       await db.updateGate(gateMap.SECRETS.id, { status: "running", summary: "Cloning repo and running Gitleaks scan...", startedAt: new Date().toISOString(), progress: 10 });
+      emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "running", summary: "Cloning repo and running Gitleaks scan...", progress: 10 });
       sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id)));
     }
   } else {
-    if (gateMap.SAST) sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
-    if (gateMap.SECRETS) sourceScans.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+    if (gateMap.SAST) {
+      sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+      emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "skipped", summary: "No git URL provided", progress: 100 });
+    }
+    if (gateMap.SECRETS) {
+      sourceScans.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+      emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "skipped", summary: "No git URL provided", progress: 100 });
+    }
   }
 
   await Promise.allSettled(sourceScans);
@@ -8261,6 +8442,7 @@ async function orchestratePipelineScan(runId) {
     // Build with Kaniko — reuse existing build job pattern
     if (gateMap.ARTIFACT_STORE) {
       await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
+      emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
     }
 
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
@@ -8333,6 +8515,7 @@ async function orchestratePipelineScan(runId) {
           : elapsedSec < 180 ? `Kaniko: Building image (${elapsedSec}s elapsed)...`
           : `Kaniko: Pushing to Harbor (${elapsedSec}s elapsed)...`;
         await db.updateGate(gateMap.ARTIFACT_STORE.id, { progress: elapsed, summary: msg });
+        emitPipelineEvent(runId, "gate_progress", { gate: "ARTIFACT_STORE", progress: elapsed, summary: msg });
       }
     }
 
@@ -8343,11 +8526,13 @@ async function orchestratePipelineScan(runId) {
       await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
       if (gateMap.ARTIFACT_STORE) {
         await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Image built and pushed: ${safeName}:${buildId}` });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary: `Image built and pushed: ${safeName}:${buildId}`, progress: 100 });
       }
       await db.auditLog(runId, "image_build_completed", null, `Image built: ${destination}`, { buildId, destination });
     } else {
       if (gateMap.ARTIFACT_STORE) {
         await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Container image build failed" });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Container image build failed", progress: 100 });
       }
       await db.auditLog(runId, "image_build_failed", null, "Container image build failed", { buildId });
       // Don't proceed with image scans — builtImageRef stays null
@@ -8356,11 +8541,13 @@ async function orchestratePipelineScan(runId) {
     // Pre-built image provided — mark ARTIFACT_STORE as passed
     if (gateMap.ARTIFACT_STORE) {
       await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Using pre-built image: ${builtImageRef}` });
+      emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary: `Using pre-built image: ${builtImageRef}`, progress: 100 });
     }
   } else {
     // No image and no git URL — skip ARTIFACT_STORE
     if (gateMap.ARTIFACT_STORE) {
       await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "skipped", completedAt: new Date().toISOString(), summary: "No image or git URL provided" });
+      emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "skipped", summary: "No image or git URL provided", progress: 100 });
     }
   }
 
@@ -8371,17 +8558,25 @@ async function orchestratePipelineScan(runId) {
     const imageScans = [];
     if (gateMap.SBOM) {
       await db.updateGate(gateMap.SBOM.id, { status: "running", summary: "Trivy: Generating SPDX SBOM from container image...", startedAt: new Date().toISOString(), progress: 10 });
+      emitPipelineEvent(runId, "gate_status", { gate: "SBOM", status: "running", summary: "Trivy: Generating SPDX SBOM from container image...", progress: 10 });
       imageScans.push(runScanGate(runId, gateMap.SBOM, (mult) => runSBOMScan(builtImageRef, mult, gateMap.SBOM.id)));
     }
     if (gateMap.CVE) {
       await db.updateGate(gateMap.CVE.id, { status: "running", summary: "Trivy: Scanning container image for CVEs...", startedAt: new Date().toISOString(), progress: 10 });
+      emitPipelineEvent(runId, "gate_status", { gate: "CVE", status: "running", summary: "Trivy: Scanning container image for CVEs...", progress: 10 });
       imageScans.push(runScanGate(runId, gateMap.CVE, (mult) => runCVEScan(builtImageRef, mult, gateMap.CVE.id)));
     }
     await Promise.allSettled(imageScans);
   } else if (!run.image_url) {
     // No image at all — mark as skipped
-    if (gateMap.SBOM) await db.updateGate(gateMap.SBOM.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
-    if (gateMap.CVE) await db.updateGate(gateMap.CVE.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
+    if (gateMap.SBOM) {
+      await db.updateGate(gateMap.SBOM.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
+      emitPipelineEvent(runId, "gate_status", { gate: "SBOM", status: "skipped", summary: "No image available", progress: 100 });
+    }
+    if (gateMap.CVE) {
+      await db.updateGate(gateMap.CVE.id, { status: "skipped", summary: "No image available", completedAt: new Date().toISOString() });
+      emitPipelineEvent(runId, "gate_status", { gate: "CVE", status: "skipped", summary: "No image available", progress: 100 });
+    }
   }
 
   // Phase 3b: Detect security exceptions (root user, privileged requirements)
@@ -8392,6 +8587,7 @@ async function orchestratePipelineScan(runId) {
   // DAST — deferred until post-deployment, will run automatically after deploy completes
   if (gateMap.DAST) {
     await db.updateGate(gateMap.DAST.id, { status: "skipped", summary: "DAST runs automatically after deployment — manual ZAP scan also available from pipeline history", completedAt: new Date().toISOString() });
+    emitPipelineEvent(runId, "gate_status", { gate: "DAST", status: "skipped", summary: "DAST runs automatically after deployment", progress: 100 });
   }
 
   // Determine overall status after automated gates (exclude DAST since it runs post-deployment)
@@ -8405,6 +8601,8 @@ async function orchestratePipelineScan(runId) {
     await db.auditLog(runId, "scan_complete_needs_attention", null,
       "Automated scans complete — critical findings or failed gates require attention",
       { failedGates: automatedGates.filter(g => g.status === "failed").map(g => g.short_name) });
+    emitPipelineEvent(runId, "pipeline_status", { status: "scanning", message: "Scans complete — critical findings or failed gates require attention" });
+    emitPipelineEvent(runId, "done", { status: "scanning" });
   } else {
     // All automated gates passed/warning/skipped — ready for review
     await db.updateRunStatus(runId, "review_pending");
@@ -8415,7 +8613,11 @@ async function orchestratePipelineScan(runId) {
       await db.updateGate(gateMap.IMAGE_SIGNING.id, { status: "warning", summary: "Runs automatically after ISSM approval", completedAt: null });
     }
     await db.auditLog(runId, "scan_complete_ready_for_review", null, "All automated scans passed — ready for ISSM review");
+    emitPipelineEvent(runId, "pipeline_status", { status: "review_pending", message: "All automated scans passed — ready for ISSM review" });
+    emitPipelineEvent(runId, "done", { status: "review_pending" });
   }
+  // Clean up the emitter after a grace period (listeners may still be reading)
+  setTimeout(() => cleanupPipelineEmitter(runId), 5 * 60 * 1000);
 
   } catch (timeoutErr) {
     // Pipeline timeout or unexpected error — mark remaining pending gates as failed
@@ -8430,11 +8632,15 @@ async function orchestratePipelineScan(runId) {
             completedAt: new Date().toISOString(),
             summary: `Timed out: ${timeoutErr.message}`,
           });
+          emitPipelineEvent(runId, "gate_status", { gate: gate.short_name, status: "failed", summary: `Timed out: ${timeoutErr.message}`, progress: 100 });
         }
       }
       await db.updateRunStatus(runId, "failed");
       await db.auditLog(runId, "pipeline_timeout", null, timeoutErr.message);
+      emitPipelineEvent(runId, "pipeline_status", { status: "failed", message: timeoutErr.message });
+      emitPipelineEvent(runId, "done", { status: "failed" });
     }
+    setTimeout(() => cleanupPipelineEmitter(runId), 5 * 60 * 1000);
   }
 }
 
