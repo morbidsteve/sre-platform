@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --production
 
-COPY server.js db.js gitops.js logger.js ./
+COPY server.js db.js gitops.js logger.js error-knowledge-base.js ./
 COPY --from=client-build /app/client/dist ./client/dist
 COPY public/ ./public/
 
