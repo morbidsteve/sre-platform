@@ -57,9 +57,6 @@ spec:
                 - sre-builds
                 - tekton-pipelines
                 - tekton-pipelines-resolvers
-                # Tenant namespaces — Istio sidecar init containers use hostPort 15020
-                - team-keystone
-                - sre-dsop
       validate:
         message: >-
           Host ports are not allowed. Pod {{request.object.metadata.name}} has
@@ -67,11 +64,19 @@ spec:
           field from all container port definitions. Use a Service resource
           (ClusterIP, NodePort, or LoadBalancer) or an Istio VirtualService to
           expose your application instead.
-        pattern:
-          spec:
-            containers:
-              - ports:
-                  - =(hostPort): 0
+        foreach:
+          - list: "request.object.spec.containers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: NotEquals
+                  value: "istio-proxy"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.ports[?hostPort > `0`] || `[]` | length(@) }}"
+                    operator: GreaterThan
+                    value: 0
     - name: deny-host-ports-init-containers
       match:
         any:
@@ -108,9 +113,6 @@ spec:
                 - sre-builds
                 - tekton-pipelines
                 - tekton-pipelines-resolvers
-                # Tenant namespaces — Istio sidecar init containers use hostPort 15020
-                - team-keystone
-                - sre-dsop
       preconditions:
         all:
           - key: "{{ request.object.spec.initContainers[] || `[]` | length(@) }}"

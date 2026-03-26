@@ -75,9 +75,9 @@ spec:
         deny:
           conditions:
             any:
-              - key: "{{ request.object.spec.containers[?livenessProbe == null] | length(@) }}"
+              - key: "{{ request.object.spec.containers[?livenessProbe == null && name != `istio-proxy`] | length(@) }}"
                 operator: GreaterThan
                 value: "0"
-              - key: "{{ request.object.spec.containers[?readinessProbe == null] | length(@) }}"
+              - key: "{{ request.object.spec.containers[?readinessProbe == null && name != `istio-proxy`] | length(@) }}"
                 operator: GreaterThan
                 value: "0"
