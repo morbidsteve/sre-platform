@@ -66,7 +66,8 @@ spec:
             - --set-authorization-header=false
             - --pass-access-token=false
             - --pass-authorization-header=false
-            # Cookie size: disable token passthrough to keep session cookie < 4KB.
+            - --session-cookie-minimal=true
+            # Cookie size: strip tokens from cookie, disable passthrough.
             # The dashboard only needs X-Auth-Request-User/Email/Groups headers.
             - --skip-auth-route=^/healthz$
             - --skip-auth-route=^/api/health$
