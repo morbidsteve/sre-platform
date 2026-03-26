@@ -10,6 +10,7 @@ import { Step6_Deploy } from './components/steps/Step6_Deploy';
 import { Step7_Complete } from './components/steps/Step7_Complete';
 import { useWizard } from './hooks/useWizard';
 import { useUser } from './hooks/useUser';
+import { usePipelineStream } from './hooks/usePipelineStream';
 import { Spinner } from './components/ui/Spinner';
 import { getConfig } from './config';
 
@@ -17,6 +18,11 @@ export default function App() {
   const { user, loading: userLoading } = useUser();
   const wizard = useWizard();
   const { state } = wizard;
+
+  // Subscribe to the SSE stream for deploy-phase events (active for Steps 5–7)
+  const pipelineStream = usePipelineStream(
+    state.currentStep >= 5 ? state.pipelineRunId : null
+  );
 
   // ── Theme sync from dashboard ──────────────────────────────────
   const dashboardTheme = useMemo(() => {
@@ -209,6 +215,8 @@ export default function App() {
             deploySteps={state.deploySteps}
             isDeploying={state.isDeploying}
             error={state.error}
+            deployStreamStates={pipelineStream.deploySteps}
+            deployLogs={pipelineStream.deployLogs}
           />
         );
 
