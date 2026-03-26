@@ -8039,7 +8039,7 @@ async function runScanGate(runId, gate, scanFn) {
   }
 }
 
-async function runSASTScan(url, branch, memoryMultiplier, gateId) {
+async function runSASTScan(url, branch, memoryMultiplier, gateId, runId) {
   if (!validateGitUrl(url)) throw new Error("Invalid git URL");
   const jobName = "sast-" + crypto.randomBytes(4).toString("hex");
   const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
@@ -8069,7 +8069,7 @@ async function runSASTScan(url, branch, memoryMultiplier, gateId) {
   });
   if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120, runId, "SAST");
   let results;
   try { results = JSON.parse(logs); } catch (err) {
     console.debug('[pipeline] Semgrep output parse failed:', err.message);
@@ -8094,7 +8094,7 @@ async function runSASTScan(url, branch, memoryMultiplier, gateId) {
   };
 }
 
-async function runSecretsScan(url, branch, memoryMultiplier, gateId) {
+async function runSecretsScan(url, branch, memoryMultiplier, gateId, runId) {
   if (!validateGitUrl(url)) throw new Error("Invalid git URL");
   const jobName = "secrets-" + crypto.randomBytes(4).toString("hex");
   const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
@@ -8124,7 +8124,7 @@ async function runSecretsScan(url, branch, memoryMultiplier, gateId) {
   });
   if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60, runId, "SECRETS");
   let secrets = [];
   try { secrets = JSON.parse(logs); } catch (err) {
     console.debug('[pipeline] Gitleaks output parse failed:', err.message);
@@ -8148,7 +8148,7 @@ async function runSecretsScan(url, branch, memoryMultiplier, gateId) {
   };
 }
 
-async function runSBOMScan(image, memoryMultiplier, gateId) {
+async function runSBOMScan(image, memoryMultiplier, gateId, runId) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "sbom-" + crypto.randomBytes(4).toString("hex");
   const mult = memoryMultiplier || 1;
@@ -8185,7 +8185,7 @@ async function runSBOMScan(image, memoryMultiplier, gateId) {
   });
   if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300, runId, "SBOM");
 
   // SBOM output can be very large (1MB+) — don't try to parse the entire thing.
   // Check for valid SPDX header and count packages via regex instead.
@@ -8222,7 +8222,7 @@ async function runSBOMScan(image, memoryMultiplier, gateId) {
   };
 }
 
-async function runCVEScan(image, memoryMultiplier, gateId) {
+async function runCVEScan(image, memoryMultiplier, gateId, runId) {
   if (!validateImageRef(image)) throw new Error("Invalid image reference");
   const jobName = "cve-" + crypto.randomBytes(4).toString("hex");
   const mult = memoryMultiplier || 1;
@@ -8258,7 +8258,7 @@ async function runCVEScan(image, memoryMultiplier, gateId) {
   });
   if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy", 120);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy", 120, runId, "CVE");
   let report;
   try { report = JSON.parse(logs); } catch (err) {
     console.debug('[pipeline] Trivy CVE report parse failed:', err.message);
@@ -8289,7 +8289,7 @@ async function runCVEScan(image, memoryMultiplier, gateId) {
   };
 }
 
-async function runDASTScan(targetUrl, gateId) {
+async function runDASTScan(targetUrl, gateId, runId) {
   if (!validateUrl(targetUrl)) throw new Error("Invalid target URL");
   const jobName = "dast-" + crypto.randomBytes(4).toString("hex");
 
@@ -8314,7 +8314,7 @@ async function runDASTScan(targetUrl, gateId) {
   });
   if (gateId) await db.updateGate(gateId, { job_name: jobName });
 
-  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180);
+  const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180, runId, "DAST");
   let report;
   try { report = JSON.parse(logs); } catch (err) {
     console.debug('[pipeline] ZAP DAST report parse failed:', err.message);
@@ -8415,12 +8415,12 @@ async function orchestratePipelineScan(runId) {
     if (gateMap.SAST) {
       await db.updateGate(gateMap.SAST.id, { status: "running", summary: "Cloning repo and running Semgrep scan...", startedAt: new Date().toISOString(), progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "running", summary: "Cloning repo and running Semgrep scan...", progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult, gateMap.SAST.id)));
+      sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult, gateMap.SAST.id, runId)));
     }
     if (gateMap.SECRETS) {
       await db.updateGate(gateMap.SECRETS.id, { status: "running", summary: "Cloning repo and running Gitleaks scan...", startedAt: new Date().toISOString(), progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "running", summary: "Cloning repo and running Gitleaks scan...", progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id)));
+      sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id, runId)));
     }
   } else {
     if (gateMap.SAST) {
@@ -8492,11 +8492,14 @@ async function orchestratePipelineScan(runId) {
     });
     if (gateMap.ARTIFACT_STORE) await db.updateGate(gateMap.ARTIFACT_STORE.id, { job_name: buildId });
 
-    // Wait for build to complete
+    // Wait for build to complete — stream Kaniko logs in real-time
     await db.auditLog(runId, "image_build_started", null, `Building image: ${destination}`, { buildId });
+    emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Building image: ${destination}` });
     const buildStartTime = Date.now();
     const buildDeadline = buildStartTime + 1200000; // 20 min
     let buildSucceeded = false;
+    let buildPodName = null;
+    let lastLogLine = 0; // track streamed log position
     while (Date.now() < buildDeadline) {
       await new Promise(r => setTimeout(r, 5000));
       try {
@@ -8506,6 +8509,35 @@ async function orchestratePipelineScan(runId) {
       } catch (e) {
         console.debug('[pipeline] Build job poll error, will retry:', e.message);
       }
+
+      // Find the build pod and stream its logs
+      if (!buildPodName) {
+        try {
+          const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${buildId}`);
+          if (pods.body.items.length > 0) buildPodName = pods.body.items[0].metadata.name;
+        } catch (e) { /* not ready */ }
+      }
+      if (buildPodName) {
+        try {
+          // Stream init container (git-clone) logs first, then kaniko logs
+          const containers = ["git-clone", "kaniko"];
+          for (const ctr of containers) {
+            try {
+              const partial = await k8sApi.readNamespacedPodLog(buildPodName, BUILD_NAMESPACE, ctr, undefined, undefined, undefined, undefined, undefined, 50);
+              const text = typeof partial.body === "string" ? partial.body : String(partial.body || "");
+              if (text.trim()) {
+                const lines = text.trim().split("\n");
+                const newLines = lines.slice(lastLogLine);
+                for (const line of newLines.slice(-8)) { // stream up to 8 new lines per poll
+                  emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${ctr}] ${line}` });
+                }
+                lastLogLine = lines.length;
+              }
+            } catch (e) { /* container not ready or finished */ }
+          }
+        } catch (e) { /* pod log read failed */ }
+      }
+
       // Update progress with descriptive messages
       if (gateMap.ARTIFACT_STORE) {
         const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
@@ -8559,12 +8591,12 @@ async function orchestratePipelineScan(runId) {
     if (gateMap.SBOM) {
       await db.updateGate(gateMap.SBOM.id, { status: "running", summary: "Trivy: Generating SPDX SBOM from container image...", startedAt: new Date().toISOString(), progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "SBOM", status: "running", summary: "Trivy: Generating SPDX SBOM from container image...", progress: 10 });
-      imageScans.push(runScanGate(runId, gateMap.SBOM, (mult) => runSBOMScan(builtImageRef, mult, gateMap.SBOM.id)));
+      imageScans.push(runScanGate(runId, gateMap.SBOM, (mult) => runSBOMScan(builtImageRef, mult, gateMap.SBOM.id, runId)));
     }
     if (gateMap.CVE) {
       await db.updateGate(gateMap.CVE.id, { status: "running", summary: "Trivy: Scanning container image for CVEs...", startedAt: new Date().toISOString(), progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "CVE", status: "running", summary: "Trivy: Scanning container image for CVEs...", progress: 10 });
-      imageScans.push(runScanGate(runId, gateMap.CVE, (mult) => runCVEScan(builtImageRef, mult, gateMap.CVE.id)));
+      imageScans.push(runScanGate(runId, gateMap.CVE, (mult) => runCVEScan(builtImageRef, mult, gateMap.CVE.id, runId)));
     }
     await Promise.allSettled(imageScans);
   } else if (!run.image_url) {
@@ -8950,36 +8982,90 @@ async function executePipelineDeploy(run, actor) {
 
 // ── Security Scanning Endpoints (DSOP Wizard) ───────────────────────────────
 
-// Helper: wait for a K8s Job to complete and return its container logs
-async function waitForJobAndGetLogs(jobName, namespace, containerName, timeoutSeconds) {
+// Helper: wait for a K8s Job to complete and return its container logs.
+// If runId and gateName are provided, streams log lines as gate_log events in real-time.
+async function waitForJobAndGetLogs(jobName, namespace, containerName, timeoutSeconds, runId, gateName) {
   const deadline = Date.now() + timeoutSeconds * 1000;
+  const shouldStream = runId && gateName;
+  let podName = null;
+
+  // Phase 1: Wait for pod to be scheduled and start running
   while (Date.now() < deadline) {
+    // Check if job finished
     const job = await batchApi.readNamespacedJob(jobName, namespace);
-    if (job.body.status?.succeeded) break;
-    if (job.body.status?.failed) throw new Error("Job failed");
+    if (job.body.status?.succeeded || job.body.status?.failed) break;
+
+    // Try to find the pod and stream logs while job is running
+    if (!podName) {
+      try {
+        const pods = await k8sApi.listNamespacedPod(namespace, undefined, undefined, undefined, undefined, `job-name=${jobName}`);
+        if (pods.body.items.length > 0) {
+          podName = pods.body.items[0].metadata.name;
+          const phase = pods.body.items[0].status?.phase;
+          if (shouldStream) emitPipelineEvent(runId, "gate_log", { gate: gateName, line: `Pod ${podName} created (${phase})` });
+        }
+      } catch (e) { /* pod not ready yet */ }
+    }
+
+    // Stream partial logs if pod is running
+    if (podName && shouldStream) {
+      try {
+        const partial = await k8sApi.readNamespacedPodLog(podName, namespace, containerName, undefined, undefined, undefined, undefined, undefined, 20);
+        const text = typeof partial.body === "string" ? partial.body : String(partial.body || "");
+        if (text.trim()) {
+          const lines = text.trim().split("\n").slice(-5); // last 5 lines as progress
+          for (const line of lines) {
+            emitPipelineEvent(runId, "gate_log", { gate: gateName, line });
+          }
+        }
+      } catch (e) { /* container not ready yet */ }
+    }
+
     await new Promise(r => setTimeout(r, 2000));
   }
+
+  // Phase 2: Job finished — get full logs
   const pods = await k8sApi.listNamespacedPod(namespace, undefined, undefined, undefined, undefined, `job-name=${jobName}`);
   if (!pods.body.items.length) throw new Error("No pods found for job");
-  const podName = pods.body.items[0].metadata.name;
+  podName = pods.body.items[0].metadata.name;
+
+  // Check if job actually failed
+  const finalJob = await batchApi.readNamespacedJob(jobName, namespace);
+  if (finalJob.body.status?.failed) {
+    if (shouldStream) emitPipelineEvent(runId, "gate_log", { gate: gateName, line: "Job failed — fetching error logs..." });
+  }
+
   const logs = await k8sApi.readNamespacedPodLog(podName, namespace, containerName);
   const body = logs.body;
-  if (typeof body === 'string') return body;
-  if (Buffer.isBuffer(body)) return body.toString('utf8');
-  // K8s client may return a Readable stream or object for large responses
-  if (body && typeof body.read === 'function') {
+  let fullLogs;
+  if (typeof body === 'string') fullLogs = body;
+  else if (Buffer.isBuffer(body)) fullLogs = body.toString('utf8');
+  else if (body && typeof body.read === 'function') {
     const chunks = [];
     for await (const chunk of body) { chunks.push(chunk); }
-    return Buffer.concat(chunks).toString('utf8');
+    fullLogs = Buffer.concat(chunks).toString('utf8');
+  } else if (body && typeof body === 'object') {
+    if (typeof body.text === 'function') fullLogs = await body.text();
+    else { try { fullLogs = JSON.stringify(body); } catch (err) { fullLogs = String(body || ''); } }
+  } else {
+    fullLogs = String(body || '');
   }
-  if (body && typeof body === 'object') {
-    // Response object — try .text or JSON.stringify
-    if (typeof body.text === 'function') return await body.text();
-    try { return JSON.stringify(body); } catch (err) {
-      console.debug('[k8s] Response body JSON.stringify failed, falling through:', err.message);
+
+  // Stream final log lines
+  if (shouldStream && fullLogs) {
+    const finalLines = fullLogs.trim().split("\n").slice(-10);
+    for (const line of finalLines) {
+      emitPipelineEvent(runId, "gate_log", { gate: gateName, line });
+    }
+    if (finalJob.body.status?.failed) {
+      emitPipelineEvent(runId, "gate_log", { gate: gateName, line: "--- JOB FAILED ---" });
+    } else {
+      emitPipelineEvent(runId, "gate_log", { gate: gateName, line: "--- SCAN COMPLETE ---" });
     }
   }
-  return String(body || '');
+
+  if (finalJob.body.status?.failed) throw new Error("Job failed");
+  return fullLogs;
 }
 
 // POST /api/security/sast — Run Semgrep SAST scan via K8s Job
@@ -9017,7 +9103,7 @@ app.post("/api/security/sast", mutateLimiter, requireGroups("sre-admins", "devel
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120);
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "semgrep", 120, runId, "SAST");
 
     let results;
     try {
@@ -9085,7 +9171,7 @@ app.post("/api/security/secrets", mutateLimiter, requireGroups("sre-admins", "de
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60);
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "gitleaks", 60, runId, "SECRETS");
 
     let secrets = [];
     try { secrets = JSON.parse(logs); } catch (err) {
@@ -9150,7 +9236,7 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300);
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300, runId, "SBOM");
 
     let sbom;
     try { sbom = JSON.parse(logs); } catch (err) {
@@ -9208,7 +9294,7 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180);
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180, runId, "DAST");
 
     let report;
     try { report = JSON.parse(logs); } catch (err) {
