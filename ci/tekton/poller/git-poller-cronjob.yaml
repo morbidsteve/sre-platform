@@ -336,7 +336,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: poller
-              image: bitnami/kubectl:1.29.2
+              image: docker.io/alpine/k8s:1.31.4
               command: ["sh", "/scripts/poll.sh"]
               securityContext:
                 allowPrivilegeEscalation: false
