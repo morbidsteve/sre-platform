@@ -51,6 +51,7 @@ spec:
                 - keycloak
                 - sre-portal
                 - sre-dashboard
+                - sre-dsop
                 - oauth2-proxy
                 - local-path-storage
                 - metallb-system
