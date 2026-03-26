@@ -15,8 +15,10 @@ import {
   Save,
   Shield,
   Code2,
+  Lightbulb,
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
+import { HelpTooltip } from '../HelpTooltip';
 import { getGateOutput, type GateOutputResponse } from '../../api';
 import type { SecurityGate, GateFinding, FindingDisposition } from '../../types';
 
@@ -29,6 +31,129 @@ interface GateCardProps {
   isAdmin?: boolean;
   username?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Fix guidance for each gate type shown when a gate fails or warns
+// ---------------------------------------------------------------------------
+
+interface GateFixGuide {
+  overview: string;
+  steps: string[];
+}
+
+const GATE_FIX_GUIDES: Record<string, GateFixGuide> = {
+  SAST: {
+    overview:
+      'Semgrep found security issues in your source code. These must be resolved before deployment because they represent real attack vectors that could be exploited in production.',
+    steps: [
+      'Run `semgrep --config auto .` locally to reproduce the findings.',
+      'For each finding, read the rule message — it explains the exact vulnerability and the line of code.',
+      'Fix the root cause: avoid string concatenation in SQL queries (use parameterized queries), avoid `eval()` or `exec()` on user input, and never hard-code secrets.',
+      'If a finding is a false positive, add a `# nosemgrep: rule-id` comment on that line with a comment explaining why.',
+      'Commit the fixes and re-run the pipeline.',
+    ],
+  },
+  Secrets: {
+    overview:
+      'Gitleaks found credentials committed to your repository. These secrets must be treated as compromised — rotate them immediately regardless of whether you remove them from the code.',
+    steps: [
+      'Rotate every detected credential immediately. Assume they are already compromised.',
+      'Remove the secret from the current code and replace it with an environment variable or an ExternalSecret reference.',
+      'Purge the secret from Git history using `git filter-repo --path <file> --invert-paths` or BFG Repo Cleaner.',
+      'Store the new secret in OpenBao and reference it via ESO: set `secretRef: <secret-name>` in your values.',
+      'Re-run the pipeline after purging history.',
+    ],
+  },
+  Build: {
+    overview:
+      'The container build failed. Your Dockerfile has an error or a dependency could not be resolved.',
+    steps: [
+      'Read the build log (last lines shown above) to find the exact error.',
+      'Common causes: syntax error in Dockerfile, a `RUN apt-get install` failing because a package was renamed, or a `COPY` referencing a file that does not exist.',
+      'Test the build locally: `docker build -t test-image .`',
+      'Ensure your base image tag is pinned (e.g., `FROM node:20-alpine`) — not `latest`.',
+      'If using a multi-stage build, verify the `COPY --from=builder` stage name matches.',
+      'Fix the Dockerfile, commit, and re-run the pipeline.',
+    ],
+  },
+  SBOM: {
+    overview:
+      'Syft could not generate a complete Software Bill of Materials for your image. This usually means the image could not be pulled or is using an unsupported format.',
+    steps: [
+      'Verify the image was built successfully in the Build gate.',
+      'Ensure the image is accessible from the pipeline runner (check registry credentials).',
+      'If the image is very minimal (e.g., scratch-based), add a package manager or use `syft packages dir:.` on the source instead.',
+      'Check that the image tag is correct and has not been overwritten or deleted.',
+    ],
+  },
+  CVE: {
+    overview:
+      'Trivy found vulnerabilities in packages installed in your container image. CRITICAL and HIGH severity findings block deployment.',
+    steps: [
+      'Update the base image to the latest patch release — most CVEs are fixed in newer minor versions.',
+      'Run `trivy image <your-image>` locally to see the full list.',
+      'For each CRITICAL/HIGH finding, check the "Fixed In" column. Upgrade the package to that version.',
+      'Use a minimal base image: Chainguard Wolfi, distroless, or Alpine images have far fewer packages and therefore fewer CVEs.',
+      'If a CVE has no fix yet and you must accept the risk, mark it as "Accepted Risk" in the findings panel above with a justification — this allows the ISSM to review it.',
+      'Do NOT ignore CVEs that have a fix available.',
+    ],
+  },
+  DAST: {
+    overview:
+      'OWASP ZAP found security issues in your running application by sending attack payloads to its HTTP endpoints.',
+    steps: [
+      'Read each alert name — ZAP links each finding to an OWASP category (e.g., A03:2021-Injection).',
+      'For missing security headers (Content-Security-Policy, X-Frame-Options): add them in your application middleware or Istio EnvoyFilter.',
+      'For XSS findings: ensure all user-supplied data is HTML-encoded before rendering.',
+      'For SQL injection: use parameterized queries — never build SQL strings with user input.',
+      'For open redirects: validate redirect targets against an allowlist.',
+      'Re-run the pipeline after fixing. Low-severity alerts can be accepted with justification.',
+    ],
+  },
+  ISSM_REVIEW: {
+    overview:
+      'The Information System Security Manager (ISSM) has returned or rejected this pipeline run. This is a human review step required by NIST 800-37 (RMF) before deploying to a CUI or classified environment.',
+    steps: [
+      'Read the ISSM\'s feedback — it will be in the pipeline run comments or a linked ticket.',
+      'Address every finding the ISSM identified.',
+      'If the ISSM rejected due to unacknowledged scan findings, triage each finding in the findings panel above (set a disposition and mitigation).',
+      'If the ISSM requires a PolicyException, use the form at the bottom of this page to generate the YAML and submit it as a PR.',
+      'Once all feedback is addressed, restart the pipeline and resubmit for review.',
+    ],
+  },
+  'ISSM REVIEW': {
+    overview:
+      'The Information System Security Manager (ISSM) has returned or rejected this pipeline run. This is a human review step required by NIST 800-37 (RMF) before deploying to a CUI or classified environment.',
+    steps: [
+      'Read the ISSM\'s feedback — it will be in the pipeline run comments or a linked ticket.',
+      'Address every finding the ISSM identified.',
+      'If the ISSM rejected due to unacknowledged scan findings, triage each finding in the findings panel above.',
+      'If the ISSM requires a PolicyException, use the form at the bottom of this page to generate the YAML and submit it as a PR.',
+      'Once all feedback is addressed, restart the pipeline and resubmit for review.',
+    ],
+  },
+  IMAGE_SIGNING: {
+    overview:
+      'Cosign could not sign your container image. Image signing is the final gate that cryptographically vouches the image passed all scans.',
+    steps: [
+      'Verify all earlier gates passed — signing only runs after Build, SBOM, and CVE gates succeed.',
+      'Check that the pipeline has access to the Cosign private key (stored in the platform secrets manager).',
+      'Ensure the image was successfully pushed to the Harbor registry.',
+      'If the signing key has been rotated, the platform team must update the Kyverno imageVerify policy with the new public key.',
+      'Contact the platform team if this gate fails consistently after all other gates pass.',
+    ],
+  },
+  'IMAGE SIGNING': {
+    overview:
+      'Cosign could not sign your container image. Image signing is the final gate that cryptographically vouches the image passed all scans.',
+    steps: [
+      'Verify all earlier gates passed — signing only runs after Build, SBOM, and CVE gates succeed.',
+      'Check that the pipeline has access to the Cosign private key (stored in the platform secrets manager).',
+      'Ensure the image was successfully pushed to the Harbor registry.',
+      'Contact the platform team if this gate fails consistently after all other gates pass.',
+    ],
+  },
+};
 
 const statusConfig = {
   pending: { icon: Clock, color: 'text-gray-400', bg: 'border-navy-600', label: 'PENDING' },
@@ -570,6 +695,43 @@ function GateToolOutput({ pipelineRunId, gate }: { pipelineRunId: string; gate: 
   );
 }
 
+// ---------------------------------------------------------------------------
+// "How to Fix" panel shown for failed / warning gates
+// ---------------------------------------------------------------------------
+
+function GateFixGuidePanel({ gate }: { gate: SecurityGate }) {
+  const key = gate.shortName.trim().toUpperCase().replace(/\s+/g, '_');
+  // Try exact shortName, then with spaces, then normalised key
+  const guide =
+    GATE_FIX_GUIDES[gate.shortName] ??
+    GATE_FIX_GUIDES[key] ??
+    null;
+
+  if (!guide) return null;
+
+  return (
+    <div className="mt-4 bg-amber-500/5 border border-amber-500/20 rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Lightbulb className="w-4 h-4 text-amber-400 flex-shrink-0" />
+        <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+          How to Fix
+        </h4>
+      </div>
+      <p className="text-xs text-gray-300 leading-relaxed mb-3">{guide.overview}</p>
+      <ol className="space-y-1.5">
+        {guide.steps.map((step, i) => (
+          <li key={i} className="flex items-start gap-2 text-xs text-gray-400">
+            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 font-mono text-[10px] flex items-center justify-center mt-0.5">
+              {i + 1}
+            </span>
+            <span className="leading-relaxed">{step}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, onOverrideGate, isAdmin, username = 'operator' }: GateCardProps) {
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[gate.status];
@@ -607,9 +769,11 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
         {/* Gate Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-navy-700 text-xs font-mono text-gray-400 flex-shrink-0">
-              {gate.shortName}
-            </span>
+            <HelpTooltip term={gate.shortName}>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-navy-700 text-xs font-mono text-gray-400 flex-shrink-0 cursor-help hover:text-cyan-300 hover:bg-navy-600 transition-colors">
+                {gate.shortName}
+              </span>
+            </HelpTooltip>
             <span className="text-sm font-medium text-gray-200 truncate">
               {gate.name}
             </span>
@@ -738,6 +902,11 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
                 </div>
               ))}
             </div>
+          )}
+
+          {/* How to Fix guidance for failed / warning gates */}
+          {(gate.status === 'failed' || gate.status === 'warning') && (
+            <GateFixGuidePanel gate={gate} />
           )}
 
           {/* Clean scan notice when no findings and no tool output */}

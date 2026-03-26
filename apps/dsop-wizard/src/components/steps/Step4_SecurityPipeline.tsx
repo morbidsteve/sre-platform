@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, ShieldAlert, FileCheck, Loader2, RotateCcw, Rock
 import { Button } from '../ui/Button';
 import { PipelineProgress } from '../pipeline/PipelineProgress';
 import { GateCard } from '../pipeline/GateCard';
+import { TermWithHelp } from '../HelpTooltip';
 import type { SecurityGate, GateFinding, PipelineRunStatus, PipelineRun } from '../../types';
 
 interface Step4Props {
@@ -162,7 +163,7 @@ function SecurityExceptionPrompt({
     <div className="bg-amber-900/30 border border-amber-500/50 rounded-lg p-4 mt-4">
       <h4 className="text-amber-400 font-semibold mb-2 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4" />
-        Security Exception Required
+        <TermWithHelp term="PolicyException" label="Security Exception Required" />
       </h4>
       <p className="text-sm text-gray-300 mb-3">
         This application requires elevated privileges that are normally restricted:
@@ -184,7 +185,7 @@ function SecurityExceptionPrompt({
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm text-gray-300 font-medium">
-                  Copy this PolicyException YAML into a PR at{' '}
+                  Copy this <TermWithHelp term="PolicyException" /> YAML into a PR at{' '}
                   <code className="text-cyan-400 text-xs">
                     policies/custom/policy-exceptions/{teamName}-{appName}-exception.yaml
                   </code>
@@ -418,7 +419,7 @@ export function Step4_SecurityPipeline({
         <div className="bg-navy-800 border border-navy-600 rounded-xl p-5 space-y-3">
           <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
             <FileCheck className="w-4 h-4" />
-            ISSM Review
+            <TermWithHelp term="ISSM" label="ISSM Review" />
           </h3>
           {isDeployed ? (
             <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, ShieldAlert, ChevronDown, ChevronRight, Loader2, FileWarning } from 'lucide-react';
 import { Input, Select } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { HelpTooltip } from '../HelpTooltip';
 import { fetchTeams } from '../../api';
 import type { AppInfo, AccessLevel, Classification, SecurityException, SecurityExceptionType, SecurityCategorization, DataType, FipsLevel } from '../../types';
 import type { User } from '../../types';
@@ -234,9 +235,10 @@ export function Step2_AppInfo({
       <div className="bg-navy-800 border border-navy-600 rounded-xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <FileWarning className="w-4 h-4 text-cyan-400" />
-          <h3 className="text-sm font-semibold text-gray-300">
+          <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-1">
             Security Categorization
             <span className="font-normal text-gray-600 ml-1">(FIPS 199)</span>
+            <HelpTooltip term="FIPS 199" />
           </h3>
         </div>
         <p className="text-xs text-gray-500 mb-4">
