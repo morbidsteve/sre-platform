@@ -33,43 +33,27 @@ spec:
       team: team-alpha
       image:
         repository: harbor.apps.sre.example.com/team-alpha/ws
-        tag: pipe-9521dbdb
+        tag: pipe-c43fedf5
         pullPolicy: IfNotPresent
-      port: 3000
+      port: 8080
       replicas: 2
       resources:
         requests:
-          cpu: 100m
-          memory: 256Mi
+          cpu: 50m
+          memory: 64Mi
         limits:
-          cpu: "2"
-          memory: 2Gi
+          cpu: 200m
+          memory: 256Mi
       probes:
         liveness:
-          type: tcp
           path: /
-          initialDelaySeconds: 30
-          periodSeconds: 15
-          failureThreshold: 10
-        readiness:
-          type: tcp
-          path: /
-          initialDelaySeconds: 15
+          initialDelaySeconds: 10
           periodSeconds: 10
-          failureThreshold: 10
+        readiness:
+          path: /
+          initialDelaySeconds: 5
+          periodSeconds: 5
       env: []
-    podSecurityContext:
-      runAsNonRoot: false
-      runAsUser: 0
-      runAsGroup: 0
-      fsGroup: 0
-      seccompProfile:
-        type: RuntimeDefault
-    containerSecurityContext:
-      allowPrivilegeEscalation: true
-      readOnlyRootFilesystem: false
-      runAsNonRoot: false
-      runAsUser: 0
     ingress:
       enabled: true
       host: ws.apps.sre.example.com
