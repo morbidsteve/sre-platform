@@ -16,6 +16,10 @@ import { PlatformNodeCard } from './NodeCard';
 import { FluxStatusPanel } from './FluxStatus';
 import { ServiceHealthPanel } from './ServiceHealth';
 import { PodTable } from './PodTable';
+import { DependencyMap } from './DependencyMap';
+import { DNSSetup } from './DNSSetup';
+import { ResourceTopPanel } from '../cluster/ResourceTopPanel';
+import { DeploymentsPanel } from '../cluster/DeploymentsPanel';
 import {
   fetchPlatformOverview,
   fetchPlatformFlux,
@@ -640,14 +644,47 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
           <ServiceHealthPanel
             services={derivedServices}
             loading={fluxLoading}
-            onOpenService={(url) => window.open(url, '_blank', 'noopener')}
+            onOpenService={(url, name) => {
+              const lname = (name || '').toLowerCase();
+              if (lname.includes('grafana')) { window.open(`https://grafana.${config.domain}/d/cluster-overview`, '_blank', 'noopener'); return; }
+              if (lname.includes('prometheus')) { window.open(url + '/targets', '_blank', 'noopener'); return; }
+              if (lname.includes('harbor')) { window.open(`https://harbor.${config.domain}/harbor/projects`, '_blank', 'noopener'); return; }
+              if (lname.includes('keycloak')) { window.open(url, '_blank', 'noopener'); return; }
+              if (lname.includes('neuvector')) { window.open(url + '#/login', '_blank', 'noopener'); return; }
+              if (lname.includes('openbao')) { window.open(url + '/ui/vault/auth?with=oidc', '_blank', 'noopener'); return; }
+              window.open(url, '_blank', 'noopener');
+            }}
           />
         </div>
 
         {/* Row 3: Pod Table */}
         <PodTable active={active} refreshTick={refreshTick} />
 
-        {/* Row 4: Events */}
+        {/* Row 4: Deployments */}
+        <div>
+          <div style={sectionLabel}>Deployments</div>
+          <DeploymentsPanel active={active} refreshKey={refreshTick} />
+        </div>
+
+        {/* Row 5: Resource Top */}
+        <div>
+          <div style={sectionLabel}>Resource Usage (Top)</div>
+          <ResourceTopPanel active={active} refreshKey={refreshTick} />
+        </div>
+
+        {/* Row 6: Dependencies */}
+        <div>
+          <div style={sectionLabel}>Service Dependencies</div>
+          <DependencyMap active={active} />
+        </div>
+
+        {/* Row 7: DNS Setup */}
+        <div>
+          <div style={sectionLabel}>DNS Setup</div>
+          <DNSSetup hostsEntry="" />
+        </div>
+
+        {/* Row 8: Events */}
         <EventsCollapsible
           events={events}
           namespaces={namespaces}
