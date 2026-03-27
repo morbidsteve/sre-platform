@@ -68,7 +68,7 @@ function deriveServicesFromFlux(flux: FluxStatus, config: { domain: string }): P
     prometheus: `https://prometheus.${config.domain}`,
     harbor: `https://harbor.${config.domain}`,
     keycloak: `https://keycloak.${config.domain}`,
-    istio: `https://kiali.${config.domain}`,
+    istio: '',
     neuvector: `https://neuvector.${config.domain}`,
   };
 
@@ -306,7 +306,6 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
     { label: 'Grafana', url: `https://grafana.${config.domain}` },
     { label: 'Harbor', url: `https://harbor.${config.domain}` },
     { label: 'Keycloak', url: `https://keycloak.${config.domain}` },
-    { label: 'Kiali', url: `https://kiali.${config.domain}` },
     { label: 'Prometheus', url: `https://prometheus.${config.domain}` },
     { label: 'NeuVector', url: `https://neuvector.${config.domain}` },
   ];
