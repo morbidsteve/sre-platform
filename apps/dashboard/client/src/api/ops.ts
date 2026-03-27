@@ -50,7 +50,7 @@ export interface OpsPodStatus {
   age: string;
   node: string;
   ip: string;
-  containers: string[];
+  containers: (string | { name: string; [k: string]: unknown })[];
 }
 
 export interface OpsEvent {

@@ -5,7 +5,12 @@ import { openLogStream } from '../../api/ops';
 interface OpsLogViewerProps {
   namespace: string;
   name: string;
-  pods: { name: string; containers: string[] }[];
+  pods: { name: string; containers: (string | { name: string; [k: string]: unknown })[] }[];
+}
+
+// Normalize container to string name
+function cName(c: string | { name: string; [k: string]: unknown }): string {
+  return typeof c === 'string' ? c : c.name;
 }
 
 const LOG_COLORS: Record<string, string> = {
@@ -30,7 +35,7 @@ const MAX_LOG_LINES = 2000;
 
 export function OpsLogViewer({ namespace, name, pods }: OpsLogViewerProps) {
   const [selectedPod, setSelectedPod] = useState(pods[0]?.name || '');
-  const [selectedContainer, setSelectedContainer] = useState(pods[0]?.containers[0] || '');
+  const [selectedContainer, setSelectedContainer] = useState(cName(pods[0]?.containers[0] || ''));
   const [lines, setLines] = useState<string[]>([]);
   const [paused, setPaused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,7 +49,7 @@ export function OpsLogViewer({ namespace, name, pods }: OpsLogViewerProps) {
   useEffect(() => {
     const pod = pods.find((p) => p.name === selectedPod);
     if (pod && pod.containers[0]) {
-      setSelectedContainer(pod.containers[0]);
+      setSelectedContainer(cName(pod.containers[0]));
     }
   }, [selectedPod, pods]);
 
@@ -145,7 +150,7 @@ export function OpsLogViewer({ namespace, name, pods }: OpsLogViewerProps) {
               className="appearance-none pl-2.5 pr-7 py-1.5 bg-surface border border-border rounded-[var(--radius)] text-[11px] font-mono text-text-primary focus:outline-none focus:border-accent"
             >
               {containers.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={cName(c)} value={cName(c)}>{cName(c)}</option>
               ))}
             </select>
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-text-dim pointer-events-none" />
