@@ -959,8 +959,12 @@ app.get("/api/apps", async (req, res) => {
             try {
               const evResp = await k8sApi.listNamespacedEvent(ns.metadata.name);
               const appName = hr.metadata.name;
+              const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
               policyViolations = evResp.body.items
                 .filter((e) => {
+                  // Only show recent events (last 5 min) to avoid stale data from old pods
+                  const eventTime = new Date(e.lastTimestamp || e.eventTime || 0);
+                  if (eventTime < fiveMinAgo) return false;
                   const objName = e.involvedObject?.name || "";
                   const matchesApp = objName === appName || objName.startsWith(`${appName}-`);
                   if (!matchesApp) return false;
