@@ -122,36 +122,71 @@ export interface PlatformPolicy {
 
 // ── API Functions ─────────────────────────────────────────────────────────────
 
-export function fetchPlatformOverview(): Promise<PlatformOverview> {
-  return apiFetch<PlatformOverview>('/api/platform/overview');
+// Backend returns shapes that may be wrapped in objects — unwrap to match frontend types
+
+export async function fetchPlatformOverview(): Promise<PlatformOverview> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch('/api/platform/overview');
+  // Transform backend shape to PlatformOverview
+  const nodes = (raw.nodes || []) as PlatformNode[];
+  const flux = raw.fluxStatus || {};
+  const totals = raw.clusterTotals || {};
+  return {
+    clusterName: 'SRE Platform',
+    nodeCount: nodes.length,
+    podCount: totals.pods?.total ?? 0,
+    namespaceCount: totals.namespaces ?? 0,
+    fluxSynced: (flux.kustomizations || []).every((k: FluxKustomization) => k.ready),
+    fluxLastSync: '',
+    nodes,
+    services: [], // populated separately
+  };
 }
 
-export function fetchPlatformFlux(): Promise<FluxStatus> {
-  return apiFetch<FluxStatus>('/api/platform/flux');
+export async function fetchPlatformFlux(): Promise<FluxStatus> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch('/api/platform/flux');
+  const ks = raw.kustomizations || [];
+  const hr = raw.helmReleases || [];
+  return {
+    kustomizations: ks,
+    helmReleases: hr,
+    syncedCount: ks.filter((k: FluxKustomization) => k.ready).length + hr.filter((h: FluxHelmRelease) => h.ready).length,
+    totalCount: ks.length + hr.length,
+  };
 }
 
-export function fetchPlatformPods(namespace?: string, status?: string, search?: string): Promise<PlatformPod[]> {
+export async function fetchPlatformPods(namespace?: string, status?: string, search?: string): Promise<PlatformPod[]> {
   const params = new URLSearchParams();
   if (namespace) params.set('namespace', namespace);
   if (status) params.set('status', status);
   if (search) params.set('search', search);
   const qs = params.toString();
-  return apiFetch<PlatformPod[]>('/api/platform/pods' + (qs ? '?' + qs : ''));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch('/api/platform/pods' + (qs ? '?' + qs : ''));
+  // Backend returns {pods: [...], total, limit, offset} — unwrap
+  return Array.isArray(raw) ? raw : (raw.pods || []);
 }
 
-export function fetchPlatformEvents(namespace?: string): Promise<PlatformEvent[]> {
+export async function fetchPlatformEvents(namespace?: string): Promise<PlatformEvent[]> {
   const params = new URLSearchParams();
   if (namespace) params.set('namespace', namespace);
   params.set('type', 'Warning');
-  return apiFetch<PlatformEvent[]>('/api/platform/events?' + params.toString());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch('/api/platform/events?' + params.toString());
+  return Array.isArray(raw) ? raw : (raw.events || []);
 }
 
-export function fetchPlatformCertificates(): Promise<PlatformCertificate[]> {
-  return apiFetch<PlatformCertificate[]>('/api/platform/certificates');
+export async function fetchPlatformCertificates(): Promise<PlatformCertificate[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch('/api/platform/certificates');
+  return Array.isArray(raw) ? raw : (raw.certificates || []);
 }
 
-export function fetchPlatformPolicies(): Promise<PlatformPolicy[]> {
-  return apiFetch<PlatformPolicy[]>('/api/platform/policies');
+export async function fetchPlatformPolicies(): Promise<PlatformPolicy[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch('/api/platform/policies');
+  return Array.isArray(raw) ? raw : (raw.policies || []);
 }
 
 export function triggerFluxReconcile(name: string, namespace: string, kind: 'kustomization' | 'helmrelease'): Promise<{ success: boolean; message: string }> {
