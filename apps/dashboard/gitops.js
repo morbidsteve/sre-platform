@@ -514,13 +514,6 @@ async function undeployApp(team, appName, actor) {
       type: "blob",
       sha: null,
     },
-    // Delete the policy exception file if it exists (best-effort)
-    {
-      path: `apps/tenants/${team}/apps/${appName}-policy-exception.yaml`,
-      mode: "100644",
-      type: "blob",
-      sha: null,
-    },
     // Update the kustomization
     {
       path: `apps/tenants/${team}/apps/kustomization.yaml`,
@@ -529,6 +522,18 @@ async function undeployApp(team, appName, actor) {
       content: kustomizationContent,
     },
   ];
+
+  // Also delete policy exception file if it exists in Git
+  // (GitHub Trees API rejects sha:null for non-existent files)
+  const policyExPath = `apps/tenants/${team}/apps/${appName}-policy-exception.yaml`;
+  try {
+    const peCheck = await githubFetch(
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${policyExPath.split("/").map(encodeURIComponent).join("/")}?ref=${GITHUB_BRANCH}`
+    );
+    if (peCheck.ok) {
+      tree.push({ path: policyExPath, mode: "100644", type: "blob", sha: null });
+    }
+  } catch (e) { /* file doesn't exist, skip */ }
 
   const treeRes = await githubFetch(
     `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/trees`,
