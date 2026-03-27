@@ -4,7 +4,6 @@ import {
   Rocket,
   AppWindow,
   Shield,
-  Activity,
   ClipboardCheck,
   Settings,
   Gauge,
@@ -29,9 +28,8 @@ const tabs: TabDef[] = [
   { id: 'deploy', label: 'Deploy', icon: <Rocket size={14} /> },
   { id: 'applications', label: 'Applications', icon: <AppWindow size={14} /> },
   { id: 'security', label: 'Security', icon: <Shield size={14} /> },
-  { id: 'operations', label: 'Operations', icon: <Activity size={14} /> },
   { id: 'compliance', label: 'Compliance', icon: <ClipboardCheck size={14} /> },
-  { id: 'platform', label: 'Platform', icon: <Gauge size={14} />, adminOnly: true },
+  { id: 'operations', label: 'Operations', icon: <Gauge size={14} />, adminOnly: true },
   { id: 'admin', label: 'Admin', icon: <Settings size={14} />, adminOnly: true },
 ];
 

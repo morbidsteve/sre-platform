@@ -6,12 +6,12 @@ interface NodeCardProps {
   node: PlatformNode;
 }
 
-const HUD_ACCENT = '#00ff88';
-const HUD_AMBER = '#ffaa00';
-const HUD_RED = '#ff3344';
-const HUD_DIM_GREEN = '#1a3a2a';
-const HUD_TEXT = '#c8ffd8';
-const HUD_LABEL = '#4a7a5a';
+const HUD_ACCENT = '#34d399';
+const HUD_AMBER = '#fbbf24';
+const HUD_RED = '#f87171';
+const HUD_BORDER = '#374151';
+const HUD_TEXT = '#e5e7eb';
+const HUD_LABEL = '#9ca3af';
 
 function barColor(pct: number, highThresh: number, warnThresh: number): string {
   if (pct > highThresh) return HUD_RED;
@@ -22,13 +22,12 @@ function barColor(pct: number, highThresh: number, warnThresh: number): string {
 function UsageBar({ pct, high, warn }: { pct: number; high: number; warn: number }) {
   const color = barColor(pct, high, warn);
   return (
-    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#0a1a10' }}>
+    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#374151' }}>
       <div
         className="h-full rounded-full transition-all"
         style={{
           width: `${Math.min(Math.max(pct, 2), 100)}%`,
           background: color,
-          boxShadow: `0 0 4px ${color}`,
         }}
       />
     </div>
@@ -41,19 +40,19 @@ export function PlatformNodeCard({ node }: NodeCardProps) {
   const cpuPct = node.cpu?.pct ?? 0;
   const memPct = node.memory?.pct ?? 0;
   const dotColor = isReady ? HUD_ACCENT : HUD_RED;
-  const borderColor = isReady ? 'rgba(0,255,136,0.15)' : 'rgba(255,51,68,0.25)';
-  const hoverBorder = isReady ? 'rgba(0,255,136,0.35)' : 'rgba(255,51,68,0.45)';
+  const borderColor = HUD_BORDER;
+  const hoverBorder = isReady ? '#4b5563' : 'rgba(248,113,113,0.4)';
 
   return (
     <>
       <div
         className="flex flex-col gap-2.5 p-3 rounded cursor-pointer transition-all duration-150 group"
         style={{
-          background: '#080c12',
+          background: '#1f2937',
           border: `1px solid ${borderColor}`,
         }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.border = `1px solid ${hoverBorder}`; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 12px ${isReady ? 'rgba(0,255,136,0.08)' : 'rgba(255,51,68,0.08)'}`; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.border = `1px solid ${borderColor}`; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = hoverBorder; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = borderColor; }}
         onClick={() => setShowDetail(true)}
         title="Click for node details"
       >
@@ -61,7 +60,6 @@ export function PlatformNodeCard({ node }: NodeCardProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <span
-              className={isReady ? 'hud-pulse-green' : 'hud-pulse-red'}
               style={{
                 display: 'inline-block',
                 width: '7px',
@@ -82,8 +80,8 @@ export function PlatformNodeCard({ node }: NodeCardProps) {
                 className="text-[8px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
                 style={{
                   color: role === 'control-plane' || role === 'etcd' ? '#60a5fa' : HUD_ACCENT,
-                  background: role === 'control-plane' || role === 'etcd' ? 'rgba(96,165,250,0.1)' : 'rgba(0,255,136,0.07)',
-                  border: `1px solid ${role === 'control-plane' || role === 'etcd' ? 'rgba(96,165,250,0.2)' : 'rgba(0,255,136,0.15)'}`,
+                  background: role === 'control-plane' || role === 'etcd' ? 'rgba(96,165,250,0.1)' : 'rgba(52,211,153,0.1)',
+                  border: `1px solid ${role === 'control-plane' || role === 'etcd' ? 'rgba(96,165,250,0.25)' : 'rgba(52,211,153,0.25)'}`,
                 }}
               >
                 {role === 'control-plane' ? 'CP' : role === 'worker' ? 'W' : role}
@@ -136,7 +134,7 @@ export function PlatformNodeCard({ node }: NodeCardProps) {
         {/* Click hint */}
         <div
           className="text-[8px] font-mono uppercase tracking-widest text-center opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ color: HUD_ACCENT }}
+          style={{ color: HUD_LABEL }}
         >
           ▶ DETAILS
         </div>

@@ -31,15 +31,15 @@ import { useConfig } from '../../context/ConfigContext';
 
 const AUTO_REFRESH_MS = 15_000;
 
-// ── F-35 HUD palette ─────────────────────────────────────────────────────────
-const HUD_ACCENT = '#00ff88';
-const HUD_AMBER = '#ffaa00';
-const HUD_RED = '#ff3344';
-const HUD_BORDER = '#0d2a1a';
-const HUD_LABEL = '#4a7a5a';
-const HUD_TEXT = '#c8ffd8';
-const HUD_BG = '#080c12';
-const HUD_SURFACE = '#0a0f15';
+// ── Platform Cockpit palette ──────────────────────────────────────────────────
+const HUD_ACCENT = '#38bdf8';
+const HUD_AMBER = '#fbbf24';
+const HUD_RED = '#f87171';
+const HUD_BORDER = '#374151';
+const HUD_LABEL = '#9ca3af';
+const HUD_TEXT = '#e5e7eb';
+const HUD_BG = '#111827';
+const HUD_SURFACE = '#1f2937';
 
 // ── Platform namespace → service name mapping ─────────────────────────────────
 const NS_TO_SERVICES: Record<string, { name: string; icon: string; description: string }[]> = {
@@ -133,13 +133,13 @@ function StatPill({
     <div
       className="flex items-center gap-2 px-3 py-2 rounded"
       style={{
-        background: HUD_BG,
-        border: `1px solid ${color}20`,
+        background: HUD_SURFACE,
+        border: `1px solid ${HUD_BORDER}`,
       }}
     >
       <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
       <div>
-        <div className="text-sm font-bold font-mono leading-tight" style={{ color: ok === true ? HUD_ACCENT : HUD_TEXT }}>
+        <div className="text-sm font-bold font-mono leading-tight" style={{ color: HUD_TEXT }}>
           {value}
         </div>
         <div className="text-[8px] uppercase tracking-[2px] font-mono" style={{ color: HUD_LABEL }}>
@@ -203,7 +203,7 @@ function EventsCollapsible({
           {!loading && events.length > 0 && (
             <span
               className="text-[8px] font-mono px-1.5 py-0.5 rounded"
-              style={{ color: HUD_AMBER, background: 'rgba(255,170,0,0.1)', border: '1px solid rgba(255,170,0,0.2)' }}
+              style={{ color: HUD_AMBER, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
             >
               {events.length}
             </span>
@@ -246,10 +246,10 @@ function EventsCollapsible({
                 const dotColor = critical ? HUD_RED : HUD_AMBER;
                 const isExpanded = expandedIdx === i;
                 return (
-                  <div key={i} style={{ borderBottom: `1px solid ${HUD_BORDER}50` }}>
+                  <div key={i} style={{ borderBottom: `1px solid ${HUD_BORDER}` }}>
                     <div
                       className="flex items-start gap-3 px-4 py-2 text-[10px] font-mono cursor-pointer transition-all"
-                      onMouseEnter={(el) => { (el.currentTarget as HTMLDivElement).style.background = 'rgba(0,255,136,0.02)'; }}
+                      onMouseEnter={(el) => { (el.currentTarget as HTMLDivElement).style.background = HUD_SURFACE; }}
                       onMouseLeave={(el) => { (el.currentTarget as HTMLDivElement).style.background = ''; }}
                       onClick={() => setExpandedIdx(isExpanded ? null : i)}
                     >
@@ -258,7 +258,7 @@ function EventsCollapsible({
                         style={{ backgroundColor: dotColor }}
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="truncate" style={{ color: isExpanded ? HUD_TEXT : HUD_TEXT }}>
+                        <div className="truncate" style={{ color: HUD_TEXT }}>
                           {e.message}
                         </div>
                         <div className="mt-0.5" style={{ color: HUD_LABEL }}>
@@ -270,19 +270,19 @@ function EventsCollapsible({
                           {e.count > 1 && <span> · x{e.count}</span>}
                         </div>
                       </div>
-                      <span className="text-[8px] flex-shrink-0 self-start mt-0.5 opacity-50" style={{ color: HUD_ACCENT }}>
+                      <span className="text-[8px] flex-shrink-0 self-start mt-0.5 opacity-50" style={{ color: HUD_LABEL }}>
                         {isExpanded ? '▲' : '▼'}
                       </span>
                     </div>
                     {isExpanded && (
                       <div
                         className="px-8 pb-3 text-[10px] font-mono leading-relaxed"
-                        style={{ color: '#8aaa9a', borderTop: `1px solid ${HUD_BORDER}50` }}
+                        style={{ color: HUD_LABEL, borderTop: `1px solid ${HUD_BORDER}` }}
                       >
-                        <div className="mt-2"><span style={{ color: HUD_LABEL }}>Message: </span>{e.message}</div>
-                        <div><span style={{ color: HUD_LABEL }}>Object: </span>{e.namespace}/{e.object}</div>
-                        {e.firstSeen && <div><span style={{ color: HUD_LABEL }}>First seen: </span>{e.firstSeen}</div>}
-                        <div><span style={{ color: HUD_LABEL }}>Count: </span>{e.count}</div>
+                        <div className="mt-2"><span style={{ color: HUD_LABEL }}>Message: </span><span style={{ color: HUD_TEXT }}>{e.message}</span></div>
+                        <div><span style={{ color: HUD_LABEL }}>Object: </span><span style={{ color: HUD_TEXT }}>{e.namespace}/{e.object}</span></div>
+                        {e.firstSeen && <div><span style={{ color: HUD_LABEL }}>First seen: </span><span style={{ color: HUD_TEXT }}>{e.firstSeen}</span></div>}
+                        <div><span style={{ color: HUD_LABEL }}>Count: </span><span style={{ color: HUD_TEXT }}>{e.count}</span></div>
                       </div>
                     )}
                   </div>
@@ -343,8 +343,8 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
           className="w-full flex items-center justify-center gap-1.5 text-[10px] font-mono px-3 py-2 rounded transition-opacity hover:opacity-70"
           style={{
             color: HUD_ACCENT,
-            border: `1px solid rgba(0,255,136,0.25)`,
-            background: 'rgba(0,255,136,0.06)',
+            border: `1px solid ${HUD_BORDER}`,
+            background: HUD_SURFACE,
             opacity: reconciling ? 0.5 : 1,
             cursor: reconciling ? 'not-allowed' : 'pointer',
           }}
@@ -368,7 +368,7 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-mono transition-all group"
               style={{ color: HUD_LABEL }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_ACCENT; (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(0,255,136,0.04)'; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_TEXT; (e.currentTarget as HTMLAnchorElement).style.background = HUD_SURFACE; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_LABEL; (e.currentTarget as HTMLAnchorElement).style.background = ''; }}
             >
               <span className="flex-1">{link.label}</span>
@@ -399,7 +399,7 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
       )}
 
       {/* Auto-refresh hint */}
-      <div className="flex items-center gap-1.5 px-1 text-[8px] font-mono" style={{ color: '#2a4a3a' }}>
+      <div className="flex items-center gap-1.5 px-1 text-[8px] font-mono" style={{ color: '#6b7280' }}>
         <Clock className="w-2.5 h-2.5" />
         Auto-refresh 15s
       </div>
@@ -548,7 +548,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
   };
 
   return (
-    <div className="flex gap-4" style={{ background: HUD_BG }}>
+    <div className="flex gap-4 min-h-0" style={{ background: HUD_BG }}>
       {/* ── Main content column ───────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Top bar */}
@@ -556,13 +556,13 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
           <div>
             <h2
               className="text-base font-bold font-mono"
-              style={{ color: HUD_ACCENT, textShadow: `0 0 12px ${HUD_ACCENT}60` }}
+              style={{ color: HUD_TEXT }}
             >
               {overview?.clusterName ?? 'SRE Platform'}
             </h2>
             <div className="text-[9px] font-mono uppercase tracking-[3px] mt-0.5" style={{ color: HUD_LABEL }}>
               Platform Cockpit
-              {lastRefreshed && <span style={{ color: '#2a4a3a' }}> · {lastRefreshed}</span>}
+              {lastRefreshed && <span style={{ color: '#6b7280' }}> · {lastRefreshed}</span>}
             </div>
           </div>
 
@@ -594,8 +594,8 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
               className="flex items-center gap-1.5 text-[9px] font-mono px-3 py-2 rounded transition-opacity hover:opacity-70"
               style={{
                 color: HUD_ACCENT,
-                border: `1px solid rgba(0,255,136,0.2)`,
-                background: HUD_BG,
+                border: `1px solid ${HUD_BORDER}`,
+                background: HUD_SURFACE,
               }}
               onClick={refreshAll}
               title="Refresh all data"
@@ -617,7 +617,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
                 <div
                   key={i}
                   className="h-36 rounded animate-pulse"
-                  style={{ background: 'rgba(0,255,136,0.02)', border: `1px solid ${HUD_BORDER}` }}
+                  style={{ background: HUD_SURFACE, border: `1px solid ${HUD_BORDER}` }}
                 />
               ))}
             </div>

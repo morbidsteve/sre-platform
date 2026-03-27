@@ -8,14 +8,14 @@ import type { PlatformPod } from '../../api/platform';
 import type { Namespace, PodDetail } from '../../types/api';
 import { LogViewer } from '../cluster/LogViewer';
 
-const HUD_ACCENT = '#00ff88';
-const HUD_AMBER = '#ffaa00';
-const HUD_RED = '#ff3344';
-const HUD_BORDER = '#0d2a1a';
-const HUD_LABEL = '#4a7a5a';
-const HUD_TEXT = '#c8ffd8';
-const HUD_BG = '#080c12';
-const HUD_SURFACE = '#0a0f15';
+const HUD_ACCENT = '#34d399';
+const HUD_AMBER = '#fbbf24';
+const HUD_RED = '#f87171';
+const HUD_BORDER = '#374151';
+const HUD_LABEL = '#9ca3af';
+const HUD_TEXT = '#e5e7eb';
+const HUD_BG = '#111827';
+const HUD_SURFACE = '#1f2937';
 
 // ── Status helpers ──────────────────────────────────────────────────────────
 
@@ -30,9 +30,9 @@ function statusColor(status: string): string {
 function rowBgStyle(status: string): React.CSSProperties {
   const s = status.toLowerCase();
   if (s === 'running') return {};
-  if (s === 'pending' || s === 'containercreating') return { background: 'rgba(255,170,0,0.02)' };
-  if (s === 'succeeded' || s === 'completed') return { background: 'rgba(96,165,250,0.02)' };
-  return { background: 'rgba(255,51,68,0.03)' };
+  if (s === 'pending' || s === 'containercreating') return { background: 'rgba(251,191,36,0.04)' };
+  if (s === 'succeeded' || s === 'completed') return { background: 'rgba(96,165,250,0.04)' };
+  return { background: 'rgba(248,113,113,0.06)' };
 }
 
 const STATUS_OPTIONS = [
@@ -109,7 +109,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
             {isAdmin && pod && (
               <button
                 className="text-[10px] font-mono px-2 py-1 rounded transition-colors"
-                style={{ color: HUD_RED, border: `1px solid rgba(255,51,68,0.3)`, background: 'rgba(255,51,68,0.06)' }}
+                style={{ color: HUD_RED, border: `1px solid rgba(248,113,113,0.3)`, background: 'rgba(248,113,113,0.08)' }}
                 onClick={handleDelete}
               >
                 Delete
@@ -205,7 +205,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                     <div
                       key={c.name}
                       className="text-[10px] font-mono p-2.5 rounded"
-                      style={{ background: '#0a0f15', border: `1px solid ${HUD_BORDER}` }}
+                      style={{ background: HUD_SURFACE, border: `1px solid ${HUD_BORDER}` }}
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <span
@@ -222,7 +222,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                       </div>
                       <div className="truncate" style={{ color: HUD_LABEL }}>{c.image}</div>
                       {c.stateDetail && (
-                        <div className="mt-0.5" style={{ color: '#3a5a4a' }}>{c.stateDetail}</div>
+                        <div className="mt-0.5" style={{ color: HUD_LABEL }}>{c.stateDetail}</div>
                       )}
                     </div>
                   ))}
@@ -239,7 +239,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                       <span
                         key={k}
                         className="text-[9px] px-1.5 py-0.5 rounded font-mono"
-                        style={{ color: HUD_LABEL, background: '#0a0f15', border: `1px solid ${HUD_BORDER}` }}
+                        style={{ color: HUD_LABEL, background: HUD_SURFACE, border: `1px solid ${HUD_BORDER}` }}
                       >
                         {k}={v}
                       </span>
@@ -263,7 +263,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                     className="flex items-start gap-2 px-3 py-2 rounded text-[10px] font-mono border-l-2"
                     style={{
                       borderLeftColor: e.type === 'Warning' ? HUD_AMBER : HUD_ACCENT,
-                      background: e.type === 'Warning' ? 'rgba(255,170,0,0.03)' : 'rgba(0,255,136,0.02)',
+                      background: e.type === 'Warning' ? 'rgba(251,191,36,0.06)' : 'rgba(52,211,153,0.04)',
                     }}
                   >
                     <div className="flex-1 min-w-0">
@@ -375,7 +375,7 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
                 <span style={{ color: HUD_ACCENT }}>{runningCount} running</span>
                 {pendingCount > 0 && <span style={{ color: HUD_AMBER }}>{pendingCount} pending</span>}
                 {failedCount > 0 && <span style={{ color: HUD_RED }}>{failedCount} failed</span>}
-                <span style={{ color: '#2a4a3a' }}>{pods.length} total</span>
+                <span style={{ color: HUD_LABEL }}>{pods.length} total</span>
               </div>
             )}
           </div>
@@ -445,12 +445,12 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
                         className="cursor-pointer transition-all"
                         style={{
                           ...rowBgStyle(p.status),
-                          borderBottom: `1px solid ${HUD_BORDER}50`,
-                          background: isSelected ? 'rgba(0,255,136,0.06)' : undefined,
-                          outline: isSelected ? `1px solid rgba(0,255,136,0.2)` : undefined,
+                          borderBottom: `1px solid ${HUD_BORDER}`,
+                          background: isSelected ? '#273344' : undefined,
+                          outline: isSelected ? `1px solid #38bdf8` : undefined,
                         }}
                         onMouseEnter={(e) => {
-                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(0,255,136,0.025)';
+                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = HUD_SURFACE;
                         }}
                         onMouseLeave={(e) => {
                           if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = '';
@@ -460,9 +460,7 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
                         <td className="py-1.5 px-3">
                           <span className="flex items-center gap-1.5">
                             <span
-                              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                p.status.toLowerCase() === 'running' ? 'hud-pulse-green' : ''
-                              }`}
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                               style={{ backgroundColor: sc }}
                             />
                             <span className="truncate" style={{ color: HUD_LABEL }}>{p.status}</span>
@@ -483,14 +481,14 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
                           {p.restarts > 0 ? (
                             <span className="font-bold" style={{ color: HUD_AMBER }}>{p.restarts}</span>
                           ) : (
-                            <span style={{ color: '#2a4a3a' }}>0</span>
+                            <span style={{ color: HUD_LABEL }}>0</span>
                           )}
                         </td>
                         <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.age}</td>
-                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: '#3a5a4a' }} title={p.node}>
+                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: HUD_LABEL }} title={p.node}>
                           {p.node || '—'}
                         </td>
-                        <td className="py-1.5 px-3" style={{ color: '#3a5a4a' }}>{p.ip || '—'}</td>
+                        <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.ip || '—'}</td>
                       </tr>
                     );
                   })}

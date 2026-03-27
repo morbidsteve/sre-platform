@@ -3,10 +3,11 @@ import { ExternalLink } from 'lucide-react';
 import type { PlatformService } from '../../api/platform';
 import { ServiceDetailSlideOut } from './DetailSlideOut';
 
-const HUD_ACCENT = '#00ff88';
-const HUD_RED = '#ff3344';
-const HUD_BORDER = '#0d2a1a';
-const HUD_LABEL = '#4a7a5a';
+const HUD_ACCENT = '#34d399';
+const HUD_RED = '#f87171';
+const HUD_BORDER = '#374151';
+const HUD_LABEL = '#9ca3af';
+const HUD_TEXT = '#e5e7eb';
 
 interface ServiceHealthProps {
   services: PlatformService[];
@@ -66,13 +67,13 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
   const healthyCount = services.filter((s) => s.healthy).length;
   const totalCount = services.length;
   const allHealthy = totalCount > 0 && healthyCount === totalCount;
-  const statusColor = totalCount === 0 ? HUD_LABEL : allHealthy ? HUD_ACCENT : healthyCount === 0 ? HUD_RED : '#ffaa00';
+  const statusColor = totalCount === 0 ? HUD_LABEL : allHealthy ? HUD_ACCENT : healthyCount === 0 ? HUD_RED : '#fbbf24';
 
   return (
     <>
       <div
         className="flex flex-col overflow-hidden h-full rounded"
-        style={{ background: '#080c12', border: `1px solid ${HUD_BORDER}` }}
+        style={{ background: '#111827', border: `1px solid ${HUD_BORDER}` }}
       >
         {/* Header */}
         <div
@@ -107,7 +108,7 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
                 <div
                   key={i}
                   className="h-16 rounded animate-pulse"
-                  style={{ background: 'rgba(0,255,136,0.03)', border: `1px solid ${HUD_BORDER}` }}
+                  style={{ background: '#1f2937', border: `1px solid ${HUD_BORDER}` }}
                 />
               ))}
             </div>
@@ -128,31 +129,25 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
                     key={svc.name + svc.namespace}
                     className="relative flex flex-col items-start gap-1.5 p-2.5 rounded text-left transition-all group"
                     style={{
-                      background: healthy ? 'rgba(0,255,136,0.03)' : 'rgba(255,51,68,0.03)',
-                      border: `1px solid ${healthy ? 'rgba(0,255,136,0.12)' : 'rgba(255,51,68,0.15)'}`,
+                      background: healthy ? '#1f2937' : 'rgba(248,113,113,0.06)',
+                      border: `1px solid ${healthy ? '#374151' : 'rgba(248,113,113,0.25)'}`,
                     }}
                     onMouseEnter={(e) => {
                       (e.currentTarget as HTMLButtonElement).style.background = healthy
-                        ? 'rgba(0,255,136,0.07)'
-                        : 'rgba(255,51,68,0.07)';
-                      (e.currentTarget as HTMLButtonElement).style.border = `1px solid ${accentC}40`;
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 8px ${accentC}12`;
+                        ? '#273344'
+                        : 'rgba(248,113,113,0.10)';
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = healthy ? '#4b5563' : 'rgba(248,113,113,0.4)';
                     }}
                     onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = healthy
-                        ? 'rgba(0,255,136,0.03)'
-                        : 'rgba(255,51,68,0.03)';
-                      (e.currentTarget as HTMLButtonElement).style.border = `1px solid ${healthy ? 'rgba(0,255,136,0.12)' : 'rgba(255,51,68,0.15)'}`;
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                      (e.currentTarget as HTMLButtonElement).style.background = healthy ? '#1f2937' : 'rgba(248,113,113,0.06)';
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = healthy ? '#374151' : 'rgba(248,113,113,0.25)';
                     }}
                     onClick={() => setSelectedService(svc)}
                     title={`${svc.name} (${svc.namespace})`}
                   >
                     {/* Status dot */}
                     <span
-                      className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${
-                        healthy ? 'hud-pulse-green' : 'hud-pulse-red'
-                      }`}
+                      className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full"
                       style={{ backgroundColor: accentC }}
                     />
 
@@ -167,7 +162,7 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
                     {/* Name */}
                     <span
                       className="text-[10px] font-mono font-bold leading-tight"
-                      style={{ color: healthy ? '#c8ffd8' : '#ffc8cc' }}
+                      style={{ color: HUD_TEXT }}
                     >
                       {serviceDisplayName(svc.name)}
                     </span>

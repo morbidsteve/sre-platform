@@ -11,7 +11,6 @@ import { OverviewTab } from './components/overview/OverviewTab';
 import { DeployTab } from './components/deploy/DeployTab';
 import { ApplicationsTab } from './components/applications/ApplicationsTab';
 import { SecurityTab } from './components/security/SecurityTab';
-import { OperationsTab } from './components/operations/OperationsTab';
 import { ComplianceTab } from './components/compliance/ComplianceTab';
 import { AdminTab } from './components/admin/AdminTab';
 import { PlatformCockpit } from './components/platform/PlatformCockpit';
@@ -20,7 +19,7 @@ import { CommandPalette } from './components/shared/CommandPalette';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Spinner } from './components/ui/Spinner';
 
-const VALID_TABS = ['overview', 'deploy', 'applications', 'security', 'operations', 'compliance', 'platform', 'admin'];
+const VALID_TABS = ['overview', 'deploy', 'applications', 'security', 'operations', 'compliance', 'admin'];
 
 function getInitialTab(): string {
   const hash = window.location.hash.slice(1);
@@ -169,13 +168,10 @@ function AppContent() {
             </ErrorBoundary>
           </div>
         )}
-        {visitedTabs.has('operations') && (
+        {visitedTabs.has('operations') && isAdmin && (
           <div style={{ display: activeTab === 'operations' ? 'block' : 'none' }} className={activeTab === 'operations' ? 'tab-enter' : ''}>
             <ErrorBoundary>
-              <OperationsTab
-                active={activeTab === 'operations'}
-                onOpenApp={handleOpenAppFrame}
-              />
+              <PlatformCockpit active={activeTab === 'operations'} />
             </ErrorBoundary>
           </div>
         )}
@@ -183,13 +179,6 @@ function AppContent() {
           <div style={{ display: activeTab === 'compliance' ? 'block' : 'none' }} className={activeTab === 'compliance' ? 'tab-enter' : ''}>
             <ErrorBoundary>
               <ComplianceTab active={activeTab === 'compliance'} />
-            </ErrorBoundary>
-          </div>
-        )}
-        {visitedTabs.has('platform') && isAdmin && (
-          <div style={{ display: activeTab === 'platform' ? 'block' : 'none' }} className={activeTab === 'platform' ? 'tab-enter' : ''}>
-            <ErrorBoundary>
-              <PlatformCockpit active={activeTab === 'platform'} />
             </ErrorBoundary>
           </div>
         )}

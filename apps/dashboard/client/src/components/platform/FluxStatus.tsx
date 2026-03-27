@@ -3,12 +3,12 @@ import { RefreshCw, Pause, ChevronDown, ChevronUp } from 'lucide-react';
 import type { FluxStatus, FluxKustomization, FluxHelmRelease } from '../../api/platform';
 import { FluxKustDetailSlideOut, FluxHelmDetailSlideOut } from './DetailSlideOut';
 
-const HUD_ACCENT = '#00ff88';
-const HUD_AMBER = '#ffaa00';
-const HUD_RED = '#ff3344';
-const HUD_BORDER = '#0d2a1a';
-const HUD_LABEL = '#4a7a5a';
-const HUD_TEXT = '#c8ffd8';
+const HUD_ACCENT = '#34d399';
+const HUD_AMBER = '#fbbf24';
+const HUD_RED = '#f87171';
+const HUD_BORDER = '#374151';
+const HUD_LABEL = '#9ca3af';
+const HUD_TEXT = '#e5e7eb';
 
 interface FluxStatusProps {
   data: FluxStatus | null;
@@ -21,14 +21,14 @@ function StatusIcon({ ready, suspended }: { ready: boolean; suspended: boolean }
   if (ready) {
     return (
       <span
-        className="hud-pulse-green inline-block w-2 h-2 rounded-full flex-shrink-0"
+        className="inline-block w-2 h-2 rounded-full flex-shrink-0"
         style={{ backgroundColor: HUD_ACCENT }}
       />
     );
   }
   return (
     <span
-      className="hud-pulse-red inline-block w-2 h-2 rounded-full flex-shrink-0"
+      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
       style={{ backgroundColor: HUD_RED }}
     />
   );
@@ -48,16 +48,16 @@ function KustomizationRow({
       className="flex items-start gap-2 px-3 py-2 rounded text-[11px] font-mono transition-all cursor-pointer"
       style={{
         opacity: k.suspended ? 0.5 : 1,
-        background: isFailed ? 'rgba(255,51,68,0.03)' : 'transparent',
+        background: isFailed ? 'rgba(248,113,113,0.06)' : 'transparent',
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
-          ? 'rgba(255,51,68,0.07)'
-          : 'rgba(0,255,136,0.03)';
+          ? 'rgba(248,113,113,0.10)'
+          : '#1f2937';
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
-          ? 'rgba(255,51,68,0.03)'
+          ? 'rgba(248,113,113,0.06)'
           : 'transparent';
       }}
       onClick={onClick}
@@ -73,7 +73,7 @@ function KustomizationRow({
           {k.suspended && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_AMBER, background: 'rgba(255,170,0,0.1)', border: '1px solid rgba(255,170,0,0.2)' }}
+              style={{ color: HUD_AMBER, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
             >
               SUSPENDED
             </span>
@@ -81,7 +81,7 @@ function KustomizationRow({
           {isFailed && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_RED, background: 'rgba(255,51,68,0.1)', border: '1px solid rgba(255,51,68,0.2)' }}
+              style={{ color: HUD_RED, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)' }}
             >
               FAILED
             </span>
@@ -115,16 +115,16 @@ function HelmReleaseRow({
       className="flex items-start gap-2 px-3 py-2 rounded text-[11px] font-mono transition-all cursor-pointer"
       style={{
         opacity: h.suspended ? 0.5 : 1,
-        background: isFailed ? 'rgba(255,51,68,0.03)' : 'transparent',
+        background: isFailed ? 'rgba(248,113,113,0.06)' : 'transparent',
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
-          ? 'rgba(255,51,68,0.07)'
-          : 'rgba(0,255,136,0.03)';
+          ? 'rgba(248,113,113,0.10)'
+          : '#1f2937';
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
-          ? 'rgba(255,51,68,0.03)'
+          ? 'rgba(248,113,113,0.06)'
           : 'transparent';
       }}
       onClick={onClick}
@@ -138,14 +138,14 @@ function HelmReleaseRow({
           <span className="font-semibold truncate" style={{ color: HUD_TEXT }}>{h.name}</span>
           <span className="text-[9px]" style={{ color: HUD_LABEL }}>{h.namespace}</span>
           {h.version && (
-            <span className="text-[9px]" style={{ color: 'rgba(0,255,136,0.5)' }}>
+            <span className="text-[9px]" style={{ color: '#6b7280' }}>
               {h.chart}@{h.version}
             </span>
           )}
           {h.suspended && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_AMBER, background: 'rgba(255,170,0,0.1)', border: '1px solid rgba(255,170,0,0.2)' }}
+              style={{ color: HUD_AMBER, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
             >
               SUSPENDED
             </span>
@@ -153,7 +153,7 @@ function HelmReleaseRow({
           {isFailed && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_RED, background: 'rgba(255,51,68,0.1)', border: '1px solid rgba(255,51,68,0.2)' }}
+              style={{ color: HUD_RED, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)' }}
             >
               FAILED
             </span>
@@ -197,7 +197,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
     <>
       <div
         className="flex flex-col overflow-hidden h-full rounded"
-        style={{ background: '#080c12', border: `1px solid ${HUD_BORDER}` }}
+        style={{ background: '#111827', border: `1px solid ${HUD_BORDER}` }}
       >
         {/* Header */}
         <div
@@ -251,7 +251,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
                 >
                   <span>
                     Kustomizations
-                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: '#3a5a4a' }}>
+                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: '#6b7280' }}>
                       ({data?.kustomizations.length ?? 0})
                     </span>
                   </span>
@@ -286,7 +286,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
                 >
                   <span>
                     HelmReleases
-                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: '#3a5a4a' }}>
+                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: '#6b7280' }}>
                       ({data?.helmReleases.length ?? 0})
                     </span>
                   </span>
