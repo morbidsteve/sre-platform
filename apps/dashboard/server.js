@@ -12496,6 +12496,783 @@ app.get("/api/apps/:namespace/:name/diagnostics", requireGroups("sre-admins", "d
   }
 });
 
+// ── Operations Cockpit API (/api/ops) ───────────────────────────────────────
+// Lets admins inspect and reconfigure deployed apps without re-running the pipeline.
+
+// ── Helper: read current HelmRelease values from Git (preferred) or cluster ──
+async function getCurrentHelmReleaseValues(namespace, name) {
+  if (gitops.isEnabled()) {
+    try {
+      // Attempt to read the manifest from Git via GitHub Contents API
+      const GITHUB_API_BASE = "https://api.github.com";
+      const GITHUB_OWNER = process.env.SRE_GITHUB_OWNER || "morbidsteve";
+      const GITHUB_REPO = process.env.SRE_GITHUB_REPO || "sre-platform";
+      const GITHUB_BRANCH = process.env.SRE_GITHUB_BRANCH || "main";
+      const filePath = `apps/tenants/${namespace}/apps/${name}.yaml`;
+      const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+      const res = await fetch(
+        `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encodedPath}?ref=${GITHUB_BRANCH}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const content = Buffer.from(data.content, "base64").toString("utf-8");
+        const parsed = yaml.load(content);
+        if (parsed && parsed.spec && parsed.spec.values) {
+          return parsed.spec.values;
+        }
+      }
+    } catch (gitErr) {
+      console.debug("[ops] Git HelmRelease read failed, falling back to cluster:", gitErr.message);
+    }
+  }
+  // Fall back to reading from the cluster
+  const hrResp = await customApi.getNamespacedCustomObject(
+    "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+  );
+  return hrResp.body?.spec?.values || {};
+}
+
+// ── GET /api/ops/capabilities — Full Linux capability list ────────────────────
+app.get("/api/ops/capabilities", requireGroups("sre-admins", "developers"), (req, res) => {
+  const LINUX_CAPABILITIES = [
+    "AUDIT_CONTROL", "AUDIT_READ", "AUDIT_WRITE",
+    "BLOCK_SUSPEND", "BPF", "CHECKPOINT_RESTORE",
+    "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH",
+    "FOWNER", "FSETID", "IPC_LOCK", "IPC_OWNER",
+    "KILL", "LEASE", "LINUX_IMMUTABLE", "MAC_ADMIN",
+    "MAC_OVERRIDE", "MKNOD", "NET_ADMIN", "NET_BIND_SERVICE",
+    "NET_BROADCAST", "NET_RAW", "PERFMON", "SETFCAP",
+    "SETGID", "SETPCAP", "SETUID", "SYSLOG",
+    "SYS_ADMIN", "SYS_BOOT", "SYS_CHROOT", "SYS_MODULE",
+    "SYS_NICE", "SYS_PACCT", "SYS_PTRACE", "SYS_RAWIO",
+    "SYS_RESOURCE", "SYS_TIME", "SYS_TTY_CONFIG",
+    "WAKE_ALARM",
+  ];
+  res.json({ capabilities: LINUX_CAPABILITIES });
+});
+
+// ── GET /api/ops/:namespace/:name — Full app diagnostics ─────────────────────
+app.get("/api/ops/:namespace/:name", requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  const result = {
+    helmRelease: null,
+    pods: [],
+    events: { warning: [], normal: [] },
+    policyViolations: [],
+    network: { service: null, ingressHost: null, virtualService: null },
+    security: { podSecurityContext: null, containerSecurityContext: null, exceptions: [] },
+    resources: { requests: null, limits: null },
+    probes: { liveness: null, readiness: null },
+    image: { repository: null, tag: null, pullPolicy: null },
+  };
+
+  // ── HelmRelease ──────────────────────────────────────────────────────────
+  try {
+    const hrResp = await customApi.getNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+    );
+    const hr = hrResp.body;
+    const readyCond = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+    const vals = hr.spec?.values || {};
+    const appVals = vals.app || {};
+
+    result.helmRelease = {
+      name: hr.metadata.name,
+      namespace: hr.metadata.namespace,
+      ready: readyCond?.status === "True",
+      message: readyCond?.message || "",
+      reason: readyCond?.reason || "",
+      lastTransition: readyCond?.lastTransitionTime || "",
+      revision: hr.status?.lastAppliedRevision || hr.status?.lastAttemptedRevision || "",
+      chartVersion: hr.spec?.chart?.spec?.version || "",
+      installFailures: hr.status?.installFailures || 0,
+      upgradeFailures: hr.status?.upgradeFailures || 0,
+      values: vals,
+    };
+
+    // Populate structured fields from HelmRelease values
+    result.image = {
+      repository: appVals.image?.repository || "",
+      tag: appVals.image?.tag || "",
+      pullPolicy: appVals.image?.pullPolicy || "IfNotPresent",
+    };
+    result.resources = {
+      requests: appVals.resources?.requests || null,
+      limits: appVals.resources?.limits || null,
+    };
+    result.probes = {
+      liveness: appVals.probes?.liveness || null,
+      readiness: appVals.probes?.readiness || null,
+    };
+    result.security.podSecurityContext = vals.podSecurityContext || null;
+    result.security.containerSecurityContext = vals.containerSecurityContext || null;
+    result.network.ingressHost = vals.ingress?.enabled ? (vals.ingress?.host || null) : null;
+  } catch (err) {
+    if (err.statusCode !== 404) {
+      console.debug("[ops] HelmRelease fetch error:", err.message);
+    }
+  }
+
+  // ── Pods ─────────────────────────────────────────────────────────────────
+  try {
+    const podResp = await k8sApi.listNamespacedPod(
+      namespace, undefined, undefined, undefined, undefined,
+      `app.kubernetes.io/name=${name}`
+    );
+
+    // Metrics (best-effort — may not be available)
+    let podMetrics = {};
+    try {
+      const metricsResp = await metricsClient.getPodMetrics(namespace);
+      for (const pm of (metricsResp?.items || [])) {
+        podMetrics[pm.metadata.name] = pm;
+      }
+    } catch (mErr) {
+      console.debug("[ops] Pod metrics not available:", mErr.message);
+    }
+
+    result.pods = podResp.body.items.map((pod) => {
+      const pm = podMetrics[pod.metadata.name];
+      const containers = (pod.spec?.containers || []).map((c) => {
+        const cs = (pod.status?.containerStatuses || []).find((s) => s.name === c.name) || {};
+        const mc = (pm?.containers || []).find((m) => m.name === c.name) || {};
+        let state = "waiting";
+        let stateReason = "";
+        if (cs.state?.running) { state = "running"; }
+        else if (cs.state?.terminated) { state = "terminated"; stateReason = cs.state.terminated.reason || ""; }
+        else if (cs.state?.waiting) { state = "waiting"; stateReason = cs.state.waiting.reason || ""; }
+        return {
+          name: c.name,
+          image: c.image,
+          ready: cs.ready || false,
+          restartCount: cs.restartCount || 0,
+          state,
+          stateReason,
+          resources: {
+            requests: c.resources?.requests || null,
+            limits: c.resources?.limits || null,
+            usage: mc.usage || null,
+          },
+          securityContext: c.securityContext || null,
+        };
+      });
+
+      return {
+        name: pod.metadata.name,
+        phase: pod.status?.phase || "Unknown",
+        node: pod.spec?.nodeName || "",
+        ready: (pod.status?.conditions || []).some((c) => c.type === "Ready" && c.status === "True"),
+        startTime: pod.status?.startTime || "",
+        containers,
+        podSecurityContext: pod.spec?.securityContext || null,
+      };
+    });
+  } catch (err) {
+    console.debug("[ops] Pod fetch error:", err.message);
+  }
+
+  // ── Events (last 1 hour, grouped) ────────────────────────────────────────
+  try {
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    const evResp = await k8sApi.listNamespacedEvent(namespace);
+    const appEvents = evResp.body.items.filter((e) => {
+      const objName = e.involvedObject?.name || "";
+      const ts = new Date(e.lastTimestamp || e.eventTime || 0);
+      return (objName === name || objName.startsWith(`${name}-`)) && ts >= oneHourAgo;
+    }).sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0));
+
+    for (const e of appEvents.slice(0, 100)) {
+      const evObj = {
+        time: e.lastTimestamp || e.eventTime || "",
+        reason: e.reason || "",
+        message: e.message || "",
+        kind: e.involvedObject?.kind || "",
+        name: e.involvedObject?.name || "",
+        count: e.count || 1,
+        // Enrich with KB match
+        fix: matchError(e.message, [e]) || null,
+      };
+
+      const msg = (e.message || "").toLowerCase();
+      const reason = (e.reason || "").toLowerCase();
+      const isPolicy = reason === "policyviolation" ||
+        msg.includes("kyverno") || msg.includes("policy") ||
+        msg.includes("denied by") || msg.includes("admission webhook") ||
+        msg.includes("blocked");
+
+      if (isPolicy) {
+        result.policyViolations.push(evObj);
+      } else if (e.type === "Warning") {
+        result.events.warning.push(evObj);
+      } else {
+        result.events.normal.push(evObj);
+      }
+    }
+  } catch (err) {
+    console.debug("[ops] Event fetch error:", err.message);
+  }
+
+  // ── Policy Exceptions ─────────────────────────────────────────────────────
+  try {
+    const peResp = await customApi.listNamespacedCustomObject(
+      "kyverno.io", "v2beta1", namespace, "policyexceptions"
+    );
+    result.security.exceptions = (peResp.body.items || [])
+      .filter((pe) => pe.metadata.name.startsWith(`${name}-`))
+      .map((pe) => ({
+        name: pe.metadata.name,
+        expiry: pe.metadata.annotations?.["sre.io/exception-expiry"] || "",
+        approver: pe.metadata.annotations?.["sre.io/exception-approver"] || "",
+        reason: pe.metadata.annotations?.["sre.io/exception-reason"] || "",
+        exceptions: pe.spec?.exceptions || [],
+      }));
+  } catch (err) {
+    console.debug("[ops] PolicyException fetch best-effort failed:", err.message);
+  }
+
+  // ── Network: Service + VirtualService ────────────────────────────────────
+  try {
+    const svcResp = await k8sApi.readNamespacedService(name, namespace);
+    const svc = svcResp.body;
+    result.network.service = {
+      clusterIP: svc.spec?.clusterIP || "",
+      ports: (svc.spec?.ports || []).map((p) => ({ name: p.name, port: p.port, targetPort: p.targetPort, protocol: p.protocol })),
+      type: svc.spec?.type || "ClusterIP",
+    };
+  } catch (err) {
+    console.debug("[ops] Service fetch best-effort failed:", err.message);
+  }
+
+  try {
+    const vsResp = await customApi.getNamespacedCustomObject(
+      "networking.istio.io", "v1", namespace, "virtualservices", name
+    );
+    const vs = vsResp.body;
+    result.network.virtualService = {
+      hosts: vs.spec?.hosts || [],
+      gateways: vs.spec?.gateways || [],
+    };
+    if (!result.network.ingressHost && vs.spec?.hosts?.length > 0) {
+      result.network.ingressHost = vs.spec.hosts[0];
+    }
+  } catch (err) {
+    console.debug("[ops] VirtualService fetch best-effort failed:", err.message);
+  }
+
+  // ── Container logs (last 50 lines per container, best-effort) ────────────
+  const logs = {};
+  for (const pod of result.pods) {
+    for (const c of pod.containers) {
+      const key = `${pod.name}/${c.name}`;
+      try {
+        const logResp = await k8sApi.readNamespacedPodLog(
+          pod.name, namespace, c.name, undefined, undefined, undefined,
+          undefined, undefined, undefined, 50, true
+        );
+        logs[key] = (logResp.body || "").split("\n").slice(-50);
+      } catch (logErr) {
+        logs[key] = [];
+        console.debug(`[ops] Log fetch best-effort failed for ${key}:`, logErr.message);
+      }
+    }
+  }
+  result.logs = logs;
+
+  res.json(result);
+});
+
+// ── PATCH /api/ops/:namespace/:name/config — Update app config in Git ─────────
+app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  const patch = req.body;
+  if (!patch || typeof patch !== "object") {
+    return res.status(400).json({ error: "Request body must be a JSON object" });
+  }
+
+  // Validate individual fields
+  if (patch.port !== undefined && !isValidPort(patch.port)) {
+    return res.status(400).json({ error: "Invalid port: must be 1-65535" });
+  }
+  if (patch.replicas !== undefined && !isValidReplicas(patch.replicas)) {
+    return res.status(400).json({ error: "Invalid replicas: must be 1-20" });
+  }
+  if (patch.env !== undefined) {
+    patch.env = sanitizeEnvArray(patch.env);
+  }
+
+  try {
+    // Step 1: Read current HelmRelease values (Git-first, cluster fallback)
+    let currentValues;
+    try {
+      currentValues = await getCurrentHelmReleaseValues(namespace, name);
+    } catch (readErr) {
+      return res.status(404).json({ error: `HelmRelease "${name}" not found in namespace "${namespace}"` });
+    }
+
+    // Step 2: Deep-merge the patch into current values
+    const newValues = JSON.parse(JSON.stringify(currentValues)); // deep clone
+    const appPatch = newValues.app || {};
+    newValues.app = appPatch;
+
+    if (patch.port !== undefined) {
+      appPatch.port = patch.port;
+    }
+    if (patch.replicas !== undefined) {
+      appPatch.replicas = patch.replicas;
+    }
+    if (patch.env !== undefined) {
+      appPatch.env = patch.env;
+    }
+    if (patch.image !== undefined) {
+      appPatch.image = appPatch.image || {};
+      if (patch.image.tag !== undefined) { appPatch.image.tag = String(patch.image.tag); }
+      if (patch.image.repository !== undefined) { appPatch.image.repository = String(patch.image.repository); }
+      if (patch.image.pullPolicy !== undefined) { appPatch.image.pullPolicy = String(patch.image.pullPolicy); }
+    }
+    if (patch.resources !== undefined) {
+      appPatch.resources = appPatch.resources || {};
+      if (patch.resources.requests) { appPatch.resources.requests = patch.resources.requests; }
+      if (patch.resources.limits) { appPatch.resources.limits = patch.resources.limits; }
+    }
+    if (patch.probes !== undefined) {
+      appPatch.probes = appPatch.probes || {};
+      if (patch.probes.liveness) { appPatch.probes.liveness = patch.probes.liveness; }
+      if (patch.probes.readiness) { appPatch.probes.readiness = patch.probes.readiness; }
+    }
+    if (patch.ingressHost !== undefined) {
+      newValues.ingress = newValues.ingress || {};
+      newValues.ingress.enabled = !!patch.ingressHost;
+      newValues.ingress.host = patch.ingressHost || "";
+    }
+
+    // Step 3: Apply security context overrides
+    const sc = patch.securityContext;
+    if (sc !== undefined && typeof sc === "object") {
+      if (sc.runAsRoot) {
+        newValues.podSecurityContext = {
+          runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
+          seccompProfile: { type: "RuntimeDefault" },
+        };
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        newValues.containerSecurityContext.runAsNonRoot = false;
+        newValues.containerSecurityContext.runAsUser = 0;
+      } else if (sc.runAsRoot === false) {
+        // Explicitly re-enabling non-root — restore secure defaults
+        newValues.podSecurityContext = {
+          runAsNonRoot: true,
+          seccompProfile: { type: "RuntimeDefault" },
+        };
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        newValues.containerSecurityContext.runAsNonRoot = true;
+        delete newValues.containerSecurityContext.runAsUser;
+      }
+      if (sc.writableFilesystem !== undefined) {
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        newValues.containerSecurityContext.readOnlyRootFilesystem = !sc.writableFilesystem;
+      }
+      if (sc.allowPrivilegeEscalation !== undefined) {
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        newValues.containerSecurityContext.allowPrivilegeEscalation = !!sc.allowPrivilegeEscalation;
+      }
+      if (sc.capabilities !== undefined && Array.isArray(sc.capabilities)) {
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        if (sc.capabilities.length > 0) {
+          newValues.containerSecurityContext.capabilities = { add: sc.capabilities, drop: [] };
+        } else {
+          newValues.containerSecurityContext.capabilities = { add: [], drop: ["ALL"] };
+        }
+      }
+    }
+
+    // Step 4: Build the updated HelmRelease manifest using the new values
+    const updatedManifest = {
+      apiVersion: "helm.toolkit.fluxcd.io/v2",
+      kind: "HelmRelease",
+      metadata: {
+        name,
+        namespace,
+        labels: {
+          "app.kubernetes.io/part-of": "sre-platform",
+          "sre.io/team": namespace,
+        },
+      },
+      spec: {
+        interval: "10m",
+        chart: {
+          spec: {
+            chart: "./apps/templates/web-app",
+            reconcileStrategy: "Revision",
+            sourceRef: { kind: "GitRepository", name: "flux-system", namespace: "flux-system" },
+          },
+        },
+        install: { createNamespace: false, remediation: { retries: 3 } },
+        upgrade: { cleanupOnFail: true, remediation: { retries: 3 } },
+        values: newValues,
+      },
+    };
+
+    // Step 5: Auto-generate PolicyException if security exceptions are needed
+    let policyException = null;
+    if (sc !== undefined && typeof sc === "object") {
+      const securityExceptions = [];
+      if (sc.runAsRoot) {
+        securityExceptions.push({ type: "run_as_root", justification: "Ops cockpit override — admin approved" });
+      }
+      if (sc.capabilities && sc.capabilities.length > 0) {
+        securityExceptions.push({ type: "custom_capability", justification: `Capabilities: ${sc.capabilities.join(", ")}` });
+      }
+      if (securityExceptions.length > 0) {
+        policyException = generatePolicyException(name, namespace, securityExceptions, getActor(req));
+      }
+    }
+
+    // Step 6: Commit to Git (or apply directly if GitOps is disabled)
+    const actor = getActor(req);
+    await deployViaGitOps(updatedManifest, namespace, name, actor, policyException);
+
+    // Step 7: Trigger Flux reconciliation
+    try {
+      await gitops.triggerFluxReconcile();
+    } catch (fluxErr) {
+      console.debug("[ops] Flux reconcile trigger best-effort failed:", fluxErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: gitops.isEnabled()
+        ? `Config update for "${name}" committed to Git — Flux will apply shortly`
+        : `Config update for "${name}" applied directly to cluster`,
+      namespace,
+      name,
+      values: newValues,
+      policyExceptionCreated: !!policyException,
+    });
+  } catch (err) {
+    console.error("[ops] Config update error:", err.message);
+    res.status(500).json({ error: "Internal server error", detail: err.message });
+  }
+});
+
+// ── POST /api/ops/:namespace/:name/restart — Rollout restart ─────────────────
+app.post("/api/ops/:namespace/:name/restart", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  try {
+    const restartAnnotation = new Date().toISOString();
+    await appsApi.patchNamespacedDeployment(
+      name, namespace,
+      {
+        spec: {
+          template: {
+            metadata: {
+              annotations: {
+                "kubectl.kubernetes.io/restartedAt": restartAnnotation,
+              },
+            },
+          },
+        },
+      },
+      undefined, undefined, undefined, undefined, undefined,
+      { headers: { "Content-Type": "application/strategic-merge-patch+json" } }
+    );
+
+    logger.info("ops-restart", `Rollout restart triggered for ${name} in ${namespace}`, {
+      app: name, namespace, actor: getActor(req),
+    });
+
+    res.json({
+      success: true,
+      message: `Rollout restart triggered for "${name}" in "${namespace}"`,
+      restartedAt: restartAnnotation,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `Deployment "${name}" not found in namespace "${namespace}"` });
+    }
+    console.error("[ops] Restart error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/ops/:namespace/:name/logs/:pod/:container — Stream logs (SSE) ───
+app.get("/api/ops/:namespace/:name/logs/:pod/:container", requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { namespace, pod, container } = req.params;
+
+  // Validate all path params
+  const safeNs = sanitizeName(namespace);
+  const safePod = req.params.pod.replace(/[^a-z0-9.-]/g, "-").substring(0, 253);
+  const safeContainer = req.params.container.replace(/[^a-z0-9-]/g, "-").substring(0, 63);
+  if (!isValidName(safeNs) || !safePod || !safeContainer) {
+    return res.status(400).json({ error: "Invalid namespace, pod, or container name" });
+  }
+
+  // Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const sendSSE = (data) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  // Send last 50 lines of existing logs first
+  try {
+    const tailResp = await k8sApi.readNamespacedPodLog(
+      safePod, namespace, safeContainer, undefined, undefined, undefined,
+      undefined, undefined, undefined, 50, true
+    );
+    const lines = (tailResp.body || "").split("\n").filter(Boolean);
+    for (const line of lines) {
+      sendSSE({ type: "log", line, historical: true });
+    }
+  } catch (err) {
+    sendSSE({ type: "error", message: `Could not fetch initial logs: ${err.message}` });
+  }
+
+  // Stream live logs using follow=true
+  const stream = await k8sApi.readNamespacedPodLog(
+    safePod, namespace, safeContainer,
+    undefined, // container
+    true,      // follow
+    undefined, undefined, undefined, undefined, undefined, true
+  ).catch((streamErr) => {
+    sendSSE({ type: "error", message: `Stream error: ${streamErr.message}` });
+    return null;
+  });
+
+  if (!stream) {
+    res.end();
+    return;
+  }
+
+  const logStream = stream.body;
+  if (logStream && typeof logStream.on === "function") {
+    logStream.on("data", (chunk) => {
+      const lines = chunk.toString().split("\n").filter(Boolean);
+      for (const line of lines) {
+        sendSSE({ type: "log", line });
+      }
+    });
+    logStream.on("end", () => {
+      if (!res.writableEnded) {
+        sendSSE({ type: "end", message: "Log stream ended" });
+        res.end();
+      }
+    });
+    logStream.on("error", (err) => {
+      if (!res.writableEnded) {
+        sendSSE({ type: "error", message: err.message });
+        res.end();
+      }
+    });
+
+    req.on("close", () => {
+      try { if (logStream && typeof logStream.destroy === "function") logStream.destroy(); } catch (e) { /* ignore */ }
+    });
+  } else {
+    sendSSE({ type: "end", message: "Log stream not available" });
+    res.end();
+  }
+});
+
+// ── GET /api/ops/:namespace/:name/events — Live events stream (SSE) ───────────
+app.get("/api/ops/:namespace/:name/events", requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const sendSSE = (data) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  // Send current events immediately on connect
+  const sendCurrentEvents = async () => {
+    try {
+      const evResp = await k8sApi.listNamespacedEvent(namespace);
+      const appEvents = evResp.body.items
+        .filter((e) => {
+          const objName = e.involvedObject?.name || "";
+          return objName === name || objName.startsWith(`${name}-`);
+        })
+        .sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0))
+        .slice(0, 50);
+
+      for (const e of appEvents) {
+        sendSSE({
+          type: "event",
+          time: e.lastTimestamp || e.eventTime || "",
+          reason: e.reason || "",
+          message: e.message || "",
+          eventType: e.type || "Normal",
+          kind: e.involvedObject?.kind || "",
+          name: e.involvedObject?.name || "",
+          count: e.count || 1,
+        });
+      }
+    } catch (err) {
+      sendSSE({ type: "error", message: err.message });
+    }
+  };
+
+  await sendCurrentEvents();
+
+  // Poll for new events every 5 seconds (K8s Watch API is complex; polling is simpler and reliable)
+  const seen = new Set();
+  const pollInterval = setInterval(async () => {
+    if (res.writableEnded) {
+      clearInterval(pollInterval);
+      return;
+    }
+    try {
+      const evResp = await k8sApi.listNamespacedEvent(namespace);
+      const appEvents = evResp.body.items.filter((e) => {
+        const objName = e.involvedObject?.name || "";
+        return objName === name || objName.startsWith(`${name}-`);
+      });
+      for (const e of appEvents) {
+        const key = `${e.metadata.name}:${e.count}:${e.lastTimestamp || e.eventTime}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          sendSSE({
+            type: "event",
+            time: e.lastTimestamp || e.eventTime || "",
+            reason: e.reason || "",
+            message: e.message || "",
+            eventType: e.type || "Normal",
+            kind: e.involvedObject?.kind || "",
+            name: e.involvedObject?.name || "",
+            count: e.count || 1,
+          });
+        }
+      }
+    } catch (err) {
+      sendSSE({ type: "error", message: err.message });
+    }
+  }, 5000);
+
+  req.on("close", () => {
+    clearInterval(pollInterval);
+    if (!res.writableEnded) res.end();
+  });
+});
+
+// ── DELETE /api/ops/:namespace/:name/policy-exception/:exName — Remove PolicyException ──
+app.delete("/api/ops/:namespace/:name/policy-exception/:exName", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  const { namespace, name, exName } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  // Validate exception name (allow hyphens and standard k8s name chars)
+  const safeExName = exName.replace(/[^a-z0-9-]/g, "-").substring(0, 253);
+  if (!safeExName) {
+    return res.status(400).json({ error: "Invalid policy exception name" });
+  }
+
+  try {
+    await customApi.deleteNamespacedCustomObject(
+      "kyverno.io", "v2beta1", namespace, "policyexceptions", safeExName
+    );
+
+    // If GitOps is enabled, also remove the file from Git so Flux doesn't recreate it
+    if (gitops.isEnabled()) {
+      const actor = getActor(req);
+      try {
+        await gitops.deleteFile(
+          `apps/tenants/${namespace}/apps/${safeExName}.yaml`,
+          `ops(${namespace}): remove policy exception ${safeExName}\n\nRemoved by: ${actor}`
+        );
+        // Update kustomization to exclude deleted file
+        const kustomPath = `apps/tenants/${namespace}/apps/kustomization.yaml`;
+        // Read current kustomization
+        const GITHUB_API_BASE = "https://api.github.com";
+        const GITHUB_OWNER = process.env.SRE_GITHUB_OWNER || "morbidsteve";
+        const GITHUB_REPO = process.env.SRE_GITHUB_REPO || "sre-platform";
+        const GITHUB_BRANCH = process.env.SRE_GITHUB_BRANCH || "main";
+        const encodedPath = kustomPath.split("/").map(encodeURIComponent).join("/");
+        const kRes = await fetch(
+          `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encodedPath}?ref=${GITHUB_BRANCH}`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+          }
+        );
+        if (kRes.ok) {
+          const kData = await kRes.json();
+          const kContent = Buffer.from(kData.content, "base64").toString("utf-8");
+          const kParsed = yaml.load(kContent) || {};
+          const resources = (kParsed.resources || []).filter((r) => r !== `${safeExName}.yaml`);
+          const updatedKustomization = "---\n" + yaml.dump(
+            { apiVersion: "kustomize.config.k8s.io/v1beta1", kind: "Kustomization", resources },
+            { lineWidth: -1, noRefs: true }
+          );
+          await gitops.createOrUpdateFile(
+            kustomPath,
+            updatedKustomization,
+            `ops(${namespace}): update kustomization after removing ${safeExName}\n\nUpdated by: ${actor}`
+          );
+        }
+      } catch (gitErr) {
+        console.debug("[ops] Git PolicyException delete best-effort failed:", gitErr.message);
+      }
+    }
+
+    logger.info("ops-policy-exception-delete", `PolicyException ${safeExName} deleted in ${namespace}`, {
+      namespace, name, exName: safeExName, actor: getActor(req),
+    });
+
+    res.json({
+      success: true,
+      message: `PolicyException "${safeExName}" deleted from "${namespace}"`,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `PolicyException "${safeExName}" not found in "${namespace}"` });
+    }
+    console.error("[ops] PolicyException delete error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // SPA catch-all: serve index.html for non-API routes (React Router / client-side nav)
 app.get('*', (req, res) => {
   const indexPath = path.join(staticPath, 'index.html');
