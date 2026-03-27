@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/part-of: sre-platform
     sre.io/team: team-keystone
 spec:
+  interval: 10m
   chart:
     spec:
       chart: ./apps/templates/web-app
@@ -16,12 +17,10 @@ spec:
         kind: GitRepository
         name: flux-system
         namespace: flux-system
-      version: '*'
   install:
     createNamespace: false
     remediation:
       retries: 3
-  interval: 10m
   upgrade:
     cleanupOnFail: true
     remediation:
