@@ -5,7 +5,7 @@ import { apiFetch } from './client';
 export interface PlatformNode {
   name: string;
   status: string; // "Ready" | "NotReady"
-  roles: string[];
+  roles: string[] | string;
   ip: string;
   kubelet: string;
   os: string;

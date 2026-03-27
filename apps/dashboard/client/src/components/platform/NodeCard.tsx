@@ -48,7 +48,7 @@ export function PlatformNodeCard({ node }: NodeCardProps) {
           <span className="text-sm font-semibold text-text-bright font-mono truncate">{node.name}</span>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-          {node.roles.map((role) => (
+          {(Array.isArray(node.roles) ? node.roles : (node.roles || '').split(',').filter(Boolean)).map((role) => (
             <span
               key={role}
               className={`text-[9px] font-mono font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${
