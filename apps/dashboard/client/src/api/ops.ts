@@ -216,8 +216,7 @@ export function openLogStream(
   pod: string,
   container: string
 ): EventSource {
-  const params = new URLSearchParams({ pod, container });
   return new EventSource(
-    `/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/logs?${params}`
+    `/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/logs/${encodeURIComponent(pod)}/${encodeURIComponent(container)}`
   );
 }

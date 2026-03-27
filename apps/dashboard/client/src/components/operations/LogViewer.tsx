@@ -67,7 +67,16 @@ export function OpsLogViewer({ namespace, name, pods }: OpsLogViewerProps) {
 
     es.addEventListener('message', (e: MessageEvent) => {
       if (pausedRef.current) return;
-      const logLine = e.data as string;
+      let logLine = e.data as string;
+      try {
+        const parsed = JSON.parse(logLine);
+        if (parsed.type === 'done') {
+          setLines((prev) => [...prev, '--- stream complete ---']);
+          es.close();
+          return;
+        }
+        logLine = parsed.line || logLine;
+      } catch { /* raw text line, use as-is */ }
       setLines((prev) => {
         const next = [...prev, logLine];
         return next.length > MAX_LOG_LINES ? next.slice(next.length - MAX_LOG_LINES) : next;
@@ -75,7 +84,9 @@ export function OpsLogViewer({ namespace, name, pods }: OpsLogViewerProps) {
     });
 
     es.addEventListener('error', () => {
-      setLines((prev) => [...prev, '--- stream ended ---']);
+      if (es.readyState === EventSource.CLOSED) {
+        setLines((prev) => [...prev, '--- stream ended ---']);
+      }
     });
   }, [namespace, name, selectedPod, selectedContainer]);
 
