@@ -104,10 +104,76 @@ export interface OpsAvailableTags {
 
 // ── API Functions ─────────────────────────────────────────────────────────────
 
-export function fetchOpsDiagnostics(namespace: string, name: string): Promise<OpsDiagnostics> {
-  return apiFetch<OpsDiagnostics>(
+export async function fetchOpsDiagnostics(namespace: string, name: string): Promise<OpsDiagnostics> {
+  // The backend returns a flat shape; transform to OpsDiagnostics
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await apiFetch(
     `/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`
   );
+
+  const hr = raw.helmRelease || {};
+  const values = hr.values || {};
+  const appVals = values.app || {};
+  const img = raw.image || appVals.image || {};
+  const pods = (raw.pods || []) as OpsPodStatus[];
+  const sec = raw.security || {};
+  const podSc = sec.podSecurityContext || {};
+  const ctrSc = sec.containerSecurityContext || {};
+  const probes = raw.probes || {};
+  const res = raw.resources || {};
+  const allEvents = [
+    ...((raw.events?.warning || []) as OpsEvent[]),
+    ...((raw.events?.normal || []) as OpsEvent[]),
+    ...((raw.policyViolations || []) as OpsEvent[]),
+  ];
+
+  // Derive status from HR + pods
+  const isReady = hr.ready === true;
+  const hasCrash = pods.some((p: OpsPodStatus) => !p.ready && p.restarts > 2);
+  const status = isReady && !hasCrash ? 'running' : hasCrash ? 'failed' : hr.reason === 'InstallFailed' || hr.reason === 'UpgradeFailed' ? 'failed' : 'deploying';
+
+  const totalRestarts = pods.reduce((s: number, p: OpsPodStatus) => s + (p.restarts || 0), 0);
+
+  return {
+    app: {
+      name: hr.name || name,
+      namespace: hr.namespace || namespace,
+      image: img.repository || '',
+      tag: img.tag || '',
+      status,
+      uptime: pods[0]?.age || '',
+      restartCount: totalRestarts,
+    },
+    pods,
+    events: allEvents,
+    resources: res.cpu ? res : null,
+    config: {
+      runAsRoot: podSc.runAsUser === 0 || podSc.runAsNonRoot === false,
+      writableFilesystem: ctrSc.readOnlyRootFilesystem === false,
+      allowPrivilegeEscalation: ctrSc.allowPrivilegeEscalation === true,
+      privileged: ctrSc.privileged === true,
+      capabilities: ctrSc.capabilities?.add || [],
+      port: appVals.port || 8080,
+      imageTag: img.tag || '',
+      replicas: appVals.replicas || 2,
+      env: appVals.env || [],
+      cpuRequest: appVals.resources?.requests?.cpu || '100m',
+      cpuLimit: appVals.resources?.limits?.cpu || '500m',
+      memoryRequest: appVals.resources?.requests?.memory || '128Mi',
+      memoryLimit: appVals.resources?.limits?.memory || '512Mi',
+      livenessProbe: probes.liveness || { type: 'tcp', path: '/', port: 8080, initialDelaySeconds: 10, periodSeconds: 10, failureThreshold: 3 },
+      readinessProbe: probes.readiness || { type: 'tcp', path: '/', port: 8080, initialDelaySeconds: 5, periodSeconds: 5, failureThreshold: 3 },
+      ingressHost: raw.network?.ingressHost || '',
+      backendProtocol: values.ingress?.backendProtocol || 'HTTP',
+    },
+    policyExceptions: (sec.exceptions || []).map((e: Record<string, unknown>) => ({
+      name: e.name as string,
+      policy: ((e.exceptions as Array<{policyName: string}>) || []).map(x => x.policyName).join(', '),
+      reason: e.reason as string || '',
+      createdAt: '',
+    })),
+    helmReleaseYaml: JSON.stringify(hr, null, 2),
+  };
 }
 
 export function patchOpsConfig(
