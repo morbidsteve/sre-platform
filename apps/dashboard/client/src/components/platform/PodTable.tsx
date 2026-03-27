@@ -8,22 +8,31 @@ import type { PlatformPod } from '../../api/platform';
 import type { Namespace, PodDetail } from '../../types/api';
 import { LogViewer } from '../cluster/LogViewer';
 
+const HUD_ACCENT = '#00ff88';
+const HUD_AMBER = '#ffaa00';
+const HUD_RED = '#ff3344';
+const HUD_BORDER = '#0d2a1a';
+const HUD_LABEL = '#4a7a5a';
+const HUD_TEXT = '#c8ffd8';
+const HUD_BG = '#080c12';
+const HUD_SURFACE = '#0a0f15';
+
 // ── Status helpers ──────────────────────────────────────────────────────────
 
-function statusDotColor(status: string): string {
+function statusColor(status: string): string {
   const s = status.toLowerCase();
-  if (s === 'running') return 'bg-green';
-  if (s === 'pending' || s === 'containercreating' || s === 'init') return 'bg-yellow';
-  if (s === 'succeeded' || s === 'completed') return 'bg-[#60a5fa]';
-  return 'bg-red';
+  if (s === 'running') return HUD_ACCENT;
+  if (s === 'pending' || s === 'containercreating' || s === 'init') return HUD_AMBER;
+  if (s === 'succeeded' || s === 'completed') return '#60a5fa';
+  return HUD_RED;
 }
 
-function rowBg(status: string): string {
+function rowBgStyle(status: string): React.CSSProperties {
   const s = status.toLowerCase();
-  if (s === 'running') return '';
-  if (s === 'pending' || s === 'containercreating') return 'bg-yellow/[0.03]';
-  if (s === 'succeeded' || s === 'completed') return 'bg-[#60a5fa]/[0.03]';
-  return 'bg-red/[0.04]';
+  if (s === 'running') return {};
+  if (s === 'pending' || s === 'containercreating') return { background: 'rgba(255,170,0,0.02)' };
+  if (s === 'succeeded' || s === 'completed') return { background: 'rgba(96,165,250,0.02)' };
+  return { background: 'rgba(255,51,68,0.03)' };
 }
 
 const STATUS_OPTIONS = [
@@ -48,8 +57,13 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
   const [pod, setPod] = useState<PodDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showLogs, setShowLogs] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'events' | 'logs'>('info');
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +76,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
   }, [namespace, name]);
 
   const handleDelete = async () => {
-    if (!confirm(`Delete pod ${name}? If it's managed by a controller, it will be recreated.`)) return;
+    if (!confirm(`Delete pod ${name}? If managed by a controller, it will be recreated.`)) return;
     try {
       await deletePod(namespace, name);
       onDeleted();
@@ -72,161 +86,208 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[520px] z-[300] flex flex-col bg-[#0a0e1a] border-l border-border shadow-2xl">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0 bg-[#0d1117]">
-        <div className="min-w-0">
-          <div className="font-mono text-sm font-semibold text-text-bright truncate">{name}</div>
-          <div className="text-[10px] text-text-dim font-mono">{namespace}</div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          {isAdmin && pod && (
-            <button
-              className="text-[10px] font-mono px-2 py-1 rounded border border-red/30 text-red hover:bg-red/10 transition-colors"
-              onClick={handleDelete}
-            >
-              Delete
-            </button>
-          )}
-          <button className="text-text-dim hover:text-text-primary transition-colors" onClick={onClose}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Tab bar */}
-      <div className="flex items-center gap-1 px-4 pt-2 border-b border-border flex-shrink-0 bg-[#0d1117]">
-        {(['info', 'events', 'logs'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setActiveDetailTab(t)}
-            className={`text-[10px] font-mono uppercase tracking-wider px-3 py-2 border-b-2 -mb-px transition-all capitalize ${
-              activeDetailTab === t
-                ? 'border-accent text-accent'
-                : 'border-transparent text-text-dim hover:text-text-primary'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {loading && (
-          <div className="flex justify-center py-12">
-            <RefreshCw className="w-5 h-5 animate-spin text-accent" />
+    <>
+      <div
+        className="fixed inset-0 z-[290]"
+        style={{ background: 'rgba(0,0,0,0.5)' }}
+        onClick={onClose}
+      />
+      <div
+        className="fixed inset-y-0 right-0 w-[520px] z-[300] flex flex-col hud-slide-in"
+        style={{ background: HUD_BG, borderLeft: `1px solid ${HUD_BORDER}` }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${HUD_BORDER}`, background: HUD_SURFACE }}
+        >
+          <div className="min-w-0">
+            <div className="font-mono text-sm font-bold truncate" style={{ color: HUD_ACCENT }}>{name}</div>
+            <div className="text-[10px] font-mono mt-0.5" style={{ color: HUD_LABEL }}>{namespace}</div>
           </div>
-        )}
-        {error && (
-          <div className="text-red text-sm font-mono py-6 text-center">{error}</div>
-        )}
-        {pod && activeDetailTab === 'info' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                ['Status', pod.status],
-                ['Node', pod.node || '-'],
-                ['IP', pod.ip || '-'],
-                ['Age', pod.age || '-'],
-                ['Namespace', pod.namespace],
-                ['Service Account', pod.serviceAccount || '-'],
-              ].map(([label, val]) => (
-                <div key={label}>
-                  <div className="text-[9px] uppercase tracking-wider text-text-dim font-mono mb-0.5">{label}</div>
-                  <div className="text-[11px] font-mono text-text-primary">{val}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Conditions */}
-            {pod.conditions && pod.conditions.length > 0 && (
-              <div>
-                <div className="text-[9px] uppercase tracking-wider text-text-dim font-mono mb-2">Conditions</div>
-                <div className="space-y-1">
-                  {pod.conditions.map((c) => (
-                    <div key={c.type} className="flex items-center gap-2 text-[10px] font-mono">
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.status === 'True' ? 'bg-green' : 'bg-red'}`} />
-                      <span className="text-text-dim">{c.type}</span>
-                      <span className={c.status === 'True' ? 'text-green' : 'text-red'}>{c.status}</span>
-                      {c.message && <span className="text-text-muted truncate">{c.message}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+            {isAdmin && pod && (
+              <button
+                className="text-[10px] font-mono px-2 py-1 rounded transition-colors"
+                style={{ color: HUD_RED, border: `1px solid rgba(255,51,68,0.3)`, background: 'rgba(255,51,68,0.06)' }}
+                onClick={handleDelete}
+              >
+                Delete
+              </button>
             )}
+            <button
+              className="transition-opacity hover:opacity-60"
+              style={{ color: HUD_ACCENT }}
+              onClick={onClose}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
 
-            {/* Containers */}
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-text-dim font-mono mb-2">Containers</div>
-              <div className="space-y-2">
-                {pod.containers.map((c) => (
-                  <div key={c.name} className="bg-[#111827] border border-border rounded p-2.5 text-[10px] font-mono">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.ready ? 'bg-green' : 'bg-red'}`}
-                        style={c.ready ? { boxShadow: '0 0 3px var(--green)' } : undefined}
-                      />
-                      <span className="font-semibold text-text-primary">{c.name}</span>
-                      <span className={c.ready ? 'text-green' : 'text-red'}>{c.ready ? 'Ready' : 'Not Ready'}</span>
-                      {c.restarts > 0 && <span className="text-yellow">{c.restarts} restarts</span>}
-                    </div>
-                    <div className="text-text-dim truncate">{c.image}</div>
-                    {c.stateDetail && <div className="text-text-muted mt-0.5">{c.stateDetail}</div>}
+        {/* Tab bar */}
+        <div
+          className="flex items-center gap-0 px-4 pt-0 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${HUD_BORDER}`, background: HUD_SURFACE }}
+        >
+          {(['info', 'events', 'logs'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveDetailTab(t)}
+              className="text-[9px] font-mono uppercase tracking-[2px] px-4 py-2.5 border-b-2 -mb-px transition-all"
+              style={{
+                borderBottomColor: activeDetailTab === t ? HUD_ACCENT : 'transparent',
+                color: activeDetailTab === t ? HUD_ACCENT : HUD_LABEL,
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading && (
+            <div className="flex justify-center py-12">
+              <RefreshCw className="w-5 h-5 animate-spin" style={{ color: HUD_ACCENT }} />
+            </div>
+          )}
+          {error && (
+            <div className="text-sm font-mono py-6 text-center" style={{ color: HUD_RED }}>{error}</div>
+          )}
+          {pod && activeDetailTab === 'info' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ['Status', pod.status],
+                  ['Node', pod.node || '—'],
+                  ['IP', pod.ip || '—'],
+                  ['Age', pod.age || '—'],
+                  ['Namespace', pod.namespace],
+                  ['Service Account', pod.serviceAccount || '—'],
+                ].map(([label, val]) => (
+                  <div key={label}>
+                    <div className="text-[9px] uppercase tracking-[2px] font-mono mb-0.5" style={{ color: HUD_LABEL }}>{label}</div>
+                    <div className="text-[11px] font-mono font-semibold" style={{ color: HUD_TEXT }}>{val}</div>
                   </div>
                 ))}
               </div>
-            </div>
 
-            {/* Labels */}
-            {pod.labels && Object.keys(pod.labels).length > 0 && (
+              {pod.conditions && pod.conditions.length > 0 && (
+                <div>
+                  <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}>
+                    Conditions
+                  </div>
+                  <div className="space-y-1">
+                    {pod.conditions.map((c) => (
+                      <div key={c.type} className="flex items-center gap-2 text-[10px] font-mono">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: c.status === 'True' ? HUD_ACCENT : HUD_RED }}
+                        />
+                        <span className="w-28 flex-shrink-0" style={{ color: HUD_TEXT }}>{c.type}</span>
+                        <span style={{ color: c.status === 'True' ? HUD_ACCENT : HUD_RED }}>{c.status}</span>
+                        {c.message && (
+                          <span className="truncate" style={{ color: HUD_LABEL }} title={c.message}>{c.message}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <div className="text-[9px] uppercase tracking-wider text-text-dim font-mono mb-2">Labels</div>
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(pod.labels).map(([k, v]) => (
-                    <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-surface border border-border text-text-dim font-mono">
-                      {k}={v}
-                    </span>
+                <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}>
+                  Containers
+                </div>
+                <div className="space-y-2">
+                  {pod.containers.map((c) => (
+                    <div
+                      key={c.name}
+                      className="text-[10px] font-mono p-2.5 rounded"
+                      style={{ background: '#0a0f15', border: `1px solid ${HUD_BORDER}` }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: c.ready ? HUD_ACCENT : HUD_RED }}
+                        />
+                        <span className="font-semibold" style={{ color: HUD_TEXT }}>{c.name}</span>
+                        <span style={{ color: c.ready ? HUD_ACCENT : HUD_RED }}>
+                          {c.ready ? 'Ready' : 'Not Ready'}
+                        </span>
+                        {c.restarts > 0 && (
+                          <span style={{ color: HUD_AMBER }}>{c.restarts} restarts</span>
+                        )}
+                      </div>
+                      <div className="truncate" style={{ color: HUD_LABEL }}>{c.image}</div>
+                      {c.stateDetail && (
+                        <div className="mt-0.5" style={{ color: '#3a5a4a' }}>{c.stateDetail}</div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {pod && activeDetailTab === 'events' && (
-          <div className="space-y-1.5">
-            {pod.events.length === 0 ? (
-              <div className="text-[11px] text-text-muted font-mono text-center py-8">No recent events</div>
-            ) : (
-              pod.events.map((e, i) => (
-                <div
-                  key={i}
-                  className={`flex items-start gap-2 px-3 py-2 rounded text-[10px] font-mono border-l-2 ${
-                    e.type === 'Warning' ? 'border-l-yellow' : 'border-l-green'
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="text-text-primary">{e.message}</div>
-                    <div className="text-text-dim mt-0.5">{e.reason} · {e.age}</div>
+              {pod.labels && Object.keys(pod.labels).length > 0 && (
+                <div>
+                  <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}>
+                    Labels
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(pod.labels).map(([k, v]) => (
+                      <span
+                        key={k}
+                        className="text-[9px] px-1.5 py-0.5 rounded font-mono"
+                        style={{ color: HUD_LABEL, background: '#0a0f15', border: `1px solid ${HUD_BORDER}` }}
+                      >
+                        {k}={v}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
-        {pod && activeDetailTab === 'logs' && (
-          <div className="h-full" style={{ minHeight: '400px' }}>
-            <LogViewer
-              namespace={namespace}
-              podName={name}
-              containers={pod.containers.map((c) => c.name)}
-            />
-          </div>
-        )}
+          {pod && activeDetailTab === 'events' && (
+            <div className="space-y-1.5">
+              {pod.events.length === 0 ? (
+                <div className="text-[10px] font-mono text-center py-8" style={{ color: HUD_LABEL }}>
+                  No recent events
+                </div>
+              ) : (
+                pod.events.map((e, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 px-3 py-2 rounded text-[10px] font-mono border-l-2"
+                    style={{
+                      borderLeftColor: e.type === 'Warning' ? HUD_AMBER : HUD_ACCENT,
+                      background: e.type === 'Warning' ? 'rgba(255,170,0,0.03)' : 'rgba(0,255,136,0.02)',
+                    }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div style={{ color: HUD_TEXT }}>{e.message}</div>
+                      <div className="mt-0.5" style={{ color: HUD_LABEL }}>{e.reason} · {e.age}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {pod && activeDetailTab === 'logs' && (
+            <div className="h-full" style={{ minHeight: '400px' }}>
+              <LogViewer
+                namespace={namespace}
+                podName={name}
+                containers={pod.containers.map((c) => c.name)}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -278,14 +339,32 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
     return s !== 'running' && s !== 'pending' && s !== 'succeeded' && s !== 'completed' && s !== 'containercreating';
   }).length;
 
+  const selectStyle: React.CSSProperties = {
+    background: HUD_SURFACE,
+    border: `1px solid ${HUD_BORDER}`,
+    borderRadius: '4px',
+    padding: '2px 8px',
+    fontSize: '10px',
+    fontFamily: 'monospace',
+    color: HUD_TEXT,
+    outline: 'none',
+  };
+
   return (
     <>
-      <div className="bg-[#0d1117] border border-border rounded-lg flex flex-col overflow-hidden">
+      <div
+        className="flex flex-col overflow-hidden rounded"
+        style={{ background: HUD_BG, border: `1px solid ${HUD_BORDER}` }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+        <div
+          className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${HUD_BORDER}` }}
+        >
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-widest text-text-dim hover:text-text-primary transition-colors"
+              className="flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-[3px] transition-opacity hover:opacity-70"
+              style={{ color: HUD_LABEL }}
               onClick={() => setCollapsed((v) => !v)}
             >
               {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
@@ -293,46 +372,34 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
             </button>
             {!loading && (
               <div className="flex items-center gap-2 text-[9px] font-mono">
-                <span className="text-green">{runningCount} running</span>
-                {pendingCount > 0 && <span className="text-yellow">{pendingCount} pending</span>}
-                {failedCount > 0 && <span className="text-red">{failedCount} failed</span>}
-                <span className="text-text-muted">{pods.length} total</span>
+                <span style={{ color: HUD_ACCENT }}>{runningCount} running</span>
+                {pendingCount > 0 && <span style={{ color: HUD_AMBER }}>{pendingCount} pending</span>}
+                {failedCount > 0 && <span style={{ color: HUD_RED }}>{failedCount} failed</span>}
+                <span style={{ color: '#2a4a3a' }}>{pods.length} total</span>
               </div>
             )}
           </div>
 
-          {/* Filters */}
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <select
-                className="bg-[#111827] border border-border rounded px-2 py-1 text-[10px] font-mono text-text-primary focus:outline-none focus:border-accent"
-                value={nsFilter}
-                onChange={(e) => { setNsFilter(e.target.value); setSelectedPod(null); }}
-              >
+              <select style={selectStyle} value={nsFilter} onChange={(e) => { setNsFilter(e.target.value); setSelectedPod(null); }}>
                 <option value="">All Namespaces</option>
-                {namespaces.map((ns) => (
-                  <option key={ns.name} value={ns.name}>{ns.name}</option>
-                ))}
+                {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
               </select>
-              <select
-                className="bg-[#111827] border border-border rounded px-2 py-1 text-[10px] font-mono text-text-primary focus:outline-none focus:border-accent"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                {STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
+              <select style={selectStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <input
                 ref={searchRef}
                 type="text"
-                className="bg-[#111827] border border-border rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent w-36"
-                placeholder="Search pods..."
+                style={{ ...selectStyle, width: '140px' }}
+                placeholder="Search pods…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <button
-                className={`text-text-dim hover:text-accent transition-colors ${loading ? 'animate-spin' : ''}`}
+                className={`transition-opacity hover:opacity-60 ${loading ? 'animate-spin' : ''}`}
+                style={{ color: HUD_ACCENT }}
                 onClick={loadPods}
                 title="Refresh"
               >
@@ -347,62 +414,83 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
           <div className="overflow-x-auto" style={{ maxHeight: '360px', overflowY: 'auto' }}>
             {loading && pods.length === 0 ? (
               <div className="flex justify-center py-8">
-                <RefreshCw className="w-4 h-4 animate-spin text-accent" />
+                <RefreshCw className="w-4 h-4 animate-spin" style={{ color: HUD_ACCENT }} />
               </div>
             ) : pods.length === 0 ? (
-              <div className="text-[11px] text-text-muted font-mono text-center py-8">No pods found</div>
+              <div className="text-[10px] font-mono text-center py-8 uppercase tracking-widest" style={{ color: HUD_LABEL }}>
+                No pods found
+              </div>
             ) : (
-              <table className="w-full text-[11px] font-mono">
-                <thead className="sticky top-0 bg-[#0d1117] z-10">
-                  <tr className="border-b border-border text-left">
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-24">Status</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider">Name</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-32">Namespace</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-16">Ready</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-16">Restarts</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-16">Age</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-32">Node</th>
-                    <th className="py-2 px-3 text-text-dim font-semibold text-[9px] uppercase tracking-wider w-28">IP</th>
+              <table className="w-full text-[10px] font-mono">
+                <thead className="sticky top-0 z-10" style={{ background: HUD_BG }}>
+                  <tr style={{ borderBottom: `1px solid ${HUD_BORDER}` }}>
+                    {['Status', 'Name', 'Namespace', 'Ready', 'Restarts', 'Age', 'Node', 'IP'].map((h) => (
+                      <th
+                        key={h}
+                        className="py-2 px-3 text-left text-[8px] font-bold uppercase tracking-[2px]"
+                        style={{ color: HUD_LABEL }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {pods.map((p) => {
                     const isSelected = selectedPod?.ns === p.namespace && selectedPod?.name === p.name;
+                    const sc = statusColor(p.status);
                     return (
                       <tr
                         key={p.namespace + '/' + p.name}
-                        className={`border-b border-border/50 cursor-pointer transition-colors ${rowBg(p.status)} ${
-                          isSelected ? 'bg-accent/10 border-accent/20' : 'hover:bg-white/[0.03]'
-                        }`}
+                        className="cursor-pointer transition-all"
+                        style={{
+                          ...rowBgStyle(p.status),
+                          borderBottom: `1px solid ${HUD_BORDER}50`,
+                          background: isSelected ? 'rgba(0,255,136,0.06)' : undefined,
+                          outline: isSelected ? `1px solid rgba(0,255,136,0.2)` : undefined,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(0,255,136,0.025)';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = '';
+                        }}
                         onClick={() => setSelectedPod(isSelected ? null : { ns: p.namespace, name: p.name })}
                       >
                         <td className="py-1.5 px-3">
                           <span className="flex items-center gap-1.5">
                             <span
-                              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotColor(p.status)}`}
+                              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                p.status.toLowerCase() === 'running' ? 'hud-pulse-green' : ''
+                              }`}
+                              style={{ backgroundColor: sc }}
                             />
-                            <span className="truncate text-text-dim">{p.status}</span>
+                            <span className="truncate" style={{ color: HUD_LABEL }}>{p.status}</span>
                           </span>
                         </td>
-                        <td className="py-1.5 px-3 text-text-primary max-w-[200px] truncate" title={p.name}>
+                        <td
+                          className="py-1.5 px-3 max-w-[200px] truncate font-semibold"
+                          style={{ color: HUD_TEXT }}
+                          title={p.name}
+                        >
                           {p.name}
                         </td>
-                        <td className="py-1.5 px-3 text-text-dim truncate max-w-[128px]" title={p.namespace}>
+                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: HUD_LABEL }} title={p.namespace}>
                           {p.namespace}
                         </td>
-                        <td className="py-1.5 px-3 text-text-dim">{p.ready}</td>
+                        <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.ready}</td>
                         <td className="py-1.5 px-3">
                           {p.restarts > 0 ? (
-                            <span className="text-yellow font-semibold">{p.restarts}</span>
+                            <span className="font-bold" style={{ color: HUD_AMBER }}>{p.restarts}</span>
                           ) : (
-                            <span className="text-text-dim">0</span>
+                            <span style={{ color: '#2a4a3a' }}>0</span>
                           )}
                         </td>
-                        <td className="py-1.5 px-3 text-text-dim">{p.age}</td>
-                        <td className="py-1.5 px-3 text-text-muted truncate max-w-[128px]" title={p.node}>
-                          {p.node || '-'}
+                        <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.age}</td>
+                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: '#3a5a4a' }} title={p.node}>
+                          {p.node || '—'}
                         </td>
-                        <td className="py-1.5 px-3 text-text-muted">{p.ip || '-'}</td>
+                        <td className="py-1.5 px-3" style={{ color: '#3a5a4a' }}>{p.ip || '—'}</td>
                       </tr>
                     );
                   })}
@@ -413,7 +501,6 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
         )}
       </div>
 
-      {/* Slide-out detail panel */}
       {selectedPod && (
         <PodSlideOut
           namespace={selectedPod.ns}

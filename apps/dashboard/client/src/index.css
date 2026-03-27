@@ -231,3 +231,20 @@ body {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+/* ── F-35 HUD animations ──────────────────────────────────────── */
+@keyframes hudPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.5; box-shadow: 0 0 2px currentColor; }
+}
+@keyframes hudPulseRed {
+  0%, 100% { opacity: 1; box-shadow: 0 0 5px #ff3344; }
+  50% { opacity: 0.6; box-shadow: 0 0 2px #ff3344; }
+}
+@keyframes hudSlideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.hud-pulse-green { animation: hudPulse 2s ease-in-out infinite; color: #00ff88; }
+.hud-pulse-red { animation: hudPulseRed 1.5s ease-in-out infinite; }
+.hud-slide-in { animation: hudSlideIn 0.25s ease-out; }

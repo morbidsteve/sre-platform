@@ -146,12 +146,22 @@ export async function fetchPlatformOverview(): Promise<PlatformOverview> {
 export async function fetchPlatformFlux(): Promise<FluxStatus> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw: any = await apiFetch('/api/platform/flux');
-  const ks = raw.kustomizations || [];
-  const hr = raw.helmReleases || [];
+  // Backend uses `message` and `chartVersion` — remap to frontend field names
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ks: FluxKustomization[] = (raw.kustomizations || []).map((k: any) => ({
+    ...k,
+    lastMessage: k.lastMessage ?? k.message ?? '',
+  }));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hr: FluxHelmRelease[] = (raw.helmReleases || []).map((h: any) => ({
+    ...h,
+    version: h.version ?? h.chartVersion ?? '',
+    lastMessage: h.lastMessage ?? h.message ?? '',
+  }));
   return {
     kustomizations: ks,
     helmReleases: hr,
-    syncedCount: ks.filter((k: FluxKustomization) => k.ready).length + hr.filter((h: FluxHelmRelease) => h.ready).length,
+    syncedCount: ks.filter((k) => k.ready).length + hr.filter((h) => h.ready).length,
     totalCount: ks.length + hr.length,
   };
 }

@@ -24,12 +24,94 @@ import {
   triggerFluxReconcileAll,
 } from '../../api/platform';
 import { fetchNamespaces } from '../../api/cluster';
-import type { PlatformOverview, FluxStatus, PlatformEvent, PlatformCertificate } from '../../api/platform';
+import type { PlatformOverview, FluxStatus, PlatformEvent, PlatformCertificate, PlatformService } from '../../api/platform';
 import type { Namespace } from '../../types/api';
 import { useToast } from '../../context/ToastContext';
 import { useConfig } from '../../context/ConfigContext';
 
 const AUTO_REFRESH_MS = 15_000;
+
+// ── F-35 HUD palette ─────────────────────────────────────────────────────────
+const HUD_ACCENT = '#00ff88';
+const HUD_AMBER = '#ffaa00';
+const HUD_RED = '#ff3344';
+const HUD_BORDER = '#0d2a1a';
+const HUD_LABEL = '#4a7a5a';
+const HUD_TEXT = '#c8ffd8';
+const HUD_BG = '#080c12';
+const HUD_SURFACE = '#0a0f15';
+
+// ── Platform namespace → service name mapping ─────────────────────────────────
+const NS_TO_SERVICES: Record<string, { name: string; icon: string; description: string }[]> = {
+  'istio-system': [{ name: 'istio', icon: '◈', description: 'Service mesh with mTLS encryption' }],
+  'kyverno': [{ name: 'kyverno', icon: '⬡', description: 'Policy engine for admission control' }],
+  'monitoring': [
+    { name: 'prometheus', icon: '◉', description: 'Metrics collection and alerting' },
+    { name: 'grafana', icon: '▣', description: 'Observability dashboards' },
+  ],
+  'logging': [
+    { name: 'loki', icon: '≡', description: 'Log aggregation' },
+    { name: 'alloy', icon: '⋈', description: 'Log collection agent' },
+  ],
+  'harbor': [{ name: 'harbor', icon: '⚓', description: 'Container registry with Trivy scanning' }],
+  'keycloak': [{ name: 'keycloak', icon: '◎', description: 'Identity and SSO provider' }],
+  'openbao': [{ name: 'openbao', icon: '⬢', description: 'Secrets management' }],
+  'runtime-security': [{ name: 'neuvector', icon: '◆', description: 'Runtime security and network DLP' }],
+  'neuvector': [{ name: 'neuvector', icon: '◆', description: 'Runtime security and network DLP' }],
+  'cert-manager': [{ name: 'cert-manager', icon: '✦', description: 'TLS certificate management' }],
+  'backup': [{ name: 'velero', icon: '▤', description: 'Cluster backup and restore' }],
+  'velero': [{ name: 'velero', icon: '▤', description: 'Cluster backup and restore' }],
+  'tempo': [{ name: 'tempo', icon: '◈', description: 'Distributed tracing' }],
+};
+
+/** Derive platform services from Flux HelmRelease data */
+function deriveServicesFromFlux(flux: FluxStatus, config: { domain: string }): PlatformService[] {
+  const services: PlatformService[] = [];
+  const seen = new Set<string>();
+
+  const serviceUrls: Record<string, string> = {
+    grafana: `https://grafana.${config.domain}`,
+    prometheus: `https://prometheus.${config.domain}`,
+    harbor: `https://harbor.${config.domain}`,
+    keycloak: `https://keycloak.${config.domain}`,
+    istio: `https://kiali.${config.domain}`,
+    neuvector: `https://neuvector.${config.domain}`,
+  };
+
+  // Check HelmReleases and Kustomizations for known platform namespaces
+  const allItems = [
+    ...flux.helmReleases.map((h) => ({ namespace: h.namespace, name: h.name, ready: h.ready, suspended: h.suspended })),
+    ...flux.kustomizations.map((k) => ({ namespace: k.namespace, name: k.name, ready: k.ready, suspended: k.suspended })),
+  ];
+
+  for (const item of allItems) {
+    const ns = item.namespace;
+    const defs = NS_TO_SERVICES[ns];
+    if (!defs) continue;
+
+    for (const def of defs) {
+      const key = def.name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const nsReady = allItems
+        .filter((x) => x.namespace === ns && !x.suspended)
+        .every((x) => x.ready);
+
+      services.push({
+        name: def.name,
+        namespace: ns,
+        healthy: nsReady,
+        podCount: 0,
+        icon: def.icon,
+        description: def.description,
+        url: serviceUrls[def.name] ?? '',
+      });
+    }
+  }
+
+  return services;
+}
 
 // ── Stat pill ────────────────────────────────────────────────────────────────
 
@@ -37,29 +119,32 @@ function StatPill({
   icon: Icon,
   label,
   value,
-  accent,
+  ok,
+  warn,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
-  accent?: boolean;
+  ok?: boolean;
+  warn?: boolean;
 }) {
+  const color = ok === true ? HUD_ACCENT : ok === false ? HUD_RED : warn ? HUD_AMBER : HUD_LABEL;
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-        accent ? 'bg-accent/10 border-accent/25' : 'bg-[#111827] border-border'
-      }`}
+      className="flex items-center gap-2 px-3 py-2 rounded"
+      style={{
+        background: HUD_BG,
+        border: `1px solid ${color}20`,
+      }}
     >
-      <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${accent ? 'text-accent' : 'text-text-dim'}`} />
+      <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
       <div>
-        <div
-          className={`text-sm font-bold font-mono leading-tight ${
-            accent ? 'text-accent' : 'text-text-bright'
-          }`}
-        >
+        <div className="text-sm font-bold font-mono leading-tight" style={{ color: ok === true ? HUD_ACCENT : HUD_TEXT }}>
           {value}
         </div>
-        <div className="text-[9px] text-text-dim uppercase tracking-wider font-mono">{label}</div>
+        <div className="text-[8px] uppercase tracking-[2px] font-mono" style={{ color: HUD_LABEL }}>
+          {label}
+        </div>
       </div>
     </div>
   );
@@ -86,23 +171,40 @@ function EventsCollapsible({
   collapsed,
   onToggle,
 }: EventsPanelProps) {
-  const isCriticalReason = (reason: string) =>
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  const isCritical = (reason: string) =>
     ['Failed', 'FailedScheduling', 'BackOff', 'OOMKilling', 'CrashLoopBackOff',
      'ErrImagePull', 'ImagePullBackOff', 'NodeNotReady', 'FailedCreate'].includes(reason);
 
+  const selectStyle: React.CSSProperties = {
+    background: HUD_SURFACE,
+    border: `1px solid ${HUD_BORDER}`,
+    borderRadius: '4px',
+    padding: '2px 8px',
+    fontSize: '10px',
+    fontFamily: 'monospace',
+    color: HUD_TEXT,
+    outline: 'none',
+  };
+
   return (
-    <div className="bg-[#0d1117] border border-border rounded-lg overflow-hidden">
+    <div className="rounded overflow-hidden" style={{ background: HUD_BG, border: `1px solid ${HUD_BORDER}` }}>
       <button
-        className="w-full flex items-center justify-between px-4 py-3 border-b border-border hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center justify-between px-4 py-2.5 transition-opacity hover:opacity-80"
+        style={{ borderBottom: collapsed ? 'none' : `1px solid ${HUD_BORDER}` }}
         onClick={onToggle}
       >
         <div className="flex items-center gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 text-yellow" />
-          <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-text-dim">
+          <AlertTriangle className="w-3.5 h-3.5" style={{ color: HUD_AMBER }} />
+          <span className="text-[9px] font-mono font-bold uppercase tracking-[3px]" style={{ color: HUD_LABEL }}>
             Warning Events
           </span>
           {!loading && events.length > 0 && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-yellow/10 text-yellow">
+            <span
+              className="text-[8px] font-mono px-1.5 py-0.5 rounded"
+              style={{ color: HUD_AMBER, background: 'rgba(255,170,0,0.1)', border: '1px solid rgba(255,170,0,0.2)' }}
+            >
               {events.length}
             </span>
           )}
@@ -110,27 +212,20 @@ function EventsCollapsible({
         <div className="flex items-center gap-2">
           {!collapsed && (
             <select
-              className="bg-[#111827] border border-border rounded px-2 py-0.5 text-[10px] font-mono text-text-primary focus:outline-none focus:border-accent"
+              style={selectStyle}
               value={nsFilter}
-              onChange={(e) => {
-                e.stopPropagation();
-                onNsFilter(e.target.value);
-              }}
+              onChange={(e) => { e.stopPropagation(); onNsFilter(e.target.value); }}
               onClick={(e) => e.stopPropagation()}
             >
               <option value="">All Namespaces</option>
               {namespaces.map((ns) => (
-                <option key={ns.name} value={ns.name}>
-                  {ns.name}
-                </option>
+                <option key={ns.name} value={ns.name}>{ns.name}</option>
               ))}
             </select>
           )}
-          {collapsed ? (
-            <ChevronDown className="w-3.5 h-3.5 text-text-dim" />
-          ) : (
-            <ChevronUp className="w-3.5 h-3.5 text-text-dim" />
-          )}
+          {collapsed
+            ? <ChevronDown className="w-3.5 h-3.5" style={{ color: HUD_LABEL }} />
+            : <ChevronUp className="w-3.5 h-3.5" style={{ color: HUD_LABEL }} />}
         </div>
       </button>
 
@@ -138,43 +233,61 @@ function EventsCollapsible({
         <div className="overflow-y-auto" style={{ maxHeight: '260px' }}>
           {loading ? (
             <div className="flex justify-center py-6">
-              <RefreshCw className="w-4 h-4 animate-spin text-accent" />
+              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: HUD_ACCENT }} />
             </div>
           ) : events.length === 0 ? (
-            <div className="text-[11px] text-text-muted font-mono text-center py-6">
+            <div className="text-[10px] font-mono text-center py-6 uppercase tracking-widest" style={{ color: HUD_LABEL }}>
               No warning events
             </div>
           ) : (
-            <div className="divide-y divide-border/50">
-              {events.slice(0, 80).map((e, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 px-4 py-2 text-[10px] font-mono hover:bg-white/[0.02] transition-colors"
-                >
-                  <span
-                    className={`flex-shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full ${
-                      isCriticalReason(e.reason) ? 'bg-red' : 'bg-yellow'
-                    }`}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-text-primary truncate">{e.message}</div>
-                    <div className="text-text-dim mt-0.5">
+            <div>
+              {events.slice(0, 80).map((e, i) => {
+                const critical = isCritical(e.reason);
+                const dotColor = critical ? HUD_RED : HUD_AMBER;
+                const isExpanded = expandedIdx === i;
+                return (
+                  <div key={i} style={{ borderBottom: `1px solid ${HUD_BORDER}50` }}>
+                    <div
+                      className="flex items-start gap-3 px-4 py-2 text-[10px] font-mono cursor-pointer transition-all"
+                      onMouseEnter={(el) => { (el.currentTarget as HTMLDivElement).style.background = 'rgba(0,255,136,0.02)'; }}
+                      onMouseLeave={(el) => { (el.currentTarget as HTMLDivElement).style.background = ''; }}
+                      onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                    >
                       <span
-                        className={`font-semibold ${
-                          isCriticalReason(e.reason) ? 'text-red' : 'text-yellow'
-                        }`}
-                      >
-                        {e.reason}
+                        className="flex-shrink-0 mt-1 w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: dotColor }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate" style={{ color: isExpanded ? HUD_TEXT : HUD_TEXT }}>
+                          {e.message}
+                        </div>
+                        <div className="mt-0.5" style={{ color: HUD_LABEL }}>
+                          <span className="font-semibold" style={{ color: dotColor }}>{e.reason}</span>
+                          {' · '}
+                          {e.namespace}/{e.object || ''}
+                          {' · '}
+                          {e.age}
+                          {e.count > 1 && <span> · x{e.count}</span>}
+                        </div>
+                      </div>
+                      <span className="text-[8px] flex-shrink-0 self-start mt-0.5 opacity-50" style={{ color: HUD_ACCENT }}>
+                        {isExpanded ? '▲' : '▼'}
                       </span>
-                      {' · '}
-                      {e.namespace}/{e.object || ''}
-                      {' · '}
-                      {e.age}
-                      {e.count > 1 && <span> · x{e.count}</span>}
                     </div>
+                    {isExpanded && (
+                      <div
+                        className="px-8 pb-3 text-[10px] font-mono leading-relaxed"
+                        style={{ color: '#8aaa9a', borderTop: `1px solid ${HUD_BORDER}50` }}
+                      >
+                        <div className="mt-2"><span style={{ color: HUD_LABEL }}>Message: </span>{e.message}</div>
+                        <div><span style={{ color: HUD_LABEL }}>Object: </span>{e.namespace}/{e.object}</div>
+                        {e.firstSeen && <div><span style={{ color: HUD_LABEL }}>First seen: </span>{e.firstSeen}</div>}
+                        <div><span style={{ color: HUD_LABEL }}>Count: </span>{e.count}</div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -193,43 +306,59 @@ interface QuickActionsProps {
 
 function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickActionsProps) {
   const config = useConfig();
-  const expiringSoon = certs.filter(
-    (c) => c.daysUntilExpiry >= 0 && c.daysUntilExpiry <= 30
-  );
+  const expiringSoon = certs.filter((c) => c.daysUntilExpiry >= 0 && c.daysUntilExpiry <= 30);
 
   const serviceLinks = [
-    { label: 'Grafana', url: `https://grafana.${config.domain}`, icon: '📊' },
-    { label: 'Harbor', url: `https://harbor.${config.domain}`, icon: '⚓' },
-    { label: 'Keycloak', url: `https://keycloak.${config.domain}`, icon: '🔑' },
-    { label: 'Kiali', url: `https://kiali.${config.domain}`, icon: '🕸' },
-    { label: 'Prometheus', url: `https://prometheus.${config.domain}`, icon: '📈' },
-    { label: 'NeuVector', url: `https://neuvector.${config.domain}`, icon: '🦺' },
+    { label: 'Grafana', url: `https://grafana.${config.domain}` },
+    { label: 'Harbor', url: `https://harbor.${config.domain}` },
+    { label: 'Keycloak', url: `https://keycloak.${config.domain}` },
+    { label: 'Kiali', url: `https://kiali.${config.domain}` },
+    { label: 'Prometheus', url: `https://prometheus.${config.domain}` },
+    { label: 'NeuVector', url: `https://neuvector.${config.domain}` },
   ];
+
+  const sectionStyle: React.CSSProperties = {
+    background: HUD_BG,
+    border: `1px solid ${HUD_BORDER}`,
+    borderRadius: '4px',
+    padding: '10px',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: '8px',
+    fontFamily: 'monospace',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '2px',
+    color: HUD_LABEL,
+    marginBottom: '8px',
+  };
 
   return (
     <div className="flex flex-col gap-3 w-full">
       {/* Flux actions */}
-      <div className="bg-[#0d1117] border border-border rounded-lg p-3">
-        <div className="text-[9px] font-mono font-semibold uppercase tracking-widest text-text-dim mb-2.5">
-          Flux Actions
-        </div>
+      <div style={sectionStyle}>
+        <div style={labelStyle}>Flux Actions</div>
         <button
-          className={`w-full flex items-center justify-center gap-1.5 text-[10px] font-mono px-3 py-2 rounded border border-accent/30 text-accent hover:bg-accent/10 transition-colors ${
-            reconciling ? 'opacity-60 cursor-not-allowed' : ''
-          }`}
+          className="w-full flex items-center justify-center gap-1.5 text-[10px] font-mono px-3 py-2 rounded transition-opacity hover:opacity-70"
+          style={{
+            color: HUD_ACCENT,
+            border: `1px solid rgba(0,255,136,0.25)`,
+            background: 'rgba(0,255,136,0.06)',
+            opacity: reconciling ? 0.5 : 1,
+            cursor: reconciling ? 'not-allowed' : 'pointer',
+          }}
           onClick={onReconcileAll}
           disabled={reconciling}
         >
           <RefreshCw className={`w-3 h-3 ${reconciling ? 'animate-spin' : ''}`} />
-          {reconciling ? 'Reconciling...' : 'Reconcile All'}
+          {reconciling ? 'Reconciling…' : 'Reconcile All'}
         </button>
       </div>
 
       {/* Service links */}
-      <div className="bg-[#0d1117] border border-border rounded-lg p-3">
-        <div className="text-[9px] font-mono font-semibold uppercase tracking-widest text-text-dim mb-2.5">
-          Quick Links
-        </div>
+      <div style={sectionStyle}>
+        <div style={labelStyle}>Quick Links</div>
         <div className="space-y-0.5">
           {serviceLinks.map((link) => (
             <a
@@ -237,9 +366,11 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-mono text-text-dim hover:text-text-primary hover:bg-white/[0.04] transition-colors group"
+              className="flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-mono transition-all group"
+              style={{ color: HUD_LABEL }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_ACCENT; (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(0,255,136,0.04)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_LABEL; (e.currentTarget as HTMLAnchorElement).style.background = ''; }}
             >
-              <span className="text-xs">{link.icon}</span>
               <span className="flex-1">{link.label}</span>
               <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
             </a>
@@ -249,25 +380,17 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
 
       {/* Certificate warnings */}
       {expiringSoon.length > 0 && (
-        <div className="bg-[#0d1117] border border-yellow/25 rounded-lg p-3">
-          <div className="flex items-center gap-1.5 mb-2.5">
-            <Shield className="w-3 h-3 text-yellow" />
-            <div className="text-[9px] font-mono font-semibold uppercase tracking-widest text-yellow">
-              Cert Expiry
-            </div>
+        <div style={{ ...sectionStyle, border: `1px solid rgba(255,170,0,0.2)` }}>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Shield className="w-3 h-3" style={{ color: HUD_AMBER }} />
+            <div style={{ ...labelStyle, color: HUD_AMBER, marginBottom: 0 }}>Cert Expiry</div>
           </div>
           <div className="space-y-1.5">
             {expiringSoon.map((cert) => (
               <div key={cert.name + cert.namespace} className="text-[10px] font-mono">
-                <div className="text-text-primary truncate" title={cert.name}>
-                  {cert.name}
-                </div>
-                <div
-                  className={cert.daysUntilExpiry <= 7 ? 'text-red' : 'text-yellow'}
-                >
-                  {cert.daysUntilExpiry <= 0
-                    ? 'EXPIRED'
-                    : `${cert.daysUntilExpiry}d remaining`}
+                <div className="truncate" style={{ color: HUD_TEXT }} title={cert.name}>{cert.name}</div>
+                <div style={{ color: cert.daysUntilExpiry <= 7 ? HUD_RED : HUD_AMBER }}>
+                  {cert.daysUntilExpiry <= 0 ? 'EXPIRED' : `${cert.daysUntilExpiry}d remaining`}
                 </div>
               </div>
             ))}
@@ -276,9 +399,9 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
       )}
 
       {/* Auto-refresh hint */}
-      <div className="flex items-center gap-1.5 px-1 text-[9px] font-mono text-text-muted">
+      <div className="flex items-center gap-1.5 px-1 text-[8px] font-mono" style={{ color: '#2a4a3a' }}>
         <Clock className="w-2.5 h-2.5" />
-        Auto-refresh every 15s
+        Auto-refresh 15s
       </div>
     </div>
   );
@@ -292,6 +415,7 @@ interface PlatformCockpitProps {
 
 export function PlatformCockpit({ active }: PlatformCockpitProps) {
   const { showToast } = useToast();
+  const config = useConfig();
 
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [flux, setFlux] = useState<FluxStatus | null>(null);
@@ -362,21 +486,18 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
     setLastRefreshed(new Date().toLocaleTimeString());
   }, [loadOverview, loadFlux, loadEvents, loadCerts]);
 
-  // Initial load + namespaces
   useEffect(() => {
     if (!active) return;
     refreshAll();
     fetchNamespaces().then(setNamespaces).catch(() => {});
   }, [active, refreshAll]);
 
-  // Auto-refresh
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(refreshAll, AUTO_REFRESH_MS);
     return () => clearInterval(timer);
   }, [active, refreshAll]);
 
-  // Re-fetch events when filter changes
   useEffect(() => {
     if (!active) return;
     setEventsLoading(true);
@@ -408,19 +529,40 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
   const totalPods = overview?.podCount ?? 0;
   const totalNamespaces = overview?.namespaceCount ?? 0;
 
+  // Derive services from flux HelmRelease data (fix for "No services found")
+  const derivedServices: PlatformService[] = flux
+    ? deriveServicesFromFlux(flux, config)
+    : [];
+
+  // Section header style
+  const sectionLabel: React.CSSProperties = {
+    fontSize: '8px',
+    fontFamily: 'monospace',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '3px',
+    color: HUD_LABEL,
+    marginBottom: '8px',
+    borderBottom: `1px solid ${HUD_BORDER}`,
+    paddingBottom: '4px',
+  };
+
   return (
-    <div className="flex gap-4">
+    <div className="flex gap-4" style={{ background: HUD_BG }}>
       {/* ── Main content column ───────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h2 className="text-base font-bold text-text-bright font-mono">
+            <h2
+              className="text-base font-bold font-mono"
+              style={{ color: HUD_ACCENT, textShadow: `0 0 12px ${HUD_ACCENT}60` }}
+            >
               {overview?.clusterName ?? 'SRE Platform'}
             </h2>
-            <div className="text-[10px] text-text-dim font-mono mt-0.5">
+            <div className="text-[9px] font-mono uppercase tracking-[3px] mt-0.5" style={{ color: HUD_LABEL }}>
               Platform Cockpit
-              {lastRefreshed && <span> · refreshed {lastRefreshed}</span>}
+              {lastRefreshed && <span style={{ color: '#2a4a3a' }}> · {lastRefreshed}</span>}
             </div>
           </div>
 
@@ -429,6 +571,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
               icon={Server}
               label="Nodes"
               value={overviewLoading ? '…' : `${readyNodes}/${nodeCount}`}
+              ok={!overviewLoading && readyNodes === nodeCount && nodeCount > 0}
             />
             <StatPill
               icon={Box}
@@ -437,17 +580,23 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
             />
             <StatPill
               icon={Layers}
-              label="Namespaces"
+              label="NS"
               value={overviewLoading ? '…' : totalNamespaces}
             />
             <StatPill
               icon={GitBranch}
               label="Flux"
               value={fluxLoading ? '…' : fluxSynced ? 'SYNCED' : 'DRIFTED'}
-              accent={!fluxLoading && fluxSynced}
+              ok={!fluxLoading && fluxSynced}
+              warn={!fluxLoading && !fluxSynced}
             />
             <button
-              className="flex items-center gap-1.5 text-[10px] font-mono px-3 py-2 rounded-lg border border-border text-text-dim hover:text-text-primary hover:border-border-hover transition-colors"
+              className="flex items-center gap-1.5 text-[9px] font-mono px-3 py-2 rounded transition-opacity hover:opacity-70"
+              style={{
+                color: HUD_ACCENT,
+                border: `1px solid rgba(0,255,136,0.2)`,
+                background: HUD_BG,
+              }}
               onClick={refreshAll}
               title="Refresh all data"
             >
@@ -459,7 +608,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
 
         {/* Row 1: Nodes */}
         <div>
-          <div className="text-[9px] font-mono font-semibold uppercase tracking-widest text-text-dim mb-2">
+          <div style={sectionLabel}>
             Nodes{!overviewLoading && overview ? ` (${overview.nodes.length})` : ''}
           </div>
           {overviewLoading ? (
@@ -467,7 +616,8 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
               {[...Array(3)].map((_, i) => (
                 <div
                   key={i}
-                  className="h-36 bg-[#0d1117] border border-border rounded-lg animate-pulse"
+                  className="h-36 rounded animate-pulse"
+                  style={{ background: 'rgba(0,255,136,0.02)', border: `1px solid ${HUD_BORDER}` }}
                 />
               ))}
             </div>
@@ -478,7 +628,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
               ))}
             </div>
           ) : (
-            <div className="text-[11px] text-text-muted font-mono py-4 text-center">
+            <div className="text-[10px] font-mono py-4 text-center uppercase tracking-widest" style={{ color: HUD_LABEL }}>
               No nodes available
             </div>
           )}
@@ -488,8 +638,8 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ minHeight: '380px' }}>
           <FluxStatusPanel data={flux} loading={fluxLoading} onRefresh={loadFlux} />
           <ServiceHealthPanel
-            services={overview?.services ?? []}
-            loading={overviewLoading}
+            services={derivedServices}
+            loading={fluxLoading}
             onOpenService={(url) => window.open(url, '_blank', 'noopener')}
           />
         </div>
