@@ -13273,6 +13273,785 @@ app.delete("/api/ops/:namespace/:name/policy-exception/:exName", mutateLimiter, 
   }
 });
 
+// ── Platform Cockpit API (/api/platform) ─────────────────────────────────────
+// Cluster-wide visibility for platform admins. All endpoints require sre-admins group.
+
+// ── Helper: safe CRD list (returns [] if CRD is not installed) ───────────────
+async function safeCrdList(fn) {
+  try {
+    const resp = await fn();
+    return resp.body.items || [];
+  } catch (err) {
+    if (err.statusCode === 404 || err.statusCode === 403 || (err.message && err.message.includes("not found"))) {
+      return [];
+    }
+    throw err;
+  }
+}
+
+// ── GET /api/platform/overview — Cluster health summary ──────────────────────
+app.get("/api/platform/overview", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const [nodesResp, nsResp, podResp, depResp, svcResp, ksResp, hrResp] = await Promise.all([
+      k8sApi.listNode(),
+      k8sApi.listNamespace(),
+      k8sApi.listPodForAllNamespaces(),
+      appsApi.listDeploymentForAllNamespaces(),
+      k8sApi.listServiceForAllNamespaces(),
+      safeCrdList(() => customApi.listClusterCustomObject("kustomize.toolkit.fluxcd.io", "v1", "kustomizations")),
+      safeCrdList(() => customApi.listClusterCustomObject("helm.toolkit.fluxcd.io", "v2", "helmreleases")),
+    ]);
+
+    // Fetch node metrics (best-effort)
+    let nodeMetrics = {};
+    try {
+      const nm = await metricsClient.getNodeMetrics();
+      for (const item of (nm.items || [])) {
+        nodeMetrics[item.metadata.name] = item.usage || {};
+      }
+    } catch (err) {
+      // metrics-server may not be installed
+    }
+
+    const nodes = nodesResp.body.items.map((n) => {
+      const conditions = n.status?.conditions || [];
+      const readyCond = conditions.find((c) => c.type === "Ready");
+      const roles = Object.keys(n.metadata?.labels || {})
+        .filter((l) => l.startsWith("node-role.kubernetes.io/"))
+        .map((l) => l.replace("node-role.kubernetes.io/", ""))
+        .join(",") || "worker";
+
+      const cpuCap = parseCpu(n.status?.capacity?.cpu || "0");
+      const memCap = parseMem(n.status?.capacity?.memory || "0");
+      const cpuUsed = parseCpu(nodeMetrics[n.metadata.name]?.cpu || "0");
+      const memUsed = parseMem(nodeMetrics[n.metadata.name]?.memory || "0");
+      const podCap = parseInt(n.status?.capacity?.pods || "110", 10);
+
+      return {
+        name: n.metadata.name,
+        status: readyCond?.status === "True" ? "Ready" : "NotReady",
+        roles,
+        version: n.status?.nodeInfo?.kubeletVersion || "",
+        os: n.status?.nodeInfo?.osImage || "",
+        cpu: {
+          capacity: fmtCpu(cpuCap),
+          used: fmtCpu(cpuUsed),
+          pct: cpuCap > 0 ? Math.round((cpuUsed / cpuCap) * 100) : 0,
+        },
+        memory: {
+          capacity: fmtMem(memCap),
+          used: fmtMem(memUsed),
+          pct: memCap > 0 ? Math.round((memUsed / memCap) * 100) : 0,
+        },
+        pods: {
+          capacity: podCap,
+          used: 0, // filled below
+        },
+        uptime: age(n.metadata?.creationTimestamp),
+      };
+    });
+
+    // Count pods per node
+    const podItems = podResp.body.items || [];
+    const podsByNode = {};
+    for (const pod of podItems) {
+      const nodeName = pod.spec?.nodeName;
+      if (nodeName) podsByNode[nodeName] = (podsByNode[nodeName] || 0) + 1;
+    }
+    for (const node of nodes) {
+      node.pods.used = podsByNode[node.name] || 0;
+    }
+
+    // Namespace summary
+    const nsList = nsResp.body.items || [];
+    const podCountByNs = {};
+    const healthyPodsByNs = {};
+    for (const pod of podItems) {
+      const ns = pod.metadata?.namespace;
+      if (!ns) continue;
+      podCountByNs[ns] = (podCountByNs[ns] || 0) + 1;
+      const phase = pod.status?.phase;
+      const allReady = (pod.status?.containerStatuses || []).every((cs) => cs.ready);
+      if (phase === "Running" && allReady) {
+        healthyPodsByNs[ns] = (healthyPodsByNs[ns] || 0) + 1;
+      }
+    }
+    const namespaces = nsList.map((ns) => ({
+      name: ns.metadata.name,
+      phase: ns.status?.phase || "Active",
+      podCount: podCountByNs[ns.metadata.name] || 0,
+      healthyPods: healthyPodsByNs[ns.metadata.name] || 0,
+      age: age(ns.metadata?.creationTimestamp),
+    }));
+
+    // Flux status
+    const kustomizations = (Array.isArray(ksResp) ? ksResp : []).map((ks) => {
+      const readyCond = (ks.status?.conditions || []).find((c) => c.type === "Ready");
+      return {
+        name: ks.metadata.name,
+        namespace: ks.metadata.namespace,
+        ready: readyCond?.status === "True",
+        revision: ks.status?.lastAppliedRevision || "",
+        message: readyCond?.message || "",
+        suspended: !!ks.spec?.suspend,
+      };
+    });
+    const helmReleases = (Array.isArray(hrResp) ? hrResp : []).map((hr) => {
+      const readyCond = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+      return {
+        name: hr.metadata.name,
+        namespace: hr.metadata.namespace,
+        ready: readyCond?.status === "True",
+        revision: hr.status?.history?.[0]?.chartVersion || hr.status?.lastAppliedRevision || "",
+        message: readyCond?.message || "",
+        suspended: !!hr.spec?.suspend,
+      };
+    });
+
+    // Cluster totals
+    const phases = { running: 0, pending: 0, failed: 0, total: podItems.length };
+    for (const pod of podItems) {
+      const ph = pod.status?.phase || "";
+      if (ph === "Running") phases.running++;
+      else if (ph === "Pending") phases.pending++;
+      else if (ph === "Failed") phases.failed++;
+    }
+
+    res.json({
+      nodes,
+      namespaces,
+      fluxStatus: { kustomizations, helmReleases },
+      clusterTotals: {
+        pods: phases,
+        deployments: (depResp.body.items || []).length,
+        services: (svcResp.body.items || []).length,
+        namespaces: nsList.length,
+      },
+    });
+  } catch (err) {
+    console.error("[platform/overview] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/pods — All pods across all namespaces ──────────────────
+app.get("/api/platform/pods", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { namespace, status, search } = req.query;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    let podItems;
+    if (namespace) {
+      const safeNs = String(namespace).replace(/[^a-z0-9-]/g, "-").substring(0, 63);
+      const resp = await k8sApi.listNamespacedPod(safeNs);
+      podItems = resp.body.items || [];
+    } else {
+      const resp = await k8sApi.listPodForAllNamespaces();
+      podItems = resp.body.items || [];
+    }
+
+    // Filter
+    if (status) {
+      const safeStatus = String(status);
+      podItems = podItems.filter((p) => {
+        const ph = p.status?.phase || "";
+        return ph.toLowerCase() === safeStatus.toLowerCase();
+      });
+    }
+    if (search) {
+      const safeSearch = String(search).substring(0, 128).toLowerCase();
+      podItems = podItems.filter((p) =>
+        (p.metadata?.name || "").toLowerCase().includes(safeSearch) ||
+        (p.metadata?.namespace || "").toLowerCase().includes(safeSearch)
+      );
+    }
+
+    const total = podItems.length;
+    const paged = podItems.slice(offset, offset + limit);
+
+    const pods = paged.map((pod) => {
+      const cs = pod.status?.containerStatuses || [];
+      const readyCount = cs.filter((c) => c.ready).length;
+      const restarts = cs.reduce((sum, c) => sum + (c.restartCount || 0), 0);
+      const images = [
+        ...(pod.spec?.containers || []).map((c) => c.image),
+        ...(pod.spec?.initContainers || []).map((c) => c.image),
+      ].filter(Boolean);
+
+      return {
+        name: pod.metadata?.name || "",
+        namespace: pod.metadata?.namespace || "",
+        status: pod.status?.phase || "Unknown",
+        ready: `${readyCount}/${(pod.spec?.containers || []).length}`,
+        restarts,
+        age: age(pod.metadata?.creationTimestamp),
+        node: pod.spec?.nodeName || "",
+        ip: pod.status?.podIP || "",
+        images,
+      };
+    });
+
+    res.json({ pods, total, limit, offset });
+  } catch (err) {
+    console.error("[platform/pods] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/namespaces/:name — Detailed namespace view ──────────────
+app.get("/api/platform/namespaces/:name", requireGroups("sre-admins"), async (req, res) => {
+  const safeNs = String(req.params.name).replace(/[^a-z0-9-]/g, "-").substring(0, 63);
+  if (!safeNs) return res.status(400).json({ error: "Invalid namespace" });
+
+  try {
+    const [podResp, svcResp, depResp, hrResp, evResp, quotaResp, lrResp, npResp, prResp] = await Promise.all([
+      k8sApi.listNamespacedPod(safeNs),
+      k8sApi.listNamespacedService(safeNs),
+      appsApi.listNamespacedDeployment(safeNs),
+      safeCrdList(() => customApi.listNamespacedCustomObject("helm.toolkit.fluxcd.io", "v2", safeNs, "helmreleases")),
+      k8sApi.listNamespacedEvent(safeNs),
+      k8sApi.listNamespacedResourceQuota(safeNs),
+      k8sApi.listNamespacedLimitRange(safeNs),
+      k8sApi.listNamespacedNetworkPolicy(safeNs),
+      safeCrdList(() => customApi.listNamespacedCustomObject("wgpolicyk8s.io", "v1alpha2", safeNs, "policyreports")),
+    ]);
+
+    const pods = (podResp.body.items || []).map((pod) => {
+      const cs = pod.status?.containerStatuses || [];
+      return {
+        name: pod.metadata.name,
+        status: pod.status?.phase || "Unknown",
+        ready: cs.filter((c) => c.ready).length + "/" + (pod.spec?.containers || []).length,
+        restarts: cs.reduce((sum, c) => sum + (c.restartCount || 0), 0),
+        age: age(pod.metadata.creationTimestamp),
+        node: pod.spec?.nodeName || "",
+        ip: pod.status?.podIP || "",
+      };
+    });
+
+    const services = (svcResp.body.items || []).map((svc) => ({
+      name: svc.metadata.name,
+      type: svc.spec?.type || "ClusterIP",
+      clusterIP: svc.spec?.clusterIP || "",
+      ports: (svc.spec?.ports || []).map((p) => `${p.port}${p.nodePort ? ":" + p.nodePort : ""}/${p.protocol || "TCP"}`),
+    }));
+
+    const deployments = (depResp.body.items || []).map((dep) => ({
+      name: dep.metadata.name,
+      ready: `${dep.status?.readyReplicas || 0}/${dep.spec?.replicas || 0}`,
+      age: age(dep.metadata.creationTimestamp),
+    }));
+
+    const helmReleases = (Array.isArray(hrResp) ? hrResp : []).map((hr) => {
+      const readyCond = (hr.status?.conditions || []).find((c) => c.type === "Ready");
+      return {
+        name: hr.metadata.name,
+        ready: readyCond?.status === "True",
+        revision: hr.status?.history?.[0]?.chartVersion || "",
+        message: readyCond?.message || "",
+      };
+    });
+
+    const events = (evResp.body.items || [])
+      .sort((a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0))
+      .slice(0, 50)
+      .map((e) => ({
+        time: e.lastTimestamp || e.eventTime || "",
+        type: e.type || "Normal",
+        reason: e.reason || "",
+        object: `${e.involvedObject?.kind || ""}/${e.involvedObject?.name || ""}`,
+        message: e.message || "",
+      }));
+
+    const resourceQuotas = (quotaResp.body.items || []).map((rq) => ({
+      name: rq.metadata.name,
+      hard: rq.spec?.hard || {},
+      used: rq.status?.used || {},
+    }));
+
+    const limitRanges = (lrResp.body.items || []).map((lr) => ({
+      name: lr.metadata.name,
+      limits: lr.spec?.limits || [],
+    }));
+
+    const networkPolicies = (npResp.body.items || []).map((np) => ({
+      name: np.metadata.name,
+      podSelector: np.spec?.podSelector || {},
+      policyTypes: np.spec?.policyTypes || [],
+    }));
+
+    const policyReports = (Array.isArray(prResp) ? prResp : []).map((pr) => ({
+      name: pr.metadata.name,
+      pass: pr.summary?.pass || 0,
+      fail: pr.summary?.fail || 0,
+      warn: pr.summary?.warn || 0,
+      error: pr.summary?.error || 0,
+      skip: pr.summary?.skip || 0,
+    }));
+
+    res.json({
+      namespace: safeNs,
+      pods,
+      services,
+      deployments,
+      helmReleases,
+      events,
+      resourceQuotas,
+      limitRanges,
+      networkPolicies,
+      policyReports,
+    });
+  } catch (err) {
+    console.error("[platform/namespaces/:name] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/services — All services across cluster ─────────────────
+app.get("/api/platform/services", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { namespace } = req.query;
+    let svcItems;
+    if (namespace) {
+      const safeNs = String(namespace).replace(/[^a-z0-9-]/g, "-").substring(0, 63);
+      const resp = await k8sApi.listNamespacedService(safeNs);
+      svcItems = resp.body.items || [];
+    } else {
+      const resp = await k8sApi.listServiceForAllNamespaces();
+      svcItems = resp.body.items || [];
+    }
+
+    const services = svcItems.map((svc) => ({
+      name: svc.metadata.name,
+      namespace: svc.metadata.namespace,
+      type: svc.spec?.type || "ClusterIP",
+      clusterIP: svc.spec?.clusterIP || "",
+      externalIPs: svc.spec?.externalIPs || [],
+      loadBalancerIP: svc.status?.loadBalancer?.ingress?.[0]?.ip || svc.status?.loadBalancer?.ingress?.[0]?.hostname || "",
+      ports: (svc.spec?.ports || []).map((p) => ({
+        name: p.name || "",
+        port: p.port,
+        targetPort: String(p.targetPort || ""),
+        nodePort: p.nodePort || null,
+        protocol: p.protocol || "TCP",
+      })),
+      selector: svc.spec?.selector || {},
+      age: age(svc.metadata.creationTimestamp),
+    }));
+
+    res.json({ services, total: services.length });
+  } catch (err) {
+    console.error("[platform/services] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/flux — Full Flux CD status ─────────────────────────────
+app.get("/api/platform/flux", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const [gitReposRaw, ksRaw, helmReposRaw, hrRaw, ociReposRaw] = await Promise.all([
+      safeCrdList(() => customApi.listClusterCustomObject("source.toolkit.fluxcd.io", "v1", "gitrepositories")),
+      safeCrdList(() => customApi.listClusterCustomObject("kustomize.toolkit.fluxcd.io", "v1", "kustomizations")),
+      safeCrdList(() => customApi.listClusterCustomObject("source.toolkit.fluxcd.io", "v1", "helmrepositories")),
+      safeCrdList(() => customApi.listClusterCustomObject("helm.toolkit.fluxcd.io", "v2", "helmreleases")),
+      safeCrdList(() => customApi.listClusterCustomObject("source.toolkit.fluxcd.io", "v1beta2", "ocirepositories")),
+    ]);
+
+    function fluxCondition(obj) {
+      const conditions = obj.status?.conditions || [];
+      const readyCond = conditions.find((c) => c.type === "Ready");
+      return {
+        ready: readyCond?.status === "True",
+        message: readyCond?.message || "",
+        reason: readyCond?.reason || "",
+        lastTransition: readyCond?.lastTransitionTime || "",
+      };
+    }
+
+    const gitRepositories = (Array.isArray(gitReposRaw) ? gitReposRaw : []).map((gr) => ({
+      name: gr.metadata.name,
+      namespace: gr.metadata.namespace,
+      url: gr.spec?.url || "",
+      branch: gr.spec?.ref?.branch || "",
+      revision: gr.status?.artifact?.revision || "",
+      age: age(gr.metadata.creationTimestamp),
+      suspended: !!gr.spec?.suspend,
+      ...fluxCondition(gr),
+    }));
+
+    const kustomizations = (Array.isArray(ksRaw) ? ksRaw : []).map((ks) => ({
+      name: ks.metadata.name,
+      namespace: ks.metadata.namespace,
+      path: ks.spec?.path || "",
+      revision: ks.status?.lastAppliedRevision || "",
+      age: age(ks.metadata.creationTimestamp),
+      suspended: !!ks.spec?.suspend,
+      prune: !!ks.spec?.prune,
+      ...fluxCondition(ks),
+    }));
+
+    const helmRepositories = (Array.isArray(helmReposRaw) ? helmReposRaw : []).map((hr) => ({
+      name: hr.metadata.name,
+      namespace: hr.metadata.namespace,
+      url: hr.spec?.url || "",
+      age: age(hr.metadata.creationTimestamp),
+      suspended: !!hr.spec?.suspend,
+      ...fluxCondition(hr),
+    }));
+
+    const helmReleases = (Array.isArray(hrRaw) ? hrRaw : []).map((hr) => {
+      const cond = fluxCondition(hr);
+      return {
+        name: hr.metadata.name,
+        namespace: hr.metadata.namespace,
+        chart: hr.spec?.chart?.spec?.chart || "",
+        chartVersion: hr.spec?.chart?.spec?.version || "",
+        revision: hr.status?.history?.[0]?.chartVersion || hr.status?.lastAppliedRevision || "",
+        lastApplied: hr.status?.lastHandledReconcileAt || "",
+        age: age(hr.metadata.creationTimestamp),
+        suspended: !!hr.spec?.suspend,
+        installFailures: hr.status?.installFailures || 0,
+        upgradeFailures: hr.status?.upgradeFailures || 0,
+        ...cond,
+      };
+    });
+
+    const ociRepositories = (Array.isArray(ociReposRaw) ? ociReposRaw : []).map((or) => ({
+      name: or.metadata.name,
+      namespace: or.metadata.namespace,
+      url: or.spec?.url || "",
+      age: age(or.metadata.creationTimestamp),
+      suspended: !!or.spec?.suspend,
+      ...fluxCondition(or),
+    }));
+
+    // Summary counts
+    const summary = {
+      gitRepositories: { total: gitRepositories.length, ready: gitRepositories.filter((x) => x.ready).length },
+      kustomizations: { total: kustomizations.length, ready: kustomizations.filter((x) => x.ready).length, suspended: kustomizations.filter((x) => x.suspended).length },
+      helmRepositories: { total: helmRepositories.length, ready: helmRepositories.filter((x) => x.ready).length },
+      helmReleases: { total: helmReleases.length, ready: helmReleases.filter((x) => x.ready).length, suspended: helmReleases.filter((x) => x.suspended).length, failing: helmReleases.filter((x) => !x.ready && !x.suspended).length },
+      ociRepositories: { total: ociRepositories.length, ready: ociRepositories.filter((x) => x.ready).length },
+    };
+
+    res.json({ gitRepositories, kustomizations, helmRepositories, helmReleases, ociRepositories, summary });
+  } catch (err) {
+    console.error("[platform/flux] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/certificates — cert-manager certificates ───────────────
+app.get("/api/platform/certificates", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const certs = await safeCrdList(() =>
+      customApi.listClusterCustomObject("cert-manager.io", "v1", "certificates")
+    );
+
+    const now = Date.now();
+    const result = (Array.isArray(certs) ? certs : []).map((cert) => {
+      const readyCond = (cert.status?.conditions || []).find((c) => c.type === "Ready");
+      const notAfter = cert.status?.notAfter || "";
+      const notBefore = cert.status?.notBefore || "";
+      const expiresAt = notAfter ? new Date(notAfter) : null;
+      const daysUntilExpiry = expiresAt ? Math.round((expiresAt.getTime() - now) / 86400000) : null;
+
+      return {
+        name: cert.metadata.name,
+        namespace: cert.metadata.namespace,
+        secretName: cert.spec?.secretName || "",
+        issuer: cert.spec?.issuerRef?.name || "",
+        issuerKind: cert.spec?.issuerRef?.kind || "Issuer",
+        dnsNames: cert.spec?.dnsNames || [],
+        notBefore,
+        notAfter,
+        daysUntilExpiry,
+        ready: readyCond?.status === "True",
+        message: readyCond?.message || "",
+        age: age(cert.metadata.creationTimestamp),
+      };
+    });
+
+    // Sort: expiring soonest first (nulls last)
+    result.sort((a, b) => {
+      if (a.daysUntilExpiry === null) return 1;
+      if (b.daysUntilExpiry === null) return -1;
+      return a.daysUntilExpiry - b.daysUntilExpiry;
+    });
+
+    res.json({ certificates: result, total: result.length });
+  } catch (err) {
+    console.error("[platform/certificates] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/storage — PVCs and storage status ──────────────────────
+app.get("/api/platform/storage", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const [pvcResp, pvResp, scResp] = await Promise.all([
+      k8sApi.listPersistentVolumeClaimForAllNamespaces(),
+      k8sApi.listPersistentVolume(),
+      k8sApi.listStorageClass ? k8sApi.listStorageClass() : Promise.resolve({ body: { items: [] } }),
+    ]);
+
+    const pvcs = (pvcResp.body.items || []).map((pvc) => ({
+      name: pvc.metadata.name,
+      namespace: pvc.metadata.namespace,
+      status: pvc.status?.phase || "Unknown",
+      capacity: pvc.status?.capacity?.storage || pvc.spec?.resources?.requests?.storage || "",
+      storageClass: pvc.spec?.storageClassName || "",
+      accessModes: pvc.spec?.accessModes || [],
+      volumeName: pvc.spec?.volumeName || "",
+      age: age(pvc.metadata.creationTimestamp),
+    }));
+
+    const pvs = (pvResp.body.items || []).map((pv) => ({
+      name: pv.metadata.name,
+      status: pv.status?.phase || "Unknown",
+      capacity: pv.spec?.capacity?.storage || "",
+      storageClass: pv.spec?.storageClassName || "",
+      accessModes: pv.spec?.accessModes || [],
+      reclaimPolicy: pv.spec?.persistentVolumeReclaimPolicy || "",
+      claimRef: pv.spec?.claimRef
+        ? { namespace: pv.spec.claimRef.namespace, name: pv.spec.claimRef.name }
+        : null,
+      age: age(pv.metadata.creationTimestamp),
+    }));
+
+    const storageClasses = (scResp.body.items || []).map((sc) => ({
+      name: sc.metadata.name,
+      provisioner: sc.provisioner || "",
+      reclaimPolicy: sc.reclaimPolicy || "",
+      volumeBindingMode: sc.volumeBindingMode || "",
+      isDefault: sc.metadata?.annotations?.["storageclass.kubernetes.io/is-default-class"] === "true",
+    }));
+
+    const summary = {
+      pvcs: { total: pvcs.length, bound: pvcs.filter((p) => p.status === "Bound").length, pending: pvcs.filter((p) => p.status === "Pending").length, lost: pvcs.filter((p) => p.status === "Lost").length },
+      pvs: { total: pvs.length, available: pvs.filter((p) => p.status === "Available").length, bound: pvs.filter((p) => p.status === "Bound").length, released: pvs.filter((p) => p.status === "Released").length },
+    };
+
+    res.json({ pvcs, pvs, storageClasses, summary });
+  } catch (err) {
+    console.error("[platform/storage] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/events — Cluster-wide events ───────────────────────────
+app.get("/api/platform/events", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const { type: typeFilter, namespace, since } = req.query;
+    const eventType = typeFilter || "Warning"; // default Warning only
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
+
+    let items;
+    if (namespace) {
+      const safeNs = String(namespace).replace(/[^a-z0-9-]/g, "-").substring(0, 63);
+      const resp = await k8sApi.listNamespacedEvent(safeNs);
+      items = resp.body.items || [];
+    } else {
+      const resp = await k8sApi.listEventForAllNamespaces();
+      items = resp.body.items || [];
+    }
+
+    // Filter by type (Warning is default; "All" returns everything)
+    if (eventType && eventType !== "All") {
+      items = items.filter((e) => e.type === eventType);
+    }
+
+    // Filter by since duration (e.g. "1h", "30m", "24h")
+    if (since) {
+      const sinceStr = String(since);
+      const match = sinceStr.match(/^(\d+)(h|m|s)$/);
+      if (match) {
+        const amount = parseInt(match[1], 10);
+        const unit = match[2];
+        const msMap = { h: 3600000, m: 60000, s: 1000 };
+        const cutoff = Date.now() - amount * msMap[unit];
+        items = items.filter((e) => {
+          const ts = new Date(e.lastTimestamp || e.eventTime || 0).getTime();
+          return ts >= cutoff;
+        });
+      }
+    }
+
+    // Sort newest first
+    items.sort((a, b) => {
+      const ta = new Date(a.lastTimestamp || a.eventTime || 0).getTime();
+      const tb = new Date(b.lastTimestamp || b.eventTime || 0).getTime();
+      return tb - ta;
+    });
+
+    const events = items.slice(0, limit).map((e) => ({
+      time: e.lastTimestamp || e.eventTime || "",
+      type: e.type || "Normal",
+      reason: e.reason || "",
+      namespace: e.metadata?.namespace || e.involvedObject?.namespace || "",
+      kind: e.involvedObject?.kind || "",
+      name: e.involvedObject?.name || "",
+      message: e.message || "",
+      count: e.count || 1,
+    }));
+
+    res.json({ events, total: events.length });
+  } catch (err) {
+    console.error("[platform/events] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/policies — Kyverno policy summary ──────────────────────
+app.get("/api/platform/policies", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const [clusterPoliciesRaw, policiesRaw, clusterReportsRaw, nsReportsRaw] = await Promise.all([
+      safeCrdList(() => customApi.listClusterCustomObject("kyverno.io", "v1", "clusterpolicies")),
+      safeCrdList(() => customApi.listClusterCustomObject("kyverno.io", "v1", "policies")),
+      safeCrdList(() => customApi.listClusterCustomObject("wgpolicyk8s.io", "v1alpha2", "clusterpolicyreports")),
+      safeCrdList(() => customApi.listClusterCustomObject("wgpolicyk8s.io", "v1alpha2", "policyreports")),
+    ]);
+
+    // Build violation counts from policy reports
+    const violationsByPolicy = {};
+    const allReports = [
+      ...(Array.isArray(clusterReportsRaw) ? clusterReportsRaw : []),
+      ...(Array.isArray(nsReportsRaw) ? nsReportsRaw : []),
+    ];
+    for (const report of allReports) {
+      for (const result of (report.results || [])) {
+        if (result.result === "fail") {
+          const policyName = result.policy || "";
+          violationsByPolicy[policyName] = (violationsByPolicy[policyName] || 0) + 1;
+        }
+      }
+    }
+
+    function mapPolicy(p, isCluster) {
+      const rules = p.spec?.rules || [];
+      const action = p.spec?.validationFailureAction || "Audit";
+      return {
+        name: p.metadata.name,
+        namespace: isCluster ? null : p.metadata.namespace,
+        kind: isCluster ? "ClusterPolicy" : "Policy",
+        action,
+        background: !!p.spec?.background,
+        ruleCount: rules.length,
+        rules: rules.map((r) => r.name || ""),
+        violationCount: violationsByPolicy[p.metadata.name] || 0,
+        age: age(p.metadata.creationTimestamp),
+        annotations: {
+          title: p.metadata?.annotations?.["policies.kyverno.io/title"] || "",
+          severity: p.metadata?.annotations?.["policies.kyverno.io/severity"] || "",
+          nistControls: p.metadata?.annotations?.["sre.io/nist-controls"] || "",
+        },
+      };
+    }
+
+    const clusterPolicies = (Array.isArray(clusterPoliciesRaw) ? clusterPoliciesRaw : []).map((p) => mapPolicy(p, true));
+    const namespacePolicies = (Array.isArray(policiesRaw) ? policiesRaw : []).map((p) => mapPolicy(p, false));
+
+    const summary = {
+      totalPolicies: clusterPolicies.length + namespacePolicies.length,
+      enforced: [...clusterPolicies, ...namespacePolicies].filter((p) => p.action === "Enforce").length,
+      audit: [...clusterPolicies, ...namespacePolicies].filter((p) => p.action === "Audit").length,
+      totalViolations: Object.values(violationsByPolicy).reduce((sum, v) => sum + v, 0),
+      policiesWithViolations: Object.keys(violationsByPolicy).length,
+    };
+
+    res.json({ clusterPolicies, namespacePolicies, summary });
+  } catch (err) {
+    console.error("[platform/policies] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/platform/network — Ingress/VirtualService/Gateway overview ──────
+app.get("/api/platform/network", requireGroups("sre-admins"), async (req, res) => {
+  try {
+    const [vsRaw, gwRaw, drRaw, k8sIngressRaw] = await Promise.all([
+      safeCrdList(() => customApi.listClusterCustomObject("networking.istio.io", "v1", "virtualservices")),
+      safeCrdList(() => customApi.listClusterCustomObject("networking.istio.io", "v1", "gateways")),
+      safeCrdList(() => customApi.listClusterCustomObject("networking.istio.io", "v1", "destinationrules")),
+      k8sApi.listIngressForAllNamespaces ? k8sApi.listIngressForAllNamespaces() : Promise.resolve({ body: { items: [] } }),
+    ]);
+
+    const virtualServices = (Array.isArray(vsRaw) ? vsRaw : []).map((vs) => {
+      const httpRoutes = vs.spec?.http || [];
+      const routes = httpRoutes.flatMap((h) =>
+        (h.route || []).map((r) => ({
+          host: r.destination?.host || "",
+          port: r.destination?.port?.number || null,
+          weight: r.weight || null,
+        }))
+      );
+      return {
+        name: vs.metadata.name,
+        namespace: vs.metadata.namespace,
+        gateways: vs.spec?.gateways || [],
+        hosts: vs.spec?.hosts || [],
+        routes,
+        age: age(vs.metadata.creationTimestamp),
+      };
+    });
+
+    const gateways = (Array.isArray(gwRaw) ? gwRaw : []).map((gw) => {
+      const servers = gw.spec?.servers || [];
+      return {
+        name: gw.metadata.name,
+        namespace: gw.metadata.namespace,
+        servers: servers.map((s) => ({
+          port: s.port?.number || null,
+          protocol: s.port?.protocol || "",
+          hosts: s.hosts || [],
+          tls: s.tls?.mode || null,
+        })),
+        selector: gw.spec?.selector || {},
+        age: age(gw.metadata.creationTimestamp),
+      };
+    });
+
+    const destinationRules = (Array.isArray(drRaw) ? drRaw : []).map((dr) => ({
+      name: dr.metadata.name,
+      namespace: dr.metadata.namespace,
+      host: dr.spec?.host || "",
+      trafficPolicy: dr.spec?.trafficPolicy || null,
+      age: age(dr.metadata.creationTimestamp),
+    }));
+
+    const k8sIngresses = ((k8sIngressRaw.body && k8sIngressRaw.body.items) || []).map((ing) => ({
+      name: ing.metadata.name,
+      namespace: ing.metadata.namespace,
+      className: ing.spec?.ingressClassName || "",
+      rules: (ing.spec?.rules || []).map((r) => ({
+        host: r.host || "",
+        paths: (r.http?.paths || []).map((p) => ({
+          path: p.path || "/",
+          backend: `${p.backend?.service?.name || ""}:${p.backend?.service?.port?.number || ""}`,
+        })),
+      })),
+      age: age(ing.metadata.creationTimestamp),
+    }));
+
+    res.json({
+      virtualServices,
+      gateways,
+      destinationRules,
+      k8sIngresses,
+      summary: {
+        virtualServices: virtualServices.length,
+        gateways: gateways.length,
+        destinationRules: destinationRules.length,
+        k8sIngresses: k8sIngresses.length,
+      },
+    });
+  } catch (err) {
+    console.error("[platform/network] Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // SPA catch-all: serve index.html for non-API routes (React Router / client-side nav)
 app.get('*', (req, res) => {
   const indexPath = path.join(staticPath, 'index.html');
