@@ -3,12 +3,6 @@ import { ExternalLink } from 'lucide-react';
 import type { PlatformService } from '../../api/platform';
 import { ServiceDetailSlideOut } from './DetailSlideOut';
 
-const HUD_ACCENT = '#34d399';
-const HUD_RED = '#f87171';
-const HUD_BORDER = '#374151';
-const HUD_LABEL = '#9ca3af';
-const HUD_TEXT = '#e5e7eb';
-
 interface ServiceHealthProps {
   services: PlatformService[];
   loading: boolean;
@@ -67,22 +61,28 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
   const healthyCount = services.filter((s) => s.healthy).length;
   const totalCount = services.length;
   const allHealthy = totalCount > 0 && healthyCount === totalCount;
-  const statusColor = totalCount === 0 ? HUD_LABEL : allHealthy ? HUD_ACCENT : healthyCount === 0 ? HUD_RED : '#fbbf24';
+  const statusColor = totalCount === 0
+    ? 'var(--text-dim)'
+    : allHealthy
+    ? 'var(--green)'
+    : healthyCount === 0
+    ? 'var(--red)'
+    : 'var(--yellow)';
 
   return (
     <>
       <div
         className="flex flex-col overflow-hidden h-full rounded"
-        style={{ background: '#111827', border: `1px solid ${HUD_BORDER}` }}
+        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${HUD_BORDER}` }}
+          style={{ borderBottom: '1px solid var(--border)' }}
         >
           <span
             className="text-[9px] font-mono font-bold uppercase tracking-[3px]"
-            style={{ color: HUD_LABEL }}
+            style={{ color: 'var(--text-dim)' }}
           >
             Platform Services
           </span>
@@ -91,8 +91,8 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
               className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded"
               style={{
                 color: statusColor,
-                background: `${statusColor}18`,
-                border: `1px solid ${statusColor}30`,
+                background: `color-mix(in srgb, ${statusColor} 12%, transparent)`,
+                border: `1px solid color-mix(in srgb, ${statusColor} 30%, transparent)`,
               }}
             >
               {healthyCount}/{totalCount} UP
@@ -108,14 +108,14 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
                 <div
                   key={i}
                   className="h-16 rounded animate-pulse"
-                  style={{ background: '#1f2937', border: `1px solid ${HUD_BORDER}` }}
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                 />
               ))}
             </div>
           ) : sorted.length === 0 ? (
             <div
               className="flex items-center justify-center py-8 text-[10px] font-mono uppercase tracking-widest"
-              style={{ color: HUD_LABEL }}
+              style={{ color: 'var(--text-dim)' }}
             >
               No services found
             </div>
@@ -123,24 +123,24 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
             <div className="grid grid-cols-3 gap-2">
               {sorted.map((svc) => {
                 const healthy = svc.healthy;
-                const accentC = healthy ? HUD_ACCENT : HUD_RED;
+                const accentC = healthy ? 'var(--green)' : 'var(--red)';
                 return (
                   <button
                     key={svc.name + svc.namespace}
                     className="relative flex flex-col items-start gap-1.5 p-2.5 rounded text-left transition-all group"
                     style={{
-                      background: healthy ? '#1f2937' : 'rgba(248,113,113,0.06)',
-                      border: `1px solid ${healthy ? '#374151' : 'rgba(248,113,113,0.25)'}`,
+                      background: healthy ? 'var(--surface)' : 'rgba(248,113,113,0.06)',
+                      border: `1px solid ${healthy ? 'var(--border)' : 'rgba(248,113,113,0.25)'}`,
                     }}
                     onMouseEnter={(e) => {
                       (e.currentTarget as HTMLButtonElement).style.background = healthy
-                        ? '#273344'
+                        ? 'var(--surface-hover)'
                         : 'rgba(248,113,113,0.10)';
-                      (e.currentTarget as HTMLButtonElement).style.borderColor = healthy ? '#4b5563' : 'rgba(248,113,113,0.4)';
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = healthy ? 'var(--border-hover)' : 'rgba(248,113,113,0.4)';
                     }}
                     onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = healthy ? '#1f2937' : 'rgba(248,113,113,0.06)';
-                      (e.currentTarget as HTMLButtonElement).style.borderColor = healthy ? '#374151' : 'rgba(248,113,113,0.25)';
+                      (e.currentTarget as HTMLButtonElement).style.background = healthy ? 'var(--surface)' : 'rgba(248,113,113,0.06)';
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = healthy ? 'var(--border)' : 'rgba(248,113,113,0.25)';
                     }}
                     onClick={() => setSelectedService(svc)}
                     title={`${svc.name} (${svc.namespace})`}
@@ -154,7 +154,7 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
                     {/* Icon */}
                     <span
                       className="text-sm leading-none font-mono"
-                      style={{ color: healthy ? HUD_ACCENT : HUD_RED }}
+                      style={{ color: healthy ? 'var(--green)' : 'var(--red)' }}
                     >
                       {svc.icon || serviceIcon(svc.name)}
                     </span>
@@ -162,13 +162,13 @@ export function ServiceHealthPanel({ services, loading, onOpenService }: Service
                     {/* Name */}
                     <span
                       className="text-[10px] font-mono font-bold leading-tight"
-                      style={{ color: HUD_TEXT }}
+                      style={{ color: 'var(--text-bright)' }}
                     >
                       {serviceDisplayName(svc.name)}
                     </span>
 
                     {/* Namespace */}
-                    <span className="text-[8px] font-mono truncate w-full" style={{ color: HUD_LABEL }}>
+                    <span className="text-[8px] font-mono truncate w-full" style={{ color: 'var(--text-dim)' }}>
                       {svc.namespace}
                     </span>
 

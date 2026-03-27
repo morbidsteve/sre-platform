@@ -35,16 +35,6 @@ import { useConfig } from '../../context/ConfigContext';
 
 const AUTO_REFRESH_MS = 15_000;
 
-// ── Platform Cockpit palette ──────────────────────────────────────────────────
-const HUD_ACCENT = '#38bdf8';
-const HUD_AMBER = '#fbbf24';
-const HUD_RED = '#f87171';
-const HUD_BORDER = '#374151';
-const HUD_LABEL = '#9ca3af';
-const HUD_TEXT = '#e5e7eb';
-const HUD_BG = '#111827';
-const HUD_SURFACE = '#1f2937';
-
 // ── Platform namespace → service name mapping ─────────────────────────────────
 const NS_TO_SERVICES: Record<string, { name: string; icon: string; description: string }[]> = {
   'istio-system': [{ name: 'istio', icon: '◈', description: 'Service mesh with mTLS encryption' }],
@@ -132,21 +122,21 @@ function StatPill({
   ok?: boolean;
   warn?: boolean;
 }) {
-  const color = ok === true ? HUD_ACCENT : ok === false ? HUD_RED : warn ? HUD_AMBER : HUD_LABEL;
+  const color = ok === true ? 'var(--accent)' : ok === false ? 'var(--red)' : warn ? 'var(--yellow)' : 'var(--text-dim)';
   return (
     <div
       className="flex items-center gap-2 px-3 py-2 rounded"
       style={{
-        background: HUD_SURFACE,
-        border: `1px solid ${HUD_BORDER}`,
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
       }}
     >
       <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
       <div>
-        <div className="text-sm font-bold font-mono leading-tight" style={{ color: HUD_TEXT }}>
+        <div className="text-sm font-bold font-mono leading-tight" style={{ color: 'var(--text-bright)' }}>
           {value}
         </div>
-        <div className="text-[8px] uppercase tracking-[2px] font-mono" style={{ color: HUD_LABEL }}>
+        <div className="text-[8px] uppercase tracking-[2px] font-mono" style={{ color: 'var(--text-dim)' }}>
           {label}
         </div>
       </div>
@@ -182,32 +172,32 @@ function EventsCollapsible({
      'ErrImagePull', 'ImagePullBackOff', 'NodeNotReady', 'FailedCreate'].includes(reason);
 
   const selectStyle: React.CSSProperties = {
-    background: HUD_SURFACE,
-    border: `1px solid ${HUD_BORDER}`,
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
     borderRadius: '4px',
     padding: '2px 8px',
     fontSize: '10px',
     fontFamily: 'monospace',
-    color: HUD_TEXT,
+    color: 'var(--text-bright)',
     outline: 'none',
   };
 
   return (
-    <div className="rounded overflow-hidden" style={{ background: HUD_BG, border: `1px solid ${HUD_BORDER}` }}>
+    <div className="rounded overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
       <button
         className="w-full flex items-center justify-between px-4 py-2.5 transition-opacity hover:opacity-80"
-        style={{ borderBottom: collapsed ? 'none' : `1px solid ${HUD_BORDER}` }}
+        style={{ borderBottom: collapsed ? 'none' : '1px solid var(--border)' }}
         onClick={onToggle}
       >
         <div className="flex items-center gap-2">
-          <AlertTriangle className="w-3.5 h-3.5" style={{ color: HUD_AMBER }} />
-          <span className="text-[9px] font-mono font-bold uppercase tracking-[3px]" style={{ color: HUD_LABEL }}>
+          <AlertTriangle className="w-3.5 h-3.5" style={{ color: 'var(--yellow)' }} />
+          <span className="text-[9px] font-mono font-bold uppercase tracking-[3px]" style={{ color: 'var(--text-dim)' }}>
             Warning Events
           </span>
           {!loading && events.length > 0 && (
             <span
               className="text-[8px] font-mono px-1.5 py-0.5 rounded"
-              style={{ color: HUD_AMBER, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
+              style={{ color: 'var(--yellow)', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
             >
               {events.length}
             </span>
@@ -228,8 +218,8 @@ function EventsCollapsible({
             </select>
           )}
           {collapsed
-            ? <ChevronDown className="w-3.5 h-3.5" style={{ color: HUD_LABEL }} />
-            : <ChevronUp className="w-3.5 h-3.5" style={{ color: HUD_LABEL }} />}
+            ? <ChevronDown className="w-3.5 h-3.5" style={{ color: 'var(--text-dim)' }} />
+            : <ChevronUp className="w-3.5 h-3.5" style={{ color: 'var(--text-dim)' }} />}
         </div>
       </button>
 
@@ -237,23 +227,23 @@ function EventsCollapsible({
         <div className="overflow-y-auto" style={{ maxHeight: '260px' }}>
           {loading ? (
             <div className="flex justify-center py-6">
-              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: HUD_ACCENT }} />
+              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: 'var(--accent)' }} />
             </div>
           ) : events.length === 0 ? (
-            <div className="text-[10px] font-mono text-center py-6 uppercase tracking-widest" style={{ color: HUD_LABEL }}>
+            <div className="text-[10px] font-mono text-center py-6 uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>
               No warning events
             </div>
           ) : (
             <div>
               {events.slice(0, 80).map((e, i) => {
                 const critical = isCritical(e.reason);
-                const dotColor = critical ? HUD_RED : HUD_AMBER;
+                const dotColor = critical ? 'var(--red)' : 'var(--yellow)';
                 const isExpanded = expandedIdx === i;
                 return (
-                  <div key={i} style={{ borderBottom: `1px solid ${HUD_BORDER}` }}>
+                  <div key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <div
                       className="flex items-start gap-3 px-4 py-2 text-[10px] font-mono cursor-pointer transition-all"
-                      onMouseEnter={(el) => { (el.currentTarget as HTMLDivElement).style.background = HUD_SURFACE; }}
+                      onMouseEnter={(el) => { (el.currentTarget as HTMLDivElement).style.background = 'var(--surface)'; }}
                       onMouseLeave={(el) => { (el.currentTarget as HTMLDivElement).style.background = ''; }}
                       onClick={() => setExpandedIdx(isExpanded ? null : i)}
                     >
@@ -262,10 +252,10 @@ function EventsCollapsible({
                         style={{ backgroundColor: dotColor }}
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="truncate" style={{ color: HUD_TEXT }}>
+                        <div className="truncate" style={{ color: 'var(--text-bright)' }}>
                           {e.message}
                         </div>
-                        <div className="mt-0.5" style={{ color: HUD_LABEL }}>
+                        <div className="mt-0.5" style={{ color: 'var(--text-dim)' }}>
                           <span className="font-semibold" style={{ color: dotColor }}>{e.reason}</span>
                           {' · '}
                           {e.namespace}/{e.object || ''}
@@ -274,19 +264,19 @@ function EventsCollapsible({
                           {e.count > 1 && <span> · x{e.count}</span>}
                         </div>
                       </div>
-                      <span className="text-[8px] flex-shrink-0 self-start mt-0.5 opacity-50" style={{ color: HUD_LABEL }}>
+                      <span className="text-[8px] flex-shrink-0 self-start mt-0.5 opacity-50" style={{ color: 'var(--text-dim)' }}>
                         {isExpanded ? '▲' : '▼'}
                       </span>
                     </div>
                     {isExpanded && (
                       <div
                         className="px-8 pb-3 text-[10px] font-mono leading-relaxed"
-                        style={{ color: HUD_LABEL, borderTop: `1px solid ${HUD_BORDER}` }}
+                        style={{ color: 'var(--text-dim)', borderTop: '1px solid var(--border)' }}
                       >
-                        <div className="mt-2"><span style={{ color: HUD_LABEL }}>Message: </span><span style={{ color: HUD_TEXT }}>{e.message}</span></div>
-                        <div><span style={{ color: HUD_LABEL }}>Object: </span><span style={{ color: HUD_TEXT }}>{e.namespace}/{e.object}</span></div>
-                        {e.firstSeen && <div><span style={{ color: HUD_LABEL }}>First seen: </span><span style={{ color: HUD_TEXT }}>{e.firstSeen}</span></div>}
-                        <div><span style={{ color: HUD_LABEL }}>Count: </span><span style={{ color: HUD_TEXT }}>{e.count}</span></div>
+                        <div className="mt-2"><span style={{ color: 'var(--text-dim)' }}>Message: </span><span style={{ color: 'var(--text-bright)' }}>{e.message}</span></div>
+                        <div><span style={{ color: 'var(--text-dim)' }}>Object: </span><span style={{ color: 'var(--text-bright)' }}>{e.namespace}/{e.object}</span></div>
+                        {e.firstSeen && <div><span style={{ color: 'var(--text-dim)' }}>First seen: </span><span style={{ color: 'var(--text-bright)' }}>{e.firstSeen}</span></div>}
+                        <div><span style={{ color: 'var(--text-dim)' }}>Count: </span><span style={{ color: 'var(--text-bright)' }}>{e.count}</span></div>
                       </div>
                     )}
                   </div>
@@ -322,8 +312,8 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
   ];
 
   const sectionStyle: React.CSSProperties = {
-    background: HUD_BG,
-    border: `1px solid ${HUD_BORDER}`,
+    background: 'var(--bg)',
+    border: '1px solid var(--border)',
     borderRadius: '4px',
     padding: '10px',
   };
@@ -334,7 +324,7 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '2px',
-    color: HUD_LABEL,
+    color: 'var(--text-dim)',
     marginBottom: '8px',
   };
 
@@ -346,9 +336,9 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
         <button
           className="w-full flex items-center justify-center gap-1.5 text-[10px] font-mono px-3 py-2 rounded transition-opacity hover:opacity-70"
           style={{
-            color: HUD_ACCENT,
-            border: `1px solid ${HUD_BORDER}`,
-            background: HUD_SURFACE,
+            color: 'var(--accent)',
+            border: '1px solid var(--border)',
+            background: 'var(--surface)',
             opacity: reconciling ? 0.5 : 1,
             cursor: reconciling ? 'not-allowed' : 'pointer',
           }}
@@ -371,9 +361,9 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-mono transition-all group"
-              style={{ color: HUD_LABEL }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_TEXT; (e.currentTarget as HTMLAnchorElement).style.background = HUD_SURFACE; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = HUD_LABEL; (e.currentTarget as HTMLAnchorElement).style.background = ''; }}
+              style={{ color: 'var(--text-dim)' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-bright)'; (e.currentTarget as HTMLAnchorElement).style.background = 'var(--surface)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-dim)'; (e.currentTarget as HTMLAnchorElement).style.background = ''; }}
             >
               <span className="flex-1">{link.label}</span>
               <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
@@ -384,16 +374,16 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
 
       {/* Certificate warnings */}
       {expiringSoon.length > 0 && (
-        <div style={{ ...sectionStyle, border: `1px solid rgba(255,170,0,0.2)` }}>
+        <div style={{ ...sectionStyle, border: '1px solid rgba(255,170,0,0.2)' }}>
           <div className="flex items-center gap-1.5 mb-2">
-            <Shield className="w-3 h-3" style={{ color: HUD_AMBER }} />
-            <div style={{ ...labelStyle, color: HUD_AMBER, marginBottom: 0 }}>Cert Expiry</div>
+            <Shield className="w-3 h-3" style={{ color: 'var(--yellow)' }} />
+            <div style={{ ...labelStyle, color: 'var(--yellow)', marginBottom: 0 }}>Cert Expiry</div>
           </div>
           <div className="space-y-1.5">
             {expiringSoon.map((cert) => (
               <div key={cert.name + cert.namespace} className="text-[10px] font-mono">
-                <div className="truncate" style={{ color: HUD_TEXT }} title={cert.name}>{cert.name}</div>
-                <div style={{ color: cert.daysUntilExpiry <= 7 ? HUD_RED : HUD_AMBER }}>
+                <div className="truncate" style={{ color: 'var(--text-bright)' }} title={cert.name}>{cert.name}</div>
+                <div style={{ color: cert.daysUntilExpiry <= 7 ? 'var(--red)' : 'var(--yellow)' }}>
                   {cert.daysUntilExpiry <= 0 ? 'EXPIRED' : `${cert.daysUntilExpiry}d remaining`}
                 </div>
               </div>
@@ -403,7 +393,7 @@ function QuickActionsSidebar({ certs, onReconcileAll, reconciling }: QuickAction
       )}
 
       {/* Auto-refresh hint */}
-      <div className="flex items-center gap-1.5 px-1 text-[8px] font-mono" style={{ color: '#6b7280' }}>
+      <div className="flex items-center gap-1.5 px-1 text-[8px] font-mono" style={{ color: 'var(--text-muted)' }}>
         <Clock className="w-2.5 h-2.5" />
         Auto-refresh 15s
       </div>
@@ -545,14 +535,14 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '3px',
-    color: HUD_LABEL,
+    color: 'var(--text-dim)',
     marginBottom: '8px',
-    borderBottom: `1px solid ${HUD_BORDER}`,
+    borderBottom: '1px solid var(--border)',
     paddingBottom: '4px',
   };
 
   return (
-    <div className="flex gap-4 min-h-0" style={{ background: HUD_BG }}>
+    <div className="flex gap-4 min-h-0" style={{ background: 'var(--bg)' }}>
       {/* ── Main content column ───────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Top bar */}
@@ -560,13 +550,13 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
           <div>
             <h2
               className="text-base font-bold font-mono"
-              style={{ color: HUD_TEXT }}
+              style={{ color: 'var(--text-bright)' }}
             >
               {overview?.clusterName ?? 'SRE Platform'}
             </h2>
-            <div className="text-[9px] font-mono uppercase tracking-[3px] mt-0.5" style={{ color: HUD_LABEL }}>
+            <div className="text-[9px] font-mono uppercase tracking-[3px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
               Platform Cockpit
-              {lastRefreshed && <span style={{ color: '#6b7280' }}> · {lastRefreshed}</span>}
+              {lastRefreshed && <span style={{ color: 'var(--text-muted)' }}> · {lastRefreshed}</span>}
             </div>
           </div>
 
@@ -597,9 +587,9 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
             <button
               className="flex items-center gap-1.5 text-[9px] font-mono px-3 py-2 rounded transition-opacity hover:opacity-70"
               style={{
-                color: HUD_ACCENT,
-                border: `1px solid ${HUD_BORDER}`,
-                background: HUD_SURFACE,
+                color: 'var(--accent)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
               }}
               onClick={refreshAll}
               title="Refresh all data"
@@ -621,7 +611,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
                 <div
                   key={i}
                   className="h-36 rounded animate-pulse"
-                  style={{ background: HUD_SURFACE, border: `1px solid ${HUD_BORDER}` }}
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                 />
               ))}
             </div>
@@ -632,7 +622,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
               ))}
             </div>
           ) : (
-            <div className="text-[10px] font-mono py-4 text-center uppercase tracking-widest" style={{ color: HUD_LABEL }}>
+            <div className="text-[10px] font-mono py-4 text-center uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>
               No nodes available
             </div>
           )}

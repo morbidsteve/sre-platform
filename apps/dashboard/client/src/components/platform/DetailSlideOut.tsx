@@ -4,17 +4,11 @@ import { triggerFluxReconcile } from '../../api/platform';
 import { useToast } from '../../context/ToastContext';
 import type { PlatformNode, FluxKustomization, FluxHelmRelease, PlatformService } from '../../api/platform';
 
-// ── Shared platform cockpit styles ────────────────────────────────────────────
-
-const HUD_BG = '#111827';
-const HUD_BORDER = '#374151';
-const HUD_ACCENT = '#38bdf8';
-const HUD_AMBER = '#fbbf24';
-const HUD_RED = '#f87171';
+// ── Shared platform cockpit helpers ────────────────────────────────────────────
 
 function HudLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[9px] font-mono uppercase tracking-[2px] mb-0.5" style={{ color: '#9ca3af' }}>
+    <div className="text-[9px] font-mono uppercase tracking-[2px] mb-0.5" style={{ color: 'var(--text-dim)' }}>
       {children}
     </div>
   );
@@ -22,7 +16,7 @@ function HudLabel({ children }: { children: React.ReactNode }) {
 
 function HudValue({ children, color }: { children: React.ReactNode; color?: string }) {
   return (
-    <div className="text-[11px] font-mono font-semibold" style={{ color: color ?? '#e5e7eb' }}>
+    <div className="text-[11px] font-mono font-semibold" style={{ color: color ?? 'var(--text-bright)' }}>
       {children}
     </div>
   );
@@ -32,19 +26,18 @@ function HudSectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="text-[9px] font-mono font-bold uppercase tracking-[3px] pb-1 mb-2"
-      style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}
+      style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)' }}
     >
       {children}
     </div>
   );
 }
 
-function StatusDot({ healthy, pulse }: { healthy: boolean; pulse?: boolean }) {
-  const color = healthy ? HUD_ACCENT : HUD_RED;
+function StatusDot({ healthy }: { healthy: boolean }) {
   return (
     <span
       className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
-      style={{ backgroundColor: color }}
+      style={{ backgroundColor: healthy ? 'var(--green)' : 'var(--red)' }}
     />
   );
 }
@@ -77,26 +70,26 @@ function SlideOutWrapper({ title, subtitle, onClose, children }: SlideOutProps) 
       {/* Panel */}
       <div
         className="fixed inset-y-0 right-0 w-[480px] z-[300] flex flex-col hud-slide-in"
-        style={{ background: HUD_BG, borderLeft: `1px solid ${HUD_BORDER}` }}
+        style={{ background: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${HUD_BORDER}`, background: '#1f2937' }}
+          style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
         >
           <div className="min-w-0">
-            <div className="font-mono text-sm font-bold truncate" style={{ color: HUD_ACCENT }}>
+            <div className="font-mono text-sm font-bold truncate" style={{ color: 'var(--accent)' }}>
               {title}
             </div>
             {subtitle && (
-              <div className="text-[10px] font-mono mt-0.5" style={{ color: '#9ca3af' }}>
+              <div className="text-[10px] font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>
                 {subtitle}
               </div>
             )}
           </div>
           <button
             className="flex-shrink-0 ml-3 transition-opacity hover:opacity-60"
-            style={{ color: HUD_ACCENT }}
+            style={{ color: 'var(--accent)' }}
             onClick={onClose}
           >
             <X className="w-4 h-4" />
@@ -125,9 +118,9 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
   const memPct = node.memory?.pct ?? 0;
 
   function barColor(pct: number, highThresh: number, warnThresh: number): string {
-    if (pct > highThresh) return HUD_RED;
-    if (pct > warnThresh) return HUD_AMBER;
-    return HUD_ACCENT;
+    if (pct > highThresh) return 'var(--red)';
+    if (pct > warnThresh) return 'var(--yellow)';
+    return 'var(--green)';
   }
 
   return (
@@ -150,7 +143,7 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
           ].map(([label, val]) => (
             <div key={label}>
               <HudLabel>{label}</HudLabel>
-              <HudValue color={label === 'Schedulable' && node.unschedulable ? HUD_RED : undefined}>
+              <HudValue color={label === 'Schedulable' && node.unschedulable ? 'var(--red)' : undefined}>
                 {val}
               </HudValue>
             </div>
@@ -168,9 +161,9 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
                 key={r}
                 className="text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded"
                 style={{
-                  color: r === 'control-plane' || r === 'etcd' ? '#60a5fa' : HUD_ACCENT,
-                  background: r === 'control-plane' || r === 'etcd' ? 'rgba(96,165,250,0.1)' : 'rgba(56,189,248,0.08)',
-                  border: `1px solid ${r === 'control-plane' || r === 'etcd' ? 'rgba(96,165,250,0.25)' : 'rgba(56,189,248,0.2)'}`,
+                  color: r === 'control-plane' || r === 'etcd' ? '#60a5fa' : 'var(--accent)',
+                  background: r === 'control-plane' || r === 'etcd' ? 'rgba(96,165,250,0.1)' : 'rgba(77,171,247,0.08)',
+                  border: `1px solid ${r === 'control-plane' || r === 'etcd' ? 'rgba(96,165,250,0.25)' : 'rgba(77,171,247,0.2)'}`,
                 }}
               >
                 {r}
@@ -187,12 +180,12 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
           {/* CPU */}
           <div>
             <div className="flex justify-between mb-1">
-              <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: '#9ca3af' }}>CPU</span>
+              <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>CPU</span>
               <span className="text-[10px] font-mono" style={{ color: barColor(cpuPct, 85, 65) }}>
                 {node.cpu?.usedFmt ?? '—'} / {node.cpu?.allocFmt ?? '?'} ({cpuPct}%)
               </span>
             </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: '#374151' }}>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
               <div
                 className="h-full rounded-full transition-all"
                 style={{
@@ -205,12 +198,12 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
           {/* Memory */}
           <div>
             <div className="flex justify-between mb-1">
-              <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: '#9ca3af' }}>MEM</span>
+              <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>MEM</span>
               <span className="text-[10px] font-mono" style={{ color: barColor(memPct, 85, 70) }}>
                 {node.memory?.usedFmt ?? '—'} / {node.memory?.allocFmt ?? '?'} ({memPct}%)
               </span>
             </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: '#374151' }}>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
               <div
                 className="h-full rounded-full transition-all"
                 style={{
@@ -231,10 +224,10 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
             {node.conditions.map((c) => (
               <div key={c.type} className="flex items-start gap-2 text-[10px] font-mono">
                 <StatusDot healthy={c.status === 'True'} />
-                <span className="font-semibold w-32 flex-shrink-0" style={{ color: '#e5e7eb' }}>{c.type}</span>
-                <span style={{ color: c.status === 'True' ? HUD_ACCENT : HUD_RED }}>{c.status}</span>
+                <span className="font-semibold w-32 flex-shrink-0" style={{ color: 'var(--text-bright)' }}>{c.type}</span>
+                <span style={{ color: c.status === 'True' ? 'var(--green)' : 'var(--red)' }}>{c.status}</span>
                 {c.message && (
-                  <span className="truncate" style={{ color: '#9ca3af' }} title={c.message}>{c.message}</span>
+                  <span className="truncate" style={{ color: 'var(--text-dim)' }} title={c.message}>{c.message}</span>
                 )}
               </div>
             ))}
@@ -246,9 +239,9 @@ export function NodeDetailSlideOut({ node, onClose }: NodeDetailProps) {
       <div
         className="text-[10px] font-mono font-bold uppercase tracking-widest text-center py-2 rounded"
         style={{
-          color: isReady ? HUD_ACCENT : HUD_RED,
-          background: isReady ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)',
-          border: `1px solid ${isReady ? 'rgba(52,211,153,0.25)' : 'rgba(248,113,113,0.25)'}`,
+          color: isReady ? 'var(--green)' : 'var(--red)',
+          background: isReady ? 'rgba(64,192,87,0.08)' : 'rgba(250,82,82,0.08)',
+          border: `1px solid ${isReady ? 'rgba(64,192,87,0.25)' : 'rgba(250,82,82,0.25)'}`,
         }}
       >
         {isReady ? '● NODE READY' : '● NODE NOT READY'}
@@ -291,7 +284,7 @@ export function FluxKustDetailSlideOut({ item, onClose, onRefresh }: FluxKustDet
         <div className="grid grid-cols-2 gap-3">
           <div>
             <HudLabel>Ready</HudLabel>
-            <HudValue color={item.ready ? HUD_ACCENT : item.suspended ? HUD_AMBER : HUD_RED}>
+            <HudValue color={item.ready ? 'var(--green)' : item.suspended ? 'var(--yellow)' : 'var(--red)'}>
               {item.suspended ? 'SUSPENDED' : item.ready ? 'READY' : 'FAILED'}
             </HudValue>
           </div>
@@ -319,9 +312,9 @@ export function FluxKustDetailSlideOut({ item, onClose, onRefresh }: FluxKustDet
           <div
             className="text-[10px] font-mono p-3 rounded leading-relaxed"
             style={{
-              color: HUD_RED,
-              background: 'rgba(248,113,113,0.08)',
-              border: `1px solid rgba(248,113,113,0.25)`,
+              color: 'var(--red)',
+              background: 'rgba(250,82,82,0.08)',
+              border: '1px solid rgba(250,82,82,0.25)',
               wordBreak: 'break-word',
             }}
           >
@@ -336,9 +329,9 @@ export function FluxKustDetailSlideOut({ item, onClose, onRefresh }: FluxKustDet
         <button
           className="flex items-center gap-2 text-[10px] font-mono font-semibold uppercase tracking-wider px-4 py-2 rounded transition-all hover:opacity-80"
           style={{
-            color: HUD_ACCENT,
-            background: 'rgba(56,189,248,0.08)',
-            border: `1px solid rgba(56,189,248,0.25)`,
+            color: 'var(--accent)',
+            background: 'var(--accent-dim)',
+            border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
           }}
           onClick={handleReconcile}
         >
@@ -384,7 +377,7 @@ export function FluxHelmDetailSlideOut({ item, onClose, onRefresh }: FluxHelmDet
         <div className="grid grid-cols-2 gap-3">
           <div>
             <HudLabel>Ready</HudLabel>
-            <HudValue color={item.ready ? HUD_ACCENT : item.suspended ? HUD_AMBER : HUD_RED}>
+            <HudValue color={item.ready ? 'var(--green)' : item.suspended ? 'var(--yellow)' : 'var(--red)'}>
               {item.suspended ? 'SUSPENDED' : item.ready ? 'READY' : 'FAILED'}
             </HudValue>
           </div>
@@ -424,9 +417,9 @@ export function FluxHelmDetailSlideOut({ item, onClose, onRefresh }: FluxHelmDet
           <div
             className="text-[10px] font-mono p-3 rounded leading-relaxed"
             style={{
-              color: HUD_RED,
-              background: 'rgba(248,113,113,0.08)',
-              border: `1px solid rgba(248,113,113,0.25)`,
+              color: 'var(--red)',
+              background: 'rgba(250,82,82,0.08)',
+              border: '1px solid rgba(250,82,82,0.25)',
               wordBreak: 'break-word',
             }}
           >
@@ -441,9 +434,9 @@ export function FluxHelmDetailSlideOut({ item, onClose, onRefresh }: FluxHelmDet
         <button
           className="flex items-center gap-2 text-[10px] font-mono font-semibold uppercase tracking-wider px-4 py-2 rounded transition-all hover:opacity-80"
           style={{
-            color: HUD_ACCENT,
-            background: 'rgba(56,189,248,0.08)',
-            border: `1px solid rgba(56,189,248,0.25)`,
+            color: 'var(--accent)',
+            background: 'var(--accent-dim)',
+            border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
           }}
           onClick={handleReconcile}
         >
@@ -474,7 +467,7 @@ export function ServiceDetailSlideOut({ service, onClose }: ServiceDetailProps) 
         <div className="grid grid-cols-2 gap-3">
           <div>
             <HudLabel>Health</HudLabel>
-            <HudValue color={service.healthy ? HUD_ACCENT : HUD_RED}>
+            <HudValue color={service.healthy ? 'var(--green)' : 'var(--red)'}>
               {service.healthy ? 'HEALTHY' : 'DEGRADED'}
             </HudValue>
           </div>
@@ -492,7 +485,7 @@ export function ServiceDetailSlideOut({ service, onClose }: ServiceDetailProps) 
       {service.description && (
         <div>
           <HudSectionHeader>Description</HudSectionHeader>
-          <div className="text-[10px] font-mono leading-relaxed" style={{ color: '#e5e7eb' }}>
+          <div className="text-[10px] font-mono leading-relaxed" style={{ color: 'var(--text-bright)' }}>
             {service.description}
           </div>
         </div>
@@ -506,7 +499,7 @@ export function ServiceDetailSlideOut({ service, onClose }: ServiceDetailProps) 
             target="_blank"
             rel="noopener noreferrer"
             className="text-[10px] font-mono underline transition-opacity hover:opacity-70"
-            style={{ color: HUD_ACCENT }}
+            style={{ color: 'var(--accent)' }}
           >
             {service.url}
           </a>
@@ -515,4 +508,3 @@ export function ServiceDetailSlideOut({ service, onClose }: ServiceDetailProps) 
     </SlideOutWrapper>
   );
 }
-

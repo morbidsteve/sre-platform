@@ -8,23 +8,14 @@ import type { PlatformPod } from '../../api/platform';
 import type { Namespace, PodDetail } from '../../types/api';
 import { LogViewer } from '../cluster/LogViewer';
 
-const HUD_ACCENT = '#34d399';
-const HUD_AMBER = '#fbbf24';
-const HUD_RED = '#f87171';
-const HUD_BORDER = '#374151';
-const HUD_LABEL = '#9ca3af';
-const HUD_TEXT = '#e5e7eb';
-const HUD_BG = '#111827';
-const HUD_SURFACE = '#1f2937';
-
 // ── Status helpers ──────────────────────────────────────────────────────────
 
 function statusColor(status: string): string {
   const s = status.toLowerCase();
-  if (s === 'running') return HUD_ACCENT;
-  if (s === 'pending' || s === 'containercreating' || s === 'init') return HUD_AMBER;
+  if (s === 'running') return 'var(--green)';
+  if (s === 'pending' || s === 'containercreating' || s === 'init') return 'var(--yellow)';
   if (s === 'succeeded' || s === 'completed') return '#60a5fa';
-  return HUD_RED;
+  return 'var(--red)';
 }
 
 function rowBgStyle(status: string): React.CSSProperties {
@@ -94,22 +85,22 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
       />
       <div
         className="fixed inset-y-0 right-0 w-[520px] z-[300] flex flex-col hud-slide-in"
-        style={{ background: HUD_BG, borderLeft: `1px solid ${HUD_BORDER}` }}
+        style={{ background: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${HUD_BORDER}`, background: HUD_SURFACE }}
+          style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
         >
           <div className="min-w-0">
-            <div className="font-mono text-sm font-bold truncate" style={{ color: HUD_ACCENT }}>{name}</div>
-            <div className="text-[10px] font-mono mt-0.5" style={{ color: HUD_LABEL }}>{namespace}</div>
+            <div className="font-mono text-sm font-bold truncate" style={{ color: 'var(--accent)' }}>{name}</div>
+            <div className="text-[10px] font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>{namespace}</div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-3">
             {isAdmin && pod && (
               <button
                 className="text-[10px] font-mono px-2 py-1 rounded transition-colors"
-                style={{ color: HUD_RED, border: `1px solid rgba(248,113,113,0.3)`, background: 'rgba(248,113,113,0.08)' }}
+                style={{ color: 'var(--red)', border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)' }}
                 onClick={handleDelete}
               >
                 Delete
@@ -117,7 +108,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
             )}
             <button
               className="transition-opacity hover:opacity-60"
-              style={{ color: HUD_ACCENT }}
+              style={{ color: 'var(--accent)' }}
               onClick={onClose}
             >
               <X className="w-4 h-4" />
@@ -128,7 +119,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
         {/* Tab bar */}
         <div
           className="flex items-center gap-0 px-4 pt-0 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${HUD_BORDER}`, background: HUD_SURFACE }}
+          style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
         >
           {(['info', 'events', 'logs'] as const).map((t) => (
             <button
@@ -136,8 +127,8 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
               onClick={() => setActiveDetailTab(t)}
               className="text-[9px] font-mono uppercase tracking-[2px] px-4 py-2.5 border-b-2 -mb-px transition-all"
               style={{
-                borderBottomColor: activeDetailTab === t ? HUD_ACCENT : 'transparent',
-                color: activeDetailTab === t ? HUD_ACCENT : HUD_LABEL,
+                borderBottomColor: activeDetailTab === t ? 'var(--accent)' : 'transparent',
+                color: activeDetailTab === t ? 'var(--accent)' : 'var(--text-dim)',
               }}
             >
               {t}
@@ -149,11 +140,11 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
         <div className="flex-1 overflow-y-auto p-4">
           {loading && (
             <div className="flex justify-center py-12">
-              <RefreshCw className="w-5 h-5 animate-spin" style={{ color: HUD_ACCENT }} />
+              <RefreshCw className="w-5 h-5 animate-spin" style={{ color: 'var(--accent)' }} />
             </div>
           )}
           {error && (
-            <div className="text-sm font-mono py-6 text-center" style={{ color: HUD_RED }}>{error}</div>
+            <div className="text-sm font-mono py-6 text-center" style={{ color: 'var(--red)' }}>{error}</div>
           )}
           {pod && activeDetailTab === 'info' && (
             <div className="space-y-4">
@@ -167,15 +158,15 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                   ['Service Account', pod.serviceAccount || '—'],
                 ].map(([label, val]) => (
                   <div key={label}>
-                    <div className="text-[9px] uppercase tracking-[2px] font-mono mb-0.5" style={{ color: HUD_LABEL }}>{label}</div>
-                    <div className="text-[11px] font-mono font-semibold" style={{ color: HUD_TEXT }}>{val}</div>
+                    <div className="text-[9px] uppercase tracking-[2px] font-mono mb-0.5" style={{ color: 'var(--text-dim)' }}>{label}</div>
+                    <div className="text-[11px] font-mono font-semibold" style={{ color: 'var(--text-bright)' }}>{val}</div>
                   </div>
                 ))}
               </div>
 
               {pod.conditions && pod.conditions.length > 0 && (
                 <div>
-                  <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}>
+                  <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)' }}>
                     Conditions
                   </div>
                   <div className="space-y-1">
@@ -183,12 +174,12 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                       <div key={c.type} className="flex items-center gap-2 text-[10px] font-mono">
                         <span
                           className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: c.status === 'True' ? HUD_ACCENT : HUD_RED }}
+                          style={{ backgroundColor: c.status === 'True' ? 'var(--green)' : 'var(--red)' }}
                         />
-                        <span className="w-28 flex-shrink-0" style={{ color: HUD_TEXT }}>{c.type}</span>
-                        <span style={{ color: c.status === 'True' ? HUD_ACCENT : HUD_RED }}>{c.status}</span>
+                        <span className="w-28 flex-shrink-0" style={{ color: 'var(--text-bright)' }}>{c.type}</span>
+                        <span style={{ color: c.status === 'True' ? 'var(--green)' : 'var(--red)' }}>{c.status}</span>
                         {c.message && (
-                          <span className="truncate" style={{ color: HUD_LABEL }} title={c.message}>{c.message}</span>
+                          <span className="truncate" style={{ color: 'var(--text-dim)' }} title={c.message}>{c.message}</span>
                         )}
                       </div>
                     ))}
@@ -197,7 +188,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
               )}
 
               <div>
-                <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}>
+                <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)' }}>
                   Containers
                 </div>
                 <div className="space-y-2">
@@ -205,24 +196,24 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                     <div
                       key={c.name}
                       className="text-[10px] font-mono p-2.5 rounded"
-                      style={{ background: HUD_SURFACE, border: `1px solid ${HUD_BORDER}` }}
+                      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <span
                           className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: c.ready ? HUD_ACCENT : HUD_RED }}
+                          style={{ backgroundColor: c.ready ? 'var(--green)' : 'var(--red)' }}
                         />
-                        <span className="font-semibold" style={{ color: HUD_TEXT }}>{c.name}</span>
-                        <span style={{ color: c.ready ? HUD_ACCENT : HUD_RED }}>
+                        <span className="font-semibold" style={{ color: 'var(--text-bright)' }}>{c.name}</span>
+                        <span style={{ color: c.ready ? 'var(--green)' : 'var(--red)' }}>
                           {c.ready ? 'Ready' : 'Not Ready'}
                         </span>
                         {c.restarts > 0 && (
-                          <span style={{ color: HUD_AMBER }}>{c.restarts} restarts</span>
+                          <span style={{ color: 'var(--yellow)' }}>{c.restarts} restarts</span>
                         )}
                       </div>
-                      <div className="truncate" style={{ color: HUD_LABEL }}>{c.image}</div>
+                      <div className="truncate" style={{ color: 'var(--text-dim)' }}>{c.image}</div>
                       {c.stateDetail && (
-                        <div className="mt-0.5" style={{ color: HUD_LABEL }}>{c.stateDetail}</div>
+                        <div className="mt-0.5" style={{ color: 'var(--text-dim)' }}>{c.stateDetail}</div>
                       )}
                     </div>
                   ))}
@@ -231,7 +222,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
 
               {pod.labels && Object.keys(pod.labels).length > 0 && (
                 <div>
-                  <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: HUD_ACCENT, borderBottom: `1px solid ${HUD_BORDER}` }}>
+                  <div className="text-[9px] uppercase tracking-[2px] font-mono mb-2 pb-1" style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)' }}>
                     Labels
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -239,7 +230,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                       <span
                         key={k}
                         className="text-[9px] px-1.5 py-0.5 rounded font-mono"
-                        style={{ color: HUD_LABEL, background: HUD_SURFACE, border: `1px solid ${HUD_BORDER}` }}
+                        style={{ color: 'var(--text-dim)', background: 'var(--surface)', border: '1px solid var(--border)' }}
                       >
                         {k}={v}
                       </span>
@@ -253,7 +244,7 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
           {pod && activeDetailTab === 'events' && (
             <div className="space-y-1.5">
               {pod.events.length === 0 ? (
-                <div className="text-[10px] font-mono text-center py-8" style={{ color: HUD_LABEL }}>
+                <div className="text-[10px] font-mono text-center py-8" style={{ color: 'var(--text-dim)' }}>
                   No recent events
                 </div>
               ) : (
@@ -262,13 +253,13 @@ function PodSlideOut({ namespace, name, isAdmin, onClose, onDeleted }: PodSlideO
                     key={i}
                     className="flex items-start gap-2 px-3 py-2 rounded text-[10px] font-mono border-l-2"
                     style={{
-                      borderLeftColor: e.type === 'Warning' ? HUD_AMBER : HUD_ACCENT,
+                      borderLeftColor: e.type === 'Warning' ? 'var(--yellow)' : 'var(--green)',
                       background: e.type === 'Warning' ? 'rgba(251,191,36,0.06)' : 'rgba(52,211,153,0.04)',
                     }}
                   >
                     <div className="flex-1 min-w-0">
-                      <div style={{ color: HUD_TEXT }}>{e.message}</div>
-                      <div className="mt-0.5" style={{ color: HUD_LABEL }}>{e.reason} · {e.age}</div>
+                      <div style={{ color: 'var(--text-bright)' }}>{e.message}</div>
+                      <div className="mt-0.5" style={{ color: 'var(--text-dim)' }}>{e.reason} · {e.age}</div>
                     </div>
                   </div>
                 ))
@@ -340,13 +331,13 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
   }).length;
 
   const selectStyle: React.CSSProperties = {
-    background: HUD_SURFACE,
-    border: `1px solid ${HUD_BORDER}`,
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
     borderRadius: '4px',
     padding: '2px 8px',
     fontSize: '10px',
     fontFamily: 'monospace',
-    color: HUD_TEXT,
+    color: 'var(--text-bright)',
     outline: 'none',
   };
 
@@ -354,17 +345,17 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
     <>
       <div
         className="flex flex-col overflow-hidden rounded"
-        style={{ background: HUD_BG, border: `1px solid ${HUD_BORDER}` }}
+        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${HUD_BORDER}` }}
+          style={{ borderBottom: '1px solid var(--border)' }}
         >
           <div className="flex items-center gap-3">
             <button
               className="flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-[3px] transition-opacity hover:opacity-70"
-              style={{ color: HUD_LABEL }}
+              style={{ color: 'var(--text-dim)' }}
               onClick={() => setCollapsed((v) => !v)}
             >
               {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
@@ -372,10 +363,10 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
             </button>
             {!loading && (
               <div className="flex items-center gap-2 text-[9px] font-mono">
-                <span style={{ color: HUD_ACCENT }}>{runningCount} running</span>
-                {pendingCount > 0 && <span style={{ color: HUD_AMBER }}>{pendingCount} pending</span>}
-                {failedCount > 0 && <span style={{ color: HUD_RED }}>{failedCount} failed</span>}
-                <span style={{ color: HUD_LABEL }}>{pods.length} total</span>
+                <span style={{ color: 'var(--green)' }}>{runningCount} running</span>
+                {pendingCount > 0 && <span style={{ color: 'var(--yellow)' }}>{pendingCount} pending</span>}
+                {failedCount > 0 && <span style={{ color: 'var(--red)' }}>{failedCount} failed</span>}
+                <span style={{ color: 'var(--text-dim)' }}>{pods.length} total</span>
               </div>
             )}
           </div>
@@ -399,7 +390,7 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
               />
               <button
                 className={`transition-opacity hover:opacity-60 ${loading ? 'animate-spin' : ''}`}
-                style={{ color: HUD_ACCENT }}
+                style={{ color: 'var(--accent)' }}
                 onClick={loadPods}
                 title="Refresh"
               >
@@ -414,21 +405,21 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
           <div className="overflow-x-auto" style={{ maxHeight: '360px', overflowY: 'auto' }}>
             {loading && pods.length === 0 ? (
               <div className="flex justify-center py-8">
-                <RefreshCw className="w-4 h-4 animate-spin" style={{ color: HUD_ACCENT }} />
+                <RefreshCw className="w-4 h-4 animate-spin" style={{ color: 'var(--accent)' }} />
               </div>
             ) : pods.length === 0 ? (
-              <div className="text-[10px] font-mono text-center py-8 uppercase tracking-widest" style={{ color: HUD_LABEL }}>
+              <div className="text-[10px] font-mono text-center py-8 uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>
                 No pods found
               </div>
             ) : (
               <table className="w-full text-[10px] font-mono">
-                <thead className="sticky top-0 z-10" style={{ background: HUD_BG }}>
-                  <tr style={{ borderBottom: `1px solid ${HUD_BORDER}` }}>
+                <thead className="sticky top-0 z-10" style={{ background: 'var(--bg)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {['Status', 'Name', 'Namespace', 'Ready', 'Restarts', 'Age', 'Node', 'IP'].map((h) => (
                       <th
                         key={h}
                         className="py-2 px-3 text-left text-[8px] font-bold uppercase tracking-[2px]"
-                        style={{ color: HUD_LABEL }}
+                        style={{ color: 'var(--text-dim)' }}
                       >
                         {h}
                       </th>
@@ -445,12 +436,12 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
                         className="cursor-pointer transition-all"
                         style={{
                           ...rowBgStyle(p.status),
-                          borderBottom: `1px solid ${HUD_BORDER}`,
-                          background: isSelected ? '#273344' : undefined,
-                          outline: isSelected ? `1px solid #38bdf8` : undefined,
+                          borderBottom: '1px solid var(--border)',
+                          background: isSelected ? 'var(--surface-hover)' : undefined,
+                          outline: isSelected ? '1px solid var(--accent)' : undefined,
                         }}
                         onMouseEnter={(e) => {
-                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = HUD_SURFACE;
+                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = 'var(--surface)';
                         }}
                         onMouseLeave={(e) => {
                           if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = '';
@@ -463,32 +454,32 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                               style={{ backgroundColor: sc }}
                             />
-                            <span className="truncate" style={{ color: HUD_LABEL }}>{p.status}</span>
+                            <span className="truncate" style={{ color: 'var(--text-dim)' }}>{p.status}</span>
                           </span>
                         </td>
                         <td
                           className="py-1.5 px-3 max-w-[200px] truncate font-semibold"
-                          style={{ color: HUD_TEXT }}
+                          style={{ color: 'var(--text-bright)' }}
                           title={p.name}
                         >
                           {p.name}
                         </td>
-                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: HUD_LABEL }} title={p.namespace}>
+                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: 'var(--text-dim)' }} title={p.namespace}>
                           {p.namespace}
                         </td>
-                        <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.ready}</td>
+                        <td className="py-1.5 px-3" style={{ color: 'var(--text-dim)' }}>{p.ready}</td>
                         <td className="py-1.5 px-3">
                           {p.restarts > 0 ? (
-                            <span className="font-bold" style={{ color: HUD_AMBER }}>{p.restarts}</span>
+                            <span className="font-bold" style={{ color: 'var(--yellow)' }}>{p.restarts}</span>
                           ) : (
-                            <span style={{ color: HUD_LABEL }}>0</span>
+                            <span style={{ color: 'var(--text-dim)' }}>0</span>
                           )}
                         </td>
-                        <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.age}</td>
-                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: HUD_LABEL }} title={p.node}>
+                        <td className="py-1.5 px-3" style={{ color: 'var(--text-dim)' }}>{p.age}</td>
+                        <td className="py-1.5 px-3 truncate max-w-[128px]" style={{ color: 'var(--text-dim)' }} title={p.node}>
                           {p.node || '—'}
                         </td>
-                        <td className="py-1.5 px-3" style={{ color: HUD_LABEL }}>{p.ip || '—'}</td>
+                        <td className="py-1.5 px-3" style={{ color: 'var(--text-dim)' }}>{p.ip || '—'}</td>
                       </tr>
                     );
                   })}

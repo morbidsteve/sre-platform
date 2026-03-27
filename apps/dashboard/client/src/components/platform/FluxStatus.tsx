@@ -3,13 +3,6 @@ import { RefreshCw, Pause, ChevronDown, ChevronUp } from 'lucide-react';
 import type { FluxStatus, FluxKustomization, FluxHelmRelease } from '../../api/platform';
 import { FluxKustDetailSlideOut, FluxHelmDetailSlideOut } from './DetailSlideOut';
 
-const HUD_ACCENT = '#34d399';
-const HUD_AMBER = '#fbbf24';
-const HUD_RED = '#f87171';
-const HUD_BORDER = '#374151';
-const HUD_LABEL = '#9ca3af';
-const HUD_TEXT = '#e5e7eb';
-
 interface FluxStatusProps {
   data: FluxStatus | null;
   loading: boolean;
@@ -17,19 +10,19 @@ interface FluxStatusProps {
 }
 
 function StatusIcon({ ready, suspended }: { ready: boolean; suspended: boolean }) {
-  if (suspended) return <Pause className="w-3 h-3" style={{ color: HUD_AMBER }} />;
+  if (suspended) return <Pause className="w-3 h-3" style={{ color: 'var(--yellow)' }} />;
   if (ready) {
     return (
       <span
         className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-        style={{ backgroundColor: HUD_ACCENT }}
+        style={{ backgroundColor: 'var(--green)' }}
       />
     );
   }
   return (
     <span
       className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-      style={{ backgroundColor: HUD_RED }}
+      style={{ backgroundColor: 'var(--red)' }}
     />
   );
 }
@@ -53,7 +46,7 @@ function KustomizationRow({
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
           ? 'rgba(248,113,113,0.10)'
-          : '#1f2937';
+          : 'var(--surface)';
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
@@ -68,12 +61,12 @@ function KustomizationRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-semibold truncate" style={{ color: HUD_TEXT }}>{k.name}</span>
-          <span className="text-[9px]" style={{ color: HUD_LABEL }}>{k.namespace}</span>
+          <span className="font-semibold truncate" style={{ color: 'var(--text-bright)' }}>{k.name}</span>
+          <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{k.namespace}</span>
           {k.suspended && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_AMBER, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
+              style={{ color: 'var(--yellow)', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
             >
               SUSPENDED
             </span>
@@ -81,22 +74,22 @@ function KustomizationRow({
           {isFailed && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_RED, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)' }}
+              style={{ color: 'var(--red)', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)' }}
             >
               FAILED
             </span>
           )}
         </div>
         {k.revision && (
-          <div className="text-[9px] mt-0.5 truncate" style={{ color: HUD_LABEL }}>{k.revision}</div>
+          <div className="text-[9px] mt-0.5 truncate" style={{ color: 'var(--text-dim)' }}>{k.revision}</div>
         )}
         {isFailed && k.lastMessage && (
-          <div className="text-[9px] mt-0.5 truncate" style={{ color: HUD_RED }} title={k.lastMessage}>
+          <div className="text-[9px] mt-0.5 truncate" style={{ color: 'var(--red)' }} title={k.lastMessage}>
             {k.lastMessage}
           </div>
         )}
       </div>
-      <span className="text-[8px] font-mono flex-shrink-0 self-center opacity-40 ml-1" style={{ color: HUD_ACCENT }}>›</span>
+      <span className="text-[8px] font-mono flex-shrink-0 self-center opacity-40 ml-1" style={{ color: 'var(--accent)' }}>›</span>
     </div>
   );
 }
@@ -120,7 +113,7 @@ function HelmReleaseRow({
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
           ? 'rgba(248,113,113,0.10)'
-          : '#1f2937';
+          : 'var(--surface)';
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = isFailed
@@ -135,17 +128,17 @@ function HelmReleaseRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-semibold truncate" style={{ color: HUD_TEXT }}>{h.name}</span>
-          <span className="text-[9px]" style={{ color: HUD_LABEL }}>{h.namespace}</span>
+          <span className="font-semibold truncate" style={{ color: 'var(--text-bright)' }}>{h.name}</span>
+          <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{h.namespace}</span>
           {h.version && (
-            <span className="text-[9px]" style={{ color: '#6b7280' }}>
+            <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>
               {h.chart}@{h.version}
             </span>
           )}
           {h.suspended && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_AMBER, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
+              style={{ color: 'var(--yellow)', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}
             >
               SUSPENDED
             </span>
@@ -153,22 +146,22 @@ function HelmReleaseRow({
           {isFailed && (
             <span
               className="px-1 py-0.5 text-[8px] font-bold uppercase rounded tracking-wider"
-              style={{ color: HUD_RED, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)' }}
+              style={{ color: 'var(--red)', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)' }}
             >
               FAILED
             </span>
           )}
         </div>
         {h.revision && (
-          <div className="text-[9px] mt-0.5 truncate" style={{ color: HUD_LABEL }}>{h.revision}</div>
+          <div className="text-[9px] mt-0.5 truncate" style={{ color: 'var(--text-dim)' }}>{h.revision}</div>
         )}
         {isFailed && h.lastMessage && (
-          <div className="text-[9px] mt-0.5 truncate" style={{ color: HUD_RED }} title={h.lastMessage}>
+          <div className="text-[9px] mt-0.5 truncate" style={{ color: 'var(--red)' }} title={h.lastMessage}>
             {h.lastMessage}
           </div>
         )}
       </div>
-      <span className="text-[8px] font-mono flex-shrink-0 self-center opacity-40 ml-1" style={{ color: HUD_ACCENT }}>›</span>
+      <span className="text-[8px] font-mono flex-shrink-0 self-center opacity-40 ml-1" style={{ color: 'var(--accent)' }}>›</span>
     </div>
   );
 }
@@ -186,7 +179,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
   const failedHelm = data?.helmReleases.filter((h) => !h.ready && !h.suspended) ?? [];
   const failedCount = failedKust.length + failedHelm.length;
 
-  const statusColor = failedCount > 0 ? HUD_RED : allSynced ? HUD_ACCENT : HUD_AMBER;
+  const statusColor = failedCount > 0 ? 'var(--red)' : allSynced ? 'var(--green)' : 'var(--yellow)';
   const statusLabel = failedCount > 0
     ? `${failedCount} FAILED`
     : allSynced
@@ -197,17 +190,17 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
     <>
       <div
         className="flex flex-col overflow-hidden h-full rounded"
-        style={{ background: '#111827', border: `1px solid ${HUD_BORDER}` }}
+        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${HUD_BORDER}` }}
+          style={{ borderBottom: '1px solid var(--border)' }}
         >
           <div className="flex items-center gap-2">
             <span
               className="text-[9px] font-mono font-bold uppercase tracking-[3px]"
-              style={{ color: HUD_LABEL }}
+              style={{ color: 'var(--text-dim)' }}
             >
               Flux GitOps
             </span>
@@ -216,8 +209,8 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
                 className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded"
                 style={{
                   color: statusColor,
-                  background: `${statusColor}18`,
-                  border: `1px solid ${statusColor}30`,
+                  background: `color-mix(in srgb, ${statusColor} 12%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${statusColor} 30%, transparent)`,
                 }}
               >
                 {statusLabel}
@@ -226,7 +219,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
           </div>
           <button
             className={`transition-opacity hover:opacity-60 ${loading ? 'animate-spin' : ''}`}
-            style={{ color: HUD_ACCENT }}
+            style={{ color: 'var(--accent)' }}
             onClick={onRefresh}
             title="Refresh"
           >
@@ -238,7 +231,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
         <div className="flex-1 overflow-y-auto min-h-0">
           {loading && !data ? (
             <div className="flex items-center justify-center py-8">
-              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: HUD_ACCENT }} />
+              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: 'var(--accent)' }} />
             </div>
           ) : (
             <div>
@@ -246,12 +239,12 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
               <div>
                 <button
                   className="w-full flex items-center justify-between px-4 py-2 text-[9px] font-mono font-bold uppercase tracking-[3px] transition-opacity hover:opacity-70"
-                  style={{ color: HUD_LABEL, borderBottom: `1px solid ${HUD_BORDER}` }}
+                  style={{ color: 'var(--text-dim)', borderBottom: '1px solid var(--border)' }}
                   onClick={() => setKustCollapsed((v) => !v)}
                 >
                   <span>
                     Kustomizations
-                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: '#6b7280' }}>
+                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: 'var(--text-muted)' }}>
                       ({data?.kustomizations.length ?? 0})
                     </span>
                   </span>
@@ -269,7 +262,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
                       />
                     ))}
                     {(data?.kustomizations.length ?? 0) === 0 && (
-                      <div className="px-4 py-3 text-[10px] font-mono" style={{ color: HUD_LABEL }}>
+                      <div className="px-4 py-3 text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>
                         No kustomizations found
                       </div>
                     )}
@@ -281,12 +274,12 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
               <div>
                 <button
                   className="w-full flex items-center justify-between px-4 py-2 text-[9px] font-mono font-bold uppercase tracking-[3px] transition-opacity hover:opacity-70"
-                  style={{ color: HUD_LABEL, borderBottom: `1px solid ${HUD_BORDER}` }}
+                  style={{ color: 'var(--text-dim)', borderBottom: '1px solid var(--border)' }}
                   onClick={() => setHelmCollapsed((v) => !v)}
                 >
                   <span>
                     HelmReleases
-                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: '#6b7280' }}>
+                    <span className="ml-1.5 font-normal normal-case tracking-normal" style={{ color: 'var(--text-muted)' }}>
                       ({data?.helmReleases.length ?? 0})
                     </span>
                   </span>
@@ -304,7 +297,7 @@ export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
                       />
                     ))}
                     {(data?.helmReleases.length ?? 0) === 0 && (
-                      <div className="px-4 py-3 text-[10px] font-mono" style={{ color: HUD_LABEL }}>
+                      <div className="px-4 py-3 text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>
                         No helm releases found
                       </div>
                     )}
