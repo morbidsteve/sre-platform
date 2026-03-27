@@ -35,7 +35,7 @@ spec:
         repository: harbor.apps.sre.example.com/team-alpha/ws
         tag: pipe-9521dbdb
         pullPolicy: IfNotPresent
-      port: 8080
+      port: 3000
       replicas: 2
       resources:
         requests:
