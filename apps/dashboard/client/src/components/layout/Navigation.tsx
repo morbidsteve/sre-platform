@@ -7,6 +7,7 @@ import {
   Activity,
   ClipboardCheck,
   Settings,
+  Gauge,
 } from 'lucide-react';
 
 interface NavigationProps {
@@ -30,6 +31,7 @@ const tabs: TabDef[] = [
   { id: 'security', label: 'Security', icon: <Shield size={14} /> },
   { id: 'operations', label: 'Operations', icon: <Activity size={14} /> },
   { id: 'compliance', label: 'Compliance', icon: <ClipboardCheck size={14} /> },
+  { id: 'platform', label: 'Platform', icon: <Gauge size={14} />, adminOnly: true },
   { id: 'admin', label: 'Admin', icon: <Settings size={14} />, adminOnly: true },
 ];
 

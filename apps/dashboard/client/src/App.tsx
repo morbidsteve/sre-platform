@@ -14,12 +14,13 @@ import { SecurityTab } from './components/security/SecurityTab';
 import { OperationsTab } from './components/operations/OperationsTab';
 import { ComplianceTab } from './components/compliance/ComplianceTab';
 import { AdminTab } from './components/admin/AdminTab';
+import { PlatformCockpit } from './components/platform/PlatformCockpit';
 import { AppFrame } from './components/shared/AppFrame';
 import { CommandPalette } from './components/shared/CommandPalette';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Spinner } from './components/ui/Spinner';
 
-const VALID_TABS = ['overview', 'deploy', 'applications', 'security', 'operations', 'compliance', 'admin'];
+const VALID_TABS = ['overview', 'deploy', 'applications', 'security', 'operations', 'compliance', 'platform', 'admin'];
 
 function getInitialTab(): string {
   const hash = window.location.hash.slice(1);
@@ -182,6 +183,13 @@ function AppContent() {
           <div style={{ display: activeTab === 'compliance' ? 'block' : 'none' }} className={activeTab === 'compliance' ? 'tab-enter' : ''}>
             <ErrorBoundary>
               <ComplianceTab active={activeTab === 'compliance'} />
+            </ErrorBoundary>
+          </div>
+        )}
+        {visitedTabs.has('platform') && isAdmin && (
+          <div style={{ display: activeTab === 'platform' ? 'block' : 'none' }} className={activeTab === 'platform' ? 'tab-enter' : ''}>
+            <ErrorBoundary>
+              <PlatformCockpit active={activeTab === 'platform'} />
             </ErrorBoundary>
           </div>
         )}
