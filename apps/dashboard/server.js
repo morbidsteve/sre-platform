@@ -8408,42 +8408,43 @@ async function orchestratePipelineScan(runId) {
   }
 
   try {
-  // Phase 1: Source code scans (SAST, SECRETS) — run in parallel
-  const sourceScans = [];
+  // Phase 1: Source code scans (SAST, SECRETS) + Build — ALL run in parallel
+  // SAST/Secrets scan source code, Build creates the container image. They don't
+  // depend on each other, so running them simultaneously saves 1-3 minutes.
+  const phase1Jobs = [];
 
   if (run.git_url) {
     if (gateMap.SAST) {
       await db.updateGate(gateMap.SAST.id, { status: "running", summary: "Cloning repo and running Semgrep scan...", startedAt: new Date().toISOString(), progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "running", summary: "Cloning repo and running Semgrep scan...", progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult, gateMap.SAST.id, runId)));
+      phase1Jobs.push(runScanGate(runId, gateMap.SAST, (mult) => runSASTScan(run.git_url, run.branch, mult, gateMap.SAST.id, runId)));
     }
     if (gateMap.SECRETS) {
       await db.updateGate(gateMap.SECRETS.id, { status: "running", summary: "Cloning repo and running Gitleaks scan...", startedAt: new Date().toISOString(), progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "running", summary: "Cloning repo and running Gitleaks scan...", progress: 10 });
-      sourceScans.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id, runId)));
+      phase1Jobs.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id, runId)));
     }
   } else {
     if (gateMap.SAST) {
-      sourceScans.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+      phase1Jobs.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
       emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "skipped", summary: "No git URL provided", progress: 100 });
     }
     if (gateMap.SECRETS) {
-      sourceScans.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
+      phase1Jobs.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
       emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "skipped", summary: "No git URL provided", progress: 100 });
     }
   }
 
-  await Promise.allSettled(sourceScans);
-  checkPipelineTimeout();
-
-  // Phase 2: Build the container image (if git URL, no pre-built image)
+  // Start the build in parallel with source scans (build doesn't need scan results)
   let builtImageRef = run.image_url || null;
+  const buildResult = { imageRef: null }; // shared mutable ref for the build promise
   if (!builtImageRef && run.git_url) {
-    // Build with Kaniko — reuse existing build job pattern
     if (gateMap.ARTIFACT_STORE) {
       await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
       emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
     }
+    // Wrap the entire build in a promise so it runs alongside SAST/Secrets
+    phase1Jobs.push((async () => {
 
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
     const teamName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
@@ -8552,7 +8553,7 @@ async function orchestratePipelineScan(runId) {
     }
 
     if (buildSucceeded) {
-      builtImageRef = destination; // Keep internal hostname for scanning
+      buildResult.imageRef = destination; // Store for Phase 2
       const externalImageRef = destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
       // Save the external image URL on the pipeline run (for nodes to pull)
       await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
@@ -8567,8 +8568,8 @@ async function orchestratePipelineScan(runId) {
         emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Container image build failed", progress: 100 });
       }
       await db.auditLog(runId, "image_build_failed", null, "Container image build failed", { buildId });
-      // Don't proceed with image scans — builtImageRef stays null
     }
+    })()); // end build promise
   } else if (builtImageRef) {
     // Pre-built image provided — mark ARTIFACT_STORE as passed
     if (gateMap.ARTIFACT_STORE) {
@@ -8583,9 +8584,13 @@ async function orchestratePipelineScan(runId) {
     }
   }
 
+  // Wait for ALL Phase 1 jobs (SAST + Secrets + Build) to finish
+  await Promise.allSettled(phase1Jobs);
+  // Pick up the built image ref from the build promise
+  if (buildResult.imageRef) builtImageRef = buildResult.imageRef;
   checkPipelineTimeout();
 
-  // Phase 3: Image-based scans (SBOM, CVE) against the BUILT image
+  // Phase 2: Image-based scans (SBOM, CVE) against the BUILT image
   if (builtImageRef) {
     const imageScans = [];
     if (gateMap.SBOM) {
