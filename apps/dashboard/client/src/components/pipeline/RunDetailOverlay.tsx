@@ -13,6 +13,7 @@ import {
   updateFindingDisposition,
 } from '../../api/pipeline';
 import type { PipelineRun } from '../../types/api';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 
 function timeAgo(dateStr: string | null | undefined): string {
   if (!dateStr) return '--';
@@ -42,9 +43,11 @@ interface RunDetailOverlayProps {
   isReview?: boolean;
   onClose: () => void;
   onActionComplete?: () => void;
+  onOpenApp?: (url: string, title: string) => void;
 }
 
-export function RunDetailOverlay({ runId, isReview = false, onClose, onActionComplete }: RunDetailOverlayProps) {
+export function RunDetailOverlay({ runId, isReview = false, onClose, onActionComplete, onOpenApp }: RunDetailOverlayProps) {
+  const config = useConfig();
   const [run, setRun] = useState<PipelineRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +221,13 @@ export function RunDetailOverlay({ runId, isReview = false, onClose, onActionCom
                 <span className="text-xs text-red">
                   Rejected{run.review?.comment ? ': ' + run.review.comment : ''}
                 </span>
+              )}
+              {onOpenApp && run.status !== 'deployed' && run.status !== 'failed' && (
+                <Button variant="primary" onClick={() => {
+                  const wizardUrl = `${serviceUrl(config, 'dsop')}?runId=${run.id}`;
+                  onOpenApp(wizardUrl, 'DSOP Security Pipeline');
+                  onClose();
+                }}>Open in Wizard</Button>
               )}
             </div>
 

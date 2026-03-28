@@ -164,7 +164,7 @@ function AppContent() {
         {visitedTabs.has('security') && (
           <div style={{ display: activeTab === 'security' ? 'block' : 'none' }} className={activeTab === 'security' ? 'tab-enter' : ''}>
             <ErrorBoundary>
-              <SecurityTab active={activeTab === 'security'} />
+              <SecurityTab active={activeTab === 'security'} onOpenApp={handleOpenAppFrame} />
             </ErrorBoundary>
           </div>
         )}

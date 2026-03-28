@@ -18,9 +18,10 @@ const PAGE_LIMIT = 20;
 
 interface SecurityTabProps {
   active: boolean;
+  onOpenApp?: (url: string, title: string) => void;
 }
 
-export function SecurityTab({ active }: SecurityTabProps) {
+export function SecurityTab({ active, onOpenApp }: SecurityTabProps) {
   const { isAdmin, isIssm } = useUserContext();
   const canReview = isAdmin || isIssm;
   const { confirm } = useModal();
@@ -495,6 +496,7 @@ export function SecurityTab({ active }: SecurityTabProps) {
           isReview={isReviewMode}
           onClose={() => setSelectedRunId(null)}
           onActionComplete={refreshAll}
+          onOpenApp={onOpenApp}
         />
       )}
     </div>

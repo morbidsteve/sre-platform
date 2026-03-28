@@ -11,9 +11,10 @@ const PAGE_LIMIT = 20;
 
 interface PipelineTabProps {
   active: boolean;
+  onOpenApp?: (url: string, title: string) => void;
 }
 
-export function PipelineTab({ active }: PipelineTabProps) {
+export function PipelineTab({ active, onOpenApp }: PipelineTabProps) {
   const [stats, setStats] = useState<PipelineStats | null>(null);
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [total, setTotal] = useState(0);
@@ -106,6 +107,7 @@ export function PipelineTab({ active }: PipelineTabProps) {
           isReview={isReviewMode}
           onClose={() => setSelectedRunId(null)}
           onActionComplete={refreshAll}
+          onOpenApp={onOpenApp}
         />
       )}
     </div>

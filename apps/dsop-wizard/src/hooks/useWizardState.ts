@@ -304,6 +304,93 @@ export function useWizardState() {
     setResumePrompt(null);
   }, []);
 
+  // ── Auto-resume deploy polling when mounting with a deploying run ──
+  // If we land on step 6 with a pipelineRunId (via resume or URL link),
+  // we need to start polling for deploy status updates.
+  useEffect(() => {
+    if (state.currentStep !== 6 || !state.pipelineRunId || state.isDeploying) return;
+
+    // Check if the run is still deploying
+    getPipelineRun(state.pipelineRunId).then((run) => {
+      if (run.status === 'deploying') {
+        setState((prev) => ({
+          ...prev,
+          isDeploying: true,
+          pipelineRun: run,
+          deploySteps: getInitialDeploySteps().map((s, i) =>
+            i === 0 ? { ...s, status: 'running' as const } : s
+          ),
+        }));
+
+        // Start polling for completion
+        let pollCount = 0;
+        const deployPoll = setInterval(async () => {
+          try {
+            pollCount++;
+            const updatedRun = await getPipelineRun(state.pipelineRunId!);
+            setState((prev) => ({ ...prev, pipelineRun: updatedRun }));
+
+            const steps = getInitialDeploySteps();
+            const stepCount = steps.length;
+            const completedIdx = updatedRun.status === 'deployed'
+              ? stepCount
+              : Math.min(Math.floor(pollCount / 3), stepCount - 1);
+            const updatedSteps = steps.map((s, i) => ({
+              ...s,
+              status: (i < completedIdx ? 'completed' : i === completedIdx ? 'running' : 'pending') as DeployStep['status'],
+            }));
+            setState((prev) => ({ ...prev, deploySteps: updatedSteps }));
+
+            if (updatedRun.status === 'deployed' || (updatedRun.status as string).startsWith('deployed_')) {
+              clearInterval(deployPoll);
+              setState((prev) => ({
+                ...prev,
+                deploySteps: steps.map((s) => ({ ...s, status: 'completed' as const })),
+                deployedUrl: updatedRun.deployed_url || `https://${state.appInfo.name || 'my-app'}.${getConfig().domain}`,
+                isDeploying: false,
+                currentStep: 7,
+              }));
+            } else if (updatedRun.status === 'failed') {
+              clearInterval(deployPoll);
+              setState((prev) => ({
+                ...prev,
+                deploySteps: updatedSteps.map((s) =>
+                  s.status === 'running' ? { ...s, status: 'failed' as const } : s
+                ),
+                isDeploying: false,
+                error: 'Deployment failed — check pipeline history for details',
+              }));
+            }
+          } catch {
+            // Keep polling
+          }
+        }, 3000);
+
+        return () => clearInterval(deployPoll);
+      } else if (run.status === 'deployed' || (run.status as string).startsWith('deployed_')) {
+        // Already finished — jump to complete step
+        setState((prev) => ({
+          ...prev,
+          pipelineRun: run,
+          deploySteps: getInitialDeploySteps().map((s) => ({ ...s, status: 'completed' as const })),
+          deployedUrl: run.deployed_url || `https://${state.appInfo.name || 'my-app'}.${getConfig().domain}`,
+          isDeploying: false,
+          currentStep: 7,
+        }));
+      } else if (run.status === 'failed') {
+        setState((prev) => ({
+          ...prev,
+          pipelineRun: run,
+          isDeploying: false,
+          error: 'Deployment failed — check pipeline history for details',
+        }));
+      }
+    }).catch(() => {
+      // Run gone — can't resume
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.currentStep, state.pipelineRunId]);
+
   const isAdmin = user
     ? user.groups.some((g) => g === 'sre-admins' || g === 'issm')
     : false;
