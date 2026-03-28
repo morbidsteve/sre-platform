@@ -9,7 +9,7 @@ metadata:
     sre.io/team: team-alpha
     sre.io/managed-by: dsop-pipeline
   annotations:
-    sre.io/exception-reason: 'privileged_container: Ops cockpit override — admin approved privileged mode; run_as_root: Ops cockpit override — admin approved root user'
+    sre.io/exception-reason: 'privileged_container: Ops cockpit override — admin approved privileged mode; run_as_root: Ops cockpit override — admin approved root user; writable_filesystem: Ops cockpit override — admin approved writable filesystem; privilege_escalation: Ops cockpit override — admin approved privilege escalation'
     sre.io/exception-approver: sre-admin@sre.example.com
     sre.io/exception-expiry: '2026-06-26'
     sre.io/pipeline-generated: 'true'
