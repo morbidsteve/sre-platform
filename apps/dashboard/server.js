@@ -2789,6 +2789,14 @@ function parseComposeBuildContext(yamlText) {
         svc.buildContext = ".";
       }
 
+      // Parse deploy config (resource limits, replicas, etc.)
+      svc.deploy = svcDef.deploy || null;
+
+      // Parse security-related fields
+      svc.cap_add = Array.isArray(svcDef.cap_add) ? svcDef.cap_add : [];
+      svc.privileged = svcDef.privileged === true;
+      svc.user = svcDef.user || null;
+
       // Parse profiles
       if (Array.isArray(svcDef.profiles)) {
         svc.profiles = svcDef.profiles.map(String);
@@ -2836,7 +2844,8 @@ function parseRepoAnalysisLogs(logs) {
   const dockerfileMatch = logs.split("===SRE_DOCKERFILE_CONTENT===")[1]?.split("===SRE_CHART_CONTENT===")[0];
   const chartMatch = logs.split("===SRE_CHART_CONTENT===")[1]?.split("===SRE_KUSTOMIZE_CONTENT===")[0];
   const kustomizeMatch = logs.split("===SRE_KUSTOMIZE_CONTENT===")[1]?.split("===SRE_VALUES_CONTENT===")[0];
-  const valuesMatch = logs.split("===SRE_VALUES_CONTENT===")[1]?.split("===SRE_DONE===")[0];
+  const valuesMatch = logs.split("===SRE_VALUES_CONTENT===")[1]?.split("===SRE_APP_CONFIG===")[0];
+  const appConfigMatch = logs.split("===SRE_APP_CONFIG===")[1]?.split("===SRE_DONE===")[0];
 
   const files = (fileListMatch || "").trim().split("\n").filter(Boolean);
   const composeFileNames = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
@@ -2860,6 +2869,7 @@ function parseRepoAnalysisLogs(logs) {
   const chartFiles = parseFileBlocks(chartMatch);
   const kustomizeFiles = parseFileBlocks(kustomizeMatch);
   const valuesFiles = parseFileBlocks(valuesMatch);
+  const appConfigs = parseFileBlocks(appConfigMatch);
 
   // Determine repoType with priority: compose > helm > dockerfile > kustomize > unknown
   let repoType = "unknown";
@@ -2883,6 +2893,7 @@ function parseRepoAnalysisLogs(logs) {
     chartPath: null,
     kustomizePath: null,
     valuesContent: null,
+    appConfigs,
   };
 
   // Parse Helm chart info
@@ -2956,6 +2967,15 @@ function parseRepoAnalysisLogs(logs) {
         console.log(`[repo-analyze] Service "${svcName}" has 'sre' Dockerfile stage — using --target=sre`);
       }
 
+      // Detect deployment requirements from Dockerfile + compose config + app configs
+      const requirements = detectAppRequirements(dockerfileContent, {
+        ports: (svc.ports || []).map(p => String(p)),
+        deploy: svc.deploy || null,
+        cap_add: svc.cap_add || [],
+        privileged: svc.privileged || false,
+        user: svc.user || null,
+      }, appConfigs);
+
       result.services.push({
         name: svcName,
         image: svc.image || null,
@@ -2972,12 +2992,14 @@ function parseRepoAnalysisLogs(logs) {
         sre: classification.sre || null,
         sreLabel: classification.label || null,
         needsBuild: !!svc.buildContext,
+        requirements,
       });
     }
   } else if (repoType === "dockerfile") {
     // Single Dockerfile repo
     const rootDockerfile = dockerfiles["Dockerfile"] || "";
     const ports = parseDockerfileExpose(rootDockerfile);
+    const requirements = detectAppRequirements(rootDockerfile, null, appConfigs);
     result.services.push({
       name: "app",
       image: null,
@@ -2989,10 +3011,336 @@ function parseRepoAnalysisLogs(logs) {
       role: "ingress",
       sre: null,
       needsBuild: true,
+      requirements,
     });
   }
 
   return result;
+}
+
+/**
+ * Detect deployment requirements from Dockerfile content, compose service config,
+ * and application config files (package.json, .env, nginx.conf, application.properties, etc.).
+ * Returns { port, needsRoot, needsPrivileged, needsWritableFs, resources, probeDelays,
+ *           capabilities, probePath, detectedFrom }
+ */
+function detectAppRequirements(dockerfileContent, composeSvc, appConfigs) {
+  const reqs = {
+    port: null,
+    needsRoot: false,
+    needsPrivileged: false,
+    needsWritableFs: false,
+    resources: null,
+    probeDelays: null,
+    probePath: null,
+    capabilities: [],
+    detectedFrom: [], // Track what we detected and why
+  };
+
+  // ── FROM BASE IMAGE DETECTION ──
+  // Known Docker Hub images and their requirements
+  if (dockerfileContent) {
+    const fromLines = dockerfileContent.match(/^FROM\s+(\S+)/gim) || [];
+    const baseImages = fromLines.map(f => f.replace(/^FROM\s+/i, '').split(' ')[0].toLowerCase());
+
+    for (const base of baseImages) {
+      // linuxserver.io images — need root, writable FS, slow startup
+      if (base.includes('linuxserver/') || base.includes('lsiobase/') || base.includes('lscr.io/')) {
+        reqs.needsRoot = true;
+        reqs.needsWritableFs = true;
+        reqs.probeDelays = { liveness: 60, readiness: 30, failureThreshold: 10 };
+        reqs.detectedFrom.push('linuxserver.io base image: needs root + writable FS');
+        // linuxserver images default to port 3000 for GUI apps, 80 for web
+        if (!reqs.port) reqs.port = 3000;
+      }
+      // Database images
+      if (base.includes('postgres') || base.includes('postgis')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 5432;
+        if (!reqs.resources) reqs.resources = { limits: { cpu: '2', memory: '2Gi' }, requests: { cpu: '250m', memory: '512Mi' } };
+        reqs.detectedFrom.push('PostgreSQL base image');
+      }
+      if (base.includes('mysql') || base.includes('mariadb')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 3306;
+        reqs.detectedFrom.push('MySQL/MariaDB base image');
+      }
+      if (base.includes('mongo')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 27017;
+        reqs.detectedFrom.push('MongoDB base image');
+      }
+      if (base.includes('redis')) {
+        if (!reqs.port) reqs.port = 6379;
+        reqs.detectedFrom.push('Redis base image');
+      }
+      if (base.includes('elasticsearch') || base.includes('opensearch')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 9200;
+        if (!reqs.resources) reqs.resources = { limits: { cpu: '2', memory: '4Gi' }, requests: { cpu: '500m', memory: '2Gi' } };
+        reqs.detectedFrom.push('Elasticsearch/OpenSearch base image');
+      }
+      // Network/security tools — need privileged
+      if (base.includes('wireshark') || base.includes('tcpdump') || base.includes('nmap') || base.includes('kali') || base.includes('parrot') || base.includes('metasploit')) {
+        reqs.needsPrivileged = true; reqs.needsRoot = true; reqs.needsWritableFs = true;
+        reqs.capabilities.push('NET_ADMIN', 'NET_RAW');
+        reqs.detectedFrom.push('Network/security tool: needs privileged + NET_ADMIN');
+      }
+      // Nginx
+      if (base.includes('nginx')) {
+        if (!reqs.port) reqs.port = base.includes('unprivileged') ? 8080 : 80;
+        reqs.detectedFrom.push('Nginx base image');
+      }
+      // Apache
+      if (base.includes('httpd') || base.includes('apache')) {
+        if (!reqs.port) reqs.port = 80;
+        reqs.detectedFrom.push('Apache base image');
+      }
+      // Python/Django/Flask/FastAPI
+      if (base.includes('python') || base.includes('django') || base.includes('uvicorn')) {
+        if (!reqs.port) reqs.port = 8000;
+        reqs.detectedFrom.push('Python base image');
+      }
+      // Node.js
+      if (base.includes('node')) {
+        if (!reqs.port) reqs.port = 3000;
+        reqs.detectedFrom.push('Node.js base image');
+      }
+      // Go
+      if (base.includes('golang')) {
+        if (!reqs.port) reqs.port = 8080;
+        reqs.detectedFrom.push('Go base image');
+      }
+      // Ruby/Rails
+      if (base.includes('ruby') || base.includes('rails')) {
+        if (!reqs.port) reqs.port = 3000;
+        reqs.detectedFrom.push('Ruby/Rails base image');
+      }
+      // Java / Spring Boot
+      if (base.includes('openjdk') || base.includes('eclipse-temurin') || base.includes('amazoncorretto') || base.includes('tomcat')) {
+        if (!reqs.port) reqs.port = 8080;
+        if (!reqs.resources) reqs.resources = { limits: { cpu: '2', memory: '2Gi' }, requests: { cpu: '250m', memory: '512Mi' } };
+        reqs.detectedFrom.push('Java base image');
+      }
+      // .NET
+      if (base.includes('dotnet') || base.includes('aspnet')) {
+        if (!reqs.port) reqs.port = 8080;
+        reqs.detectedFrom.push('.NET base image');
+      }
+      // Grafana
+      if (base.includes('grafana')) {
+        if (!reqs.port) reqs.port = 3000;
+        reqs.detectedFrom.push('Grafana base image');
+      }
+      // Jenkins
+      if (base.includes('jenkins')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 8080;
+        if (!reqs.resources) reqs.resources = { limits: { cpu: '2', memory: '4Gi' }, requests: { cpu: '500m', memory: '1Gi' } };
+        reqs.detectedFrom.push('Jenkins base image');
+      }
+      // Nextcloud
+      if (base.includes('nextcloud')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 80;
+        if (!reqs.resources) reqs.resources = { limits: { cpu: '2', memory: '2Gi' }, requests: { cpu: '250m', memory: '512Mi' } };
+        reqs.detectedFrom.push('Nextcloud base image');
+      }
+      // GitLab
+      if (base.includes('gitlab')) {
+        reqs.needsRoot = true; reqs.needsWritableFs = true;
+        if (!reqs.port) reqs.port = 80;
+        if (!reqs.resources) reqs.resources = { limits: { cpu: '4', memory: '8Gi' }, requests: { cpu: '1', memory: '4Gi' } };
+        reqs.detectedFrom.push('GitLab base image');
+      }
+    }
+
+    // ── DOCKERFILE DIRECTIVES ──
+
+    // EXPOSE
+    const exposed = parseDockerfileExpose(dockerfileContent);
+    if (exposed.length > 0 && !reqs.port) {
+      reqs.port = exposed.length === 1 ? exposed[0] : (PREFERRED_HTTP_PORTS.find(p => exposed.includes(p)) || exposed[0]);
+      reqs.detectedFrom.push(`EXPOSE ${exposed.join(', ')}`);
+    }
+
+    // USER
+    const userMatch = dockerfileContent.match(/^USER\s+(\S+)/im);
+    if (!userMatch && !reqs.needsRoot) {
+      // No USER directive at all — runs as root by default
+      reqs.needsRoot = true;
+      reqs.detectedFrom.push('No USER directive: runs as root');
+    } else if (userMatch) {
+      const user = userMatch[1];
+      if (user === '0' || user === 'root') {
+        reqs.needsRoot = true;
+        reqs.detectedFrom.push(`USER ${user}: runs as root`);
+      }
+    }
+
+    // HEALTHCHECK
+    const healthMatch = dockerfileContent.match(/HEALTHCHECK\s+.*CMD\s+.*?(?:curl|wget)\s+.*?(\/\S*)/im);
+    if (healthMatch && !reqs.probePath) {
+      reqs.probePath = healthMatch[1].replace(/['"\|].*/, '').replace(/\s.*/, '');
+      reqs.detectedFrom.push(`HEALTHCHECK path: ${reqs.probePath}`);
+    }
+
+    // VOLUME — implies writable filesystem need
+    if (/^VOLUME\s+/im.test(dockerfileContent) && !reqs.needsWritableFs) {
+      reqs.needsWritableFs = true;
+      reqs.detectedFrom.push('VOLUME directive: needs writable FS');
+    }
+
+    // s6-overlay detection from any context
+    if (/s6.overlay|s6-overlay/i.test(dockerfileContent)) {
+      reqs.needsRoot = true;
+      reqs.needsWritableFs = true;
+      if (!reqs.probeDelays) reqs.probeDelays = { liveness: 60, readiness: 30, failureThreshold: 10 };
+      reqs.detectedFrom.push('s6-overlay init system: needs root + writable FS + slow startup');
+    }
+  }
+
+  // ── COMPOSE SERVICE OVERRIDES ──
+  if (composeSvc) {
+    // Port from compose (takes precedence over Dockerfile)
+    if (composeSvc.ports && composeSvc.ports.length > 0) {
+      const parts = String(composeSvc.ports[0]).split(':');
+      const containerPort = parseInt(parts[parts.length - 1].replace(/\/\w+$/, ''), 10);
+      if (containerPort > 0 && containerPort <= 65535) {
+        reqs.port = containerPort;
+        reqs.detectedFrom.push(`Compose ports: ${containerPort}`);
+      }
+    }
+
+    // Resource limits from compose deploy section
+    if (composeSvc.deploy && composeSvc.deploy.resources) {
+      const limits = composeSvc.deploy.resources.limits || {};
+      const reservations = composeSvc.deploy.resources.reservations || {};
+      reqs.resources = {
+        limits: {
+          cpu: limits.cpus ? String(limits.cpus).replace(/'/g, '') : '1',
+          memory: limits.memory || '512Mi',
+        },
+        requests: {
+          cpu: reservations.cpus ? String(reservations.cpus).replace(/'/g, '') : '100m',
+          memory: reservations.memory || '128Mi',
+        },
+      };
+      reqs.detectedFrom.push(`Compose resource limits: ${JSON.stringify(limits)}`);
+    }
+
+    // cap_add -> capabilities
+    if (composeSvc.cap_add && Array.isArray(composeSvc.cap_add)) {
+      for (const cap of composeSvc.cap_add) {
+        if (!reqs.capabilities.includes(cap)) reqs.capabilities.push(cap);
+      }
+      reqs.detectedFrom.push(`Compose cap_add: ${composeSvc.cap_add.join(', ')}`);
+    }
+
+    // privileged from compose
+    if (composeSvc.privileged) {
+      reqs.needsPrivileged = true;
+      reqs.detectedFrom.push('Compose privileged: true');
+    }
+
+    // user from compose
+    if (composeSvc.user) {
+      const uid = String(composeSvc.user).split(':')[0];
+      if (uid === '0' || uid === 'root') {
+        reqs.needsRoot = true;
+        reqs.detectedFrom.push(`Compose user: ${composeSvc.user}`);
+      }
+    }
+  }
+
+  // ── APP CONFIG FILE DETECTION ──
+  if (appConfigs && typeof appConfigs === 'object') {
+    // package.json — detect port from start script
+    const packageJson = appConfigs['package.json'];
+    if (packageJson) {
+      try {
+        const pkg = JSON.parse(packageJson);
+        const startScript = pkg.scripts?.start || pkg.scripts?.serve || '';
+        // Look for --port or -p flags
+        const portFlag = startScript.match(/(?:--port|(?:^|\s)-p)\s*(\d+)/);
+        if (portFlag && !reqs.port) {
+          reqs.port = parseInt(portFlag[1], 10);
+          reqs.detectedFrom.push(`package.json scripts.start --port ${reqs.port}`);
+        }
+        // Look for PORT in env or default
+        if (startScript.includes('PORT') && !reqs.port) {
+          reqs.port = 3000; // Node default
+          reqs.detectedFrom.push('package.json uses PORT env variable, defaulting to 3000');
+        }
+      } catch (e) { /* not valid JSON */ }
+    }
+
+    // .env / .env.example / .env.production — detect PORT
+    for (const envFile of ['.env', '.env.example', '.env.production']) {
+      const envContent = appConfigs[envFile];
+      if (envContent) {
+        const portMatch = envContent.match(/^PORT\s*=\s*(\d+)/m);
+        if (portMatch && !reqs.port) {
+          reqs.port = parseInt(portMatch[1], 10);
+          reqs.detectedFrom.push(`${envFile}: PORT=${reqs.port}`);
+        }
+      }
+    }
+
+    // nginx.conf — detect listen port
+    const nginxConf = appConfigs['nginx.conf'] || appConfigs['nginx/default.conf'];
+    if (nginxConf) {
+      const listenMatch = nginxConf.match(/listen\s+(\d+)/);
+      if (listenMatch) {
+        reqs.port = parseInt(listenMatch[1], 10);
+        reqs.detectedFrom.push(`nginx.conf listen ${reqs.port}`);
+      }
+    }
+
+    // application.properties / application.yml (Spring Boot) — detect server.port
+    for (const [fname, content] of Object.entries(appConfigs)) {
+      if (fname.includes('application.properties') && content) {
+        const portMatch = content.match(/server\.port\s*=\s*(\d+)/);
+        if (portMatch && !reqs.port) {
+          reqs.port = parseInt(portMatch[1], 10);
+          reqs.detectedFrom.push(`${fname}: server.port=${reqs.port}`);
+        }
+      }
+      // application.yml (Spring Boot)
+      if ((fname.includes('application.yml') || fname.includes('application.yaml')) && content) {
+        const portMatch = content.match(/port:\s*(\d+)/);
+        if (portMatch && !reqs.port) {
+          reqs.port = parseInt(portMatch[1], 10);
+          reqs.detectedFrom.push(`${fname}: port: ${reqs.port}`);
+        }
+      }
+    }
+
+    // Procfile — detect web process and port
+    const procfile = appConfigs['Procfile'];
+    if (procfile) {
+      const webLine = procfile.match(/^web:\s*(.+)/m);
+      if (webLine) {
+        const portMatch = webLine[1].match(/(?:--port|(?:^|\s)-p)\s*(\d+)/);
+        if (portMatch && !reqs.port) {
+          reqs.port = parseInt(portMatch[1], 10);
+          reqs.detectedFrom.push(`Procfile web process: port ${reqs.port}`);
+        }
+      }
+    }
+  }
+
+  // ── FINAL DEFAULTS ──
+  // If we still don't have a port, use 8080
+  if (!reqs.port) reqs.port = 8080;
+
+  // If privileged is needed, root is also needed
+  if (reqs.needsPrivileged && !reqs.needsRoot) reqs.needsRoot = true;
+
+  // Deduplicate capabilities
+  reqs.capabilities = [...new Set(reqs.capabilities)];
+
+  return reqs;
 }
 
 // Create the analyze Job spec for cloning and scanning a repo
@@ -3040,6 +3388,17 @@ function createAnalyzeJobSpec(analyzeId, gitUrl, safeBranch) {
               `find /workspace -maxdepth 2 \\( -name 'kustomization.yaml' -o -name 'kustomize.yaml' \\) | head -5 | while read kf; do relpath=$(echo $kf | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $kf; done`,
               `echo '===SRE_VALUES_CONTENT==='`,
               `find /workspace -maxdepth 2 -name 'values.yaml' | head -5 | while read vf; do relpath=$(echo $vf | sed 's|/workspace/||'); echo "===FILE:$relpath==="; cat $vf; done`,
+              `echo '===SRE_APP_CONFIG==='`,
+              // Capture common config files that reveal ports, resources, requirements
+              `for f in package.json .env .env.example .env.production Procfile nginx.conf nginx/default.conf; do if [ -f /workspace/$f ]; then echo "===FILE:$f==="; head -100 /workspace/$f; fi; done`,
+              // Spring Boot / Java
+              `for f in $(find /workspace -maxdepth 3 -name 'application.properties' -o -name 'application.yml' -o -name 'application.yaml' 2>/dev/null | head -5); do relpath=$(echo $f | sed 's|/workspace/||'); echo "===FILE:$relpath==="; head -50 $f; done`,
+              // Python
+              `for f in $(find /workspace -maxdepth 2 -name 'requirements.txt' -o -name 'Pipfile' -o -name 'pyproject.toml' 2>/dev/null | head -3); do relpath=$(echo $f | sed 's|/workspace/||'); echo "===FILE:$relpath==="; head -30 $f; done`,
+              // Go
+              `for f in $(find /workspace -maxdepth 2 -name 'go.mod' 2>/dev/null | head -2); do relpath=$(echo $f | sed 's|/workspace/||'); echo "===FILE:$relpath==="; head -20 $f; done`,
+              // Rust
+              `for f in $(find /workspace -maxdepth 2 -name 'Cargo.toml' 2>/dev/null | head -2); do relpath=$(echo $f | sed 's|/workspace/||'); echo "===FILE:$relpath==="; head -30 $f; done`,
               `echo '===SRE_DONE==='`,
             ].join(" && ")],
             volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
@@ -8525,12 +8884,33 @@ async function orchestratePipelineScan(runId) {
       emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: "Repo analysis error — falling back to root Dockerfile build" });
     }
 
-    // Save analysis to metadata
+    // Save analysis to metadata (including detected requirements for smart deploy defaults)
     if (repoAnalysis) {
       try {
+        const analysisMetadata = {
+          repoAnalysis: {
+            repoType: repoAnalysis.repoType,
+            services: repoAnalysis.services.map(s => ({
+              name: s.name, role: s.role, sre: s.sre || null, sreLabel: s.sreLabel || null,
+              needsBuild: s.needsBuild, port: s.port, buildContext: s.buildContext,
+              dockerfile: s.dockerfile || null, buildTarget: s.buildTarget || null,
+              image: s.image || null, environment: s.environment || [],
+              requirements: s.requirements || null,
+            })),
+          },
+        };
+        // Store the primary (ingress) service's requirements as top-level detectedRequirements
+        // so the deploy phase can use them without digging into the services array
+        if (repoAnalysis.services.length > 0) {
+          const primarySvc = repoAnalysis.services.find(s => s.role === 'ingress') || repoAnalysis.services[0];
+          if (primarySvc.requirements) {
+            analysisMetadata.detectedRequirements = primarySvc.requirements;
+          }
+        }
+        const portUpdate = analysisMetadata.detectedRequirements?.port || null;
         await db.pool.query(
-          "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
-          [JSON.stringify({ repoAnalysis: { repoType: repoAnalysis.repoType, services: repoAnalysis.services.map(s => ({ name: s.name, role: s.role, sre: s.sre || null, sreLabel: s.sreLabel || null, needsBuild: s.needsBuild, port: s.port, buildContext: s.buildContext, dockerfile: s.dockerfile || null, buildTarget: s.buildTarget || null, image: s.image || null, environment: s.environment || [] })) } }), runId]
+          "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, port = COALESCE($2, port), updated_at = NOW() WHERE id = $3",
+          [JSON.stringify(analysisMetadata), portUpdate, runId]
         );
       } catch (metaErr) {
         logger.info('pipeline', `Failed to save repoAnalysis metadata: ${metaErr.message}`, { runId });
@@ -9146,6 +9526,19 @@ async function executePipelineDeploy(run, actor) {
             const isIngress = svc.role === "ingress";
             const svcIngressHost = isIngress ? ingressHost : "";
 
+            // Apply per-service detected requirements (additive — ISSM overrides take precedence)
+            let svcSecurityContext = pipelineSecurityContext;
+            const svcReqs = svc.requirements;
+            if (svcReqs && !pipelineSecurityContext && (svcReqs.needsRoot || svcReqs.needsPrivileged)) {
+              svcSecurityContext = {};
+              if (svcReqs.needsRoot) svcSecurityContext.runAsRoot = true;
+              if (svcReqs.needsPrivileged) { svcSecurityContext.privileged = true; svcSecurityContext.runAsRoot = true; }
+              if (svcReqs.needsWritableFs) svcSecurityContext.writableFilesystem = true;
+              if (svcReqs.capabilities && svcReqs.capabilities.length > 0) svcSecurityContext.capabilities = svcReqs.capabilities;
+            } else if (svcReqs && !pipelineSecurityContext && svcReqs.needsWritableFs) {
+              svcSecurityContext = { writableFilesystem: true };
+            }
+
             const manifest = generateHelmRelease({
               name: svcAppName,
               team: nsName,
@@ -9154,10 +9547,22 @@ async function executePipelineDeploy(run, actor) {
               port: svcPort,
               replicas: isIngress ? 2 : 1,
               ingressHost: svcIngressHost,
-              privileged: needsPrivileged,
-              securityContext: pipelineSecurityContext,
+              privileged: needsPrivileged || (svcReqs && svcReqs.needsPrivileged),
+              securityContext: svcSecurityContext,
               env: svc.environment || [],
             });
+
+            // Override resources if detected from compose deploy config
+            if (svcReqs && svcReqs.resources) {
+              manifest.spec.values.app.resources = svcReqs.resources;
+            }
+            // Override probe delays for apps that need longer startup
+            if (svcReqs && svcReqs.probeDelays) {
+              manifest.spec.values.app.probes = {
+                liveness: { path: '/', initialDelaySeconds: svcReqs.probeDelays.liveness, periodSeconds: 30, failureThreshold: svcReqs.probeDelays.failureThreshold || 5 },
+                readiness: { path: '/', initialDelaySeconds: svcReqs.probeDelays.readiness, periodSeconds: 10, failureThreshold: svcReqs.probeDelays.failureThreshold || 5 },
+              };
+            }
 
             await deployViaGitOps(manifest, nsName, svcAppName, actor, isIngress ? policyException : null);
 
@@ -9268,6 +9673,44 @@ async function executePipelineDeploy(run, actor) {
       const imageTag = imageParts.length > 1 ? imageParts[imageParts.length - 1] : "latest";
       const ingressHost = `${safeName}.${domain}`;
 
+      // Auto-detect app requirements from repo analysis stored during scan phase
+      let detectedPort = run.port || 8080;
+      let detectedResources = null;
+      let detectedProbeDelays = null;
+      try {
+        const runMeta = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {});
+        const analysis = runMeta.repoAnalysis;
+        if (analysis && analysis.services && analysis.services.length > 0) {
+          // Find the primary (ingress) service, or the first service
+          const primarySvc = analysis.services.find(s => s.role === 'ingress') || analysis.services[0];
+          if (primarySvc.port) detectedPort = primarySvc.port;
+        }
+        // Check for detected requirements stored during scan phase
+        if (runMeta.detectedRequirements) {
+          const dreqs = runMeta.detectedRequirements;
+          if (dreqs.port) detectedPort = dreqs.port;
+          if (dreqs.resources) detectedResources = dreqs.resources;
+          if (dreqs.probeDelays) detectedProbeDelays = dreqs.probeDelays;
+          // Auto-apply security context from detected requirements (only if not already set by ISSM)
+          if (!pipelineSecurityContext && (dreqs.needsRoot || dreqs.needsPrivileged)) {
+            pipelineSecurityContext = {};
+            if (dreqs.needsRoot) pipelineSecurityContext.runAsRoot = true;
+            if (dreqs.needsPrivileged) { pipelineSecurityContext.privileged = true; pipelineSecurityContext.runAsRoot = true; }
+            if (dreqs.needsWritableFs) pipelineSecurityContext.writableFilesystem = true;
+            if (dreqs.capabilities && dreqs.capabilities.length > 0) pipelineSecurityContext.capabilities = dreqs.capabilities;
+            needsPrivileged = true;
+            logger.info('pipeline', `Run ${run.id}: auto-detected security requirements from repo analysis`, { runId: run.id, detectedReqs: dreqs });
+          }
+          // Auto-apply writable filesystem even without root (if not already set by ISSM)
+          if (!pipelineSecurityContext && dreqs.needsWritableFs) {
+            pipelineSecurityContext = { writableFilesystem: true };
+          }
+        }
+      } catch (e) { /* best-effort detection */ }
+
+      // Use detected port (run.port takes precedence if explicitly set by user)
+      const effectivePort = run.port || detectedPort;
+
       emitPipelineEvent(run.id, "deploy_step", { step: "prepare", status: "completed" });
       emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "running" });
       emitPipelineEvent(run.id, "deploy_log", { step: "namespace", line: `Ensuring namespace ${nsName} exists` });
@@ -9282,12 +9725,24 @@ async function executePipelineDeploy(run, actor) {
         team: nsName,
         image: imageRepo,
         tag: imageTag,
-        port: run.port || 8080,
+        port: effectivePort,
         replicas: 2,
         ingressHost: ingressHost,
         privileged: needsPrivileged,
         securityContext: pipelineSecurityContext,
       });
+
+      // Override resources if detected from compose deploy config
+      if (detectedResources) {
+        manifest.spec.values.app.resources = detectedResources;
+      }
+      // Override probe delays for apps that need longer startup (e.g., linuxserver images)
+      if (detectedProbeDelays) {
+        manifest.spec.values.app.probes = {
+          liveness: { path: '/', initialDelaySeconds: detectedProbeDelays.liveness, periodSeconds: 30, failureThreshold: detectedProbeDelays.failureThreshold || 5 },
+          readiness: { path: '/', initialDelaySeconds: detectedProbeDelays.readiness, periodSeconds: 10, failureThreshold: detectedProbeDelays.failureThreshold || 5 },
+        };
+      }
 
       // Generate Kyverno PolicyException for ISSM-approved security exceptions only.
       // Exceptions must have approved === true (set by the ISSM review endpoint).
