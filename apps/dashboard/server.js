@@ -5316,19 +5316,31 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
 function generatePolicyException(name, team, securityExceptions, reviewer) {
   const policyMap = {
     run_as_root: [
+      { policyName: "require-run-as-nonroot", ruleNames: ["require-pod-run-as-nonroot", "require-container-run-as-nonroot"] },
       { policyName: "require-security-context", ruleNames: ["require-run-as-non-root", "require-drop-all-capabilities"] },
+      { policyName: "disallow-privilege-escalation", ruleNames: ["disallow-privilege-escalation-containers", "disallow-privilege-escalation-init-containers"] },
     ],
     privileged_container: [
-      { policyName: "disallow-privileged-containers", ruleNames: ["disallow-privileged"] },
+      { policyName: "disallow-privileged-containers", ruleNames: ["deny-privileged-containers", "deny-privileged-init-containers"] },
+      { policyName: "disallow-privilege-escalation", ruleNames: ["disallow-privilege-escalation-containers", "disallow-privilege-escalation-init-containers"] },
+      { policyName: "require-run-as-nonroot", ruleNames: ["require-pod-run-as-nonroot", "require-container-run-as-nonroot"] },
       { policyName: "require-security-context", ruleNames: ["require-run-as-non-root", "require-drop-all-capabilities"] },
+      { policyName: "require-drop-all-capabilities", ruleNames: ["require-drop-all"] },
+    ],
+    privilege_escalation: [
+      { policyName: "disallow-privilege-escalation", ruleNames: ["disallow-privilege-escalation-containers", "disallow-privilege-escalation-init-containers"] },
+    ],
+    writable_filesystem: [
+      { policyName: "require-security-context", ruleNames: ["require-run-as-non-root"] },
     ],
     host_networking: [
       { policyName: "disallow-host-namespaces", ruleNames: ["deny-host-namespaces"] },
+      { policyName: "disallow-host-ports", ruleNames: ["deny-host-ports", "deny-host-ports-init-containers"] },
     ],
     custom_capability: [
+      { policyName: "require-drop-all-capabilities", ruleNames: ["require-drop-all"] },
       { policyName: "require-security-context", ruleNames: ["require-drop-all-capabilities"] },
     ],
-    // writable_filesystem: no PolicyException needed — Helm values override is sufficient
   };
 
   // Collect all policy exceptions, deduplicating by policyName
