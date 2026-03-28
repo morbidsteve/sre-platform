@@ -5186,7 +5186,7 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
   // Determine if we need privileged-level security context.
   // securityContext (granular) takes precedence over the boolean privileged flag.
   const sc = securityContext || {};
-  const needsPrivileged = privileged || sc.runAsRoot || false;
+  const needsPrivileged = privileged || sc.privileged || sc.runAsRoot || false;
 
   const hr = {
     apiVersion: "helm.toolkit.fluxcd.io/v2",
@@ -5250,19 +5250,29 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
 
   // Apply security context overrides (granular securityContext takes precedence over boolean privileged)
   const values = hr.spec.values;
-  if (sc.runAsRoot) {
+  if (needsPrivileged) {
     values.podSecurityContext = {
       runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
       seccompProfile: { type: "RuntimeDefault" },
     };
+    values.containerSecurityContext = values.containerSecurityContext || {};
+    values.containerSecurityContext.runAsNonRoot = false;
+    values.containerSecurityContext.runAsUser = 0;
+    values.containerSecurityContext.allowPrivilegeEscalation = true;
+    values.containerSecurityContext.readOnlyRootFilesystem = false;
   }
-  // Writable filesystem
-  if (sc.writableFilesystem || sc.runAsRoot) {
+  // Privileged container — full access (implies root, escalation, writable FS)
+  if (needsPrivileged) {
+    values.containerSecurityContext = values.containerSecurityContext || {};
+    values.containerSecurityContext.privileged = true;
+  }
+  // Writable filesystem (standalone, without root)
+  if (sc.writableFilesystem && !needsRoot) {
     values.containerSecurityContext = values.containerSecurityContext || {};
     values.containerSecurityContext.readOnlyRootFilesystem = false;
   }
-  // Privilege escalation
-  if (sc.allowPrivilegeEscalation || sc.runAsRoot) {
+  // Privilege escalation (standalone, without root)
+  if (sc.allowPrivilegeEscalation && !needsRoot) {
     values.containerSecurityContext = values.containerSecurityContext || {};
     values.containerSecurityContext.allowPrivilegeEscalation = true;
   }
@@ -5273,17 +5283,6 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
       add: sc.capabilities,
       drop: [],
     };
-  }
-  // If root is set, ensure container-level context matches
-  if (sc.runAsRoot) {
-    values.containerSecurityContext = values.containerSecurityContext || {};
-    values.containerSecurityContext.runAsNonRoot = false;
-    values.containerSecurityContext.runAsUser = 0;
-  }
-  // Fallback: old-style boolean privileged flag with no granular sc
-  if (privileged && !sc.runAsRoot && !sc.writableFilesystem && !sc.capabilities) {
-    values.podSecurityContext = { runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: "RuntimeDefault" } };
-    values.containerSecurityContext = { allowPrivilegeEscalation: true, readOnlyRootFilesystem: false, runAsNonRoot: false, runAsUser: 0 };
   }
 
   // Extra sidecar containers (e.g., MongoDB for unifi-network-application)
@@ -7701,7 +7700,7 @@ app.post("/api/pipeline/runs/:id/exceptions", mutateLimiter, requireDb, requireG
       else merged.push(entry);
     }
 
-    await pool.query("UPDATE pipeline_runs SET security_exceptions = $1, updated_at = NOW() WHERE id = $2", [JSON.stringify(merged), run.id]);
+    await db.pool.query("UPDATE pipeline_runs SET security_exceptions = $1::jsonb, updated_at = NOW() WHERE id = $2", [JSON.stringify(merged), run.id]);
     await db.auditLog(run.id, "security_exceptions_updated", actor,
       `Security exceptions updated: ${exceptions.map(e => `${e.type}${isAdmin ? ' (approved)' : ' (requested)'}`).join(", ")}`,
       { exceptions: merged });

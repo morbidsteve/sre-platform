@@ -534,6 +534,16 @@ export function useWizardState() {
 
     // Try the Pipeline API first
     try {
+      // Build security context from enabled exceptions so deploy applies the right pod spec
+      const enabledExcs = state.securityExceptions.filter((e) => e.enabled);
+      const scOverride: Record<string, unknown> = {};
+      for (const ex of enabledExcs) {
+        if (ex.type === 'privileged_container') { scOverride.privileged = true; scOverride.runAsRoot = true; }
+        if (ex.type === 'run_as_root') scOverride.runAsRoot = true;
+        if (ex.type === 'writable_filesystem') scOverride.writableFilesystem = true;
+        if (ex.type === 'host_networking') scOverride.hostNetworking = true;
+      }
+
       const run = await createPipelineRun({
         appName: state.appInfo.name || 'my-app',
         gitUrl: state.source.gitUrl,
@@ -543,6 +553,7 @@ export function useWizardState() {
         team: state.appInfo.team || 'team-alpha',
         classification: state.appInfo.classification,
         contact: state.appInfo.contact,
+        securityContext: Object.keys(scOverride).length > 0 ? scOverride : undefined,
       });
 
       const localGates = getInitialGates();
