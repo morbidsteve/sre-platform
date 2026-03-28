@@ -13399,12 +13399,31 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
 
     // Step 3: Apply security context overrides
     // Accept both nested (patch.securityContext.runAsRoot) and flat (patch.runAsRoot) formats.
-    // The frontend sends flat keys; normalize into a single `sc` object.
-    const sc = (patch.securityContext && typeof patch.securityContext === "object")
-      ? patch.securityContext
-      : (patch.runAsRoot !== undefined || patch.privileged !== undefined || patch.writableFilesystem !== undefined || patch.allowPrivilegeEscalation !== undefined || patch.capabilities !== undefined)
-        ? { runAsRoot: patch.runAsRoot, privileged: patch.privileged, writableFilesystem: patch.writableFilesystem, allowPrivilegeEscalation: patch.allowPrivilegeEscalation, capabilities: patch.capabilities }
-        : undefined;
+    // The frontend sends the FULL config every time, so we must detect what actually CHANGED
+    // by comparing against the current values. Otherwise toggling resources would reset security.
+    const currentCsc = currentValues.containerSecurityContext || {};
+    const currentPsc = currentValues.podSecurityContext || {};
+    const currentRunAsRoot = currentPsc.runAsUser === 0 || currentPsc.runAsNonRoot === false;
+    const currentPrivileged = currentCsc.privileged === true;
+    const currentWritable = currentCsc.readOnlyRootFilesystem === false;
+    const currentEscalation = currentCsc.allowPrivilegeEscalation === true;
+    const currentCaps = (currentCsc.capabilities?.add || []);
+
+    let sc;
+    if (patch.securityContext && typeof patch.securityContext === "object") {
+      sc = patch.securityContext;
+    } else {
+      // Only build sc from flat keys if security values actually CHANGED from current state
+      const secChanged =
+        (patch.runAsRoot !== undefined && patch.runAsRoot !== currentRunAsRoot) ||
+        (patch.privileged !== undefined && patch.privileged !== currentPrivileged) ||
+        (patch.writableFilesystem !== undefined && patch.writableFilesystem !== currentWritable) ||
+        (patch.allowPrivilegeEscalation !== undefined && patch.allowPrivilegeEscalation !== currentEscalation) ||
+        (patch.capabilities !== undefined && JSON.stringify(patch.capabilities) !== JSON.stringify(currentCaps));
+      if (secChanged) {
+        sc = { runAsRoot: patch.runAsRoot, privileged: patch.privileged, writableFilesystem: patch.writableFilesystem, allowPrivilegeEscalation: patch.allowPrivilegeEscalation, capabilities: patch.capabilities };
+      }
+    }
 
     if (sc !== undefined && typeof sc === "object") {
       // Handle privileged container mode — REPLACE entire security context (don't merge with defaults)
