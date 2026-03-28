@@ -8399,6 +8399,16 @@ async function orchestratePipelineScan(runId) {
   await db.updateRunStatus(runId, "scanning");
   emitPipelineEvent(runId, "pipeline_status", { status: "scanning", message: "Pipeline started" });
 
+  // Validate git URL before any jobs use it (SAST/Secrets validate independently,
+  // but the build and analyze paths also need it validated up front)
+  if (run.git_url && !validateGitUrl(run.git_url)) {
+    logger.error('pipeline', `Pipeline ${runId} rejected: invalid git URL`, { runId, gitUrl: run.git_url });
+    await db.updateRunStatus(runId, "failed");
+    emitPipelineEvent(runId, "pipeline_status", { status: "failed", message: "Invalid or unsafe git URL" });
+    emitPipelineEvent(runId, "done", { status: "failed" });
+    return;
+  }
+
   // Helper: check if the pipeline has exceeded the timeout
   function checkPipelineTimeout() {
     if (Date.now() - pipelineStartTime > PIPELINE_TIMEOUT_MS) {
@@ -8444,16 +8454,14 @@ async function orchestratePipelineScan(runId) {
   const buildResult = { imageRef: null }; // shared mutable ref for the build promise
   if (!builtImageRef && run.git_url) {
     if (gateMap.ARTIFACT_STORE) {
-      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
-      emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Kaniko: Cloning repo and building Dockerfile...", progress: 10 });
+      await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Analyzing repository...", progress: 5 });
+      emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Analyzing repository...", progress: 5 });
     }
     // Wrap the entire build in a promise so it runs alongside SAST/Secrets
     phase1Jobs.push((async () => {
 
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
     const teamName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
-    const buildId = "pipe-" + crypto.randomBytes(4).toString("hex");
-    const destination = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${buildId}`;
     const safeBranch = (run.branch || "main").replace(/[^a-zA-Z0-9._-]/g, "");
 
     // Ensure Harbor project exists
@@ -8461,117 +8469,286 @@ async function orchestratePipelineScan(runId) {
       console.debug('[pipeline] Harbor project ensure best-effort error:', e.message);
     }
 
-    // Create Kaniko build job
-    await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
-      apiVersion: "batch/v1", kind: "Job",
-      metadata: {
-        name: buildId, namespace: BUILD_NAMESPACE,
-        labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/build-id": buildId, "sre.io/app-name": safeName }
-      },
-      spec: {
-        backoffLimit: 1, ttlSecondsAfterFinished: 3600,
-        template: {
-          metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
-          spec: {
-            restartPolicy: "Never",
-            initContainers: [{
-              name: "git-clone", image: GIT_CLONE_IMAGE,
-              command: ["sh", "-c", `git clone --depth=1 --branch "${safeBranch}" "${run.git_url}" /workspace 2>/dev/null || git clone --depth=1 "${run.git_url}" /workspace`],
-              volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
-              resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
-              securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
-            }],
-            containers: [{
-              name: "kaniko", image: KANIKO_IMAGE,
-              args: ["--dockerfile=Dockerfile", "--context=/workspace", `--destination=${destination}`, "--cache=true", `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`, "--snapshot-mode=time", "--compressed-caching=false", "--insecure", "--skip-tls-verify", "--skip-tls-verify-pull"],
-              volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "docker-config", mountPath: "/kaniko/.docker" }],
-              resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
-            }],
-            volumes: [
-              { name: "workspace", emptyDir: {} },
-              { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
-            ],
-          },
-        },
-      },
-    });
-    if (gateMap.ARTIFACT_STORE) await db.updateGate(gateMap.ARTIFACT_STORE.id, { job_name: buildId });
+    // ── Step 1: Analyze the repo to detect compose vs single-Dockerfile ──
+    let repoAnalysis = null;
+    try {
+      const analyzeId = "pipe-analyze-" + crypto.randomBytes(4).toString("hex");
+      emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: "Analyzing repository structure..." });
+      const jobSpec = createAnalyzeJobSpec(analyzeId, run.git_url, safeBranch);
+      await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
+      const logs = await runAnalyzeJob(analyzeId);
+      if (logs && !logs.error) {
+        repoAnalysis = parseRepoAnalysisLogs(logs);
+        logger.info('pipeline', `Repo analysis for run ${runId}: type=${repoAnalysis.repoType}, services=${repoAnalysis.services.length}`, { runId, repoType: repoAnalysis.repoType });
+        emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Detected repo type: ${repoAnalysis.repoType} (${repoAnalysis.services.length} service(s))` });
+      } else {
+        logger.info('pipeline', `Repo analysis failed or timed out for run ${runId}, falling back to single Dockerfile`, { runId });
+        emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: "Repo analysis unavailable — falling back to root Dockerfile build" });
+      }
+    } catch (analyzeErr) {
+      logger.info('pipeline', `Repo analysis error for run ${runId}: ${analyzeErr.message}, falling back to single Dockerfile`, { runId, error: analyzeErr.message });
+      emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: "Repo analysis error — falling back to root Dockerfile build" });
+    }
 
-    // Wait for build to complete — stream Kaniko logs in real-time
-    await db.auditLog(runId, "image_build_started", null, `Building image: ${destination}`, { buildId });
-    emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Building image: ${destination}` });
-    const buildStartTime = Date.now();
-    const buildDeadline = buildStartTime + 1200000; // 20 min
-    let buildSucceeded = false;
-    let buildPodName = null;
-    let lastLogLine = 0; // track streamed log position
-    while (Date.now() < buildDeadline) {
-      await new Promise(r => setTimeout(r, 5000));
+    // Save analysis to metadata
+    if (repoAnalysis) {
       try {
-        const job = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
-        if (job.body.status?.succeeded) { buildSucceeded = true; break; }
-        if (job.body.status?.failed) break;
-      } catch (e) {
-        console.debug('[pipeline] Build job poll error, will retry:', e.message);
-      }
-
-      // Find the build pod and stream its logs
-      if (!buildPodName) {
-        try {
-          const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${buildId}`);
-          if (pods.body.items.length > 0) buildPodName = pods.body.items[0].metadata.name;
-        } catch (e) { /* not ready */ }
-      }
-      if (buildPodName) {
-        try {
-          // Stream init container (git-clone) logs first, then kaniko logs
-          const containers = ["git-clone", "kaniko"];
-          for (const ctr of containers) {
-            try {
-              const partial = await k8sApi.readNamespacedPodLog(buildPodName, BUILD_NAMESPACE, ctr, undefined, undefined, undefined, undefined, undefined, 50);
-              const text = typeof partial.body === "string" ? partial.body : String(partial.body || "");
-              if (text.trim()) {
-                const lines = text.trim().split("\n");
-                const newLines = lines.slice(lastLogLine);
-                for (const line of newLines.slice(-8)) { // stream up to 8 new lines per poll
-                  emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${ctr}] ${line}` });
-                }
-                lastLogLine = lines.length;
-              }
-            } catch (e) { /* container not ready or finished */ }
-          }
-        } catch (e) { /* pod log read failed */ }
-      }
-
-      // Update progress with descriptive messages
-      if (gateMap.ARTIFACT_STORE) {
-        const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
-        const elapsed = Math.min(90, Math.floor((Date.now() - buildStartTime) / 6667));
-        const msg = elapsedSec < 15 ? "Kaniko: Cloning repository..."
-          : elapsedSec < 60 ? "Kaniko: Building image layers..."
-          : elapsedSec < 180 ? `Kaniko: Building image (${elapsedSec}s elapsed)...`
-          : `Kaniko: Pushing to Harbor (${elapsedSec}s elapsed)...`;
-        await db.updateGate(gateMap.ARTIFACT_STORE.id, { progress: elapsed, summary: msg });
-        emitPipelineEvent(runId, "gate_progress", { gate: "ARTIFACT_STORE", progress: elapsed, summary: msg });
+        await db.pool.query(
+          "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
+          [JSON.stringify({ repoAnalysis: { repoType: repoAnalysis.repoType, services: repoAnalysis.services.map(s => ({ name: s.name, role: s.role, sre: s.sre || null, sreLabel: s.sreLabel || null, needsBuild: s.needsBuild, port: s.port, buildContext: s.buildContext, dockerfile: s.dockerfile || null, buildTarget: s.buildTarget || null, image: s.image || null, environment: s.environment || [] })) } }), runId]
+        );
+      } catch (metaErr) {
+        logger.info('pipeline', `Failed to save repoAnalysis metadata: ${metaErr.message}`, { runId });
       }
     }
 
-    if (buildSucceeded) {
-      buildResult.imageRef = destination; // Store for Phase 2
-      const externalImageRef = destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
-      // Save the external image URL on the pipeline run (for nodes to pull)
-      await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
-      if (gateMap.ARTIFACT_STORE) {
-        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Image built and pushed: ${safeName}:${buildId}` });
-        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary: `Image built and pushed: ${safeName}:${buildId}`, progress: 100 });
+    if (gateMap.ARTIFACT_STORE) {
+      await db.updateGate(gateMap.ARTIFACT_STORE.id, { summary: "Kaniko: Building container image(s)...", progress: 10 });
+      emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Kaniko: Building container image(s)...", progress: 10 });
+    }
+
+    // ── Step 2: Determine build plan based on analysis ──
+    const isCompose = repoAnalysis && repoAnalysis.repoType === "compose" && repoAnalysis.services.length > 0;
+    const buildableServices = isCompose ? repoAnalysis.services.filter(s => s.needsBuild && s.buildContext) : [];
+    const builtImages = []; // Track all images built in this run
+
+    // Helper: run a single Kaniko build job and wait for completion with log streaming
+    async function runKanikoBuild(buildId, destination, kanikoArgs, serviceLabel) {
+      await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+        apiVersion: "batch/v1", kind: "Job",
+        metadata: {
+          name: buildId, namespace: BUILD_NAMESPACE,
+          labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/build-id": buildId, "sre.io/app-name": safeName }
+        },
+        spec: {
+          backoffLimit: 1, ttlSecondsAfterFinished: 3600,
+          template: {
+            metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
+            spec: {
+              restartPolicy: "Never",
+              initContainers: [{
+                name: "git-clone", image: GIT_CLONE_IMAGE,
+                command: ["sh", "-c", `git clone --depth=1 --branch "${safeBranch}" "${run.git_url}" /workspace 2>/dev/null || git clone --depth=1 "${run.git_url}" /workspace`],
+                volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
+                resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+                securityContext: { runAsNonRoot: false, readOnlyRootFilesystem: false },
+              }],
+              containers: [{
+                name: "kaniko", image: KANIKO_IMAGE,
+                args: kanikoArgs,
+                volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "docker-config", mountPath: "/kaniko/.docker" }],
+                resources: { requests: { cpu: "500m", memory: "1Gi" }, limits: { cpu: "4", memory: "8Gi" } },
+              }],
+              volumes: [
+                { name: "workspace", emptyDir: {} },
+                { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+              ],
+            },
+          },
+        },
+      });
+
+      emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${serviceLabel}] Building image: ${destination}` });
+      await db.auditLog(runId, "image_build_started", null, `Building image: ${destination}`, { buildId, service: serviceLabel });
+
+      const buildStartTime = Date.now();
+      const buildDeadline = buildStartTime + 1200000; // 20 min
+      let buildSucceeded = false;
+      let buildPodName = null;
+      let lastLogLine = 0;
+      while (Date.now() < buildDeadline) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const job = await batchApi.readNamespacedJob(buildId, BUILD_NAMESPACE);
+          if (job.body.status?.succeeded) { buildSucceeded = true; break; }
+          if (job.body.status?.failed) break;
+        } catch (e) {
+          console.debug('[pipeline] Build job poll error, will retry:', e.message);
+        }
+
+        // Find the build pod and stream its logs
+        if (!buildPodName) {
+          try {
+            const pods = await k8sApi.listNamespacedPod(BUILD_NAMESPACE, undefined, undefined, undefined, undefined, `job-name=${buildId}`);
+            if (pods.body.items.length > 0) buildPodName = pods.body.items[0].metadata.name;
+          } catch (e) { /* not ready */ }
+        }
+        if (buildPodName) {
+          try {
+            const containers = ["git-clone", "kaniko"];
+            for (const ctr of containers) {
+              try {
+                const partial = await k8sApi.readNamespacedPodLog(buildPodName, BUILD_NAMESPACE, ctr, undefined, undefined, undefined, undefined, undefined, 50);
+                const text = typeof partial.body === "string" ? partial.body : String(partial.body || "");
+                if (text.trim()) {
+                  const lines = text.trim().split("\n");
+                  const newLines = lines.slice(lastLogLine);
+                  for (const line of newLines.slice(-8)) {
+                    emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${serviceLabel}/${ctr}] ${line}` });
+                  }
+                  lastLogLine = lines.length;
+                }
+              } catch (e) { /* container not ready or finished */ }
+            }
+          } catch (e) { /* pod log read failed */ }
+        }
+
+        // Update progress with descriptive messages
+        if (gateMap.ARTIFACT_STORE) {
+          const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
+          const elapsed = Math.min(90, Math.floor((Date.now() - buildStartTime) / 6667));
+          const msg = elapsedSec < 15 ? `Kaniko: Cloning repository (${serviceLabel})...`
+            : elapsedSec < 60 ? `Kaniko: Building image layers (${serviceLabel})...`
+            : elapsedSec < 180 ? `Kaniko: Building ${serviceLabel} (${elapsedSec}s elapsed)...`
+            : `Kaniko: Pushing ${serviceLabel} to Harbor (${elapsedSec}s elapsed)...`;
+          await db.updateGate(gateMap.ARTIFACT_STORE.id, { progress: elapsed, summary: msg });
+          emitPipelineEvent(runId, "gate_progress", { gate: "ARTIFACT_STORE", progress: elapsed, summary: msg });
+        }
       }
-      await db.auditLog(runId, "image_build_completed", null, `Image built: ${destination}`, { buildId, destination });
+
+      return buildSucceeded;
+    }
+
+    let overallBuildSuccess = false;
+
+    if (isCompose && buildableServices.length > 0) {
+      // ── COMPOSE BUILD: build each service with the correct dockerfile/context ──
+      const totalBuildable = buildableServices.length;
+      emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Compose repo: ${totalBuildable} service(s) to build` });
+      logger.info('pipeline', `Compose build for run ${runId}: ${totalBuildable} buildable service(s)`, { runId, services: buildableServices.map(s => s.name) });
+
+      const buildContextToImage = new Map(); // Dedup shared build contexts
+      let allSucceeded = true;
+
+      for (let i = 0; i < buildableServices.length; i++) {
+        const svc = buildableServices[i];
+        const svcName = svc.name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
+        const buildCtx = (svc.buildContext || ".").replace(/^\.\//, "");
+        const normalizedCtx = `${buildCtx}:${svc.dockerfile || "Dockerfile"}:${svc.buildTarget || ""}`;
+
+        // Check for shared build context — reuse image instead of building twice
+        const sharedImage = buildContextToImage.get(normalizedCtx);
+        if (sharedImage) {
+          emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${svcName}] Reusing image from shared build context: ${sharedImage.destination}` });
+          builtImages.push({ service: svcName, destination: sharedImage.destination, role: svc.role, port: svc.port, sharedBuild: true });
+          logger.info('pipeline', `Service "${svcName}" shares build context "${normalizedCtx}" — reusing ${sharedImage.destination}`, { runId });
+          continue;
+        }
+
+        const dockerfilePath = `${buildCtx}/${svc.dockerfile || "Dockerfile"}`;
+        if (!isSafePath(dockerfilePath) || !isSafePath(buildCtx)) {
+          emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${svcName}] Skipped — unsafe path: ${dockerfilePath}` });
+          logger.info('pipeline', `Skipping service "${svcName}" — unsafe path: dockerfile="${dockerfilePath}", context="${buildCtx}"`, { runId });
+          continue;
+        }
+
+        const buildId = "pipe-" + crypto.randomBytes(4).toString("hex");
+        const imageName = totalBuildable === 1 ? safeName : `${safeName}-${svcName}`;
+        const destination = `${HARBOR_REGISTRY}/${teamName}/${imageName}:${buildId}`;
+
+        const kanikoArgs = [
+          `--dockerfile=/workspace/${dockerfilePath}`,
+          `--context=/workspace/${buildCtx}`,
+          `--destination=${destination}`,
+          "--cache=true",
+          `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
+          "--snapshot-mode=time",
+          "--compressed-caching=false",
+          "--insecure",
+          "--skip-tls-verify",
+          "--skip-tls-verify-pull",
+        ];
+        if (svc.buildTarget) {
+          kanikoArgs.push(`--target=${svc.buildTarget}`);
+        }
+
+        if (gateMap.ARTIFACT_STORE) await db.updateGate(gateMap.ARTIFACT_STORE.id, { job_name: buildId });
+
+        const succeeded = await runKanikoBuild(buildId, destination, kanikoArgs, svcName);
+        if (succeeded) {
+          builtImages.push({ service: svcName, destination, role: svc.role, port: svc.port, sharedBuild: false });
+          buildContextToImage.set(normalizedCtx, { destination });
+          emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${svcName}] Build succeeded: ${imageName}:${buildId}` });
+          await db.auditLog(runId, "image_build_completed", null, `Image built: ${destination}`, { buildId, destination, service: svcName });
+        } else {
+          allSucceeded = false;
+          emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `[${svcName}] Build FAILED` });
+          await db.auditLog(runId, "image_build_failed", null, `Build failed for service ${svcName}`, { buildId, service: svcName });
+        }
+      }
+
+      // Determine the primary image (ingress service, or first built)
+      const ingressImage = builtImages.find(img => img.role === "ingress") || builtImages[0];
+      if (ingressImage) {
+        buildResult.imageRef = ingressImage.destination;
+        const externalImageRef = ingressImage.destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
+        await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
+      }
+
+      overallBuildSuccess = builtImages.length > 0 && allSucceeded;
+
     } else {
-      if (gateMap.ARTIFACT_STORE) {
-        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Container image build failed" });
-        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Container image build failed", progress: 100 });
+      // ── SINGLE DOCKERFILE BUILD: original behavior (non-compose or analysis unavailable) ──
+      const buildId = "pipe-" + crypto.randomBytes(4).toString("hex");
+      const destination = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${buildId}`;
+
+      const kanikoArgs = [
+        "--dockerfile=Dockerfile",
+        "--context=/workspace",
+        `--destination=${destination}`,
+        "--cache=true",
+        `--cache-repo=${HARBOR_REGISTRY}/${teamName}/cache`,
+        "--snapshot-mode=time",
+        "--compressed-caching=false",
+        "--insecure",
+        "--skip-tls-verify",
+        "--skip-tls-verify-pull",
+      ];
+
+      if (gateMap.ARTIFACT_STORE) await db.updateGate(gateMap.ARTIFACT_STORE.id, { job_name: buildId });
+
+      const succeeded = await runKanikoBuild(buildId, destination, kanikoArgs, safeName);
+      if (succeeded) {
+        builtImages.push({ service: safeName, destination, role: "ingress", port: null, sharedBuild: false });
+        buildResult.imageRef = destination;
+        const externalImageRef = destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
+        await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
+        await db.auditLog(runId, "image_build_completed", null, `Image built: ${destination}`, { buildId, destination });
+      } else {
+        await db.auditLog(runId, "image_build_failed", null, "Container image build failed", { buildId });
       }
-      await db.auditLog(runId, "image_build_failed", null, "Container image build failed", { buildId });
+      overallBuildSuccess = succeeded;
+    }
+
+    // Save builtImages to metadata
+    if (builtImages.length > 0) {
+      try {
+        await db.pool.query(
+          "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
+          [JSON.stringify({ builtImages: builtImages.map(img => ({ service: img.service, destination: img.destination.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY), role: img.role, port: img.port, sharedBuild: img.sharedBuild })) }), runId]
+        );
+      } catch (metaErr) {
+        logger.info('pipeline', `Failed to save builtImages metadata: ${metaErr.message}`, { runId });
+      }
+    }
+
+    // Update gate status
+    if (overallBuildSuccess) {
+      const summary = builtImages.length === 1
+        ? `Image built and pushed: ${builtImages[0].service}`
+        : `${builtImages.length} image(s) built and pushed: ${builtImages.map(img => img.service).join(", ")}`;
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary, progress: 100 });
+      }
+    } else {
+      const summary = builtImages.length > 0
+        ? `Partial build failure: ${builtImages.length} succeeded, some failed`
+        : "Container image build failed";
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary, progress: 100 });
+      }
     }
     })()); // end build promise
   } else if (builtImageRef) {
@@ -8747,7 +8924,290 @@ async function executePipelineDeploy(run, actor) {
     // Check if the pipeline already built an image (ARTIFACT_STORE gate passed)
     const builtImage = run.image_url || (run.gates || []).find(g => g.gate_name === 'ARTIFACT_STORE' && g.status === 'passed' && g.output)?.output;
 
-    if (builtImage && !builtImage.startsWith('{')) {
+    // ── COMPOSE DEPLOY PATH ──
+    // If the pipeline built multiple images for a compose repo, deploy them all
+    // using the pre-built images from metadata instead of rebuilding via /api/deploy/git.
+    let runMetadata = {};
+    try { runMetadata = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {}); } catch (e) { /* */ }
+    const builtImagesArray = Array.isArray(runMetadata.builtImages) ? runMetadata.builtImages : [];
+    const isComposePipeline = runMetadata.repoAnalysis?.repoType === "compose" && builtImagesArray.length > 0;
+
+    if (isComposePipeline) {
+      const analysis = runMetadata.repoAnalysis;
+      // Convert array to map keyed by service name for easy lookup
+      const builtImages = {};
+      for (const img of builtImagesArray) {
+        builtImages[img.service] = img;
+      }
+      const services = analysis.services || [];
+      const nsName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
+      const teamName = run.team;
+      const ingressHost = `${safeName}.${domain}`;
+
+      logger.info('pipeline', `Compose deploy for ${safeName}: ${services.length} services, ${Object.keys(builtImages).length} built images`, { runId: run.id });
+      await db.auditLog(run.id, "compose_deploy_started", actor, `Deploying compose app "${safeName}" with ${services.length} services`);
+
+      await ensureNamespace(nsName, teamName);
+
+      // Generate a shared PolicyException for all services (if ISSM-approved exceptions exist)
+      const approvedExceptions = parsedExceptions.filter(e => e.approved === true);
+      const policyException = approvedExceptions.length > 0
+        ? generatePolicyException(safeName, nsName, approvedExceptions, actor)
+        : null;
+      if (policyException) {
+        await db.auditLog(run.id, "policy_exception_generated", actor,
+          `Generated Kyverno PolicyException for ${approvedExceptions.map(e => e.type).join(", ")}`);
+      }
+
+      const deployedServices = [];
+      const failedServices = [];
+
+      for (const svc of services) {
+        const svcName = sanitizeName(svc.name);
+        try {
+          if (svc.role === "platform") {
+            // ── Platform services (postgres, redis) — raw Deployment+Service ──
+            if (svc.sre === "cnpg") {
+              const dbName = sanitizeName(`${safeName}-db`);
+              const pgDeployment = {
+                apiVersion: "apps/v1",
+                kind: "Deployment",
+                metadata: {
+                  name: dbName,
+                  namespace: nsName,
+                  labels: { app: dbName, "app.kubernetes.io/name": dbName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName },
+                },
+                spec: {
+                  replicas: 1,
+                  selector: { matchLabels: { app: dbName } },
+                  template: {
+                    metadata: { labels: { app: dbName, "app.kubernetes.io/name": dbName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName } },
+                    spec: {
+                      securityContext: { seccompProfile: { type: "RuntimeDefault" } },
+                      containers: [{
+                        name: "postgres",
+                        image: "docker.io/library/postgres:16-alpine",
+                        ports: [{ containerPort: 5432 }],
+                        env: [
+                          { name: "POSTGRES_DB", value: safeName.replace(/-/g, "_") },
+                          { name: "POSTGRES_USER", value: safeName.replace(/-/g, "_") },
+                          { name: "POSTGRES_PASSWORD", value: "changeme" },
+                        ],
+                        resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "512Mi" } },
+                        volumeMounts: [{ name: "data", mountPath: "/var/lib/postgresql/data", subPath: "pgdata" }],
+                        securityContext: {
+                          runAsNonRoot: false,
+                          allowPrivilegeEscalation: false,
+                          capabilities: { drop: ["ALL"], add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"] },
+                        },
+                      }],
+                      volumes: [{ name: "data", emptyDir: {} }],
+                    },
+                  },
+                },
+              };
+              const pgSvc = {
+                apiVersion: "v1",
+                kind: "Service",
+                metadata: { name: dbName, namespace: nsName, labels: { app: dbName, "sre.io/team": teamName } },
+                spec: { selector: { app: dbName }, ports: [{ port: 5432, targetPort: 5432 }] },
+              };
+              await applyRawDeployment(pgDeployment, nsName).catch(err => {
+                logger.warn('pipeline', `PostgreSQL deployment failed: ${err.body?.message || err.message}`, { runId: run.id });
+              });
+              await applyRawService(pgSvc, nsName).catch(err => {
+                logger.warn('pipeline', `PostgreSQL service failed: ${err.body?.message || err.message}`, { runId: run.id });
+              });
+              // Create alias so compose DNS name resolves (e.g., "db" -> "keystone-db")
+              if (svc.name !== dbName) {
+                await k8sApi.createNamespacedService(nsName, {
+                  metadata: { name: svc.name, namespace: nsName, labels: { "sre.io/alias-for": dbName } },
+                  spec: { selector: { app: dbName }, ports: [{ port: 5432, targetPort: 5432 }] },
+                }).catch(e => { if (e.statusCode !== 409) logger.warn('pipeline', `Alias "${svc.name}" failed: ${e.message}`, { runId: run.id }); });
+              }
+              deployedServices.push({ name: dbName, type: "postgresql", port: 5432 });
+              logger.info('pipeline', `Deployed platform service: PostgreSQL as ${dbName}`, { runId: run.id });
+
+            } else if (svc.sre === "redis") {
+              const redisName = sanitizeName(`${safeName}-redis`);
+              const redisDeployment = {
+                apiVersion: "apps/v1",
+                kind: "Deployment",
+                metadata: {
+                  name: redisName,
+                  namespace: nsName,
+                  labels: { app: redisName, "app.kubernetes.io/name": redisName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName },
+                },
+                spec: {
+                  replicas: 1,
+                  selector: { matchLabels: { app: redisName } },
+                  template: {
+                    metadata: { labels: { app: redisName, "app.kubernetes.io/name": redisName, "app.kubernetes.io/part-of": "sre-platform", "sre.io/team": teamName } },
+                    spec: {
+                      securityContext: { runAsNonRoot: true, seccompProfile: { type: "RuntimeDefault" } },
+                      containers: [{
+                        name: "redis",
+                        image: "docker.io/library/redis:7-alpine",
+                        ports: [{ containerPort: 6379 }],
+                        resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "256Mi" } },
+                        securityContext: {
+                          runAsNonRoot: true,
+                          allowPrivilegeEscalation: false,
+                          capabilities: { drop: ["ALL"] },
+                        },
+                      }],
+                    },
+                  },
+                },
+              };
+              const redisSvc = {
+                apiVersion: "v1",
+                kind: "Service",
+                metadata: { name: redisName, namespace: nsName, labels: { app: redisName, "sre.io/team": teamName } },
+                spec: { selector: { app: redisName }, ports: [{ port: 6379, targetPort: 6379 }] },
+              };
+              await applyRawDeployment(redisDeployment, nsName).catch(err => {
+                logger.warn('pipeline', `Redis deployment failed: ${err.body?.message || err.message}`, { runId: run.id });
+              });
+              await applyRawService(redisSvc, nsName).catch(err => {
+                logger.warn('pipeline', `Redis service failed: ${err.body?.message || err.message}`, { runId: run.id });
+              });
+              // Create alias so compose DNS name resolves
+              if (svc.name !== redisName) {
+                await k8sApi.createNamespacedService(nsName, {
+                  metadata: { name: svc.name, namespace: nsName, labels: { "sre.io/alias-for": redisName } },
+                  spec: { selector: { app: redisName }, ports: [{ port: 6379, targetPort: 6379 }] },
+                }).catch(e => { if (e.statusCode !== 409) logger.warn('pipeline', `Alias "${svc.name}" failed: ${e.message}`, { runId: run.id }); });
+              }
+              deployedServices.push({ name: redisName, type: "redis", port: 6379 });
+              logger.info('pipeline', `Deployed platform service: Redis as ${redisName}`, { runId: run.id });
+
+            } else if (svc.sre === "skip") {
+              deployedServices.push({ name: svcName, type: "skipped", reason: svc.sreLabel });
+            }
+
+          } else if (builtImages[svc.name]) {
+            // ── Built service — deploy using pre-built image from pipeline ──
+            const imgInfo = builtImages[svc.name];
+            const svcAppName = sanitizeName(`${safeName}-${svc.name}`);
+            // Parse destination "registry/team/name:tag" into repo + tag
+            const imgDest = imgInfo.destination || "";
+            const destColonIdx = imgDest.lastIndexOf(":");
+            const imageRepo = destColonIdx > 0 && !imgDest.substring(destColonIdx).includes("/") ? imgDest.substring(0, destColonIdx) : imgDest;
+            const imageTag = destColonIdx > 0 && !imgDest.substring(destColonIdx).includes("/") ? imgDest.substring(destColonIdx + 1) : "pipeline";
+            const svcPort = svc.port || imgInfo.port || 8080;
+            const isIngress = svc.role === "ingress";
+            const svcIngressHost = isIngress ? ingressHost : "";
+
+            const manifest = generateHelmRelease({
+              name: svcAppName,
+              team: nsName,
+              image: imageRepo,
+              tag: imageTag,
+              port: svcPort,
+              replicas: isIngress ? 2 : 1,
+              ingressHost: svcIngressHost,
+              privileged: needsPrivileged,
+              securityContext: pipelineSecurityContext,
+              env: svc.environment || [],
+            });
+
+            await deployViaGitOps(manifest, nsName, svcAppName, actor, isIngress ? policyException : null);
+
+            // Auto-create DestinationRule for HTTPS backend detection
+            await createBackendTLSRule(svcAppName, nsName, `${svcAppName}-${svcAppName}`);
+
+            deployedServices.push({ name: svcAppName, type: isIngress ? "ingress" : "internal", port: svcPort, image: `${imageRepo}:${imageTag}` });
+            logger.info('pipeline', `Deployed built service: ${svcAppName} (${imageRepo}:${imageTag})`, { runId: run.id });
+
+            if (isIngress) {
+              await registerOAuth2ProxyPath(ingressHost).catch(e => {
+                logger.warn('pipeline', `OAuth2 proxy registration for ${ingressHost} failed: ${e.message}`, { runId: run.id });
+              });
+            }
+
+          } else if (svc.image && !svc.needsBuild) {
+            // ── Pre-built external image (not built by pipeline) — deploy directly ──
+            const svcAppName = sanitizeName(`${safeName}-${svc.name}`);
+            let imageRepo = svc.image;
+            let imageTag = "latest";
+            const colonIdx = svc.image.lastIndexOf(":");
+            if (colonIdx > 0 && !svc.image.substring(colonIdx).includes("/")) {
+              imageRepo = svc.image.substring(0, colonIdx);
+              imageTag = svc.image.substring(colonIdx + 1);
+            }
+
+            const manifest = generateHelmRelease({
+              name: svcAppName,
+              team: nsName,
+              image: imageRepo,
+              tag: imageTag,
+              port: svc.port || 8080,
+              replicas: 1,
+              ingressHost: "",
+              env: svc.environment || [],
+            });
+            await deployViaGitOps(manifest, nsName, svcAppName, actor, null);
+            deployedServices.push({ name: svcAppName, type: "external", port: svc.port, image: svc.image });
+            logger.info('pipeline', `Deployed external image service: ${svcAppName} (${svc.image})`, { runId: run.id });
+
+          } else {
+            logger.info('pipeline', `Skipping service "${svcName}" — no built image, no external image, not a platform service`, { runId: run.id });
+          }
+        } catch (svcErr) {
+          logger.error('pipeline', `Failed to deploy service "${svcName}": ${svcErr.message}`, { runId: run.id, error: svcErr.message });
+          failedServices.push({ name: svcName, error: svcErr.message });
+        }
+      }
+
+      // Wait for ingress service HelmRelease to become ready
+      const ingressSvc = deployedServices.find(s => s.type === "ingress");
+      let deployHealthy = true;
+      let deployWarning = "";
+      if (ingressSvc) {
+        const hrStatus = await waitForHelmRelease(nsName, ingressSvc.name, 180);
+        if (!hrStatus.ready && hrStatus.error) {
+          deployHealthy = false;
+          deployWarning = hrStatus.error;
+          logger.warn('pipeline', `Ingress HelmRelease ${ingressSvc.name} not ready: ${hrStatus.error}`, { runId: run.id });
+          await db.auditLog(run.id, "deploy_warning", actor, `Ingress HelmRelease issue: ${hrStatus.error}`);
+        }
+      }
+
+      const deployedUrl = `https://${ingressHost}`;
+
+      // Log compose deploy summary
+      logger.info('pipeline', `Compose deploy summary for ${safeName}: ${deployedServices.length} deployed, ${failedServices.length} failed`, {
+        runId: run.id,
+        deployed: deployedServices.map(s => `${s.name} (${s.type})`),
+        failed: failedServices.map(s => `${s.name}: ${s.error}`),
+      });
+
+      // Register in app portal
+      const appData = {
+        name: safeName,
+        namespace: nsName,
+        team: run.team,
+        url: deployedUrl,
+        helmRelease: ingressSvc?.name || safeName,
+        deployedVia: "pipeline-compose",
+        services: deployedServices,
+        registeredAt: new Date().toISOString(),
+      };
+      appRegistry.push(appData);
+      try {
+        await k8sApi.patchNamespacedConfigMap(APP_REGISTRY_CM, APP_REGISTRY_NS, {
+          data: { "apps.json": JSON.stringify(appRegistry) },
+        }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+      } catch (cmErr) {
+        console.debug('[pipeline] Registry update best-effort:', cmErr.message);
+      }
+
+      const deployStatus = failedServices.length > 0 ? "deployed_partial" : (deployHealthy ? "deployed" : "deployed_unhealthy");
+      await db.updateRunStatus(run.id, deployStatus, { deployedUrl, deployWarning, deployedServices, failedServices });
+      await db.auditLog(run.id, "deploy_completed", actor,
+        `Compose deploy of ${run.app_name}: ${deployedServices.length} services deployed, ${failedServices.length} failed. URL: ${deployedUrl}${deployWarning ? " — WARNING: " + deployWarning : ""}`);
+    } else if (builtImage && !builtImage.startsWith('{')) {
       // Image already built during pipeline — skip rebuild, just create HelmRelease
       logger.info('pipeline', `Using pre-built image for ${safeName}: ${builtImage}`, { runId: run.id });
       const nsName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
