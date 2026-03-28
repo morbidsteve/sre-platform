@@ -1,0 +1,45 @@
+---
+apiVersion: kyverno.io/v2beta1
+kind: PolicyException
+metadata:
+  name: ws-security-exception
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-alpha
+    sre.io/managed-by: dsop-pipeline
+  annotations:
+    sre.io/exception-reason: 'privileged_container: Ops cockpit override — admin approved privileged mode; run_as_root: Ops cockpit override — admin approved root user'
+    sre.io/exception-approver: sre-admin@sre.example.com
+    sre.io/exception-expiry: '2026-06-26'
+    sre.io/pipeline-generated: 'true'
+spec:
+  exceptions:
+    - policyName: disallow-privileged-containers
+      ruleNames:
+        - deny-privileged-containers
+        - deny-privileged-init-containers
+    - policyName: disallow-privilege-escalation
+      ruleNames:
+        - disallow-privilege-escalation-containers
+        - disallow-privilege-escalation-init-containers
+    - policyName: require-run-as-nonroot
+      ruleNames:
+        - require-pod-run-as-nonroot
+        - require-container-run-as-nonroot
+    - policyName: require-security-context
+      ruleNames:
+        - require-run-as-non-root
+        - require-drop-all-capabilities
+    - policyName: require-drop-all-capabilities
+      ruleNames:
+        - require-drop-all
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - team-alpha
+          names:
+            - ws-*
