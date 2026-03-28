@@ -13380,11 +13380,24 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
       if (patch.image.tag !== undefined) { appPatch.image.tag = String(patch.image.tag); }
       if (patch.image.repository !== undefined) { appPatch.image.repository = String(patch.image.repository); }
       if (patch.image.pullPolicy !== undefined) { appPatch.image.pullPolicy = String(patch.image.pullPolicy); }
+    } else if (patch.imageTag !== undefined) {
+      // Flat format from frontend OpsConfig
+      appPatch.image = appPatch.image || {};
+      appPatch.image.tag = String(patch.imageTag);
     }
+    // Accept both nested {resources:{requests,limits}} and flat {cpuRequest,memoryLimit,...} formats
     if (patch.resources !== undefined) {
       appPatch.resources = appPatch.resources || {};
       if (patch.resources.requests) { appPatch.resources.requests = patch.resources.requests; }
       if (patch.resources.limits) { appPatch.resources.limits = patch.resources.limits; }
+    } else if (patch.cpuRequest !== undefined || patch.cpuLimit !== undefined || patch.memoryRequest !== undefined || patch.memoryLimit !== undefined) {
+      appPatch.resources = appPatch.resources || { requests: {}, limits: {} };
+      appPatch.resources.requests = appPatch.resources.requests || {};
+      appPatch.resources.limits = appPatch.resources.limits || {};
+      if (patch.cpuRequest !== undefined) appPatch.resources.requests.cpu = patch.cpuRequest;
+      if (patch.memoryRequest !== undefined) appPatch.resources.requests.memory = patch.memoryRequest;
+      if (patch.cpuLimit !== undefined) appPatch.resources.limits.cpu = patch.cpuLimit;
+      if (patch.memoryLimit !== undefined) appPatch.resources.limits.memory = patch.memoryLimit;
     }
     if (patch.probes !== undefined) {
       appPatch.probes = appPatch.probes || {};
