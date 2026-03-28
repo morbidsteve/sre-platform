@@ -76,6 +76,14 @@ export interface OpsPolicyException {
   createdAt: string;
 }
 
+export interface OpsPrimaryIssue {
+  type: string;
+  message: string;
+  severity: 'critical' | 'warning';
+  container?: string;
+  exitCode?: number | null;
+}
+
 export interface OpsDiagnostics {
   app: {
     name: string;
@@ -92,6 +100,7 @@ export interface OpsDiagnostics {
   config: OpsConfig;
   policyExceptions: OpsPolicyException[];
   helmReleaseYaml: string;
+  primaryIssue: OpsPrimaryIssue | null;
 }
 
 export interface OpsCapabilitiesResponse {
@@ -130,7 +139,11 @@ export async function fetchOpsDiagnostics(namespace: string, name: string): Prom
   // Derive status from HR + pods
   const isReady = hr.ready === true;
   const hasCrash = pods.some((p: OpsPodStatus) => !p.ready && p.restarts > 2);
-  const status = isReady && !hasCrash ? 'running' : hasCrash ? 'failed' : hr.reason === 'InstallFailed' || hr.reason === 'UpgradeFailed' ? 'failed' : 'deploying';
+  const primaryIssue: OpsPrimaryIssue | null = raw.primaryIssue || null;
+  // Use primaryIssue type for more specific status display
+  const status = primaryIssue && primaryIssue.severity === 'critical'
+    ? primaryIssue.type
+    : isReady && !hasCrash ? 'running' : hasCrash ? 'failed' : hr.reason === 'InstallFailed' || hr.reason === 'UpgradeFailed' ? 'failed' : 'deploying';
 
   const totalRestarts = pods.reduce((s: number, p: OpsPodStatus) => s + (p.restarts || 0), 0);
 
@@ -147,6 +160,7 @@ export async function fetchOpsDiagnostics(namespace: string, name: string): Prom
     pods,
     events: allEvents,
     resources: res.cpu ? res : null,
+    primaryIssue,
     config: {
       runAsRoot: podSc.runAsUser === 0 || podSc.runAsNonRoot === false,
       writableFilesystem: ctrSc.readOnlyRootFilesystem === false,
@@ -193,6 +207,51 @@ export function restartApp(
 ): Promise<{ success: boolean; message: string }> {
   return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/restart`, {
     method: 'POST',
+  });
+}
+
+export function reconcileApp(
+  namespace: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/reconcile`, {
+    method: 'POST',
+  });
+}
+
+export function suspendApp(
+  namespace: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/suspend`, {
+    method: 'POST',
+  });
+}
+
+export function resumeApp(
+  namespace: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/resume`, {
+    method: 'POST',
+  });
+}
+
+export function redeployApp(
+  namespace: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/redeploy`, {
+    method: 'POST',
+  });
+}
+
+export function deleteApp(
+  namespace: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
   });
 }
 

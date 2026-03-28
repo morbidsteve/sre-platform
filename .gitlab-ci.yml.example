@@ -1,0 +1,170 @@
+---
+# GitLab CI/CD pipeline template for SRE Platform auto-build
+#
+# This is a REFERENCE TEMPLATE — it is not active. Copy and adapt it for
+# GitLab CI/CD if your repository is hosted on GitLab instead of GitHub.
+#
+# Equivalent to: .github/workflows/build-apps.yml
+#
+# How to use:
+#   1. Copy this file to .gitlab-ci.yml in your repo root
+#   2. Set the following CI/CD variables in GitLab (Settings > CI/CD > Variables):
+#      - HARBOR_USERNAME  (robot account username, e.g., robot$ci-push)
+#      - HARBOR_PASSWORD  (robot account password, masked)
+#      - HARBOR_REGISTRY  (optional, default: harbor.apps.sre.example.com)
+#   3. Adjust the `rules` blocks if your branch naming differs
+#   4. Remove this comment block
+#
+# Key differences from the GitHub Actions version:
+#   - GitLab uses `rules:changes` instead of dorny/paths-filter
+#   - GitLab uses `needs` for job dependencies instead of matrix strategy
+#   - Each app is a separate job (rather than a matrix) for clarity
+#   - Docker-in-Docker (dind) is used for building images
+
+stages:
+  - detect
+  - build
+  - update
+
+variables:
+  HARBOR_REGISTRY: "${HARBOR_REGISTRY:-harbor.apps.sre.example.com}"
+  HARBOR_PROJECT: "platform"
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# ==================================================================
+# Reusable job templates
+# ==================================================================
+
+# Template for building and pushing an app image
+.build-app:
+  stage: build
+  image: docker:27-dind
+  services:
+    - docker:27-dind
+  before_script:
+    - apk add --no-cache jq
+  script:
+    # Determine next version from package.json
+    - CURRENT=$(jq -r '.version' "${APP_DIR}/package.json")
+    - IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+    - NEW_PATCH=$((PATCH + 1))
+    - export VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+    - export VERSION_NUMBER="${MAJOR}.${MINOR}.${NEW_PATCH}"
+    - export FULL_IMAGE="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${VERSION}"
+    - echo "Building ${FULL_IMAGE} (was v${CURRENT})"
+    # Login to Harbor
+    - docker login -u "${HARBOR_USERNAME}" -p "${HARBOR_PASSWORD}" "${HARBOR_REGISTRY}"
+    # Build and push
+    - docker build -t "${FULL_IMAGE}" "${APP_DIR}"
+    - docker push "${FULL_IMAGE}"
+    # Update deployment YAML
+    - |
+      DEPLOY_FILE=$(find "${APP_DIR}/k8s" -name "deployment.yaml" | head -1)
+      if [ -n "$DEPLOY_FILE" ]; then
+        sed -i "s|image: .*${IMAGE_NAME}:.*|image: ${FULL_IMAGE}|" "$DEPLOY_FILE"
+      fi
+    # Update package.json version
+    - |
+      cd "${APP_DIR}"
+      jq --arg v "$VERSION_NUMBER" '.version = $v' package.json > package.json.tmp
+      mv package.json.tmp package.json
+    # Export for the update job
+    - echo "VERSION=${VERSION}" > "${CI_PROJECT_DIR}/build-${APP_NAME}.env"
+  artifacts:
+    reports:
+      dotenv: "build-${APP_NAME}.env"
+    paths:
+      - "${APP_DIR}/k8s/deployment.yaml"
+      - "${APP_DIR}/package.json"
+    expire_in: 1 hour
+  rules:
+    # Skip commits from CI to prevent infinite loops
+    - if: $CI_COMMIT_AUTHOR =~ /gitlab-ci/
+      when: never
+    - changes:
+        - "${APP_DIR}/**"
+      when: on_success
+
+# ==================================================================
+# Build jobs (one per app)
+# ==================================================================
+
+build-dashboard:
+  extends: .build-app
+  variables:
+    APP_NAME: "dashboard"
+    APP_DIR: "apps/dashboard"
+    IMAGE_NAME: "sre-dashboard"
+  rules:
+    - if: $CI_COMMIT_AUTHOR =~ /gitlab-ci/
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - apps/dashboard/**
+
+build-dsop-wizard:
+  extends: .build-app
+  variables:
+    APP_NAME: "dsop-wizard"
+    APP_DIR: "apps/dsop-wizard"
+    IMAGE_NAME: "dsop-wizard"
+  rules:
+    - if: $CI_COMMIT_AUTHOR =~ /gitlab-ci/
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - apps/dsop-wizard/**
+
+build-portal:
+  extends: .build-app
+  variables:
+    APP_NAME: "portal"
+    APP_DIR: "apps/portal"
+    IMAGE_NAME: "sre-portal"
+  rules:
+    - if: $CI_COMMIT_AUTHOR =~ /gitlab-ci/
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - apps/portal/**
+
+# ==================================================================
+# Commit version bumps back to Git (Flux auto-deploys)
+# ==================================================================
+
+update-versions:
+  stage: update
+  image: alpine/git:2.47.2
+  needs:
+    - job: build-dashboard
+      optional: true
+    - job: build-dsop-wizard
+      optional: true
+    - job: build-portal
+      optional: true
+  script:
+    - git config user.name "gitlab-ci[bot]"
+    - git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git checkout "${CI_COMMIT_BRANCH}"
+    - git pull origin "${CI_COMMIT_BRANCH}"
+    # Stage all changed deployment and package files
+    - |
+      CHANGED=false
+      for app_dir in apps/dashboard apps/dsop-wizard apps/portal; do
+        if [ -f "${app_dir}/k8s/deployment.yaml" ] && [ -f "${app_dir}/package.json" ]; then
+          git add "${app_dir}/k8s/deployment.yaml" "${app_dir}/package.json" 2>/dev/null || true
+          CHANGED=true
+        fi
+      done
+    - |
+      if git diff --cached --quiet; then
+        echo "No version changes to commit"
+      else
+        git commit -m "ci: bump app versions [skip ci]"
+        git push origin "${CI_COMMIT_BRANCH}"
+      fi
+  rules:
+    - if: $CI_COMMIT_AUTHOR =~ /gitlab-ci/
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

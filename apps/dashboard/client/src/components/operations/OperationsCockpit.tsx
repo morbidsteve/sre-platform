@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X, RefreshCw, RotateCcw, Activity, Cpu, MemoryStick,
   Terminal, Calendar, Code2, Settings2, Loader2, AlertTriangle,
-  CheckCircle2, Clock,
+  CheckCircle2, Clock, Play, Pause, Repeat, Trash2,
 } from 'lucide-react';
 import { PodStatusCard } from './PodStatusCard';
 import { EventsTimeline } from './EventsTimeline';
@@ -12,6 +12,11 @@ import {
   fetchOpsDiagnostics,
   patchOpsConfig,
   restartApp,
+  reconcileApp,
+  suspendApp,
+  resumeApp,
+  redeployApp,
+  deleteApp,
   fetchAvailableTags,
 } from '../../api/ops';
 import type { OpsDiagnostics, OpsConfig } from '../../api/ops';
@@ -136,6 +141,12 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
   const [activeTab, setActiveTab] = useState<CockpitTab>('config');
   const [applying, setApplying] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [suspendBusy, setSuspendBusy] = useState(false);
+  const [suspended, setSuspended] = useState(false);
+  const [redeploying, setRedeploying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'suspend' | 'resume' | 'redeploy' | 'delete' | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [yamlCopied, setYamlCopied] = useState(false);
 
@@ -218,6 +229,82 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
     }
   }, [namespace, name, load, showToast, restarting]);
 
+  const handleReconcile = useCallback(async () => {
+    if (reconciling) return;
+    setReconciling(true);
+    try {
+      await reconcileApp(namespace, name);
+      showToast(`Reconcile triggered for ${name}`, 'success');
+      setTimeout(load, 3000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Reconcile failed';
+      showToast(`Reconcile failed: ${msg}`, 'error');
+    } finally {
+      setTimeout(() => setReconciling(false), 3000);
+    }
+  }, [namespace, name, load, showToast, reconciling]);
+
+  const handleSuspend = useCallback(async () => {
+    setSuspendBusy(true);
+    setConfirmAction(null);
+    try {
+      await suspendApp(namespace, name);
+      setSuspended(true);
+      showToast(`${name} suspended`, 'success');
+      setTimeout(load, 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Suspend failed';
+      showToast(`Suspend failed: ${msg}`, 'error');
+    } finally {
+      setSuspendBusy(false);
+    }
+  }, [namespace, name, load, showToast]);
+
+  const handleResume = useCallback(async () => {
+    setSuspendBusy(true);
+    setConfirmAction(null);
+    try {
+      await resumeApp(namespace, name);
+      setSuspended(false);
+      showToast(`${name} resumed`, 'success');
+      setTimeout(load, 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Resume failed';
+      showToast(`Resume failed: ${msg}`, 'error');
+    } finally {
+      setSuspendBusy(false);
+    }
+  }, [namespace, name, load, showToast]);
+
+  const handleRedeploy = useCallback(async () => {
+    setRedeploying(true);
+    setConfirmAction(null);
+    try {
+      await redeployApp(namespace, name);
+      showToast(`Redeploy triggered for ${name}`, 'success');
+      setTimeout(load, 5000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Redeploy failed';
+      showToast(`Redeploy failed: ${msg}`, 'error');
+    } finally {
+      setTimeout(() => setRedeploying(false), 5000);
+    }
+  }, [namespace, name, load, showToast]);
+
+  const handleDelete = useCallback(async () => {
+    setDeleting(true);
+    setConfirmAction(null);
+    try {
+      await deleteApp(namespace, name);
+      showToast(`${name} deleted`, 'success');
+      setTimeout(onClose, 1500);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Delete failed';
+      showToast(`Delete failed: ${msg}`, 'error');
+      setDeleting(false);
+    }
+  }, [namespace, name, onClose, showToast]);
+
   const handleCopyYaml = () => {
     if (!data?.helmReleaseYaml) return;
     navigator.clipboard.writeText(data.helmReleaseYaml).then(() => {
@@ -278,7 +365,25 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 ${reconciling ? 'opacity-50' : ''}`}
+              onClick={handleReconcile}
+              disabled={reconciling}
+              title="Reconcile Flux HelmRelease"
+            >
+              <Repeat className={`w-3 h-3 ${reconciling ? 'animate-spin' : ''}`} />
+              {reconciling ? 'Reconciling…' : 'Reconcile'}
+            </button>
+            <button
+              className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 ${suspendBusy ? 'opacity-50' : ''}`}
+              onClick={() => setConfirmAction(suspended ? 'resume' : 'suspend')}
+              disabled={suspendBusy}
+              title={suspended ? 'Resume Flux reconciliation' : 'Suspend Flux reconciliation'}
+            >
+              {suspended ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+              {suspendBusy ? '…' : suspended ? 'Resume' : 'Suspend'}
+            </button>
             <button
               className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 ${restarting ? 'opacity-50' : ''}`}
               onClick={handleRestart}
@@ -288,6 +393,25 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
               <RotateCcw className={`w-3 h-3 ${restarting ? 'animate-spin' : ''}`} />
               {restarting ? 'Restarting…' : 'Restart'}
             </button>
+            <button
+              className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 text-yellow ${redeploying ? 'opacity-50' : ''}`}
+              onClick={() => setConfirmAction('redeploy')}
+              disabled={redeploying}
+              title="Delete and recreate HelmRelease"
+            >
+              <RefreshCw className={`w-3 h-3 ${redeploying ? 'animate-spin' : ''}`} />
+              {redeploying ? 'Redeploying…' : 'Redeploy'}
+            </button>
+            <button
+              className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 text-red hover:bg-red/10 ${deleting ? 'opacity-50' : ''}`}
+              onClick={() => setConfirmAction('delete')}
+              disabled={deleting}
+              title="Permanently delete application"
+            >
+              <Trash2 className="w-3 h-3" />
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+            <div className="w-px h-5 bg-border mx-0.5" />
             <button
               className="btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1"
               onClick={() => { setLoading(true); load(); }}
@@ -306,6 +430,23 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
             </button>
           </div>
         </div>
+
+        {/* ── Primary Issue Banner ──────────────────────────────────────── */}
+        {data?.primaryIssue && (
+          <div
+            className={`flex items-start gap-2 px-5 py-2.5 border-b text-xs font-mono flex-shrink-0 ${
+              data.primaryIssue.severity === 'critical'
+                ? 'border-red/30 bg-red/5 text-red'
+                : 'border-yellow/30 bg-yellow/5 text-yellow'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold">{data.primaryIssue.type}:</span>{' '}
+              {data.primaryIssue.message}
+            </div>
+          </div>
+        )}
 
         {/* ── Body ──────────────────────────────────────────────────────── */}
         {loading && !data ? (
@@ -546,6 +687,66 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Confirmation dialog ──────────────────────────────────── */}
+        {confirmAction && (
+          <div
+            className="absolute inset-0 z-[400] flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.6)' }}
+            onClick={() => setConfirmAction(null)}
+          >
+            <div
+              className="bg-[#0d1117] border border-border rounded-lg p-5 max-w-sm w-full mx-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              style={{ animation: 'confirmIn 0.15s ease-out' }}
+            >
+              <h3 className="text-sm font-semibold text-text-bright mb-2">
+                {confirmAction === 'delete' && 'Delete Application'}
+                {confirmAction === 'redeploy' && 'Redeploy Application'}
+                {confirmAction === 'suspend' && 'Suspend Reconciliation'}
+                {confirmAction === 'resume' && 'Resume Reconciliation'}
+              </h3>
+              <p className="text-xs text-text-dim mb-4 leading-relaxed">
+                {confirmAction === 'delete' &&
+                  'This will permanently remove the application. This cannot be undone.'}
+                {confirmAction === 'redeploy' &&
+                  'This will delete and recreate the HelmRelease. Continue?'}
+                {confirmAction === 'suspend' &&
+                  'This will suspend Flux reconciliation. The app will keep running but changes will not be applied.'}
+                {confirmAction === 'resume' &&
+                  'This will resume Flux reconciliation for this application.'}
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  className="btn text-[11px] !px-3 !py-1.5 !min-h-0"
+                  onClick={() => setConfirmAction(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className={`btn text-[11px] !px-3 !py-1.5 !min-h-0 font-semibold ${
+                    confirmAction === 'delete'
+                      ? 'bg-red/15 text-red border-red/30 hover:bg-red/25'
+                      : confirmAction === 'redeploy'
+                      ? 'bg-yellow/15 text-yellow border-yellow/30 hover:bg-yellow/25'
+                      : 'bg-accent/15 text-accent border-accent/30 hover:bg-accent/25'
+                  }`}
+                  onClick={() => {
+                    if (confirmAction === 'delete') handleDelete();
+                    else if (confirmAction === 'redeploy') handleRedeploy();
+                    else if (confirmAction === 'suspend') handleSuspend();
+                    else if (confirmAction === 'resume') handleResume();
+                  }}
+                >
+                  {confirmAction === 'delete' && 'Delete'}
+                  {confirmAction === 'redeploy' && 'Redeploy'}
+                  {confirmAction === 'suspend' && 'Suspend'}
+                  {confirmAction === 'resume' && 'Resume'}
+                </button>
               </div>
             </div>
           </div>

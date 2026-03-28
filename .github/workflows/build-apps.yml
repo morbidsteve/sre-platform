@@ -1,0 +1,224 @@
+---
+# GitHub Actions workflow for SRE Platform application auto-build
+# Builds and deploys container images to Harbor when app code changes on main.
+#
+# Required GitHub Secrets:
+#   HARBOR_USERNAME  — Harbor robot account username (e.g., robot$ci-push)
+#   HARBOR_PASSWORD  — Harbor robot account password
+#
+# Optional GitHub Variables:
+#   HARBOR_REGISTRY  — Harbor registry hostname (default: harbor.apps.sre.example.com)
+#
+# How it works:
+#   1. Detects which apps changed using dorny/paths-filter
+#   2. Builds only the changed apps in parallel via matrix strategy
+#   3. Auto-increments the patch version from package.json
+#   4. Pushes the image to Harbor
+#   5. Updates deployment.yaml and package.json with the new version
+#   6. Commits the version bump back to main (Flux auto-deploys from there)
+
+name: Build and Deploy Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/dashboard/**'
+      - 'apps/dsop-wizard/**'
+      - 'apps/portal/**'
+
+# Prevent concurrent builds on the same branch to avoid commit conflicts
+concurrency:
+  group: build-apps-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # ==================================================================
+  # Job 1: Detect which apps have changes
+  # ==================================================================
+  detect-changes:
+    # Skip commits made by this workflow to prevent infinite loops
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    outputs:
+      dashboard: ${{ steps.changes.outputs.dashboard }}
+      dsop-wizard: ${{ steps.changes.outputs.dsop-wizard }}
+      portal: ${{ steps.changes.outputs.portal }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: changes
+        with:
+          filters: |
+            dashboard:
+              - 'apps/dashboard/**'
+            dsop-wizard:
+              - 'apps/dsop-wizard/**'
+            portal:
+              - 'apps/portal/**'
+
+  # ==================================================================
+  # Job 2: Build, push, and update version for each changed app
+  # ==================================================================
+  build:
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.dashboard == 'true' ||
+      needs.detect-changes.outputs.dsop-wizard == 'true' ||
+      needs.detect-changes.outputs.portal == 'true'
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      max-parallel: 1  # Serialize to avoid git push conflicts
+      matrix:
+        include:
+          - app: dashboard
+            dir: apps/dashboard
+            image: sre-dashboard
+            changed: ${{ needs.detect-changes.outputs.dashboard }}
+          - app: dsop-wizard
+            dir: apps/dsop-wizard
+            image: dsop-wizard
+            changed: ${{ needs.detect-changes.outputs.dsop-wizard }}
+          - app: portal
+            dir: apps/portal
+            image: sre-portal
+            changed: ${{ needs.detect-changes.outputs.portal }}
+
+    steps:
+      - name: Skip unchanged app
+        if: matrix.changed != 'true'
+        run: echo "No changes in ${{ matrix.app }}, skipping."
+
+      # ----------------------------------------------------------------
+      # Checkout with full history for version detection
+      # ----------------------------------------------------------------
+      - name: Checkout
+        if: matrix.changed == 'true'
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------------------
+      # Determine next version from package.json (increment patch)
+      # ----------------------------------------------------------------
+      - name: Determine version
+        if: matrix.changed == 'true'
+        id: version
+        run: |
+          CURRENT=$(jq -r '.version' "${{ matrix.dir }}/package.json")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW_PATCH=$((PATCH + 1))
+          VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          VERSION_NUMBER="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_number=$VERSION_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "## ${{ matrix.app }} version bump" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Current: v${CURRENT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- New: ${VERSION}" >> "$GITHUB_STEP_SUMMARY"
+
+      # ----------------------------------------------------------------
+      # Set up Docker Buildx
+      # ----------------------------------------------------------------
+      - name: Set up Docker Buildx
+        if: matrix.changed == 'true'
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2  # v3.10.0
+
+      # ----------------------------------------------------------------
+      # Login to Harbor
+      # ----------------------------------------------------------------
+      - name: Login to Harbor
+        if: matrix.changed == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3.3.0
+        with:
+          registry: ${{ vars.HARBOR_REGISTRY || 'harbor.apps.sre.example.com' }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      # ----------------------------------------------------------------
+      # Build and push container image
+      # ----------------------------------------------------------------
+      - name: Build and push
+        if: matrix.changed == 'true'
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v5.5.0
+        with:
+          context: ${{ matrix.dir }}
+          push: true
+          tags: |
+            ${{ vars.HARBOR_REGISTRY || 'harbor.apps.sre.example.com' }}/platform/${{ matrix.image }}:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ----------------------------------------------------------------
+      # Update deployment.yaml image tag and package.json version
+      # ----------------------------------------------------------------
+      - name: Update deployment tag and package version
+        if: matrix.changed == 'true'
+        env:
+          REGISTRY: ${{ vars.HARBOR_REGISTRY || 'harbor.apps.sre.example.com' }}
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_NUMBER: ${{ steps.version.outputs.version_number }}
+          APP_DIR: ${{ matrix.dir }}
+        run: |
+          # Update k8s deployment YAML
+          DEPLOY_FILE=$(find "$APP_DIR/k8s" -name "deployment.yaml" | head -1)
+          if [ -n "$DEPLOY_FILE" ]; then
+            sed -i "s|image: .*${IMAGE}:.*|image: ${REGISTRY}/platform/${IMAGE}:${VERSION}|" "$DEPLOY_FILE"
+            echo "Updated $DEPLOY_FILE with image tag $VERSION"
+          fi
+
+          # Update package.json version
+          cd "$APP_DIR"
+          npm version "$VERSION_NUMBER" --no-git-tag-version --allow-same-version 2>/dev/null || true
+          echo "Updated package.json to $VERSION_NUMBER"
+
+      # ----------------------------------------------------------------
+      # Commit version bump and push (Flux auto-deploys)
+      # ----------------------------------------------------------------
+      - name: Commit and push version bump
+        if: matrix.changed == 'true'
+        env:
+          APP: ${{ matrix.app }}
+          VERSION: ${{ steps.version.outputs.version }}
+          APP_DIR: ${{ matrix.dir }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Pull latest to avoid conflicts (another matrix job may have pushed)
+          git pull --rebase origin main
+
+          git add "$APP_DIR/k8s/deployment.yaml" "$APP_DIR/package.json"
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(${APP}): release ${VERSION}"
+            git push
+            echo "Committed and pushed $APP $VERSION"
+          else
+            echo "No version changes to commit"
+          fi
+
+      # ----------------------------------------------------------------
+      # Summary
+      # ----------------------------------------------------------------
+      - name: Build summary
+        if: matrix.changed == 'true'
+        env:
+          REGISTRY: ${{ vars.HARBOR_REGISTRY || 'harbor.apps.sre.example.com' }}
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Build Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| App | \`${{ matrix.app }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${REGISTRY}/platform/${{ matrix.image }}:${{ steps.version.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deploy | Flux auto-reconcile from \`${{ matrix.dir }}/k8s/deployment.yaml\` |" >> "$GITHUB_STEP_SUMMARY"

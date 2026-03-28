@@ -13185,9 +13185,16 @@ app.get("/api/ops/:namespace/:name", requireGroups("sre-admins", "developers"), 
         const mc = (pm?.containers || []).find((m) => m.name === c.name) || {};
         let state = "waiting";
         let stateReason = "";
+        let lastTerminatedReason = "";
+        let lastTerminatedExitCode = null;
         if (cs.state?.running) { state = "running"; }
         else if (cs.state?.terminated) { state = "terminated"; stateReason = cs.state.terminated.reason || ""; }
         else if (cs.state?.waiting) { state = "waiting"; stateReason = cs.state.waiting.reason || ""; }
+        // Capture last termination info (critical for CrashLoopBackOff diagnosis)
+        if (cs.lastState?.terminated) {
+          lastTerminatedReason = cs.lastState.terminated.reason || "";
+          lastTerminatedExitCode = cs.lastState.terminated.exitCode ?? null;
+        }
         return {
           name: c.name,
           image: c.image,
@@ -13195,6 +13202,8 @@ app.get("/api/ops/:namespace/:name", requireGroups("sre-admins", "developers"), 
           restartCount: cs.restartCount || 0,
           state,
           stateReason,
+          lastTerminatedReason,
+          lastTerminatedExitCode,
           resources: {
             requests: c.resources?.requests || null,
             limits: c.resources?.limits || null,
@@ -13324,6 +13333,81 @@ app.get("/api/ops/:namespace/:name", requireGroups("sre-admins", "developers"), 
     }
   }
   result.logs = logs;
+
+  // ── Primary Issue Detection ─────────────────────────────────────────────────
+  // Determine the most actionable problem for the user. Prioritize container-level
+  // crash reasons over generic pod phase or Kyverno background scan violations.
+  let primaryIssue = null;
+  for (const pod of result.pods) {
+    for (const c of pod.containers) {
+      if (c.name === "istio-proxy" || c.name === "istio-init") continue; // Skip sidecar
+      const effectiveReason = c.lastTerminatedReason || c.stateReason;
+      if (effectiveReason === "OOMKilled" || c.lastTerminatedReason === "OOMKilled") {
+        primaryIssue = {
+          type: "OOMKilled",
+          message: `Container "${c.name}" was killed because it ran out of memory. Increase the memory limit in the Configuration tab under Resources.`,
+          severity: "critical",
+          container: c.name,
+          exitCode: c.lastTerminatedExitCode,
+        };
+        break; // OOMKilled is the most specific — stop searching
+      } else if (effectiveReason === "CrashLoopBackOff") {
+        const exitHint = c.lastTerminatedExitCode !== null ? ` (exit code ${c.lastTerminatedExitCode})` : "";
+        const innerReason = c.lastTerminatedReason ? ` Last crash: ${c.lastTerminatedReason}.` : "";
+        primaryIssue = primaryIssue || {
+          type: "CrashLoopBackOff",
+          message: `Container "${c.name}" keeps crashing${exitHint}.${innerReason} Check the Logs tab for the error output.`,
+          severity: "critical",
+          container: c.name,
+          exitCode: c.lastTerminatedExitCode,
+        };
+      } else if (effectiveReason === "Error" || effectiveReason === "ContainerCannotRun") {
+        const exitHint = c.lastTerminatedExitCode !== null ? ` (exit code ${c.lastTerminatedExitCode})` : "";
+        primaryIssue = primaryIssue || {
+          type: effectiveReason,
+          message: `Container "${c.name}" failed to start${exitHint}. Check the Logs tab for details.`,
+          severity: "critical",
+          container: c.name,
+          exitCode: c.lastTerminatedExitCode,
+        };
+      } else if (effectiveReason === "ImagePullBackOff" || effectiveReason === "ErrImagePull") {
+        primaryIssue = primaryIssue || {
+          type: "ImagePullError",
+          message: `Cannot pull image for "${c.name}" (${c.image}). Verify the image exists in Harbor and the tag is correct.`,
+          severity: "critical",
+          container: c.name,
+        };
+      } else if (effectiveReason === "CreateContainerConfigError") {
+        primaryIssue = primaryIssue || {
+          type: "ConfigError",
+          message: `Container "${c.name}" has a configuration error (missing Secret, ConfigMap, or invalid env var reference). Check Events for details.`,
+          severity: "critical",
+          container: c.name,
+        };
+      }
+    }
+    if (primaryIssue && primaryIssue.type === "OOMKilled") break; // Already found the most specific issue
+    if (pod.phase === "Pending" && !primaryIssue) {
+      primaryIssue = {
+        type: "Pending",
+        message: "Pod is pending — may be waiting for resources, node scheduling, or image pull.",
+        severity: "warning",
+      };
+    }
+  }
+  // Check for Kyverno admission blocks (real blocks, not background scan reports)
+  const allEvts = [...(result.events?.warning || []), ...(result.events?.normal || [])];
+  const admissionBlocked = allEvts.some(
+    (e) => e.reason === "FailedCreate" && e.message && e.message.includes("admission webhook")
+  );
+  if (admissionBlocked) {
+    primaryIssue = {
+      type: "AdmissionDenied",
+      message: "Pod creation was blocked by an admission policy. Check the Events tab for the specific policy violation and ensure the required PolicyExceptions are created.",
+      severity: "critical",
+    };
+  }
+  result.primaryIssue = primaryIssue;
 
   res.json(result);
 });
@@ -13873,6 +13957,242 @@ app.delete("/api/ops/:namespace/:name/policy-exception/:exName", mutateLimiter, 
       return res.status(404).json({ error: `PolicyException "${safeExName}" not found in "${namespace}"` });
     }
     console.error("[ops] PolicyException delete error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Ops Control Actions ─────────────────────────────────────────────────────
+
+// ── POST /api/ops/:namespace/:name/reconcile — Force Flux reconciliation ────
+app.post("/api/ops/:namespace/:name/reconcile", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  try {
+    const now = new Date().toISOString();
+    await customApi.patchNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name,
+      {
+        metadata: {
+          annotations: {
+            "reconcile.fluxcd.io/requestedAt": now,
+          },
+        },
+      },
+      undefined, undefined, undefined, undefined,
+      { headers: { "Content-Type": "application/merge-patch+json" } }
+    );
+
+    // Best-effort: also trigger a Flux source reconcile
+    try { await gitops.triggerFluxReconcile(); } catch (e) { console.debug("[ops] Flux reconcile best-effort:", e.message); }
+
+    logger.info("ops-reconcile", `Reconciliation triggered for ${name} in ${namespace}`, {
+      app: name, namespace, actor: getActor(req),
+    });
+
+    res.json({
+      success: true,
+      message: `Reconciliation triggered for "${name}" in "${namespace}"`,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `HelmRelease "${name}" not found in namespace "${namespace}"` });
+    }
+    console.error("[ops] Reconcile error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/ops/:namespace/:name/suspend — Suspend HelmRelease ────────────
+app.post("/api/ops/:namespace/:name/suspend", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  try {
+    await customApi.patchNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name,
+      { spec: { suspend: true } },
+      undefined, undefined, undefined, undefined,
+      { headers: { "Content-Type": "application/merge-patch+json" } }
+    );
+
+    const actor = getActor(req);
+    logger.info("ops-suspend", `HelmRelease ${name} suspended in ${namespace}`, {
+      app: name, namespace, actor,
+    });
+
+    res.json({
+      success: true,
+      message: `HelmRelease "${name}" suspended in "${namespace}"`,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `HelmRelease "${name}" not found in namespace "${namespace}"` });
+    }
+    console.error("[ops] Suspend error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/ops/:namespace/:name/resume — Resume HelmRelease ──────────────
+app.post("/api/ops/:namespace/:name/resume", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  try {
+    const now = new Date().toISOString();
+    await customApi.patchNamespacedCustomObject(
+      "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name,
+      {
+        spec: { suspend: false },
+        metadata: {
+          annotations: {
+            "reconcile.fluxcd.io/requestedAt": now,
+          },
+        },
+      },
+      undefined, undefined, undefined, undefined,
+      { headers: { "Content-Type": "application/merge-patch+json" } }
+    );
+
+    const actor = getActor(req);
+    logger.info("ops-resume", `HelmRelease ${name} resumed in ${namespace}`, {
+      app: name, namespace, actor,
+    });
+
+    res.json({
+      success: true,
+      message: `HelmRelease "${name}" resumed in "${namespace}"`,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: `HelmRelease "${name}" not found in namespace "${namespace}"` });
+    }
+    console.error("[ops] Resume error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── DELETE /api/ops/:namespace/:name — Delete/undeploy app ──────────────────
+app.delete("/api/ops/:namespace/:name", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  try {
+    const actor = getActor(req);
+
+    // Step 1: Remove from Git (if GitOps enabled) or delete directly
+    if (gitops.isEnabled()) {
+      try {
+        await gitops.undeployApp(namespace, name, actor);
+        await gitops.triggerFluxReconcile();
+      } catch (gitErr) {
+        console.warn("[ops] Git undeploy failed, falling back to direct delete:", gitErr.message);
+        try {
+          await customApi.deleteNamespacedCustomObject("helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name);
+        } catch (e) {
+          if (e.statusCode !== 404) throw e;
+        }
+      }
+    } else {
+      try {
+        await customApi.deleteNamespacedCustomObject("helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name);
+      } catch (e) {
+        if (e.statusCode !== 404) throw e;
+      }
+    }
+
+    // Step 2: Clean up PolicyException (best-effort)
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "kyverno.io", "v2", namespace, "policyexceptions", name + "-security-exception"
+      );
+    } catch (e) {
+      if (e.statusCode !== 404) {
+        console.debug("[ops] PolicyException cleanup non-critical:", e.message);
+      }
+    }
+
+    // Step 3: Remove from app registry
+    const regIdx = appRegistry.findIndex(a => a.name === name);
+    if (regIdx >= 0) {
+      appRegistry.splice(regIdx, 1);
+      await saveAppRegistry();
+    }
+
+    logger.info("ops-delete", `Application ${name} undeployed from ${namespace}`, {
+      app: name, namespace, actor,
+    });
+
+    res.json({
+      success: true,
+      message: `Application "${name}" undeployed from "${namespace}"`,
+    });
+  } catch (err) {
+    console.error("[ops] Delete/undeploy error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/ops/:namespace/:name/redeploy — Delete and redeploy (force fresh install) ──
+app.post("/api/ops/:namespace/:name/redeploy", mutateLimiter, requireGroups("sre-admins"), async (req, res) => {
+  const { namespace, name } = req.params;
+
+  if (!isValidName(sanitizeName(namespace)) || !isValidName(sanitizeName(name))) {
+    return res.status(400).json({ error: "Invalid namespace or name" });
+  }
+
+  try {
+    const actor = getActor(req);
+
+    // Step 1: Remove finalizers so the HelmRelease can be deleted cleanly
+    try {
+      await customApi.patchNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name,
+        { metadata: { finalizers: null } },
+        undefined, undefined, undefined, undefined,
+        { headers: { "Content-Type": "application/merge-patch+json" } }
+      );
+    } catch (e) {
+      console.debug("[ops] Finalizer removal — HelmRelease may already be gone:", e.message);
+    }
+
+    // Step 2: Delete the HelmRelease
+    try {
+      await customApi.deleteNamespacedCustomObject(
+        "helm.toolkit.fluxcd.io", "v2", namespace, "helmreleases", name
+      );
+    } catch (e) {
+      if (e.statusCode !== 404) {
+        console.warn("[ops] Could not delete HelmRelease for redeploy:", e.message);
+      }
+    }
+
+    // Step 3: Trigger Flux reconcile so it recreates the HelmRelease from Git
+    try { await gitops.triggerFluxReconcile(); } catch (e) { console.debug("[ops] Flux reconcile best-effort:", e.message); }
+
+    logger.info("ops-redeploy", `Redeployment triggered for ${name} in ${namespace}`, {
+      app: name, namespace, actor,
+    });
+
+    res.json({
+      success: true,
+      message: `Redeployment triggered for "${name}" in "${namespace}"`,
+    });
+  } catch (err) {
+    console.error("[ops] Redeploy error:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
