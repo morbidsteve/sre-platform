@@ -5255,16 +5255,14 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
       runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
       seccompProfile: { type: "RuntimeDefault" },
     };
-    values.containerSecurityContext = values.containerSecurityContext || {};
-    values.containerSecurityContext.runAsNonRoot = false;
-    values.containerSecurityContext.runAsUser = 0;
-    values.containerSecurityContext.allowPrivilegeEscalation = true;
-    values.containerSecurityContext.readOnlyRootFilesystem = false;
-  }
-  // Privileged container — full access (implies root, escalation, writable FS)
-  if (needsPrivileged) {
-    values.containerSecurityContext = values.containerSecurityContext || {};
-    values.containerSecurityContext.privileged = true;
+    // REPLACE entire container security context — don't merge with chart defaults
+    values.containerSecurityContext = {
+      privileged: true,
+      runAsNonRoot: false,
+      runAsUser: 0,
+      allowPrivilegeEscalation: true,
+      readOnlyRootFilesystem: false,
+    };
   }
   // Writable filesystem (standalone, without root)
   if (sc.writableFilesystem && !needsRoot) {
@@ -13409,17 +13407,19 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
         : undefined;
 
     if (sc !== undefined && typeof sc === "object") {
-      // Handle privileged container mode — this implies runAsRoot + allowPrivilegeEscalation
+      // Handle privileged container mode — REPLACE entire security context (don't merge with defaults)
       if (sc.privileged) {
         newValues.podSecurityContext = {
           runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
           seccompProfile: { type: "RuntimeDefault" },
         };
-        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
-        newValues.containerSecurityContext.privileged = true;
-        newValues.containerSecurityContext.runAsNonRoot = false;
-        newValues.containerSecurityContext.runAsUser = 0;
-        newValues.containerSecurityContext.allowPrivilegeEscalation = true;
+        newValues.containerSecurityContext = {
+          privileged: true,
+          runAsNonRoot: false,
+          runAsUser: 0,
+          allowPrivilegeEscalation: true,
+          readOnlyRootFilesystem: false,
+        };
       } else if (sc.privileged === false) {
         newValues.containerSecurityContext = newValues.containerSecurityContext || {};
         newValues.containerSecurityContext.privileged = false;
@@ -13430,9 +13430,12 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
           runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
           seccompProfile: { type: "RuntimeDefault" },
         };
-        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
-        newValues.containerSecurityContext.runAsNonRoot = false;
-        newValues.containerSecurityContext.runAsUser = 0;
+        newValues.containerSecurityContext = {
+          runAsNonRoot: false,
+          runAsUser: 0,
+          allowPrivilegeEscalation: true,
+          readOnlyRootFilesystem: false,
+        };
       } else if (sc.runAsRoot === false && !sc.privileged) {
         // Explicitly re-enabling non-root — restore secure defaults
         newValues.podSecurityContext = {
