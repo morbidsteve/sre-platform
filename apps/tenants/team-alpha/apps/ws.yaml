@@ -20,7 +20,7 @@ spec:
   install:
     createNamespace: false
     remediation:
-      retries: 3
+      retries: 5
   upgrade:
     cleanupOnFail: true
     remediation:
@@ -35,24 +35,26 @@ spec:
         repository: harbor.apps.sre.example.com/team-alpha/ws
         tag: pipe-e20a1c85
         pullPolicy: IfNotPresent
-      port: 8080
-      replicas: 2
+      port: 3000
+      replicas: 1
       resources:
         requests:
-          cpu: '2'
-          memory: 2Gi
-        limits:
           cpu: 200m
-          memory: 256Mi
+          memory: 512Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
       probes:
         liveness:
           path: /
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 10
         readiness:
           path: /
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 10
       env: []
     ingress:
       enabled: true
@@ -78,7 +80,3 @@ spec:
       runAsUser: 0
       allowPrivilegeEscalation: true
       readOnlyRootFilesystem: false
-      capabilities:
-        add: []
-        drop:
-          - ALL
