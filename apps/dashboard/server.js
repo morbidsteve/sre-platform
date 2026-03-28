@@ -7540,6 +7540,32 @@ app.post("/api/pipeline/runs/:id/review", mutateLimiter, requireDb, requireGroup
         await db.updateGate(signingGate.id, { status: "running", startedAt: new Date().toISOString() });
         await db.updateGate(signingGate.id, { status: "passed", completedAt: new Date().toISOString(), summary: "Image signed (simulated cosign)" });
       }
+
+      // Mark all security exceptions as ISSM-approved so executePipelineDeploy
+      // can apply the correct securityContext and generate Kyverno PolicyExceptions
+      try {
+        const rawExceptions = run.security_exceptions;
+        const exceptions = typeof rawExceptions === "string" ? JSON.parse(rawExceptions || "[]") : (rawExceptions || []);
+        if (exceptions.length > 0) {
+          const approvedExceptions = exceptions.map(e => ({
+            ...e,
+            approved: true,
+            approvedBy: actor,
+            approvedAt: new Date().toISOString(),
+          }));
+          await db.pool.query(
+            "UPDATE pipeline_runs SET security_exceptions = $1::jsonb, updated_at = NOW() WHERE id = $2",
+            [JSON.stringify(approvedExceptions), run.id]
+          );
+          await db.auditLog(run.id, "exceptions_approved", actor,
+            `ISSM approved ${approvedExceptions.length} security exception(s): ${approvedExceptions.map(e => e.type).join(", ")}`);
+          logger.info("pipeline", `ISSM ${actor} approved ${approvedExceptions.length} security exceptions for run ${run.id}`,
+            { runId: run.id, exceptions: approvedExceptions.map(e => e.type) });
+        }
+      } catch (exErr) {
+        logger.warn("pipeline", `Failed to approve security exceptions for run ${run.id}: ${exErr.message}`);
+      }
+
       await db.updateRunStatus(run.id, "approved");
       await db.auditLog(run.id, "review_approved", actor, comment || "Approved by ISSM");
 
@@ -8866,8 +8892,14 @@ async function orchestratePipelineScan(runId) {
 
 async function executePipelineDeploy(run, actor) {
   try {
+    // Ensure SSE emitter exists so the wizard can stream deploy progress
+    getOrCreatePipelineEmitter(run.id);
+
     await db.updateRunStatus(run.id, "deploying");
     await db.auditLog(run.id, "deploy_started", actor, `Starting deployment of ${run.app_name}`);
+    emitPipelineEvent(run.id, "pipeline_status", { status: "deploying", message: `Deploying ${run.app_name}...` });
+    emitPipelineEvent(run.id, "deploy_step", { step: "prepare", status: "running" });
+    emitPipelineEvent(run.id, "deploy_log", { step: "prepare", line: `Starting deployment of ${run.app_name}` });
 
     const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
     const domain = SRE_DOMAIN;
@@ -8946,8 +8978,14 @@ async function executePipelineDeploy(run, actor) {
 
       logger.info('pipeline', `Compose deploy for ${safeName}: ${services.length} services, ${Object.keys(builtImages).length} built images`, { runId: run.id });
       await db.auditLog(run.id, "compose_deploy_started", actor, `Deploying compose app "${safeName}" with ${services.length} services`);
+      emitPipelineEvent(run.id, "deploy_step", { step: "prepare", status: "completed" });
+      emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "namespace", line: `Ensuring namespace ${nsName} exists` });
 
       await ensureNamespace(nsName, teamName);
+      emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "completed" });
+      emitPipelineEvent(run.id, "deploy_step", { step: "helmrelease", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Deploying ${services.length} compose services...` });
 
       // Generate a shared PolicyException for all services (if ISSM-approved exceptions exist)
       const approvedExceptions = parsedExceptions.filter(e => e.approved === true);
@@ -9203,10 +9241,15 @@ async function executePipelineDeploy(run, actor) {
         console.debug('[pipeline] Registry update best-effort:', cmErr.message);
       }
 
+      emitPipelineEvent(run.id, "deploy_step", { step: "helmrelease", status: deployedServices.length > 0 ? "completed" : "failed" });
+      emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: deployHealthy ? "completed" : "failed" });
       const deployStatus = failedServices.length > 0 ? "deployed_partial" : (deployHealthy ? "deployed" : "deployed_unhealthy");
       await db.updateRunStatus(run.id, deployStatus, { deployedUrl, deployWarning, deployedServices, failedServices });
       await db.auditLog(run.id, "deploy_completed", actor,
         `Compose deploy of ${run.app_name}: ${deployedServices.length} services deployed, ${failedServices.length} failed. URL: ${deployedUrl}${deployWarning ? " — WARNING: " + deployWarning : ""}`);
+      emitPipelineEvent(run.id, "deploy_log", { line: `Deployed ${deployedServices.length} services to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "pipeline_status", { status: deployStatus, message: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "done", { status: deployStatus });
     } else if (builtImage && !builtImage.startsWith('{')) {
       // Image already built during pipeline — skip rebuild, just create HelmRelease
       logger.info('pipeline', `Using pre-built image for ${safeName}: ${builtImage}`, { runId: run.id });
@@ -9216,7 +9259,14 @@ async function executePipelineDeploy(run, actor) {
       const imageTag = imageParts.length > 1 ? imageParts[imageParts.length - 1] : "latest";
       const ingressHost = `${safeName}.${domain}`;
 
+      emitPipelineEvent(run.id, "deploy_step", { step: "prepare", status: "completed" });
+      emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "namespace", line: `Ensuring namespace ${nsName} exists` });
       await ensureNamespace(nsName, run.team);
+      emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "completed" });
+
+      emitPipelineEvent(run.id, "deploy_step", { step: "helmrelease", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Creating HelmRelease for ${safeName} (image: ${imageRepo}:${imageTag})` });
 
       const manifest = generateHelmRelease({
         name: safeName,
@@ -9237,13 +9287,17 @@ async function executePipelineDeploy(run, actor) {
         ? generatePolicyException(safeName, nsName, approvedExceptions, actor)
         : null;
       if (policyException) {
+        emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Kyverno PolicyException created for: ${approvedExceptions.map(e => e.type).join(", ")}` });
         await db.auditLog(run.id, "policy_exception_generated", actor,
           `Generated Kyverno PolicyException for ${approvedExceptions.map(e => e.type).join(", ")}`);
       }
 
       await deployViaGitOps(manifest, nsName, safeName, actor, policyException);
+      emitPipelineEvent(run.id, "deploy_step", { step: "helmrelease", status: "completed" });
 
       // Monitor HelmRelease status — auto-retry on max retry failure
+      emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "reconcile", line: "Waiting for HelmRelease to reconcile..." });
       const hrStatus = await waitForHelmRelease(nsName, safeName, 180);
       let deployHealthy = true;
       let deployWarning = "";
@@ -9252,6 +9306,10 @@ async function executePipelineDeploy(run, actor) {
         deployWarning = hrStatus.error;
         logger.warn('pipeline', `HelmRelease ${safeName} not ready: ${hrStatus.error}`, { runId: run.id });
         await db.auditLog(run.id, "deploy_warning", actor, `HelmRelease issue: ${hrStatus.error}`);
+        emitPipelineEvent(run.id, "deploy_log", { step: "reconcile", line: `Warning: ${hrStatus.error}` });
+        emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: "failed" });
+      } else {
+        emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: "completed" });
       }
 
       const deployedUrl = `https://${ingressHost}`;
@@ -9268,10 +9326,9 @@ async function executePipelineDeploy(run, actor) {
       };
       appRegistry.push(appData);
       try {
-        await coreApi.replaceNamespacedConfigMap(APP_REGISTRY_CM, DASHBOARD_NAMESPACE, {
-          metadata: { name: APP_REGISTRY_CM, namespace: DASHBOARD_NAMESPACE },
+        await k8sApi.patchNamespacedConfigMap(APP_REGISTRY_CM, APP_REGISTRY_NS, {
           data: { "apps.json": JSON.stringify(appRegistry) },
-        });
+        }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
       } catch (cmErr) {
         console.debug('[pipeline] Registry update best-effort:', cmErr.message);
       }
@@ -9279,6 +9336,9 @@ async function executePipelineDeploy(run, actor) {
       const deployStatus = deployHealthy ? "deployed" : "deployed_unhealthy";
       await db.updateRunStatus(run.id, deployStatus, { deployedUrl, deployWarning });
       await db.auditLog(run.id, "deploy_completed", actor, `Deployed ${run.app_name} to ${deployedUrl} (pre-built image)${deployWarning ? " — WARNING: " + deployWarning : ""}`);
+      emitPipelineEvent(run.id, "deploy_log", { line: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "pipeline_status", { status: deployStatus, message: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "done", { status: deployStatus });
     } else if (run.git_url) {
       // Fallback: no pre-built image, call deploy-from-git to build + deploy
       const http = require("http");
@@ -9368,6 +9428,9 @@ async function executePipelineDeploy(run, actor) {
       await db.auditLog(run.id, "deploy_completed", actor,
         `Deployed ${run.app_name} to ${deployedUrl}`,
         { deployedUrl, result: deployResult });
+      emitPipelineEvent(run.id, "deploy_log", { line: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "pipeline_status", { status: "deployed", message: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "done", { status: "deployed" });
     } else if (run.image_url) {
       // Image-only deploy — call generateHelmRelease + deployViaGitOps directly
       // instead of going through HTTP to avoid auth header issues
@@ -9420,6 +9483,9 @@ async function executePipelineDeploy(run, actor) {
       await db.auditLog(run.id, "deploy_completed", actor,
         `Deployed ${run.app_name} from image ${run.image_url}${deployWarning2 ? " — WARNING: " + deployWarning2 : ""}`,
         { deployedUrl, privileged: needsPrivileged });
+      emitPipelineEvent(run.id, "deploy_log", { line: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "pipeline_status", { status: deployStatus2, message: `Deployed to ${deployedUrl}` });
+      emitPipelineEvent(run.id, "done", { status: deployStatus2 });
     } else {
       throw new Error("No git URL or image URL available for deployment");
     }
@@ -13323,9 +13389,32 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
     }
 
     // Step 3: Apply security context overrides
-    const sc = patch.securityContext;
+    // Accept both nested (patch.securityContext.runAsRoot) and flat (patch.runAsRoot) formats.
+    // The frontend sends flat keys; normalize into a single `sc` object.
+    const sc = (patch.securityContext && typeof patch.securityContext === "object")
+      ? patch.securityContext
+      : (patch.runAsRoot !== undefined || patch.privileged !== undefined || patch.writableFilesystem !== undefined || patch.allowPrivilegeEscalation !== undefined || patch.capabilities !== undefined)
+        ? { runAsRoot: patch.runAsRoot, privileged: patch.privileged, writableFilesystem: patch.writableFilesystem, allowPrivilegeEscalation: patch.allowPrivilegeEscalation, capabilities: patch.capabilities }
+        : undefined;
+
     if (sc !== undefined && typeof sc === "object") {
-      if (sc.runAsRoot) {
+      // Handle privileged container mode — this implies runAsRoot + allowPrivilegeEscalation
+      if (sc.privileged) {
+        newValues.podSecurityContext = {
+          runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
+          seccompProfile: { type: "RuntimeDefault" },
+        };
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        newValues.containerSecurityContext.privileged = true;
+        newValues.containerSecurityContext.runAsNonRoot = false;
+        newValues.containerSecurityContext.runAsUser = 0;
+        newValues.containerSecurityContext.allowPrivilegeEscalation = true;
+      } else if (sc.privileged === false) {
+        newValues.containerSecurityContext = newValues.containerSecurityContext || {};
+        newValues.containerSecurityContext.privileged = false;
+      }
+
+      if (sc.runAsRoot && !sc.privileged) {
         newValues.podSecurityContext = {
           runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
           seccompProfile: { type: "RuntimeDefault" },
@@ -13333,7 +13422,7 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
         newValues.containerSecurityContext = newValues.containerSecurityContext || {};
         newValues.containerSecurityContext.runAsNonRoot = false;
         newValues.containerSecurityContext.runAsUser = 0;
-      } else if (sc.runAsRoot === false) {
+      } else if (sc.runAsRoot === false && !sc.privileged) {
         // Explicitly re-enabling non-root — restore secure defaults
         newValues.podSecurityContext = {
           runAsNonRoot: true,
@@ -13347,7 +13436,7 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
         newValues.containerSecurityContext = newValues.containerSecurityContext || {};
         newValues.containerSecurityContext.readOnlyRootFilesystem = !sc.writableFilesystem;
       }
-      if (sc.allowPrivilegeEscalation !== undefined) {
+      if (sc.allowPrivilegeEscalation !== undefined && !sc.privileged) {
         newValues.containerSecurityContext = newValues.containerSecurityContext || {};
         newValues.containerSecurityContext.allowPrivilegeEscalation = !!sc.allowPrivilegeEscalation;
       }
@@ -13388,15 +13477,24 @@ app.patch("/api/ops/:namespace/:name/config", mutateLimiter, requireGroups("sre-
       },
     };
 
-    // Step 5: Auto-generate PolicyException if security exceptions are needed
+    // Step 5: Auto-generate PolicyException if security overrides require Kyverno exemption
     let policyException = null;
     if (sc !== undefined && typeof sc === "object") {
       const securityExceptions = [];
+      if (sc.privileged) {
+        securityExceptions.push({ type: "privileged_container", justification: "Ops cockpit override — admin approved privileged mode", approved: true });
+      }
       if (sc.runAsRoot) {
-        securityExceptions.push({ type: "run_as_root", justification: "Ops cockpit override — admin approved" });
+        securityExceptions.push({ type: "run_as_root", justification: "Ops cockpit override — admin approved root user", approved: true });
+      }
+      if (sc.writableFilesystem) {
+        securityExceptions.push({ type: "writable_filesystem", justification: "Ops cockpit override — admin approved writable filesystem", approved: true });
+      }
+      if (sc.allowPrivilegeEscalation) {
+        securityExceptions.push({ type: "privilege_escalation", justification: "Ops cockpit override — admin approved privilege escalation", approved: true });
       }
       if (sc.capabilities && sc.capabilities.length > 0) {
-        securityExceptions.push({ type: "custom_capability", justification: `Capabilities: ${sc.capabilities.join(", ")}` });
+        securityExceptions.push({ type: "custom_capability", justification: `Capabilities: ${sc.capabilities.join(", ")}`, approved: true });
       }
       if (securityExceptions.length > 0) {
         policyException = generatePolicyException(name, namespace, securityExceptions, getActor(req));
