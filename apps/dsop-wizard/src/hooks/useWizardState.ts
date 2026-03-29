@@ -200,22 +200,24 @@ export function useWizardState() {
         return;
       }
 
-      // ── Completed: clear session and start fresh (nothing to resume) ──
-      if (classification === 'completed') {
+      // ── Completed runs from session: clear and start fresh ──
+      // But if opened via URL link (?runId=), show the results instead of discarding
+      if (classification === 'completed' && !urlRunId) {
         clearSession();
         setState(initialState);
-        if (urlRunId) window.history.replaceState({}, '', window.location.pathname);
         return;
       }
 
-      // ── URL-linked run: auto-resume without prompting (shared link) ──
+      // ── URL-linked run: auto-resume/view without prompting ──
       if (urlRunId) {
         const mappedGates = run.gates.map((g: PipelineGate) =>
           mapPipelineGateToSecurityGate(g, run.findings, getInitialGates())
         );
-        const step = run.status === 'deployed' ? 7 :
+        const isDeployedStatus = run.status === 'deployed' || (run.status as string).startsWith('deployed_');
+        const step = isDeployedStatus ? 7 :
                      run.status === 'deploying' ? 6 :
                      run.status === 'approved' || run.status === 'review_pending' || run.status === 'rejected' ? 5 :
+                     run.status === 'failed' ? 4 :
                      4;
         setState((prev) => ({
           ...prev,
@@ -223,6 +225,7 @@ export function useWizardState() {
           pipelineRun: run,
           gates: mappedGates,
           currentStep: step,
+          deployedUrl: run.deployed_url || prev.deployedUrl,
           appInfo: {
             ...prev.appInfo,
             name: run.app_name || prev.appInfo.name,
