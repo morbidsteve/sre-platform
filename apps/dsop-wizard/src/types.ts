@@ -69,11 +69,24 @@ export interface AppSource {
   chartName?: string;
 }
 
+export interface DetectedRequirements {
+  port: number | null;
+  needsRoot: boolean;
+  needsPrivileged: boolean;
+  needsWritableFs: boolean;
+  capabilities: string[];
+  detectedFrom: string[];
+  probeDelays?: { liveness: number; readiness: number; failureThreshold: number };
+  resources?: { limits: { cpu: string; memory: string }; requests: { cpu: string; memory: string } };
+  probePath?: string;
+}
+
 export interface DetectedService {
   name: string;
   image: string;
   port: number | null;
   type: 'application' | 'database' | 'cache' | 'queue' | 'proxy';
+  requirements?: DetectedRequirements;
 }
 
 export interface PlatformMapping {
@@ -92,6 +105,7 @@ export interface DetectionResult {
   services: DetectedService[];
   platformServices: PlatformMapping[];
   externalAccess: ExternalAccess[];
+  detectedRequirements?: DetectedRequirements;
 }
 
 export interface DeployStep {

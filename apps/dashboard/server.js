@@ -1706,11 +1706,36 @@ app.get("/api/deploy/:namespace/:name/status", requireGroups("sre-admins", "deve
 // Auto-detects repo type (compose, helm, dockerfile, kustomize) and routes to the right strategy
 app.post("/api/deploy/git", mutateLimiter, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { url, branch, team, name, securityContext, securityExceptions } = req.body;
+    const { url, branch, team, name, securityContext, securityExceptions, analyze_only } = req.body;
 
     if (!url || !isValidGitUrl(url)) {
       return res.status(400).json({ error: "Missing or invalid required field: url (must be a valid Git URL)" });
     }
+
+    // Analysis-only mode: clone, analyze, return detection result with requirements
+    if (analyze_only) {
+      const safeBranch = (branch || "main").replace(/[^a-zA-Z0-9._/-]/g, "").substring(0, 128);
+      const analyzeId = "analyze-" + crypto.randomBytes(4).toString("hex");
+      const jobSpec = createAnalyzeJobSpec(analyzeId, url, safeBranch);
+      await batchApi.createNamespacedJob(BUILD_NAMESPACE, jobSpec);
+
+      const logs = await runAnalyzeJob(analyzeId);
+      if (logs && logs.error) {
+        return res.status(400).json({ error: logs.error });
+      }
+      if (!logs) {
+        return res.status(504).json({ error: "Repository analysis timed out" });
+      }
+
+      const analysisResult = parseRepoAnalysisLogs(logs);
+
+      // Attach top-level detectedRequirements from the primary (ingress) service
+      const primarySvc = analysisResult.services.find(s => s.role === 'ingress') || analysisResult.services[0];
+      const detectedRequirements = primarySvc?.requirements || null;
+
+      return res.json({ success: true, ...analysisResult, detectedRequirements });
+    }
+
     if (!team || typeof team !== "string") {
       return res.status(400).json({ error: "Missing required field: team" });
     }
@@ -3469,7 +3494,11 @@ app.post("/api/repo/analyze", mutateLimiter, requireGroups("sre-admins", "develo
     // Parse the structured output
     const analysisResult = parseRepoAnalysisLogs(logs);
 
-    res.json({ success: true, ...analysisResult });
+    // Attach top-level detectedRequirements from the primary (ingress) service
+    const primarySvc = analysisResult.services.find(s => s.role === 'ingress') || analysisResult.services[0];
+    const detectedRequirements = primarySvc?.requirements || null;
+
+    res.json({ success: true, ...analysisResult, detectedRequirements });
   } catch (err) {
     console.error("Error analyzing repo:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -9692,7 +9721,8 @@ async function executePipelineDeploy(run, actor) {
           if (dreqs.resources) detectedResources = dreqs.resources;
           if (dreqs.probeDelays) detectedProbeDelays = dreqs.probeDelays;
           // Auto-apply security context from detected requirements (only if not already set by ISSM)
-          if (!pipelineSecurityContext && (dreqs.needsRoot || dreqs.needsPrivileged)) {
+          const hasExplicitSecurity = pipelineSecurityContext && Object.keys(pipelineSecurityContext).length > 0;
+          if (!hasExplicitSecurity && (dreqs.needsRoot || dreqs.needsPrivileged)) {
             pipelineSecurityContext = {};
             if (dreqs.needsRoot) pipelineSecurityContext.runAsRoot = true;
             if (dreqs.needsPrivileged) { pipelineSecurityContext.privileged = true; pipelineSecurityContext.runAsRoot = true; }
@@ -9700,10 +9730,27 @@ async function executePipelineDeploy(run, actor) {
             if (dreqs.capabilities && dreqs.capabilities.length > 0) pipelineSecurityContext.capabilities = dreqs.capabilities;
             needsPrivileged = true;
             logger.info('pipeline', `Run ${run.id}: auto-detected security requirements from repo analysis`, { runId: run.id, detectedReqs: dreqs });
+
+            // Auto-generate security exceptions for PolicyException when none were explicitly provided
+            const autoExceptions = [];
+            if (dreqs.needsRoot) autoExceptions.push({ type: 'run_as_root', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true });
+            if (dreqs.needsPrivileged) autoExceptions.push({ type: 'privileged_container', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true });
+            if (dreqs.needsWritableFs) autoExceptions.push({ type: 'writable_filesystem', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true });
+            if (dreqs.capabilities && dreqs.capabilities.length > 0) autoExceptions.push({ type: 'custom_capability', justification: 'Auto-detected capabilities: ' + dreqs.capabilities.join(', '), approved: true });
+
+            const hasExistingExceptions = parsedExceptions.filter(e => e.approved === true).length > 0;
+            if (autoExceptions.length > 0 && !hasExistingExceptions) {
+              parsedExceptions = autoExceptions;
+              logger.info('pipeline', `Run ${run.id}: auto-generated ${autoExceptions.length} security exception(s) from repo analysis`, { runId: run.id, autoExceptions: autoExceptions.map(e => e.type) });
+            }
           }
           // Auto-apply writable filesystem even without root (if not already set by ISSM)
-          if (!pipelineSecurityContext && dreqs.needsWritableFs) {
+          if (!hasExplicitSecurity && !pipelineSecurityContext && dreqs.needsWritableFs) {
             pipelineSecurityContext = { writableFilesystem: true };
+            const hasExistingExceptions = parsedExceptions.filter(e => e.approved === true).length > 0;
+            if (!hasExistingExceptions) {
+              parsedExceptions = [{ type: 'writable_filesystem', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true }];
+            }
           }
         }
       } catch (e) { /* best-effort detection */ }

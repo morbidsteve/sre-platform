@@ -436,12 +436,34 @@ export function useWizardState() {
     setState((prev) => ({ ...prev, isAnalyzing: true, error: null }));
     try {
       const detection = await analyzeSource(state.source);
-      setState((prev) => ({
-        ...prev,
-        detection,
-        isAnalyzing: false,
-        currentStep: 3,
-      }));
+
+      setState((prev) => {
+        // Auto-enable security exceptions based on detected requirements
+        const reqs = detection.detectedRequirements || detection.services?.[0]?.requirements;
+        let autoExceptions = prev.securityExceptions;
+        if (reqs) {
+          autoExceptions = prev.securityExceptions.map((exc) => {
+            if (exc.type === 'privileged_container' && reqs.needsPrivileged) {
+              return { ...exc, enabled: true, justification: reqs.detectedFrom?.join('; ') || 'Auto-detected from repository analysis' };
+            }
+            if (exc.type === 'run_as_root' && reqs.needsRoot) {
+              return { ...exc, enabled: true, justification: reqs.detectedFrom?.join('; ') || 'Auto-detected from repository analysis' };
+            }
+            if (exc.type === 'writable_filesystem' && reqs.needsWritableFs) {
+              return { ...exc, enabled: true, justification: reqs.detectedFrom?.join('; ') || 'Auto-detected from repository analysis' };
+            }
+            return exc;
+          });
+        }
+
+        return {
+          ...prev,
+          detection,
+          securityExceptions: autoExceptions,
+          isAnalyzing: false,
+          currentStep: 3,
+        };
+      });
     } catch (err) {
       setState((prev) => ({
         ...prev,
