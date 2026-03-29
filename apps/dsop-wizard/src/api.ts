@@ -544,3 +544,7 @@ export async function requestSecurityExceptions(
 export async function retryPipelineRun(runId: string): Promise<PipelineRun> {
   return apiFetch(`/pipeline/runs/${runId}/retry`, { method: 'POST' });
 }
+
+export async function listPipelineRuns(limit = 20): Promise<{ runs: PipelineRun[]; total: number }> {
+  return apiFetch(`/pipeline/runs?limit=${limit}`);
+}

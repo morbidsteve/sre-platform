@@ -1,5 +1,6 @@
-import React, { useEffect, useCallback, useMemo } from 'react';
+import React, { useEffect, useCallback, useMemo, useState } from 'react';
 import { WizardLayout } from './components/WizardLayout';
+import { WizardLauncher } from './components/WizardLauncher';
 import { ResumePrompt } from './components/ResumePrompt';
 import { Step1_AppSource } from './components/steps/Step1_AppSource';
 import { Step2_AppInfo } from './components/steps/Step2_AppInfo';
@@ -19,6 +20,15 @@ export default function App() {
   const wizard = useWizard();
   const { state } = wizard;
 
+  // ── Launcher vs Wizard view ──────────────────────────────────
+  // Show the launcher unless:
+  //   - URL has ?runId= (skip straight to wizard/resume)
+  //   - User clicked "Start New" or selected a run from the launcher
+  const [showLauncher, setShowLauncher] = useState<boolean>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !params.get('runId');
+  });
+
   // Subscribe to the SSE stream for deploy-phase events (active for Steps 5–7)
   const pipelineStream = usePipelineStream(
     state.currentStep >= 5 ? state.pipelineRunId : null
@@ -37,6 +47,39 @@ export default function App() {
       document.documentElement.classList.remove('theme-light');
     }
   }, [dashboardTheme]);
+
+  // ── Launcher handlers ──────────────────────────────────────────
+  const handleStartNew = useCallback(() => {
+    sessionStorage.removeItem('dsop-wizard-state');
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('runId');
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
+    wizard.reset();
+    setShowLauncher(false);
+  }, [wizard]);
+
+  const handleSelectRun = useCallback((runId: string) => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('runId', runId);
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
+    setShowLauncher(false);
+    // Force a page reload with the runId param so useWizardState's
+    // mount effect picks it up and resumes/loads the run.
+    window.location.search = `?runId=${encodeURIComponent(runId)}${
+      window.location.search.includes('theme=light') ? '&theme=light' : ''
+    }`;
+  }, []);
+
+  // When wizard.reset() is called (e.g. from Step7 "New Pipeline" button),
+  // return to the launcher
+  const handleWizardReset = useCallback(() => {
+    wizard.reset();
+    setShowLauncher(true);
+  }, [wizard]);
 
   // ── Enter key advances to next step ──────────────────────────────
   const handleKeyDown = useCallback(
@@ -88,12 +131,12 @@ export default function App() {
           break;
         }
         case 7: {
-          wizard.reset();
+          handleWizardReset();
           break;
         }
       }
     },
-    [state, wizard]
+    [state, wizard, handleWizardReset]
   );
 
   useEffect(() => {
@@ -112,6 +155,11 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  // ── Show launcher screen ──────────────────────────────────────
+  if (showLauncher) {
+    return <WizardLauncher onStartNew={handleStartNew} onSelectRun={handleSelectRun} />;
   }
 
   const renderStep = () => {
@@ -230,7 +278,7 @@ export default function App() {
             }
             classification={state.appInfo.classification}
             gates={state.gates}
-            onReset={wizard.reset}
+            onReset={handleWizardReset}
             pipelineRunId={state.pipelineRunId}
             onDownloadPackage={wizard.downloadPackage}
           />
@@ -266,7 +314,7 @@ export default function App() {
             wizard.setStep(step);
           }
         }}
-        onReset={wizard.reset}
+        onReset={handleWizardReset}
       >
         {/* Error Banner */}
         {state.error && state.currentStep !== 6 && (
