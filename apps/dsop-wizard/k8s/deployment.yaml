@@ -57,7 +57,7 @@ spec:
           # NOTE: Uses nginx:1.27-alpine which runs as root.
           # To run as non-root (runAsUser: 101), switch Dockerfile base
           # image to nginxinc/nginx-unprivileged:1.27-alpine (like portal).
-          image: harbor.apps.sre.example.com/platform/dsop-wizard:v3.0.17
+          image: harbor.apps.sre.example.com/platform/dsop-wizard:v3.0.18
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
