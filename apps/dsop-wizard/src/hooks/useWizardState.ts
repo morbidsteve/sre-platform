@@ -15,6 +15,7 @@ import type {
   PipelineFinding,
   FindingDisposition,
   EasyConfig,
+  BundleBuilderConfig,
   BundleManifest,
 } from '../types';
 import {
@@ -75,6 +76,28 @@ const initialEasyConfig: EasyConfig = {
   env: [],
 };
 
+const initialBundleBuilderConfig: BundleBuilderConfig = {
+  name: '',
+  version: '',
+  author: '',
+  email: '',
+  description: '',
+  appType: 'web-app',
+  port: 8080,
+  resources: 'small',
+  ingress: '',
+  probes: { liveness: '/healthz', readiness: '/readyz' },
+  primaryImageFile: null,
+  components: [],
+  database: { enabled: false, size: 'small' },
+  redis: { enabled: false, size: 'small' },
+  sso: false,
+  storage: false,
+  env: [],
+  sourceIncluded: false,
+  sourceFile: null,
+};
+
 const initialState: WizardState = {
   currentStep: 1,
   source: initialSource,
@@ -94,6 +117,7 @@ const initialState: WizardState = {
   mode: null,
   easyConfig: initialEasyConfig,
   easyPrUrl: null,
+  bundleBuilderConfig: initialBundleBuilderConfig,
 };
 
 // ── Session persistence ──
@@ -113,6 +137,7 @@ function saveSession(state: WizardState) {
       mode: state.mode,
       easyConfig: state.easyConfig,
       easyPrUrl: state.easyPrUrl,
+      bundleBuilderConfig: state.bundleBuilderConfig,
     }));
   } catch { /* ignore */ }
 }
@@ -949,7 +974,7 @@ export function useWizardState() {
 
   // ── Easy mode methods ──
 
-  const setMode = useCallback((mode: 'full' | 'easy') => {
+  const setMode = useCallback((mode: 'full' | 'easy' | 'bundle') => {
     setState((prev) => {
       const next = { ...prev, mode, currentStep: 1 };
       saveSession(next);
@@ -960,6 +985,14 @@ export function useWizardState() {
   const updateEasyConfig = useCallback((updates: Partial<EasyConfig>) => {
     setState((prev) => {
       const next = { ...prev, easyConfig: { ...prev.easyConfig, ...updates } };
+      saveSession(next);
+      return next;
+    });
+  }, []);
+
+  const updateBundleBuilderConfig = useCallback((updates: Partial<BundleBuilderConfig>) => {
+    setState((prev) => {
+      const next = { ...prev, bundleBuilderConfig: { ...prev.bundleBuilderConfig, ...updates } };
       saveSession(next);
       return next;
     });
@@ -1048,5 +1081,7 @@ export function useWizardState() {
     setMode,
     updateEasyConfig,
     submitEasyDeploy,
+    // Bundle builder mode
+    updateBundleBuilderConfig,
   };
 }

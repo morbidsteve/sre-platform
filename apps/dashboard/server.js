@@ -7563,6 +7563,151 @@ app.post("/api/bundle/upload", mutateLimiter, requireDb, requireGroups("sre-admi
   }
 });
 
+// POST /api/bundle/create — Generate a downloadable .bundle.tar.gz
+app.post("/api/bundle/create", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), (req, res, next) => {
+  bundleUpload.fields([
+    { name: "manifest", maxCount: 1 },
+    { name: "images", maxCount: 10 },
+    { name: "source", maxCount: 1 },
+  ])(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "File exceeds maximum size" });
+      return res.status(400).json({ error: err.message || "Upload failed" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const buildId = crypto.randomUUID();
+  const buildDir = path.join(BUNDLE_UPLOAD_DIR, `build-${buildId}`);
+  const outputFile = path.join(BUNDLE_UPLOAD_DIR, `build-${buildId}.tar.gz`);
+
+  try {
+    // Parse manifest
+    const manifestJson = req.body?.manifest;
+    if (!manifestJson) return res.status(400).json({ error: "manifest field is required" });
+
+    let manifest;
+    try {
+      manifest = JSON.parse(manifestJson);
+    } catch {
+      return res.status(400).json({ error: "Invalid manifest JSON" });
+    }
+
+    if (!manifest.metadata?.name) return res.status(400).json({ error: "manifest.metadata.name is required" });
+
+    const bundleName = manifest.metadata.name;
+    const bundleVersion = manifest.metadata.version || "0.0.0";
+
+    // Create bundle directory structure
+    fs.mkdirSync(path.join(buildDir, "images"), { recursive: true });
+
+    // Write bundle.yaml
+    fs.writeFileSync(path.join(buildDir, "bundle.yaml"), yaml.dump(manifest, { lineWidth: -1 }));
+
+    // Copy image files
+    const imageFiles = req.files?.images || [];
+    for (const imgFile of imageFiles) {
+      const destName = imgFile.originalname || `image-${crypto.randomBytes(4).toString("hex")}.tar`;
+      fs.copyFileSync(imgFile.path, path.join(buildDir, "images", destName));
+    }
+
+    // Copy source file if provided
+    const sourceFiles = req.files?.source || [];
+    if (sourceFiles.length > 0) {
+      fs.mkdirSync(path.join(buildDir, "source"), { recursive: true });
+      fs.copyFileSync(sourceFiles[0].path, path.join(buildDir, "source", sourceFiles[0].originalname || "source.tar.gz"));
+    }
+
+    // Generate checksums
+    const checksumLines = [];
+    const allFiles = [];
+    function walkDir(dir, prefix = "") {
+      for (const entry of fs.readdirSync(dir)) {
+        const fullPath = path.join(dir, entry);
+        const relPath = prefix ? `${prefix}/${entry}` : entry;
+        if (fs.statSync(fullPath).isDirectory()) {
+          walkDir(fullPath, relPath);
+        } else {
+          allFiles.push({ fullPath, relPath });
+        }
+      }
+    }
+    walkDir(buildDir);
+    for (const { fullPath, relPath } of allFiles) {
+      const hash = crypto.createHash("sha256");
+      hash.update(fs.readFileSync(fullPath));
+      checksumLines.push(`${hash.digest("hex")}  ${relPath}`);
+    }
+    fs.writeFileSync(path.join(buildDir, "checksums.sha256"), checksumLines.join("\n") + "\n");
+
+    // Generate README
+    const readme = [
+      `# ${bundleName} v${bundleVersion}`,
+      "",
+      `Bundle created: ${new Date().toISOString()}`,
+      manifest.metadata?.author ? `Author: ${manifest.metadata.author}` : "",
+      manifest.metadata?.description ? `\n${manifest.metadata.description}` : "",
+      "",
+      "## Contents",
+      "",
+      `- bundle.yaml — Deployment manifest`,
+      `- images/ — ${imageFiles.length} container image(s)`,
+      sourceFiles.length > 0 ? "- source/ — Source code archive" : "",
+      "- checksums.sha256 — File integrity checksums",
+      "",
+      "## How to deploy",
+      "",
+      "Upload this bundle through the DSOP wizard's 'Upload Bundle' option",
+      "or use the SRE Platform CLI:",
+      "",
+      "```",
+      `# Upload and process through security pipeline`,
+      `# Navigate to https://dsop.apps.sre.example.com`,
+      `# Select 'Upload Bundle' in Step 1`,
+      "```",
+    ].filter(Boolean).join("\n");
+    fs.writeFileSync(path.join(buildDir, "README.md"), readme);
+
+    // Create tar.gz
+    const tarFilename = `${bundleName}-v${bundleVersion}.bundle.tar.gz`;
+    try {
+      execSync(`tar czf "${outputFile}" -C "${buildDir}" .`, { timeout: 120000 });
+    } catch (tarErr) {
+      return res.status(500).json({ error: "Failed to create bundle archive" });
+    }
+
+    // Stream the file as a download
+    const stat = fs.statSync(outputFile);
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="${tarFilename}"`);
+    res.setHeader("Content-Length", stat.size);
+
+    const stream = fs.createReadStream(outputFile);
+    stream.pipe(res);
+    stream.on("end", () => {
+      // Clean up
+      try { fs.rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      try { fs.unlinkSync(outputFile); } catch { /* ignore */ }
+      // Clean up multer temp files
+      for (const f of [...imageFiles, ...sourceFiles]) {
+        try { fs.unlinkSync(f.path); } catch { /* ignore */ }
+      }
+    });
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(500).json({ error: "Failed to send bundle" });
+    });
+
+    logger.info("bundle", `Bundle created: ${bundleName} v${bundleVersion} (${Math.round(stat.size / (1024*1024))}MB)`, { bundleName, bundleVersion });
+
+  } catch (err) {
+    console.error("[bundle] Create error:", err);
+    // Clean up on error
+    try { fs.rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.unlinkSync(outputFile); } catch { /* ignore */ }
+    if (!res.headersSent) res.status(500).json({ error: "Bundle creation failed" });
+  }
+});
+
 // Periodic cleanup of stale bundle uploads (older than 24 hours)
 setInterval(() => {
   try {

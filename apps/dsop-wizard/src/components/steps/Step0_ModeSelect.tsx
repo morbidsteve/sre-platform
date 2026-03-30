@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Zap, ShieldCheck } from 'lucide-react';
+import { Zap, ShieldCheck, Package } from 'lucide-react';
 
 interface Step0Props {
-  onSelectMode: (mode: 'full' | 'easy') => void;
+  onSelectMode: (mode: 'full' | 'easy' | 'bundle') => void;
 }
 
 export function Step0_ModeSelect({ onSelectMode }: Step0Props) {
-  const [selected, setSelected] = useState<'full' | 'easy' | null>(null);
+  const [selected, setSelected] = useState<'full' | 'easy' | 'bundle' | null>(null);
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
@@ -15,7 +15,7 @@ export function Step0_ModeSelect({ onSelectMode }: Step0Props) {
         <p className="mt-2 text-sm text-gray-400">Choose a deployment path based on your needs.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {/* Quick Deploy card */}
         <button
           onClick={() => setSelected('easy')}
@@ -63,6 +63,31 @@ export function Step0_ModeSelect({ onSelectMode }: Step0Props) {
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {['Source', 'App Info', 'Detection', 'Security', 'Review', 'Deploy', 'Complete'].map((s) => (
+              <span key={s} className="px-2 py-0.5 rounded text-xs font-mono bg-navy-700 text-gray-400">{s}</span>
+            ))}
+          </div>
+        </button>
+
+        {/* Create Bundle card */}
+        <button
+          onClick={() => setSelected('bundle')}
+          className={`text-left rounded-xl border p-6 transition-all ${
+            selected === 'bundle'
+              ? 'border-cyan-500 bg-cyan-500/10 ring-1 ring-cyan-500 shadow-lg shadow-cyan-500/10'
+              : 'border-navy-700 bg-navy-800 hover:border-navy-600'
+          }`}
+        >
+          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+            selected === 'bundle' ? 'bg-cyan-500/20' : 'bg-navy-700'
+          }`}>
+            <Package className={`w-6 h-6 ${selected === 'bundle' ? 'text-cyan-400' : 'text-gray-400'}`} />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-gray-100">Create Bundle</h3>
+          <p className="mt-2 text-sm text-gray-400 leading-relaxed">
+            Package your app for offline transfer to air-gapped environments or vendor handoff.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {['Configure', 'Review', 'Download'].map((s) => (
               <span key={s} className="px-2 py-0.5 rounded text-xs font-mono bg-navy-700 text-gray-400">{s}</span>
             ))}
           </div>
