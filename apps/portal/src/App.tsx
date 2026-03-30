@@ -6,6 +6,7 @@ import { AppGrid } from './components/AppGrid';
 import { QuickActions } from './components/QuickActions';
 import { LoadingSkeleton } from './components/LoadingSkeleton';
 import { EmptyState } from './components/EmptyState';
+import { DeployModal } from './components/DeployModal';
 import { useUser } from './hooks/useUser';
 import { useApps } from './hooks/useApps';
 
@@ -13,6 +14,7 @@ export function App() {
   const { user, loading: userLoading, isAdmin: userIsAdmin } = useUser();
   const { userApps, platformApps, adminApps, isAdmin: appsIsAdmin, loading: appsLoading } = useApps();
   const [searchQuery, setSearchQuery] = useState('');
+  const [showDeploy, setShowDeploy] = useState(false);
 
   const isAdmin = userIsAdmin || appsIsAdmin;
   const loading = userLoading || appsLoading;
@@ -59,7 +61,7 @@ export function App() {
                   {totalApps} {totalApps === 1 ? 'application' : 'applications'} &middot; {totalPlatform} platform services
                 </p>
               </div>
-              <QuickActions isAdmin={isAdmin} userGroups={user?.groups ?? []} />
+              <QuickActions isAdmin={isAdmin} userGroups={user?.groups ?? []} onDeployClick={() => setShowDeploy(true)} />
             </div>
           )}
 
@@ -91,7 +93,7 @@ export function App() {
                       icon={<Boxes className="h-4 w-4" />}
                     />
                   ) : (
-                    !query && <EmptyState />
+                    !query && <EmptyState onDeployClick={() => setShowDeploy(true)} />
                   )}
 
                   {/* Platform Services */}
@@ -122,6 +124,8 @@ export function App() {
           </p>
         </footer>
       </div>
+
+      {showDeploy && <DeployModal onClose={() => setShowDeploy(false)} />}
     </div>
   );
 }

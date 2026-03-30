@@ -1,6 +1,52 @@
 import type { PortalAppsResponse, UserInfo } from './types';
 import { svcUrl } from './config';
 
+export interface DeployResponse {
+  success: boolean;
+  prUrl?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface DeployRequest {
+  appName: string;
+  appType: string;
+  image: string;
+  port: number;
+  team: string;
+  resources: string;
+  ingress?: string;
+  database?: { enabled: boolean; size: string };
+  redis?: { enabled: boolean; size: string };
+  sso?: boolean;
+  storage?: boolean;
+  env?: Array<{ name: string; value?: string; secret?: string }>;
+}
+
+export async function createDeploymentPR(request: DeployRequest): Promise<DeployResponse> {
+  try {
+    const response = await fetch('/api/portal/deploy', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+      return {
+        success: false,
+        error: (body.error as string) || `HTTP ${response.status}`,
+      };
+    }
+    return await response.json() as DeployResponse;
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error',
+    };
+  }
+}
+
 export async function fetchApps(): Promise<PortalAppsResponse> {
   try {
     const response = await fetch('/api/portal/apps', {
@@ -121,6 +167,21 @@ export function getAdminServices() {
       healthUrl: `${svcUrl('dashboard')}/api/health`,
     },
   ];
+}
+
+export async function fetchTeams(): Promise<string[]> {
+  try {
+    const response = await fetch('/api/portal/teams', {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json() as { teams: string[] };
+    return data.teams;
+  } catch {
+    return ['team-alpha', 'team-beta'];
+  }
 }
 
 // Keep backward-compatible exports
