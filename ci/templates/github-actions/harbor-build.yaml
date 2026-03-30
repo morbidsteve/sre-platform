@@ -1,0 +1,116 @@
+---
+# SRE Platform — Simple Harbor Build Pipeline
+# Copy this file to your project's .github/workflows/harbor-build.yaml
+# See docs/developer-guides/ci-pipeline.md for setup instructions.
+#
+# What this does:
+#   1. Builds a container image from your Dockerfile
+#   2. Pushes to Harbor (on tag push only)
+#   3. Scans for vulnerabilities with Trivy (fails on CRITICAL)
+#   4. Generates SBOM with Syft (SPDX 2.3 JSON)
+#   5. Signs the image with Cosign
+#   6. Attaches SBOM as a Cosign attestation
+#
+# Required secrets:
+#   HARBOR_USERNAME  — Harbor robot account username
+#   HARBOR_PASSWORD  — Harbor robot account password
+#   COSIGN_PRIVATE_KEY — Cosign private key (PEM format)
+#   COSIGN_PASSWORD    — Cosign key passphrase
+
+name: Build & Push to Harbor
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  # ── Change these for your project ──
+  HARBOR_REGISTRY: "harbor.apps.sre.example.com"
+  HARBOR_PROJECT: "team-alpha"      # Your Harbor project / team name
+  IMAGE_NAME: "my-app"              # Your application name
+
+jobs:
+  build-scan-sign:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
+
+      - name: Determine image tag
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Log in to Harbor
+        if: steps.meta.outputs.push == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ env.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v5.5.0
+        with:
+          context: .
+          push: ${{ steps.meta.outputs.push }}
+          tags: "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947e795f797d01e4b97 # v0.28.0
+        with:
+          image-ref: "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL"
+
+      - name: Generate SBOM
+        if: steps.meta.outputs.push == 'true'
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58571 # v0.17.7
+        with:
+          image: "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Install Cosign
+        if: steps.meta.outputs.push == 'true'
+        uses: sigstore/cosign-installer@3454372f970b8a86ee5b7c1123cb0f81d9dd3279 # v3.8.0
+
+      - name: Sign image
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          cosign sign --yes \
+            --key env://COSIGN_PRIVATE_KEY \
+            "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Attach SBOM attestation
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            --key env://COSIGN_PRIVATE_KEY \
+            "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}

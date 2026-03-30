@@ -1,0 +1,75 @@
+---
+# SRE Platform — Simple Harbor Build Pipeline (GitLab CI)
+# Copy this file to your project root as .gitlab-ci.yml
+# See docs/developer-guides/ci-pipeline.md for setup instructions.
+#
+# Required CI/CD variables (Settings > CI/CD > Variables):
+#   HARBOR_REGISTRY  — Harbor URL (e.g., harbor.apps.sre.example.com)
+#   HARBOR_USERNAME  — Harbor robot account username
+#   HARBOR_PASSWORD  — Harbor robot account password (masked)
+#   COSIGN_PRIVATE_KEY — Cosign private key PEM (file variable)
+#   COSIGN_PASSWORD    — Cosign key passphrase (masked)
+#   HARBOR_PROJECT   — Harbor project name (e.g., team-alpha)
+#   IMAGE_NAME       — Application name (e.g., my-app)
+
+stages:
+  - build
+  - scan
+  - sign
+
+variables:
+  FULL_IMAGE: "${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${CI_COMMIT_TAG}"
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# ── Build & Push ──
+build:
+  stage: build
+  image: docker:27-dind
+  services:
+    - docker:27-dind
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  script:
+    - echo "${HARBOR_PASSWORD}" | docker login "${HARBOR_REGISTRY}" -u "${HARBOR_USERNAME}" --password-stdin
+    - docker build -t "${FULL_IMAGE}" .
+    - docker push "${FULL_IMAGE}"
+
+# ── Trivy Scan ──
+trivy-scan:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.58.2
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  script:
+    - trivy image --exit-code 1 --severity CRITICAL "${FULL_IMAGE}"
+  allow_failure: false
+
+# ── SBOM Generation ──
+sbom-generate:
+  stage: scan
+  image:
+    name: anchore/syft:v1.18.1
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  script:
+    - syft "${FULL_IMAGE}" -o spdx-json=sbom.spdx.json
+  artifacts:
+    paths:
+      - sbom.spdx.json
+
+# ── Sign Image + Attach SBOM ──
+sign:
+  stage: sign
+  image:
+    name: bitnami/cosign:2.4.1
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  needs:
+    - sbom-generate
+  script:
+    - cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${FULL_IMAGE}"
+    - cosign attest --yes --predicate sbom.spdx.json --type spdxjson --key env://COSIGN_PRIVATE_KEY "${FULL_IMAGE}"
