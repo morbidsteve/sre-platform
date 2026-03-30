@@ -87,6 +87,9 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
+# -- Singleton mode (exactly 1 replica, HPA disabled) --
+singleton: false
+
 # -- Object storage (S3-compatible via MinIO/S3) --
 storage:
   enabled: false
@@ -96,3 +99,17 @@ storage:
   endpoint: ""
   # AWS region (for S3 compatibility)
   region: ""
+
+# -- Persistent storage (for stateful apps) --
+persistence:
+  enabled: false
+  mountPath: "/data"
+  size: "1Gi"
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+
+# -- Extra volume mounts (for stateful apps needing writable paths) --
+extraVolumeMounts: []
+# - name: data
+#   mountPath: /app/data

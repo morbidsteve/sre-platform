@@ -41,6 +41,17 @@ app:
   terminationGracePeriodSeconds: 30
   # preStopCommand: ["/bin/sh", "-c", "sleep 5"]
   preStopCommand: []
+  # Command override (for same-image different-role deployments)
+  command: []
+  args: []
+
+# -- Startup probe (for slow-starting apps like JVM, Django, Rails) --
+startupProbe:
+  enabled: false
+  path: "/"
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 30
 
 # -- Istio AuthorizationPolicy --
 authorizationPolicy:
@@ -133,3 +144,17 @@ storage:
   endpoint: ""
   # AWS region (for S3 compatibility)
   region: ""
+
+# -- Persistent storage (for stateful apps) --
+persistence:
+  enabled: false
+  mountPath: "/data"
+  size: "1Gi"
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+
+# -- Extra volume mounts (for stateful apps needing writable paths) --
+extraVolumeMounts: []
+# - name: data
+#   mountPath: /app/data

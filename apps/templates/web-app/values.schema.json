@@ -150,7 +150,39 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Command to run before pod termination for graceful shutdown"
+        },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Command to run (overrides image CMD)"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Arguments to command"
         }
+      }
+    },
+    "startupProbe": {
+      "type": "object",
+      "description": "Startup probe for slow-starting apps (JVM, Django, Rails)",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "path": { "type": "string" },
+        "initialDelaySeconds": { "type": "integer", "minimum": 0 },
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "description": "Persistent storage for stateful apps",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mountPath": { "type": "string" },
+        "size": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "accessModes": { "type": "array", "items": { "type": "string" } }
       }
     },
     "ingress": {

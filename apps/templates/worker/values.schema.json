@@ -146,6 +146,21 @@
         }
       }
     },
+    "singleton": {
+      "type": "boolean",
+      "description": "Singleton mode — exactly 1 replica, HPA disabled"
+    },
+    "persistence": {
+      "type": "object",
+      "description": "Persistent storage for stateful apps",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mountPath": { "type": "string" },
+        "size": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "accessModes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "autoscaling": {
       "type": "object",
       "properties": {

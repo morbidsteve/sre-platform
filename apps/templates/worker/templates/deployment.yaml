@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "sre-worker.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if .Values.singleton }}
+  replicas: 1
+  {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.app.replicas }}
   {{- end }}
   selector:
@@ -62,3 +64,24 @@ spec:
             - configMapRef:
                 name: {{ include "sre-worker.fullname" . }}-storage-config
           {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "sre-worker.fullname" . }}-data
+      {{- end }}

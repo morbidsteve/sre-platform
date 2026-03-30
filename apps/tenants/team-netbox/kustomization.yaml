@@ -10,82 +10,107 @@ patches:
     patch: |
       - op: replace
         path: /metadata/name
-        value: team-test
+        value: team-netbox
       - op: replace
         path: /metadata/labels/sre.io~1team
-        value: team-test
+        value: team-netbox
   - target: { kind: ResourceQuota, name: tenant-quota }
     patch: |
       - op: replace
         path: /metadata/name
-        value: team-test-quota
+        value: team-netbox-quota
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: LimitRange, name: tenant-limits }
     patch: |
       - op: replace
         path: /metadata/name
-        value: team-test-limits
+        value: team-netbox-limits
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: RoleBinding, name: tenant-developers }
     patch: |
       - op: replace
         path: /metadata/name
-        value: team-test-developers
+        value: team-netbox-developers
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
       - op: replace
         path: /subjects/0/name
-        value: team-test-developers
+        value: team-netbox-developers
   - target: { kind: RoleBinding, name: tenant-viewers }
     patch: |
       - op: replace
         path: /metadata/name
-        value: team-test-viewers
+        value: team-netbox-viewers
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
       - op: replace
         path: /subjects/0/name
-        value: team-test-viewers
+        value: team-netbox-viewers
   - target: { kind: NetworkPolicy, name: default-deny-all }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: NetworkPolicy, name: allow-dns }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: NetworkPolicy, name: allow-monitoring }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: NetworkPolicy, name: allow-istio-gateway }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: NetworkPolicy, name: allow-same-namespace }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: NetworkPolicy, name: allow-istio-control-plane }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
+        value: team-netbox
   - target: { kind: NetworkPolicy, name: allow-https-egress }
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: team-test
-  - apps/uptime-kuma-test.yaml
-  - apps/wordpress-test.yaml
+        value: team-netbox
+
+  - target: { kind: ResourceQuota, name: tenant-quota }
+    patch: |
+      - op: replace
+        path: /spec/hard/requests.cpu
+        value: "8"
+      - op: replace
+        path: /spec/hard/requests.memory
+        value: "16Gi"
+      - op: replace
+        path: /spec/hard/limits.cpu
+        value: "16"
+      - op: replace
+        path: /spec/hard/limits.memory
+        value: "32Gi"
+      - op: replace
+        path: /spec/hard/pods
+        value: "40"
+      - op: replace
+        path: /spec/hard/services
+        value: "20"
+      - op: replace
+        path: /spec/hard/persistentvolumeclaims
+        value: "20"
+  - apps/netbox.yaml
+  - apps/netbox-worker.yaml
+  - apps/netbox-housekeeping.yaml

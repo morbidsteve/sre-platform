@@ -51,6 +51,17 @@ NO_COMMIT=false
 APP_NAME="" TEAM="" IMAGE_REPO="" IMAGE_TAG="" APP_PORT="8080"
 CHART_TYPE="web-app" REPLICAS="1" INGRESS_HOST="" HPA_ENABLED="false"
 METRICS_ENABLED="false" LIVENESS_PATH="/" READINESS_PATH="/"
+RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
+WRITABLE_ROOT="${WRITABLE_ROOT:-false}"
+CAPABILITIES=()
+PERSIST_SPEC=""
+COMMAND_OVERRIDE=""
+ARGS_OVERRIDE=""
+SINGLETON="${SINGLETON:-false}"
+STARTUP_PROBE_PATH=""
+RESOURCES="${RESOURCES:-small}"
+ENV_VARS=()
+EXTRA_VOLUMES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,6 +77,17 @@ while [[ $# -gt 0 ]]; do
     --metrics)  METRICS_ENABLED="true"; shift ;;
     --liveness) LIVENESS_PATH="$2"; shift 2 ;;
     --readiness) READINESS_PATH="$2"; shift 2 ;;
+    --run-as-root)    RUN_AS_ROOT="true"; shift ;;
+    --writable-root)  WRITABLE_ROOT="true"; shift ;;
+    --add-capability) CAPABILITIES+=("$2"); shift 2 ;;
+    --persist)        PERSIST_SPEC="$2"; shift 2 ;;
+    --command)        COMMAND_OVERRIDE="$2"; shift 2 ;;
+    --args)           ARGS_OVERRIDE="$2"; shift 2 ;;
+    --singleton)      SINGLETON="true"; shift ;;
+    --startup-probe)  STARTUP_PROBE_PATH="$2"; shift 2 ;;
+    --resources)      RESOURCES="$2"; shift 2 ;;
+    --env)            ENV_VARS+=("$2"); shift 2 ;;
+    --extra-volume)   EXTRA_VOLUMES+=("$2"); shift 2 ;;
     --no-commit) NO_COMMIT=true; shift ;;
     --help|-h)
       echo "Usage: $0 [--name NAME --team TEAM --image IMAGE --tag TAG] [options]"
@@ -87,6 +109,17 @@ while [[ $# -gt 0 ]]; do
       echo "  --metrics         Enable Prometheus ServiceMonitor"
       echo "  --liveness PATH   Liveness probe path (default: /)"
       echo "  --readiness PATH  Readiness probe path (default: /)"
+      echo "  --run-as-root     Run container as root (uid 0)"
+      echo "  --writable-root   Allow writable root filesystem"
+      echo "  --add-capability CAP  Add Linux capability (e.g. NET_BIND_SERVICE)"
+      echo "  --persist PATH:SIZE   Enable PVC (e.g. /app/data:5Gi)"
+      echo "  --command CMD     Override container command (quoted string)"
+      echo "  --args ARGS       Override container args (quoted string)"
+      echo "  --singleton       Exactly 1 replica (worker chart only)"
+      echo "  --startup-probe PATH  Enable startup probe with HTTP path"
+      echo "  --resources SIZE  Resource preset: small|medium|large (default: small)"
+      echo "  --env KEY=VALUE   Add environment variable (repeatable)"
+      echo "  --extra-volume NAME:PATH  Add emptyDir volume (repeatable)"
       echo "  --no-commit       Generate files only, don't commit to Git"
       exit 0
       ;;
@@ -302,6 +335,15 @@ info "Generating HelmRelease manifest..."
 
 mkdir -p "${TEAM_DIR}/apps"
 
+# Resolve resource preset
+case "${RESOURCES}" in
+  small)  RES_REQ_CPU="50m";  RES_REQ_MEM="64Mi";  RES_LIM_CPU="200m";  RES_LIM_MEM="256Mi" ;;
+  medium) RES_REQ_CPU="250m"; RES_REQ_MEM="256Mi"; RES_LIM_CPU="1000m"; RES_LIM_MEM="1Gi"   ;;
+  large)  RES_REQ_CPU="500m"; RES_REQ_MEM="512Mi"; RES_LIM_CPU="2000m"; RES_LIM_MEM="2Gi"   ;;
+  *)      warn "Unknown resource preset '${RESOURCES}', using small."
+          RES_REQ_CPU="50m"; RES_REQ_MEM="64Mi"; RES_LIM_CPU="200m"; RES_LIM_MEM="256Mi" ;;
+esac
+
 cat > "${APP_FILE}" <<EOF
 ---
 # ${APP_NAME} — deployed via sre-deploy-app.sh
@@ -342,11 +384,11 @@ spec:
       replicas: ${REPLICAS}
       resources:
         requests:
-          cpu: 50m
-          memory: 64Mi
+          cpu: ${RES_REQ_CPU}
+          memory: ${RES_REQ_MEM}
         limits:
-          cpu: 200m
-          memory: 256Mi
+          cpu: ${RES_LIM_CPU}
+          memory: ${RES_LIM_MEM}
       probes:
         liveness:
           path: "${LIVENESS_PATH}"
@@ -356,7 +398,181 @@ spec:
           path: "${READINESS_PATH}"
           initialDelaySeconds: 5
           periodSeconds: 5
+EOF
+
+# Add command override
+if [[ -n "${COMMAND_OVERRIDE}" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+      command:
+EOF
+  IFS=',' read -ra CMD_PARTS <<< "${COMMAND_OVERRIDE}"
+  for part in "${CMD_PARTS[@]}"; do
+    part="$(echo "$part" | xargs)"  # trim whitespace
+    cat >> "${APP_FILE}" <<EOF
+        - "${part}"
+EOF
+  done
+fi
+
+# Add args override
+if [[ -n "${ARGS_OVERRIDE}" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+      args:
+EOF
+  IFS=',' read -ra ARG_PARTS <<< "${ARGS_OVERRIDE}"
+  for part in "${ARG_PARTS[@]}"; do
+    part="$(echo "$part" | xargs)"  # trim whitespace
+    cat >> "${APP_FILE}" <<EOF
+        - "${part}"
+EOF
+  done
+fi
+
+# Add env vars
+if [[ ${#ENV_VARS[@]} -gt 0 ]]; then
+  cat >> "${APP_FILE}" <<EOF
+      env:
+EOF
+  for env_entry in "${ENV_VARS[@]}"; do
+    env_key="${env_entry%%=*}"
+    env_val="${env_entry#*=}"
+    cat >> "${APP_FILE}" <<EOF
+        - name: "${env_key}"
+          value: "${env_val}"
+EOF
+  done
+else
+  cat >> "${APP_FILE}" <<EOF
       env: []
+EOF
+fi
+
+# Security context overrides
+if [[ "${RUN_AS_ROOT}" == "true" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+EOF
+  if [[ "${WRITABLE_ROOT}" == "true" ]]; then
+    cat >> "${APP_FILE}" <<EOF
+      readOnlyRootFilesystem: false
+EOF
+  else
+    cat >> "${APP_FILE}" <<EOF
+      readOnlyRootFilesystem: true
+EOF
+  fi
+  cat >> "${APP_FILE}" <<EOF
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
+EOF
+  if [[ ${#CAPABILITIES[@]} -gt 0 ]]; then
+    cat >> "${APP_FILE}" <<EOF
+        add:
+EOF
+    for cap in "${CAPABILITIES[@]}"; do
+      cat >> "${APP_FILE}" <<EOF
+          - ${cap}
+EOF
+    done
+  fi
+elif [[ "${WRITABLE_ROOT}" == "true" || ${#CAPABILITIES[@]} -gt 0 ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+EOF
+  if [[ "${WRITABLE_ROOT}" == "true" ]]; then
+    cat >> "${APP_FILE}" <<EOF
+      readOnlyRootFilesystem: false
+EOF
+  else
+    cat >> "${APP_FILE}" <<EOF
+      readOnlyRootFilesystem: true
+EOF
+  fi
+  cat >> "${APP_FILE}" <<EOF
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+EOF
+  if [[ ${#CAPABILITIES[@]} -gt 0 ]]; then
+    cat >> "${APP_FILE}" <<EOF
+        add:
+EOF
+    for cap in "${CAPABILITIES[@]}"; do
+      cat >> "${APP_FILE}" <<EOF
+          - ${cap}
+EOF
+    done
+  fi
+fi
+
+# Startup probe
+if [[ -n "${STARTUP_PROBE_PATH}" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    startupProbe:
+      enabled: true
+      path: "${STARTUP_PROBE_PATH}"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 30
+EOF
+fi
+
+# Persistence
+if [[ -n "${PERSIST_SPEC}" ]]; then
+  PERSIST_PATH="${PERSIST_SPEC%%:*}"
+  PERSIST_SIZE="${PERSIST_SPEC#*:}"
+  cat >> "${APP_FILE}" <<EOF
+    persistence:
+      enabled: true
+      mountPath: "${PERSIST_PATH}"
+      size: "${PERSIST_SIZE}"
+EOF
+fi
+
+# Singleton (worker chart only)
+if [[ "${SINGLETON}" == "true" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    singleton: true
+EOF
+fi
+
+# Extra volumes
+if [[ ${#EXTRA_VOLUMES[@]} -gt 0 ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    extraVolumeMounts:
+EOF
+  for vol_entry in "${EXTRA_VOLUMES[@]}"; do
+    vol_name="${vol_entry%%:*}"
+    vol_path="${vol_entry#*:}"
+    cat >> "${APP_FILE}" <<EOF
+      - name: "${vol_name}"
+        mountPath: "${vol_path}"
+EOF
+  done
+  cat >> "${APP_FILE}" <<EOF
+    extraVolumes:
+EOF
+  for vol_entry in "${EXTRA_VOLUMES[@]}"; do
+    vol_name="${vol_entry%%:*}"
+    cat >> "${APP_FILE}" <<EOF
+      - name: "${vol_name}"
+        emptyDir: {}
+EOF
+  done
+fi
+
+# Ingress
+cat >> "${APP_FILE}" <<EOF
     ingress:
       enabled: ${INGRESS_ENABLED}
 EOF
