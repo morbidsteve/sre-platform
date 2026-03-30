@@ -5,6 +5,10 @@ metadata:
   name: {{ include "sre-web-app.fullname" . }}
   labels:
     {{- include "sre-web-app.labels" . | nindent 4 }}
+  {{- if .Values.sso.enabled }}
+  annotations:
+    sre.io/sso: "enabled"
+  {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.app.replicas }}
@@ -94,6 +98,11 @@ spec:
               mountPath: /var/cache
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
+          {{- if .Values.sso.enabled }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "sre-web-app.fullname" . }}-oidc-config
+          {{- end }}
       {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - disallow-default-namespace.yaml
   - disallow-latest-tag.yaml
+  - generate-sso-resources.yaml
   - require-istio-sidecar.yaml
   - require-labels.yaml
   - require-network-policies.yaml
