@@ -181,9 +181,10 @@ export interface WizardState {
   pipelineRun: PipelineRun | null;
   securityExceptions: SecurityException[];
   securityCategorization: SecurityCategorization;
-  mode: 'full' | 'easy' | null;
+  mode: 'full' | 'easy' | 'bundle' | null;
   easyConfig: EasyConfig;
   easyPrUrl: string | null;
+  bundleBuilderConfig: BundleBuilderConfig;
 }
 
 export interface EasyConfig {
@@ -199,4 +200,26 @@ export interface EasyConfig {
   sso: boolean;
   storage: boolean;
   env: Array<{ name: string; value?: string; secret?: string }>;
+}
+
+export interface BundleBuilderConfig {
+  name: string;
+  version: string;
+  author: string;
+  email: string;
+  description: string;
+  appType: 'web-app' | 'api-service' | 'worker' | 'cronjob';
+  port: number;
+  resources: 'small' | 'medium' | 'large';
+  ingress: string;
+  probes: { liveness: string; readiness: string };
+  primaryImageFile: { name: string; size: number } | null;
+  components: Array<{ name: string; type: string; imageFile: { name: string; size: number } | null }>;
+  database: { enabled: boolean; size: string };
+  redis: { enabled: boolean; size: string };
+  sso: boolean;
+  storage: boolean;
+  env: Array<{ name: string; value?: string; secret?: string }>;
+  sourceIncluded: boolean;
+  sourceFile: { name: string; size: number } | null;
 }

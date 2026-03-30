@@ -87,5 +87,7 @@ export function useWizard() {
     setMode: wizardState.setMode,
     updateEasyConfig: wizardState.updateEasyConfig,
     submitEasyDeploy: wizardState.submitEasyDeploy,
+    // Bundle builder mode
+    updateBundleBuilderConfig: wizardState.updateBundleBuilderConfig,
   };
 }

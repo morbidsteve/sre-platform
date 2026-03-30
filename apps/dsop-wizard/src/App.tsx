@@ -12,6 +12,8 @@ import { Step7_Complete } from './components/steps/Step7_Complete';
 import { Step0_ModeSelect } from './components/steps/Step0_ModeSelect';
 import { Step_EasyConfig } from './components/steps/Step_EasyConfig';
 import { Step_EasyReview } from './components/steps/Step_EasyReview';
+import { Step_BundleConfig } from './components/steps/Step_BundleConfig';
+import { Step_BundleReview } from './components/steps/Step_BundleReview';
 import { useWizard } from './hooks/useWizard';
 import { useUser } from './hooks/useUser';
 import { usePipelineStream } from './hooks/usePipelineStream';
@@ -19,6 +21,7 @@ import { Spinner } from './components/ui/Spinner';
 import { getConfig } from './config';
 
 const easyStepLabels = ['Configure', 'Review', 'Complete'];
+const bundleStepLabels = ['Configure', 'Review', 'Download'];
 
 export default function App() {
   const { user, loading: userLoading } = useUser();
@@ -27,6 +30,12 @@ export default function App() {
 
   // Easy mode deploy result tracking
   const [easyResult, setEasyResult] = useState<{ success: boolean; prUrl?: string; error?: string } | null>(null);
+
+  const [bundleFiles, setBundleFiles] = useState<{
+    primaryImage: File | null;
+    components: Map<number, File>;
+    source: File | null;
+  }>({ primaryImage: null, components: new Map(), source: null });
 
   // ── Launcher vs Wizard view ──────────────────────────────────
   // Show the launcher unless:
@@ -243,6 +252,33 @@ export default function App() {
       }
     }
 
+    // Bundle builder steps
+    if (state.mode === 'bundle') {
+      switch (state.currentStep) {
+        case 1:
+          return (
+            <Step_BundleConfig
+              config={state.bundleBuilderConfig}
+              onUpdate={wizard.updateBundleBuilderConfig}
+              onFilesChange={setBundleFiles}
+              onNext={wizard.nextStep}
+              onBack={handleWizardReset}
+            />
+          );
+        case 2:
+          return (
+            <Step_BundleReview
+              config={state.bundleBuilderConfig}
+              files={bundleFiles}
+              onBack={wizard.prevStep}
+              onReset={handleWizardReset}
+            />
+          );
+        default:
+          return null;
+      }
+    }
+
     // Full pipeline steps (existing, unchanged)
     switch (state.currentStep) {
       case 1:
@@ -384,8 +420,8 @@ export default function App() {
       <WizardLayout
         currentStep={state.mode === null ? 0 : state.currentStep}
         classification={state.appInfo.classification}
-        stepLabels={state.mode === 'easy' ? easyStepLabels : undefined}
-        totalSteps={state.mode === 'easy' ? 3 : undefined}
+        stepLabels={state.mode === 'easy' ? easyStepLabels : state.mode === 'bundle' ? bundleStepLabels : undefined}
+        totalSteps={state.mode === 'easy' ? 3 : state.mode === 'bundle' ? 2 : undefined}
         onStepClick={(step) => {
           if (state.mode === null) return;
           if (state.isDeploying || state.isAnalyzing) return;
