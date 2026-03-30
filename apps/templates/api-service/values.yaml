@@ -80,9 +80,19 @@ serviceMonitor:
 
 networkPolicy:
   enabled: true
-  # Additional ingress rules beyond the defaults
+  # Services this app needs to call (generates egress rules)
+  allowedServices: []
+  # - name: user-service            # same namespace
+  #   port: 8080
+  # - name: auth-service            # different namespace
+  #   namespace: team-platform
+  #   port: 8080
+  # Services allowed to call this app (generates ingress rules)
+  allowedCallers: []
+  # - name: api-gateway
+  #   namespace: team-platform
+  # Raw additional rules (escape hatch for complex cases)
   additionalIngress: []
-  # Additional egress rules beyond the defaults
   additionalEgress: []
 
 podDisruptionBudget:

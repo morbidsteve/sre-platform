@@ -38,6 +38,9 @@ spec:
           protocol: TCP
     {{- end }}
     {{- end }}
+    {{- if .Values.networkPolicy.allowedCallers }}
+    {{- include "sre-lib.networkpolicy-ingress-allowed-callers" . | nindent 4 }}
+    {{- end }}
     {{- with .Values.networkPolicy.additionalIngress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
