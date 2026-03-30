@@ -11,9 +11,11 @@ interface WizardLayoutProps {
   onStepClick?: (step: number) => void;
   onReset?: () => void;
   children: React.ReactNode;
+  stepLabels?: string[];
+  totalSteps?: number;
 }
 
-const stepLabels = [
+const defaultStepLabels = [
   'Source',
   'App Info',
   'Detection',
@@ -23,7 +25,7 @@ const stepLabels = [
   'Complete',
 ];
 
-export function WizardLayout({ currentStep, classification, onStepClick, onReset, children }: WizardLayoutProps) {
+export function WizardLayout({ currentStep, classification, onStepClick, onReset, children, stepLabels, totalSteps }: WizardLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-navy-900">
       <ClassificationBanner classification={classification} />
@@ -78,8 +80,8 @@ export function WizardLayout({ currentStep, classification, onStepClick, onReset
         <div className="max-w-6xl mx-auto">
           <StepIndicator
             currentStep={currentStep}
-            totalSteps={7}
-            labels={stepLabels}
+            totalSteps={totalSteps ?? 7}
+            labels={stepLabels ?? defaultStepLabels}
             onStepClick={onStepClick}
           />
         </div>

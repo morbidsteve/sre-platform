@@ -130,4 +130,22 @@ export interface WizardState {
   pipelineRun: PipelineRun | null;
   securityExceptions: SecurityException[];
   securityCategorization: SecurityCategorization;
+  mode: 'full' | 'easy' | null;
+  easyConfig: EasyConfig;
+  easyPrUrl: string | null;
+}
+
+export interface EasyConfig {
+  appName: string;
+  team: string;
+  image: string;
+  appType: 'web-app' | 'api-service' | 'worker' | 'cronjob';
+  port: number;
+  resources: 'small' | 'medium' | 'large';
+  ingress: string;
+  database: { enabled: boolean; size: string };
+  redis: { enabled: boolean; size: string };
+  sso: boolean;
+  storage: boolean;
+  env: Array<{ name: string; value?: string; secret?: string }>;
 }

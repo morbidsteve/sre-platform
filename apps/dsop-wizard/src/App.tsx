@@ -9,16 +9,24 @@ import { Step4_SecurityPipeline } from './components/steps/Step4_SecurityPipelin
 import { Step5_Review } from './components/steps/Step5_Review';
 import { Step6_Deploy } from './components/steps/Step6_Deploy';
 import { Step7_Complete } from './components/steps/Step7_Complete';
+import { Step0_ModeSelect } from './components/steps/Step0_ModeSelect';
+import { Step_EasyConfig } from './components/steps/Step_EasyConfig';
+import { Step_EasyReview } from './components/steps/Step_EasyReview';
 import { useWizard } from './hooks/useWizard';
 import { useUser } from './hooks/useUser';
 import { usePipelineStream } from './hooks/usePipelineStream';
 import { Spinner } from './components/ui/Spinner';
 import { getConfig } from './config';
 
+const easyStepLabels = ['Configure', 'Review', 'Complete'];
+
 export default function App() {
   const { user, loading: userLoading } = useUser();
   const wizard = useWizard();
   const { state } = wizard;
+
+  // Easy mode deploy result tracking
+  const [easyResult, setEasyResult] = useState<{ success: boolean; prUrl?: string; error?: string } | null>(null);
 
   // ── Launcher vs Wizard view ──────────────────────────────────
   // Show the launcher unless:
@@ -57,6 +65,7 @@ export default function App() {
       window.history.replaceState({}, '', url.toString());
     } catch { /* ignore */ }
     wizard.reset();
+    setEasyResult(null);
     setShowLauncher(false);
   }, [wizard]);
 
@@ -78,7 +87,28 @@ export default function App() {
   // return to the launcher
   const handleWizardReset = useCallback(() => {
     wizard.reset();
+    setEasyResult(null);
     setShowLauncher(true);
+  }, [wizard]);
+
+  // ── Easy mode deploy ──────────────────────────────────────────────
+  // Track easy deploy results from state
+  useEffect(() => {
+    if (state.mode === 'easy' && state.easyPrUrl) {
+      setEasyResult({ success: true, prUrl: state.easyPrUrl });
+    }
+  }, [state.mode, state.easyPrUrl]);
+
+  // Track easy deploy errors from state
+  useEffect(() => {
+    if (state.mode === 'easy' && state.error && !state.isDeploying) {
+      setEasyResult({ success: false, error: state.error });
+    }
+  }, [state.mode, state.error, state.isDeploying]);
+
+  const handleEasySubmit = useCallback(async () => {
+    setEasyResult(null);
+    await wizard.submitEasyDeploy();
   }, [wizard]);
 
   // ── Enter key advances to next step ──────────────────────────────
@@ -163,6 +193,57 @@ export default function App() {
   }
 
   const renderStep = () => {
+    // Mode selection (Step 0 — mode not yet chosen)
+    if (state.mode === null) {
+      return (
+        <Step0_ModeSelect
+          onSelectMode={(mode) => {
+            wizard.setMode(mode);
+          }}
+        />
+      );
+    }
+
+    // Easy mode steps
+    if (state.mode === 'easy') {
+      switch (state.currentStep) {
+        case 1:
+          return (
+            <Step_EasyConfig
+              config={state.easyConfig}
+              onUpdate={wizard.updateEasyConfig}
+              onNext={wizard.nextStep}
+              onBack={() => handleWizardReset()}
+            />
+          );
+        case 2:
+          return (
+            <Step_EasyReview
+              config={state.easyConfig}
+              onBack={wizard.prevStep}
+              onSubmit={handleEasySubmit}
+              submitting={state.isDeploying}
+              result={easyResult}
+              onReset={handleWizardReset}
+            />
+          );
+        case 3:
+          return (
+            <Step7_Complete
+              appName={state.easyConfig.appName || 'my-app'}
+              deployedUrl={
+                state.easyPrUrl ||
+                `https://${state.easyConfig.appName || 'my-app'}.${getConfig().domain}`
+              }
+              onReset={handleWizardReset}
+            />
+          );
+        default:
+          return null;
+      }
+    }
+
+    // Full pipeline steps (existing, unchanged)
     switch (state.currentStep) {
       case 1:
         return (
@@ -301,14 +382,16 @@ export default function App() {
       )}
 
       <WizardLayout
-        currentStep={state.currentStep}
+        currentStep={state.mode === null ? 0 : state.currentStep}
         classification={state.appInfo.classification}
+        stepLabels={state.mode === 'easy' ? easyStepLabels : undefined}
+        totalSteps={state.mode === 'easy' ? 3 : undefined}
         onStepClick={(step) => {
-          // Allow navigating to completed steps or to step 4 if pipeline exists
+          if (state.mode === null) return;
           if (state.isDeploying || state.isAnalyzing) return;
           if (step < state.currentStep) {
             wizard.setStep(step);
-          } else if (step === 4 && state.pipelineRunId && !state.isPipelineRunning) {
+          } else if (state.mode === 'full' && step === 4 && state.pipelineRunId && !state.isPipelineRunning) {
             wizard.setStep(4);
           } else if (step <= state.currentStep) {
             wizard.setStep(step);

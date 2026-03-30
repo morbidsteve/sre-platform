@@ -14,6 +14,7 @@ import type {
   PipelineGate,
   PipelineFinding,
   FindingDisposition,
+  EasyConfig,
 } from '../types';
 import {
   analyzeSource,
@@ -58,6 +59,21 @@ const initialSecurityCategorization: SecurityCategorization = {
   availability: 'low',
 };
 
+const initialEasyConfig: EasyConfig = {
+  appName: '',
+  team: 'team-alpha',
+  image: '',
+  appType: 'web-app',
+  port: 8080,
+  resources: 'small',
+  ingress: '',
+  database: { enabled: false, size: 'small' },
+  redis: { enabled: false, size: 'small' },
+  sso: false,
+  storage: false,
+  env: [],
+};
+
 const initialState: WizardState = {
   currentStep: 1,
   source: initialSource,
@@ -74,6 +90,9 @@ const initialState: WizardState = {
   pipelineRun: null,
   securityExceptions: [],
   securityCategorization: initialSecurityCategorization,
+  mode: null,
+  easyConfig: initialEasyConfig,
+  easyPrUrl: null,
 };
 
 // ── Session persistence ──
@@ -90,6 +109,9 @@ function saveSession(state: WizardState) {
       securityCategorization: state.securityCategorization,
       pipelineRunId: state.pipelineRunId,
       deployedUrl: state.deployedUrl,
+      mode: state.mode,
+      easyConfig: state.easyConfig,
+      easyPrUrl: state.easyPrUrl,
     }));
   } catch { /* ignore */ }
 }
@@ -875,6 +897,73 @@ export function useWizardState() {
     } catch { /* ignore */ }
   }, []);
 
+  // ── Easy mode methods ──
+
+  const setMode = useCallback((mode: 'full' | 'easy') => {
+    setState((prev) => {
+      const next = { ...prev, mode, currentStep: 1 };
+      saveSession(next);
+      return next;
+    });
+  }, []);
+
+  const updateEasyConfig = useCallback((updates: Partial<EasyConfig>) => {
+    setState((prev) => {
+      const next = { ...prev, easyConfig: { ...prev.easyConfig, ...updates } };
+      saveSession(next);
+      return next;
+    });
+  }, []);
+
+  const submitEasyDeploy = useCallback(async () => {
+    setState((prev) => ({ ...prev, isDeploying: true, error: null }));
+    try {
+      const cfg = state.easyConfig;
+      const response = await fetch('/api/portal/deploy', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appName: cfg.appName,
+          appType: cfg.appType,
+          image: cfg.image,
+          port: cfg.port,
+          team: cfg.team,
+          resources: cfg.resources,
+          ingress: cfg.ingress || undefined,
+          database: cfg.database.enabled ? { enabled: true, size: cfg.database.size } : undefined,
+          redis: cfg.redis.enabled ? { enabled: true, size: cfg.redis.size } : undefined,
+          sso: cfg.sso || undefined,
+          storage: cfg.storage || undefined,
+          env: cfg.env.filter((e) => e.name.trim()).length > 0
+            ? cfg.env.filter((e) => e.name.trim())
+            : undefined,
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((body.error as string) || `HTTP ${response.status}`);
+      }
+      const data = await response.json() as { success: boolean; prUrl?: string };
+      setState((prev) => {
+        const next = {
+          ...prev,
+          isDeploying: false,
+          easyPrUrl: data.prUrl || null,
+          deployedUrl: data.prUrl || null,
+        };
+        saveSession(next);
+        return next;
+      });
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        isDeploying: false,
+        error: err instanceof Error ? err.message : 'Deploy failed',
+      }));
+    }
+  }, [state.easyConfig]);
+
   // ── Expose setState for sub-hooks ──
 
   return {
@@ -905,5 +994,9 @@ export function useWizardState() {
     resumePrompt,
     confirmResume,
     discardAndStartNew,
+    // Easy mode
+    setMode,
+    updateEasyConfig,
+    submitEasyDeploy,
   };
 }
