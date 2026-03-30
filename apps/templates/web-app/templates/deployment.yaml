@@ -52,6 +52,14 @@ spec:
         - name: {{ .Values.app.name }}
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
           imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          {{- with .Values.app.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.app.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.app.port }}
@@ -66,6 +74,15 @@ spec:
               exec:
                 command:
                   {{- toYaml .Values.app.preStopCommand | nindent 18 }}
+          {{- end }}
+          {{- if and (hasKey .Values "startupProbe") .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.startupProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           {{- end }}
           livenessProbe:
             {{- if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
@@ -99,6 +116,10 @@ spec:
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
           {{- if or .Values.sso.enabled (and (hasKey .Values "storage") .Values.storage.enabled) }}
@@ -122,4 +143,9 @@ spec:
           emptyDir: {}
       {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "sre-web-app.fullname" . }}-data
       {{- end }}

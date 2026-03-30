@@ -87,3 +87,5 @@ patches:
       - op: replace
         path: /metadata/namespace
         value: team-test
+  - apps/uptime-kuma-test.yaml
+  - apps/wordpress-test.yaml
