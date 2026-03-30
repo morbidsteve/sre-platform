@@ -1,0 +1,68 @@
+---
+# redash-scheduled-worker — deployed via sre-deploy-app.sh
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: redash-scheduled-worker
+  namespace: team-redash
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-redash
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/worker
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "redash-scheduled-worker"
+      team: "team-redash"
+      image:
+        repository: "harbor.apps.sre.example.com/team-redash/redash"
+        tag: "v10.1.0"
+        pullPolicy: IfNotPresent
+      port: 8080
+      replicas: 1
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
+      probes:
+        liveness:
+          path: "/"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      command:
+        - "celery"
+      args:
+        - "-A redash.worker worker -Q scheduled_queries"
+      env: []
+    ingress:
+      enabled: false
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false
