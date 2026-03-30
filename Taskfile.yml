@@ -648,6 +648,14 @@ tasks:
       - sh: command -v yq
         msg: "yq v4 is required. Install: https://github.com/mikefarah/yq#install"
 
+  onboard-team:
+    desc: Onboard a new team from a Team Contract
+    cmds:
+      - scripts/onboard-team.sh {{.CLI_ARGS}}
+    preconditions:
+      - sh: command -v yq
+        msg: "yq v4 is required. Install: https://github.com/mikefarah/yq#install"
+
   # ===========================================================================
   # DOCUMENTATION
   # ===========================================================================

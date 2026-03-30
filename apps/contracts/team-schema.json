@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sre.io/schemas/team-contract/v1alpha1",
+  "title": "SRE Team Contract",
+  "description": "Validates an SRE Platform Team Contract YAML file for automated team onboarding.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "sre.io/v1alpha1",
+      "description": "API version. Must be sre.io/v1alpha1."
+    },
+    "kind": {
+      "const": "TeamContract",
+      "description": "Resource kind. Must be TeamContract."
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^team-[a-z][a-z0-9-]*$",
+          "description": "Team name. Must start with 'team-' followed by lowercase kebab-case."
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["quota"],
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "description": "Human-readable team display name."
+        },
+        "contactEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "Team contact email address."
+        },
+        "quota": {
+          "type": "string",
+          "enum": ["small", "medium", "large", "custom"],
+          "description": "Resource quota preset. Use 'custom' with customQuota for specific values."
+        },
+        "customQuota": {
+          "type": "object",
+          "description": "Custom resource quota values. Required when quota is 'custom'.",
+          "properties": {
+            "cpu": { "type": "string", "description": "CPU limit (e.g., '16')" },
+            "memory": { "type": "string", "description": "Memory limit (e.g., '32Gi')" },
+            "pods": { "type": "integer", "minimum": 1, "description": "Max pods" },
+            "services": { "type": "integer", "minimum": 1, "description": "Max services" },
+            "pvcs": { "type": "integer", "minimum": 1, "description": "Max PVCs" }
+          },
+          "required": ["cpu", "memory", "pods", "services", "pvcs"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "quota": { "const": "custom" } }, "required": ["quota"] },
+          "then": { "required": ["quota", "customQuota"] }
+        }
+      ]
+    }
+  }
+}

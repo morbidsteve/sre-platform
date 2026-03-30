@@ -1,0 +1,9 @@
+---
+apiVersion: sre.io/v1alpha1
+kind: TeamContract
+metadata:
+  name: team-phoenix
+spec:
+  displayName: "Phoenix Team"
+  contactEmail: phoenix@example.com
+  quota: medium
