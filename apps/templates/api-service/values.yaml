@@ -30,11 +30,11 @@ app:
   env: []
   probes:
     liveness:
-      path: /healthz
-      initialDelaySeconds: 10
+      path: /
+      initialDelaySeconds: 15
       periodSeconds: 10
     readiness:
-      path: /readyz
+      path: /
       initialDelaySeconds: 5
       periodSeconds: 5
   # Graceful shutdown

@@ -1,0 +1,97 @@
+---
+# WordPress deployment — legacy app requiring security exceptions
+# This is a manual HelmRelease because the App Contract cannot express:
+# - Root user requirement
+# - Port 80 (privileged)
+# - readOnlyRootFilesystem: false (writes to /var/www/html)
+# - External MySQL database (platform only has PostgreSQL)
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: wordpress
+  namespace: team-test
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-test
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/web-app
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: wordpress
+      team: team-test
+      image:
+        repository: harbor.apps.sre.example.com/team-test/wordpress
+        tag: v6.7.0
+        pullPolicy: IfNotPresent
+      port: 80
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      probes:
+        liveness:
+          path: /wp-login.php
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readiness:
+          path: /wp-login.php
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      env:
+        - name: WORDPRESS_DB_HOST
+          value: "external-mysql.team-test.svc:3306"
+        - name: WORDPRESS_DB_NAME
+          value: "wordpress"
+    ingress:
+      enabled: true
+      host: wordpress.apps.sre.example.com
+    autoscaling:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    # Security overrides: WordPress requires root + writable filesystem + port 80
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      fsGroup: 33
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
+        add:
+          - NET_BIND_SERVICE
+    extraVolumeMounts:
+      - name: wordpress-data
+        mountPath: /var/www/html
+    extraVolumes:
+      - name: wordpress-data
+        emptyDir: {}
