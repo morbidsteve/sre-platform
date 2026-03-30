@@ -1,4 +1,4 @@
-import type { AppSource, DetectionResult, SecurityGate, DeployStep, PipelineRun, FindingDisposition } from './types';
+import type { AppSource, DetectionResult, SecurityGate, DeployStep, PipelineRun, FindingDisposition, BundleUploadResult } from './types';
 import { getConfig, svcUrl } from './config';
 
 const API_BASE = '/api';
@@ -439,6 +439,44 @@ async function simulateProgress(
   }
 }
 
+export async function uploadBundle(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<BundleUploadResult> {
+  const formData = new FormData();
+  formData.append('bundle', file);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/bundle/upload');
+    xhr.withCredentials = true;
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data as BundleUploadResult);
+        } else {
+          reject(new Error(data.error || `Upload failed (HTTP ${xhr.status})`));
+        }
+      } catch {
+        reject(new Error(`Upload failed (HTTP ${xhr.status})`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.send(formData);
+  });
+}
+
 // --- Pipeline API ---
 
 export async function createPipelineRun(data: {
@@ -453,6 +491,7 @@ export async function createPipelineRun(data: {
   /** Granular pod/container security context overrides (e.g. from the Deploy tab securityContext UI). */
   securityContext?: Record<string, unknown>;
   port?: number;
+  bundleUploadId?: string;
 }): Promise<PipelineRun> {
   return apiFetch('/pipeline/runs', {
     method: 'POST',

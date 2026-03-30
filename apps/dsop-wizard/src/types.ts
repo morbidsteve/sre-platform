@@ -45,7 +45,7 @@ export interface SecurityException {
   approvedAt?: string;
 }
 
-export type SourceType = 'git' | 'container' | 'helm';
+export type SourceType = 'git' | 'container' | 'helm' | 'bundle';
 
 export type DataType = 'public' | 'cui' | 'pii' | 'phi' | 'financial';
 
@@ -60,6 +60,53 @@ export interface SecurityCategorization {
 
 export type DeployStepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
+export interface BundleManifest {
+  apiVersion: string;
+  metadata: {
+    name: string;
+    version: string;
+    team: string;
+    created?: string;
+    author?: string;
+    description?: string;
+  };
+  spec: {
+    app: {
+      type: 'web-app' | 'api-service' | 'worker' | 'cronjob';
+      image: string;
+      port?: number;
+      resources?: string;
+      ingress?: string;
+      probes?: { liveness?: string; readiness?: string };
+    };
+    components?: Array<{
+      name: string;
+      type: string;
+      image: string;
+      resources?: string;
+      schedule?: string;
+    }>;
+    services?: {
+      database?: { enabled: boolean; size?: string };
+      redis?: { enabled: boolean; size?: string };
+      sso?: { enabled: boolean };
+      storage?: { enabled: boolean };
+    };
+    env?: Array<{ name: string; value?: string; secret?: string }>;
+    externalApis?: string[];
+    source?: { included: boolean; language?: string };
+    classification?: string;
+  };
+}
+
+export interface BundleUploadResult {
+  uploadId: string;
+  manifest: BundleManifest;
+  images: Array<{ name: string; file: string; sizeMB: number }>;
+  sourceIncluded: boolean;
+  errors?: string[];
+}
+
 export interface AppSource {
   type: SourceType;
   gitUrl?: string;
@@ -67,6 +114,10 @@ export interface AppSource {
   imageUrl?: string;
   chartRepo?: string;
   chartName?: string;
+  bundleManifest?: BundleManifest;
+  bundleUploadId?: string;
+  bundleImages?: Array<{ name: string; file: string; sizeMB: number }>;
+  bundleSourceIncluded?: boolean;
 }
 
 export interface DetectedRequirements {

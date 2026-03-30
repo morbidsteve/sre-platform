@@ -15,6 +15,7 @@ import type {
   PipelineFinding,
   FindingDisposition,
   EasyConfig,
+  BundleManifest,
 } from '../types';
 import {
   analyzeSource,
@@ -460,7 +461,44 @@ export function useWizardState() {
   const analyze = useCallback(async () => {
     setState((prev) => ({ ...prev, isAnalyzing: true, error: null }));
     try {
-      const detection = await analyzeSource(state.source);
+      let detection: DetectionResult;
+
+      if (state.source.type === 'bundle' && state.source.bundleManifest) {
+        // For bundles, construct detection from the manifest
+        const manifest = state.source.bundleManifest;
+        const services = [
+          {
+            name: manifest.metadata.name,
+            image: manifest.spec.app.image,
+            port: manifest.spec.app.port || 8080,
+            type: 'application' as const,
+          },
+          ...(manifest.spec.components || []).map((c) => ({
+            name: c.name,
+            image: c.image,
+            port: null,
+            type: 'application' as const,
+          })),
+        ];
+        const platformServices = [];
+        if (manifest.spec.services?.database?.enabled) platformServices.push({ detected: 'PostgreSQL', mappedTo: 'CNPG', icon: 'Database' });
+        if (manifest.spec.services?.redis?.enabled) platformServices.push({ detected: 'Redis', mappedTo: 'Redis', icon: 'Zap' });
+        if (manifest.spec.services?.sso?.enabled) platformServices.push({ detected: 'SSO', mappedTo: 'Keycloak', icon: 'Shield' });
+        if (manifest.spec.services?.storage?.enabled) platformServices.push({ detected: 'Object Storage', mappedTo: 'MinIO', icon: 'HardDrive' });
+        const externalAccess = (manifest.spec.externalApis || []).map((host) => ({ service: host, hostname: host }));
+
+        detection = {
+          repoType: 'container' as const,
+          services,
+          platformServices,
+          externalAccess,
+        };
+      } else {
+        detection = await analyzeSource(state.source);
+      }
+
+      // Capture manifest ref for appInfo pre-fill in the bundle case
+      const bundleManifest = state.source.type === 'bundle' ? state.source.bundleManifest : undefined;
 
       setState((prev) => {
         // Auto-enable security exceptions based on detected requirements
@@ -487,6 +525,17 @@ export function useWizardState() {
           securityExceptions: autoExceptions,
           isAnalyzing: false,
           currentStep: 3,
+          // Pre-fill appInfo from bundle manifest when available
+          ...(bundleManifest ? {
+            appInfo: {
+              ...prev.appInfo,
+              name: prev.appInfo.name || bundleManifest.metadata.name,
+              description: prev.appInfo.description || bundleManifest.metadata.description || '',
+              team: bundleManifest.metadata.team || prev.appInfo.team,
+              classification: (bundleManifest.spec.classification as Classification) || prev.appInfo.classification,
+              contact: bundleManifest.metadata.author || prev.appInfo.contact,
+            },
+          } : {}),
         };
       });
     } catch (err) {
@@ -601,6 +650,7 @@ export function useWizardState() {
         classification: state.appInfo.classification,
         contact: state.appInfo.contact,
         securityContext: Object.keys(scOverride).length > 0 ? scOverride : undefined,
+        bundleUploadId: state.source.bundleUploadId,
       });
 
       const localGates = getInitialGates();

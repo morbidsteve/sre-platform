@@ -1,8 +1,9 @@
 import React from 'react';
-import { GitBranch, Container, ArrowRight } from 'lucide-react';
+import { GitBranch, Container, ArrowRight, Package } from 'lucide-react';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
-import type { AppSource, SourceType } from '../../types';
+import { BundleUploader } from '../BundleUploader';
+import type { AppSource, SourceType, BundleUploadResult } from '../../types';
 
 interface Step1Props {
   source: AppSource;
@@ -39,13 +40,38 @@ const sourceOptions: { type: SourceType; label: string; icon: React.ReactNode; d
     icon: <HelmIcon className="w-8 h-8" />,
     desc: 'Deploy from chart repo',
   },
+  {
+    type: 'bundle',
+    label: 'Upload Bundle',
+    icon: <Package className="w-8 h-8" />,
+    desc: 'Upload a .bundle.tar.gz package',
+  },
 ];
 
 export function Step1_AppSource({ source, onUpdate, onNext }: Step1Props) {
   const isValid =
     (source.type === 'git' && source.gitUrl && source.gitUrl.trim().length > 0) ||
     (source.type === 'container' && source.imageUrl && source.imageUrl.trim().length > 0) ||
-    (source.type === 'helm' && source.chartRepo && source.chartName);
+    (source.type === 'helm' && source.chartRepo && source.chartName) ||
+    (source.type === 'bundle' && source.bundleUploadId);
+
+  const handleBundleUpload = (result: BundleUploadResult) => {
+    onUpdate({
+      bundleUploadId: result.uploadId,
+      bundleManifest: result.manifest,
+      bundleImages: result.images,
+      bundleSourceIncluded: result.sourceIncluded,
+    });
+  };
+
+  const handleBundleRemove = () => {
+    onUpdate({
+      bundleUploadId: undefined,
+      bundleManifest: undefined,
+      bundleImages: undefined,
+      bundleSourceIncluded: undefined,
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -59,7 +85,7 @@ export function Step1_AppSource({ source, onUpdate, onNext }: Step1Props) {
       </div>
 
       {/* Source Type Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {sourceOptions.map((opt) => (
           <button
             key={opt.type}
@@ -128,6 +154,19 @@ export function Step1_AppSource({ source, onUpdate, onNext }: Step1Props) {
               onChange={(e) => onUpdate({ chartName: e.target.value })}
             />
           </>
+        )}
+
+        {source.type === 'bundle' && (
+          <div className="mt-6">
+            <BundleUploader
+              manifest={source.bundleManifest}
+              uploadId={source.bundleUploadId}
+              images={source.bundleImages}
+              sourceIncluded={source.bundleSourceIncluded}
+              onUploadComplete={handleBundleUpload}
+              onRemove={handleBundleRemove}
+            />
+          </div>
         )}
       </div>
 
