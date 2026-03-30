@@ -1,0 +1,44 @@
+=== SRE Platform - Quick Start for Developers ===
+
+You have received this kit because you need to deploy an application
+to the Secure Runtime Environment (SRE) platform.
+
+FASTEST PATH (no command line needed):
+
+  1. Open bundle-builder.html in your web browser
+  2. Fill in the form with your app details
+  3. Upload your container image (.tar file)
+  4. Click "Generate Bundle"
+  5. Send the .bundle.tar.gz file to your platform operator
+
+NEED TO CREATE A .tar FILE FROM YOUR DOCKER IMAGE?
+
+  Run: docker save myimage:mytag -o myimage.tar
+
+PREFER THE COMMAND LINE?
+
+  Run: bash sre-bundle.sh
+  Follow the interactive prompts.
+
+WANT FULL CONTROL? (manual method)
+
+  1. Copy bundle.yaml.template to bundle.yaml
+  2. Fill in your values (see comments in the file)
+  3. Export your image: docker save myapp:v1.0.0 -o images/myapp.tar
+  4. Create the bundle:
+     mkdir -p images
+     mv myapp.tar images/
+     tar czf myapp-v1.0.0.bundle.tar.gz bundle.yaml images/ README.md
+
+EXAMPLES
+
+  See the examples/ directory for 4 complete bundle configurations,
+  from a simple web app to a multi-container vendor deployment.
+
+NEED MORE HELP?
+
+  Read: docs/bundle-guide.md
+
+QUESTIONS?
+
+  Contact your SRE platform operator.

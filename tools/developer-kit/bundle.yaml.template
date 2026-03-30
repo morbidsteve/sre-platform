@@ -1,0 +1,191 @@
+# =============================================================================
+# SRE Platform - Bundle Manifest Template
+# =============================================================================
+#
+# This file describes your application so the SRE platform knows how to
+# deploy it. Copy this file to bundle.yaml, fill in your values, and
+# include it in your bundle alongside your container image(s).
+#
+# Lines starting with # are comments. Remove them or leave them -- the
+# platform ignores comments when processing your bundle.
+#
+# Required fields are marked [REQUIRED]. Everything else has a sensible
+# default or is optional.
+#
+# =============================================================================
+
+# -- Bundle metadata ----------------------------------------------------------
+# These fields identify your bundle. The platform uses them for tracking,
+# logging, and display in the dashboard.
+
+# [REQUIRED] A short name for your application. Use lowercase letters,
+# numbers, and hyphens only. This becomes the Kubernetes deployment name.
+# Example: "inventory-api", "fraud-detector", "my-web-app"
+name: ""
+
+# [REQUIRED] Version of your application. Use semantic versioning (vX.Y.Z).
+# This must match the image tag you include in the bundle.
+# Example: "v1.0.0", "v2.3.1"
+version: ""
+
+# [REQUIRED] A one-line description of what your application does.
+# Displayed in the SRE dashboard and used in compliance documentation.
+description: ""
+
+# [REQUIRED] Team or organization that owns this application.
+# Used for RBAC, namespace assignment, and cost tracking.
+# Example: "team-alpha", "vendor-acme", "security-ops"
+team: ""
+
+# -- Container image ----------------------------------------------------------
+# Where to find the container image inside this bundle.
+
+image:
+  # [REQUIRED] Path to the image tar file, relative to the bundle root.
+  # This is the file produced by "docker save".
+  # Example: "images/myapp.tar"
+  file: ""
+
+  # [REQUIRED] The full image reference (repository:tag) as it was saved.
+  # Must match exactly what "docker save" used.
+  # Example: "myapp:v1.0.0", "mycompany/myapp:v2.3.1"
+  ref: ""
+
+# -- Runtime configuration ----------------------------------------------------
+# How the platform should run your application.
+
+runtime:
+  # Port your application listens on inside the container.
+  # Default: 8080
+  port: 8080
+
+  # Number of replicas (instances) to run.
+  # Default: 2 (for high availability)
+  replicas: 2
+
+  # Resource requests and limits.
+  # Requests = guaranteed minimum. Limits = maximum allowed.
+  # If your app exceeds the memory limit, it will be killed and restarted.
+  resources:
+    requests:
+      cpu: "100m"       # 100 millicores = 0.1 CPU core
+      memory: "128Mi"   # 128 mebibytes
+    limits:
+      cpu: "500m"       # 500 millicores = 0.5 CPU core
+      memory: "512Mi"   # 512 mebibytes
+
+  # Health check endpoints. The platform uses these to know if your app
+  # is alive and ready to receive traffic.
+  #
+  # - liveness: If this fails, the container is restarted.
+  # - readiness: If this fails, the container stops receiving traffic
+  #   but is NOT restarted (useful during startup or temporary issues).
+  #
+  # Set to the HTTP path your app responds to with a 200 OK.
+  # If your app doesn't have health endpoints, set both to your main path
+  # (e.g., "/" for a web app, "/api" for an API).
+  healthCheck:
+    liveness: "/healthz"
+    readiness: "/readyz"
+
+# -- Environment variables ----------------------------------------------------
+# Key-value pairs injected into your container at runtime.
+# Do NOT put secrets here -- use the secrets section below.
+
+env: {}
+  # Examples:
+  # LOG_LEVEL: "info"
+  # DATABASE_HOST: "postgres.sre.internal"
+  # FEATURE_FLAG_NEW_UI: "true"
+
+# -- Secrets ------------------------------------------------------------------
+# Secrets are values that should not appear in plain text in this file.
+# The platform operator will provision these in the secrets manager (OpenBao)
+# before deploying your bundle.
+#
+# List the secret names your app needs. The platform will mount them as
+# environment variables with the same name.
+
+secrets: []
+  # Examples:
+  # - DATABASE_PASSWORD
+  # - API_KEY
+  # - JWT_SECRET
+
+# -- Ingress (external access) ------------------------------------------------
+# If your app needs to be reachable from outside the cluster.
+
+ingress:
+  # Set to true if your app needs an external URL.
+  # Default: false (app is only reachable inside the cluster)
+  enabled: false
+
+  # The hostname for your app. Must be under your platform's domain.
+  # Your platform operator will tell you what domain to use.
+  # Example: "myapp.apps.sre.example.com"
+  host: ""
+
+  # TLS is always enabled (the platform enforces HTTPS).
+  # No configuration needed -- certificates are managed automatically.
+
+# -- Storage (persistent volumes) ---------------------------------------------
+# If your app needs persistent storage that survives container restarts.
+
+storage:
+  # Set to true if your app needs persistent storage.
+  # Default: false
+  enabled: false
+
+  # Mount path inside the container where the volume will appear.
+  # Example: "/data", "/var/lib/myapp"
+  mountPath: "/data"
+
+  # Size of the persistent volume.
+  # Example: "1Gi", "10Gi", "100Gi"
+  size: "1Gi"
+
+# -- Security context ---------------------------------------------------------
+# These settings control the security posture of your container.
+# The defaults are the most restrictive (and most secure) settings.
+# Only change these if your application absolutely requires it, and
+# document WHY in the comments.
+
+security:
+  # Run as a non-root user inside the container.
+  # Default: true. Only set to false if the app CANNOT run as non-root
+  # (requires security exception approval).
+  runAsNonRoot: true
+
+  # Make the container filesystem read-only.
+  # Default: true. Your app can still write to mounted volumes and /tmp.
+  # Set to false only if the app writes to its own filesystem.
+  readOnlyRootFilesystem: true
+
+  # Linux capabilities to add. The platform drops ALL capabilities by default.
+  # Only add capabilities your app genuinely needs.
+  # Common: NET_BIND_SERVICE (to bind ports below 1024)
+  # Uncommon: SYS_PTRACE (for debugging tools)
+  # See: https://man7.org/linux/man-pages/man7/capabilities.7.html
+  capabilities: []
+    # Examples:
+    # - NET_BIND_SERVICE
+
+# -- Additional containers (sidecars) -----------------------------------------
+# If your deployment requires multiple containers running together.
+# Most applications do NOT need this. The platform automatically adds
+# an Istio sidecar for mTLS -- you do not need to add it here.
+
+sidecars: []
+  # Example:
+  # - name: "log-shipper"
+  #   image:
+  #     file: "images/log-shipper.tar"
+  #     ref: "log-shipper:v1.2.0"
+  #   port: 9090
+  #   resources:
+  #     requests:
+  #       cpu: "50m"
+  #       memory: "64Mi"
+  #     limits:
+  #       cpu: "100m"
+  #       memory: "128Mi"

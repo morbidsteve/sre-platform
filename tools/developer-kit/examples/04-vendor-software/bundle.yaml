@@ -1,0 +1,31 @@
+apiVersion: sre.io/v1alpha1
+kind: DeploymentBundle
+metadata:
+  name: acme-portal
+  version: "5.2.1"
+  team: team-ops
+  author: "ACME Corp <support@acme.example.com>"
+  description: "ACME Enterprise Portal — commercial off-the-shelf software"
+spec:
+  app:
+    type: web-app
+    image: images/acme-portal.tar
+    port: 443
+    resources: large
+    ingress: acme.apps.sre.example.com
+    probes:
+      liveness: /api/health
+      readiness: /api/ready
+  services:
+    database:
+      enabled: false
+    redis:
+      enabled: false
+    sso:
+      enabled: true
+    storage:
+      enabled: false
+  source:
+    included: false
+    language: ""
+  classification: CUI

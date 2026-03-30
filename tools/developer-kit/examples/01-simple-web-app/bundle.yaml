@@ -1,0 +1,30 @@
+apiVersion: sre.io/v1alpha1
+kind: DeploymentBundle
+metadata:
+  name: hello-web
+  version: "1.0.0"
+  team: team-demo
+  author: "Demo Developer"
+  description: "Simple web application with no dependencies"
+spec:
+  app:
+    type: web-app
+    image: images/hello-web.tar
+    port: 3000
+    resources: small
+    ingress: hello-web.apps.sre.example.com
+    probes:
+      liveness: /healthz
+      readiness: /readyz
+  services:
+    database:
+      enabled: false
+    redis:
+      enabled: false
+    sso:
+      enabled: false
+    storage:
+      enabled: false
+  source:
+    included: false
+  classification: UNCLASSIFIED

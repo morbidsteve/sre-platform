@@ -1,0 +1,49 @@
+apiVersion: sre.io/v1alpha1
+kind: DeploymentBundle
+metadata:
+  name: order-service
+  version: "3.1.0"
+  team: team-demo
+  author: "Platform Team <platform@example.com>"
+  description: "Order processing with API, background worker, and database migration"
+spec:
+  app:
+    type: web-app
+    image: images/order-api.tar
+    port: 8080
+    resources: medium
+    ingress: orders.apps.sre.example.com
+    probes:
+      liveness: /health
+      readiness: /ready
+  components:
+    - name: order-worker
+      type: worker
+      image: images/order-worker.tar
+      resources: small
+    - name: db-migrate
+      type: cronjob
+      image: images/db-migrate.tar
+      resources: small
+      schedule: "0 3 * * *"
+  services:
+    database:
+      enabled: true
+      size: medium
+    redis:
+      enabled: true
+      size: small
+    sso:
+      enabled: false
+    storage:
+      enabled: false
+  env:
+    - name: LOG_LEVEL
+      value: "info"
+    - name: STRIPE_KEY
+      secret: order-stripe-key
+  externalApis:
+    - api.stripe.com
+  source:
+    included: false
+  classification: UNCLASSIFIED
