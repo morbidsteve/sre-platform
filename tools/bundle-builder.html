@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRE Bundle Builder</title>
+  <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
+.container { max-width: 800px; margin: 0 auto; padding: 2rem 1.5rem; }
+h1 { font-size: 1.5rem; font-weight: 700; color: #f1f5f9; }
+h2 { font-size: 1.1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 1rem; }
+.subtitle { color: #94a3b8; font-size: 0.875rem; margin-top: 0.25rem; }
+.badge { display: inline-block; padding: 0.125rem 0.5rem; font-size: 0.75rem; font-family: monospace; background: #1e293b; border: 1px solid #334155; border-radius: 0.375rem; color: #94a3b8; }
+.section { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+.section-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.section-header h2 { margin: 0; }
+label { display: block; font-size: 0.8125rem; font-weight: 500; color: #94a3b8; margin-bottom: 0.25rem; }
+input[type="text"], input[type="number"], select, textarea {
+  width: 100%; padding: 0.5rem 0.75rem; font-size: 0.875rem; color: #e2e8f0;
+  background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem;
+  outline: none; transition: border-color 0.15s;
+}
+input:focus, select:focus, textarea:focus { border-color: #06b6d4; }
+textarea { resize: vertical; min-height: 3rem; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group.full { grid-column: 1 / -1; }
+.error-text { color: #f87171; font-size: 0.75rem; margin-top: 0.25rem; }
+.help-text { color: #64748b; font-size: 0.75rem; margin-top: 0.25rem; }
+.radio-group { display: flex; gap: 0.75rem; }
+.radio-card { flex: 1; padding: 0.75rem; border: 1px solid #334155; border-radius: 0.5rem; cursor: pointer; text-align: center; transition: all 0.15s; }
+.radio-card:hover { border-color: #475569; }
+.radio-card.selected { border-color: #06b6d4; background: rgba(6,182,212,0.1); }
+.radio-card .label { font-size: 0.875rem; font-weight: 500; color: #e2e8f0; }
+.radio-card .desc { font-size: 0.7rem; color: #64748b; margin-top: 0.25rem; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; margin-bottom: 0.75rem; }
+.toggle-row .toggle-label { font-size: 0.875rem; color: #e2e8f0; }
+.toggle-row .toggle-desc { font-size: 0.75rem; color: #64748b; }
+.toggle-right { display: flex; align-items: center; gap: 0.75rem; }
+.toggle { position: relative; width: 2.5rem; height: 1.375rem; background: #334155; border-radius: 1rem; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+.toggle.on { background: #06b6d4; }
+.toggle .knob { position: absolute; top: 0.125rem; left: 0.125rem; width: 1.125rem; height: 1.125rem; background: white; border-radius: 50%; transition: transform 0.2s; }
+.toggle.on .knob { transform: translateX(1.125rem); }
+.toggle-size { padding: 0.25rem 0.5rem; font-size: 0.75rem; background: #1e293b; border: 1px solid #334155; border-radius: 0.375rem; color: #e2e8f0; }
+.dropzone { border: 2px dashed #334155; border-radius: 0.75rem; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.15s; }
+.dropzone:hover, .dropzone.dragover { border-color: #06b6d4; background: rgba(6,182,212,0.05); }
+.dropzone .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+.dropzone .text { font-size: 0.875rem; color: #94a3b8; }
+.dropzone .hint { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+.file-info { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; }
+.file-info .name { font-size: 0.875rem; color: #e2e8f0; font-family: monospace; }
+.file-info .size { font-size: 0.75rem; color: #64748b; }
+.file-info .remove { background: none; border: none; color: #f87171; cursor: pointer; font-size: 0.875rem; padding: 0.25rem 0.5rem; border-radius: 0.25rem; }
+.file-info .remove:hover { background: rgba(248,113,113,0.1); }
+.btn { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border: none; border-radius: 0.5rem; cursor: pointer; transition: all 0.15s; }
+.btn-primary { background: #06b6d4; color: #0f172a; }
+.btn-primary:hover { background: #22d3ee; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+.btn-secondary:hover { background: #334155; color: #e2e8f0; }
+.btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
+.btn-danger { background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+.env-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.env-row input { flex: 1; }
+.env-row .secret-toggle { padding: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem; background: #0f172a; color: #94a3b8; white-space: nowrap; }
+.env-row .secret-toggle.active { border-color: #f59e0b; background: rgba(245,158,11,0.1); color: #f59e0b; }
+.preview-block { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; font-family: monospace; font-size: 0.8125rem; white-space: pre-wrap; color: #94a3b8; max-height: 400px; overflow-y: auto; }
+.validation-list { list-style: none; margin: 1rem 0; }
+.validation-list li { padding: 0.25rem 0; font-size: 0.875rem; }
+.validation-list .pass { color: #34d399; }
+.validation-list .fail { color: #f87171; }
+.success-box { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); border-radius: 0.75rem; padding: 2rem; text-align: center; }
+.success-box h3 { color: #34d399; font-size: 1.25rem; margin-bottom: 0.5rem; }
+.success-box p { color: #94a3b8; font-size: 0.875rem; }
+.component-row { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.75rem; }
+.component-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.footer { text-align: center; padding: 2rem 0; color: #475569; font-size: 0.75rem; font-family: monospace; }
+input[type="file"] { display: none; }
+.progress-bar { height: 0.5rem; background: #334155; border-radius: 0.25rem; overflow: hidden; margin-top: 0.5rem; }
+.progress-bar .fill { height: 100%; background: #06b6d4; transition: width 0.3s; }
+.api-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.api-row input { flex: 1; }
+@media (max-width: 600px) {
+  .form-row { grid-template-columns: 1fr; }
+  .radio-group { flex-wrap: wrap; }
+  .radio-card { min-width: 0; }
+}
+  </style>
+</head>
+<body>
+<div class="container">
+  <!-- Header -->
+  <header style="text-align: center; margin-bottom: 2rem;">
+    <h1>SRE Bundle Builder</h1>
+    <p class="subtitle">Create a deployment bundle for the Secure Runtime Environment</p>
+    <span class="badge">v1.0.0</span>
+  </header>
+
+  <!-- Section 1: App Info -->
+  <div class="section" id="sec-info">
+    <h2>App Information</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>App Name *</label>
+        <input type="text" id="appName" placeholder="my-service" />
+        <div class="error-text" id="appNameError"></div>
+      </div>
+      <div class="form-group">
+        <label>Version *</label>
+        <input type="text" id="appVersion" placeholder="1.0.0" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Team *</label>
+        <input type="text" id="team" placeholder="team-alpha" />
+        <div class="help-text">Will auto-prepend "team-" if missing</div>
+      </div>
+      <div class="form-group">
+        <label>Author</label>
+        <input type="text" id="author" placeholder="Jane Dev &lt;jane@vendor.com&gt;" />
+      </div>
+    </div>
+    <div class="form-group full">
+      <label>Description</label>
+      <input type="text" id="description" placeholder="Brief description of your application" />
+    </div>
+  </div>
+
+  <!-- Section 2: Application -->
+  <div class="section" id="sec-app">
+    <h2>Application</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Type *</label>
+        <select id="appType">
+          <option value="web-app">Web App</option>
+          <option value="api-service">API Service</option>
+          <option value="worker">Worker</option>
+          <option value="cronjob">Cron Job</option>
+        </select>
+      </div>
+      <div class="form-group" id="portGroup">
+        <label>Port</label>
+        <input type="number" id="port" value="8080" min="1" max="65535" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Resource Size *</label>
+      <div class="radio-group" id="resourceRadios">
+        <div class="radio-card selected" data-value="small" onclick="selectResource(this)">
+          <div class="label">Small</div>
+          <div class="desc">100m / 128Mi</div>
+        </div>
+        <div class="radio-card" data-value="medium" onclick="selectResource(this)">
+          <div class="label">Medium</div>
+          <div class="desc">250m / 256Mi</div>
+        </div>
+        <div class="radio-card" data-value="large" onclick="selectResource(this)">
+          <div class="label">Large</div>
+          <div class="desc">500m / 512Mi</div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group" id="ingressGroup">
+      <label>Ingress Hostname</label>
+      <input type="text" id="ingress" placeholder="my-app.apps.sre.example.com" />
+    </div>
+    <div class="form-row" id="probesRow">
+      <div class="form-group" id="livenessGroup">
+        <label>Liveness Probe</label>
+        <input type="text" id="liveness" value="/healthz" />
+      </div>
+      <div class="form-group" id="readinessGroup">
+        <label>Readiness Probe</label>
+        <input type="text" id="readiness" value="/readyz" />
+      </div>
+    </div>
+    <div class="form-group" id="scheduleGroup" style="display:none">
+      <label>Cron Schedule *</label>
+      <input type="text" id="schedule" placeholder="0 */6 * * *" />
+      <div class="help-text">Standard cron format: minute hour day month weekday</div>
+    </div>
+  </div>
+
+  <!-- Section 3: Images -->
+  <div class="section" id="sec-images">
+    <h2>Container Images</h2>
+    <div class="form-group">
+      <label>Primary Image * <span class="help-text" style="display:inline">(docker save output, .tar file)</span></label>
+      <div id="primaryDropzone" class="dropzone" onclick="document.getElementById('primaryFileInput').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handlePrimaryDrop(event)">
+        <div class="icon">&#x1f4e6;</div>
+        <div class="text">Drop .tar file here or click to browse</div>
+        <div class="hint">Export with: docker save my-app:v1.0.0 &gt; my-app.tar</div>
+      </div>
+      <input type="file" id="primaryFileInput" accept=".tar" onchange="handlePrimaryFile(this.files[0])" />
+      <div id="primaryFileInfo" style="display:none"></div>
+    </div>
+    <div id="componentsContainer"></div>
+    <button class="btn btn-secondary btn-sm" onclick="addComponent()" style="margin-top:0.5rem">+ Add Component Image</button>
+    <div class="help-text" style="margin-top:0.5rem" id="totalSize"></div>
+  </div>
+
+  <!-- Section 4: Services -->
+  <div class="section" id="sec-services">
+    <h2>Platform Services</h2>
+    <div id="serviceToggles"></div>
+  </div>
+
+  <!-- Section 5: Env Vars (collapsible) -->
+  <div class="section" id="sec-env">
+    <div class="section-header" onclick="toggleSection('envContent','envToggle')">
+      <h2>Environment Variables</h2>
+      <span id="envToggle" style="color:#64748b; font-size:1.2rem;">&#9654;</span>
+    </div>
+    <div id="envContent" style="display:none; margin-top:1rem;">
+      <div id="envRows"></div>
+      <button class="btn btn-secondary btn-sm" onclick="addEnvVar()">+ Add Variable</button>
+    </div>
+  </div>
+
+  <!-- Section 6: External APIs (collapsible) -->
+  <div class="section" id="sec-apis">
+    <div class="section-header" onclick="toggleSection('apiContent','apiToggle')">
+      <h2>External APIs</h2>
+      <span id="apiToggle" style="color:#64748b; font-size:1.2rem;">&#9654;</span>
+    </div>
+    <div id="apiContent" style="display:none; margin-top:1rem;">
+      <div class="help-text" style="margin-bottom:0.75rem;">Hostnames the app needs egress to (used for NetworkPolicy generation)</div>
+      <div id="apiRows"></div>
+      <button class="btn btn-secondary btn-sm" onclick="addApi()">+ Add API</button>
+    </div>
+  </div>
+
+  <!-- Section 7: Source Code (collapsible) -->
+  <div class="section" id="sec-source">
+    <div class="section-header" onclick="toggleSection('sourceContent','sourceToggle')">
+      <h2>Source Code</h2>
+      <span id="sourceToggle" style="color:#64748b; font-size:1.2rem;">&#9654;</span>
+    </div>
+    <div id="sourceContent" style="display:none; margin-top:1rem;">
+      <div class="toggle-row">
+        <div><div class="toggle-label">Include source for SAST scanning</div></div>
+        <div class="toggle" id="sourceToggleSwitch" onclick="toggleSourceInclude()"><div class="knob"></div></div>
+      </div>
+      <div id="sourceUpload" style="display:none; margin-top:0.75rem;">
+        <div class="dropzone" onclick="document.getElementById('sourceFileInput').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleSourceDrop(event)">
+          <div class="text">Drop .zip or .tar.gz source archive</div>
+        </div>
+        <input type="file" id="sourceFileInput" accept=".zip,.tar.gz,.tgz" onchange="handleSourceFile(this.files[0])" />
+        <div id="sourceFileInfo" style="display:none; margin-top:0.5rem;"></div>
+        <div class="form-group" style="margin-top:0.75rem">
+          <label>Primary Language</label>
+          <select id="sourceLang">
+            <option value="nodejs">Node.js</option>
+            <option value="python">Python</option>
+            <option value="go">Go</option>
+            <option value="java">Java</option>
+            <option value="dotnet">.NET</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 8: Classification -->
+  <div class="section" id="sec-class">
+    <h2>Classification</h2>
+    <div class="radio-group" id="classRadios">
+      <div class="radio-card selected" data-value="UNCLASSIFIED" onclick="selectClassification(this)"><div class="label">Unclassified</div></div>
+      <div class="radio-card" data-value="CUI" onclick="selectClassification(this)"><div class="label">CUI</div></div>
+      <div class="radio-card" data-value="CONFIDENTIAL" onclick="selectClassification(this)"><div class="label">Confidential</div></div>
+      <div class="radio-card" data-value="SECRET" onclick="selectClassification(this)"><div class="label">Secret</div></div>
+    </div>
+  </div>
+
+  <!-- Section 9: Generate -->
+  <div class="section" id="sec-generate">
+    <h2>Review &amp; Generate</h2>
+    <button class="btn btn-secondary" onclick="showPreview()" style="margin-bottom:1rem">Preview Manifest</button>
+    <div id="previewContainer" style="display:none; margin-bottom:1rem;">
+      <pre class="preview-block" id="previewContent"></pre>
+    </div>
+    <ul class="validation-list" id="validationList"></ul>
+    <div style="text-align:center; margin-top:1rem;">
+      <button class="btn btn-primary" id="generateBtn" onclick="generateBundle()">Generate Bundle (.tar.gz)</button>
+    </div>
+    <div id="progressContainer" style="display:none; margin-top:1rem;">
+      <div style="text-align:center; color:#94a3b8; font-size:0.875rem;">Packaging bundle...</div>
+      <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
+    </div>
+    <div id="successContainer" style="display:none; margin-top:1rem;"></div>
+  </div>
+
+  <footer class="footer">SRE Platform &middot; Bundle Builder v1.0.0 &middot; Works Offline</footer>
+</div>
+
+<script>
+var state = {
+  appName: '', version: '', team: '', author: '', description: '',
+  appType: 'web-app', port: 8080, resources: 'small', ingress: '',
+  liveness: '/healthz', readiness: '/readyz', schedule: '',
+  classification: 'UNCLASSIFIED',
+  primaryImage: null,
+  components: [],
+  services: {
+    database: { enabled: false, size: 'small' },
+    redis: { enabled: false, size: 'small' },
+    sso: { enabled: false },
+    storage: { enabled: false }
+  },
+  envVars: [],
+  externalApis: [],
+  sourceIncluded: false, sourceFile: null, sourceLang: 'nodejs'
+};
+
+var RESOURCE_MAP = {
+  small:  { cpu_req: '100m', mem_req: '128Mi', cpu_lim: '250m', mem_lim: '256Mi' },
+  medium: { cpu_req: '250m', mem_req: '256Mi', cpu_lim: '500m', mem_lim: '512Mi' },
+  large:  { cpu_req: '500m', mem_req: '512Mi', cpu_lim: '1000m', mem_lim: '1Gi' }
+};
+
+var DB_SIZE_MAP = {
+  small:  { cpu: '250m', mem: '256Mi', storage: '5Gi' },
+  medium: { cpu: '500m', mem: '512Mi', storage: '20Gi' },
+  large:  { cpu: '1000m', mem: '1Gi', storage: '50Gi' }
+};
+
+var REDIS_SIZE_MAP = {
+  small:  { cpu: '100m', mem: '128Mi' },
+  medium: { cpu: '250m', mem: '256Mi' },
+  large:  { cpu: '500m', mem: '512Mi' }
+};
+
+//Sync state from form
+function syncState() {
+  state.appName = document.getElementById('appName').value.trim();
+  state.version = document.getElementById('appVersion').value.trim();
+  state.team = document.getElementById('team').value.trim();
+  state.author = document.getElementById('author').value.trim();
+  state.description = document.getElementById('description').value.trim();
+  state.appType = document.getElementById('appType').value;
+  state.port = parseInt(document.getElementById('port').value, 10) || 8080;
+  state.ingress = document.getElementById('ingress').value.trim();
+  state.liveness = document.getElementById('liveness').value.trim();
+  state.readiness = document.getElementById('readiness').value.trim();
+  state.schedule = document.getElementById('schedule').value.trim();
+  state.sourceLang = document.getElementById('sourceLang').value;
+}
+
+//Radio card selection
+function selectResource(el) {
+  document.querySelectorAll('#resourceRadios .radio-card').forEach(function(c) { c.classList.remove('selected'); });
+  el.classList.add('selected');
+  state.resources = el.getAttribute('data-value');
+}
+
+function selectClassification(el) {
+  document.querySelectorAll('#classRadios .radio-card').forEach(function(c) { c.classList.remove('selected'); });
+  el.classList.add('selected');
+  state.classification = el.getAttribute('data-value');
+}
+
+//Section collapse
+function toggleSection(contentId, toggleId) {
+  var content = document.getElementById(contentId);
+  var toggle = document.getElementById(toggleId);
+  if (content.style.display === 'none') {
+    content.style.display = 'block';
+    toggle.innerHTML = '&#9660;';
+  } else {
+    content.style.display = 'none';
+    toggle.innerHTML = '&#9654;';
+  }
+}
+
+//Type visibility
+function updateTypeVisibility() {
+  var type = document.getElementById('appType').value;
+  state.appType = type;
+
+  var showPort = (type === 'web-app' || type === 'api-service');
+  var showIngress = (type === 'web-app');
+  var showProbes = (type === 'web-app' || type === 'api-service');
+  var showSchedule = (type === 'cronjob');
+
+  document.getElementById('portGroup').style.display = showPort ? '' : 'none';
+  document.getElementById('ingressGroup').style.display = showIngress ? '' : 'none';
+  document.getElementById('probesRow').style.display = showProbes ? '' : 'none';
+  document.getElementById('scheduleGroup').style.display = showSchedule ? '' : 'none';
+}
+
+//File handling helpers
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  var units = ['B', 'KB', 'MB', 'GB'];
+  var i = Math.floor(Math.log(bytes) / Math.log(1024));
+  if (i >= units.length) i = units.length - 1;
+  return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function readFileAsArrayBuffer(file, callback) {
+  var reader = new FileReader();
+  reader.onload = function() { callback(reader.result); };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateTotalSize() {
+  var total = 0;
+  if (state.primaryImage) total += state.primaryImage.size;
+  state.components.forEach(function(c) { if (c.fileData) total += c.fileSize; });
+  if (state.sourceFile) total += state.sourceFile.size;
+  var el = document.getElementById('totalSize');
+  el.textContent = total > 0 ? 'Total bundle size (images): ~' + formatSize(total) : '';
+}
+
+//Primary image
+function handlePrimaryDrop(event) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('dragover');
+  var file = event.dataTransfer.files[0];
+  if (file) handlePrimaryFile(file);
+}
+
+function handlePrimaryFile(file) {
+  if (!file) return;
+  readFileAsArrayBuffer(file, function(buf) {
+    state.primaryImage = { name: file.name, size: file.size, data: buf };
+    document.getElementById('primaryDropzone').style.display = 'none';
+    var info = document.getElementById('primaryFileInfo');
+    info.style.display = 'block';
+    info.innerHTML = '';
+    var div = document.createElement('div');
+    div.className = 'file-info';
+    div.innerHTML = '<div><span class="name">' + escHtml(file.name) + '</span> <span class="size">' + formatSize(file.size) + '</span></div>' +
+      '<button class="remove" onclick="removePrimaryImage()">Remove</button>';
+    info.appendChild(div);
+    updateTotalSize();
+  });
+}
+
+function removePrimaryImage() {
+  state.primaryImage = null;
+  document.getElementById('primaryDropzone').style.display = '';
+  document.getElementById('primaryFileInfo').style.display = 'none';
+  document.getElementById('primaryFileInput').value = '';
+  updateTotalSize();
+}
+
+//Component images
+function addComponent() {
+  var idx = state.components.length;
+  state.components.push({ name: '', type: 'sidecar', resources: 'small', fileName: '', fileSize: 0, fileData: null });
+  renderComponents();
+}
+
+function removeComponent(idx) {
+  state.components.splice(idx, 1);
+  renderComponents();
+  updateTotalSize();
+}
+
+function renderComponents() {
+  var container = document.getElementById('componentsContainer');
+  container.innerHTML = '';
+  state.components.forEach(function(comp, idx) {
+    var div = document.createElement('div');
+    div.className = 'component-row';
+    var fileHtml = '';
+    if (comp.fileData) {
+      fileHtml = '<div class="file-info" style="margin-top:0.5rem"><div><span class="name">' + escHtml(comp.fileName) + '</span> <span class="size">' + formatSize(comp.fileSize) + '</span></div></div>';
+    } else {
+      fileHtml = '<div style="margin-top:0.5rem"><button class="btn btn-secondary btn-sm" onclick="pickComponentFile(' + idx + ')">Choose .tar file</button>' +
+        '<input type="file" id="compFile' + idx + '" accept=".tar" style="display:none" onchange="handleComponentFile(' + idx + ', this.files[0])" /></div>';
+    }
+    div.innerHTML = '<div class="component-header"><div style="font-size:0.875rem;font-weight:500;color:#e2e8f0;">Component #' + (idx + 1) + '</div>' +
+      '<button class="btn btn-danger btn-sm" onclick="removeComponent(' + idx + ')">Remove</button></div>' +
+      '<div class="form-row" style="margin-bottom:0.5rem">' +
+        '<div class="form-group" style="margin-bottom:0"><label>Name</label><input type="text" value="' + escAttr(comp.name) + '" onchange="state.components[' + idx + '].name=this.value" placeholder="redis-sidecar" /></div>' +
+        '<div class="form-group" style="margin-bottom:0"><label>Role</label><select onchange="state.components[' + idx + '].type=this.value">' +
+          '<option value="sidecar"' + (comp.type === 'sidecar' ? ' selected' : '') + '>Sidecar</option>' +
+          '<option value="init"' + (comp.type === 'init' ? ' selected' : '') + '>Init Container</option>' +
+          '<option value="dependency"' + (comp.type === 'dependency' ? ' selected' : '') + '>Dependency</option>' +
+        '</select></div>' +
+      '</div>' + fileHtml;
+    container.appendChild(div);
+  });
+}
+
+function pickComponentFile(idx) {
+  document.getElementById('compFile' + idx).click();
+}
+
+function handleComponentFile(idx, file) {
+  if (!file) return;
+  readFileAsArrayBuffer(file, function(buf) {
+    state.components[idx].fileName = file.name;
+    state.components[idx].fileSize = file.size;
+    state.components[idx].fileData = buf;
+    renderComponents();
+    updateTotalSize();
+  });
+}
+
+//Service toggles
+function initServiceToggles() {
+  var defs = [
+    { key: 'database', label: 'PostgreSQL Database', desc: 'Managed PostgreSQL via OpenBao dynamic credentials', hasSize: true },
+    { key: 'redis', label: 'Redis Cache', desc: 'In-memory cache for sessions or queues', hasSize: true },
+    { key: 'sso', label: 'SSO / OIDC', desc: 'Keycloak single sign-on integration', hasSize: false },
+    { key: 'storage', label: 'Object Storage', desc: 'S3-compatible bucket (MinIO)', hasSize: false }
+  ];
+  var container = document.getElementById('serviceToggles');
+  container.innerHTML = '';
+  defs.forEach(function(svc) {
+    var row = document.createElement('div');
+    row.className = 'toggle-row';
+    var rightHtml = '';
+    if (svc.hasSize) {
+      rightHtml = '<select class="toggle-size" id="svcSize_' + svc.key + '" onchange="state.services[\'' + svc.key + '\'].size=this.value">' +
+        '<option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select>';
+    }
+    row.innerHTML = '<div><div class="toggle-label">' + svc.label + '</div><div class="toggle-desc">' + svc.desc + '</div></div>' +
+      '<div class="toggle-right">' + rightHtml +
+      '<div class="toggle" id="svcToggle_' + svc.key + '" onclick="toggleService(\'' + svc.key + '\')"><div class="knob"></div></div></div>';
+    container.appendChild(row);
+  });
+}
+
+function toggleService(key) {
+  state.services[key].enabled = !state.services[key].enabled;
+  var el = document.getElementById('svcToggle_' + key);
+  if (state.services[key].enabled) {
+    el.classList.add('on');
+  } else {
+    el.classList.remove('on');
+  }
+}
+
+//Environment variables
+function addEnvVar() {
+  state.envVars.push({ name: '', value: '', isSecret: false });
+  renderEnvVars();
+}
+
+function removeEnvVar(idx) {
+  state.envVars.splice(idx, 1);
+  renderEnvVars();
+}
+
+function renderEnvVars() {
+  var container = document.getElementById('envRows');
+  container.innerHTML = '';
+  state.envVars.forEach(function(ev, idx) {
+    var row = document.createElement('div');
+    row.className = 'env-row';
+    row.innerHTML = '<input type="text" placeholder="KEY" value="' + escAttr(ev.name) + '" onchange="state.envVars[' + idx + '].name=this.value" />' +
+      '<input type="text" placeholder="value" value="' + escAttr(ev.value) + '" onchange="state.envVars[' + idx + '].value=this.value" />' +
+      '<span class="secret-toggle' + (ev.isSecret ? ' active' : '') + '" onclick="toggleEnvSecret(' + idx + ')">Secret</span>' +
+      '<button class="remove" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:1rem;padding:0.25rem;" onclick="removeEnvVar(' + idx + ')">&#10005;</button>';
+    container.appendChild(row);
+  });
+}
+
+function toggleEnvSecret(idx) {
+  state.envVars[idx].isSecret = !state.envVars[idx].isSecret;
+  renderEnvVars();
+}
+
+//External APIs
+function addApi() {
+  state.externalApis.push('');
+  renderApis();
+}
+
+function removeApi(idx) {
+  state.externalApis.splice(idx, 1);
+  renderApis();
+}
+
+function renderApis() {
+  var container = document.getElementById('apiRows');
+  container.innerHTML = '';
+  state.externalApis.forEach(function(api, idx) {
+    var row = document.createElement('div');
+    row.className = 'api-row';
+    row.innerHTML = '<input type="text" placeholder="api.example.com:443" value="' + escAttr(api) + '" onchange="state.externalApis[' + idx + ']=this.value" />' +
+      '<button class="remove" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:1rem;padding:0.25rem;" onclick="removeApi(' + idx + ')">&#10005;</button>';
+    container.appendChild(row);
+  });
+}
+
+//Source code
+function toggleSourceInclude() {
+  state.sourceIncluded = !state.sourceIncluded;
+  var el = document.getElementById('sourceToggleSwitch');
+  if (state.sourceIncluded) {
+    el.classList.add('on');
+    document.getElementById('sourceUpload').style.display = 'block';
+  } else {
+    el.classList.remove('on');
+    document.getElementById('sourceUpload').style.display = 'none';
+  }
+}
+
+function handleSourceDrop(event) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('dragover');
+  var file = event.dataTransfer.files[0];
+  if (file) handleSourceFile(file);
+}
+
+function handleSourceFile(file) {
+  if (!file) return;
+  readFileAsArrayBuffer(file, function(buf) {
+    state.sourceFile = { name: file.name, size: file.size, data: buf };
+    var info = document.getElementById('sourceFileInfo');
+    info.style.display = 'block';
+    info.innerHTML = '';
+    var div = document.createElement('div');
+    div.className = 'file-info';
+    div.innerHTML = '<div><span class="name">' + escHtml(file.name) + '</span> <span class="size">' + formatSize(file.size) + '</span></div>' +
+      '<button class="remove" onclick="removeSourceFile()">Remove</button>';
+    info.appendChild(div);
+    updateTotalSize();
+  });
+}
+
+function removeSourceFile() {
+  state.sourceFile = null;
+  document.getElementById('sourceFileInfo').style.display = 'none';
+  document.getElementById('sourceFileInput').value = '';
+  updateTotalSize();
+}
+
+//Validation
+function validate() {
+  syncState();
+  var checks = [];
+  var allPass = true;
+
+  // App name
+  var nameOk = state.appName && /^[a-z][a-z0-9-]*$/.test(state.appName);
+  checks.push({ pass: nameOk, text: 'App name is valid kebab-case' });
+  if (!nameOk) allPass = false;
+
+  // Version
+  var verOk = state.version.length > 0;
+  checks.push({ pass: verOk, text: 'Version is specified' });
+  if (!verOk) allPass = false;
+
+  // Team
+  var teamOk = state.team.length > 0;
+  checks.push({ pass: teamOk, text: 'Team is specified' });
+  if (!teamOk) allPass = false;
+
+  // Primary image
+  var imgOk = state.primaryImage !== null;
+  checks.push({ pass: imgOk, text: 'Primary container image is provided' });
+  if (!imgOk) allPass = false;
+
+  // Port
+  if (state.appType === 'web-app' || state.appType === 'api-service') {
+    var portOk = state.port >= 1 && state.port <= 65535;
+    checks.push({ pass: portOk, text: 'Port is valid (1-65535)' });
+    if (!portOk) allPass = false;
+  }
+
+  // Schedule for cronjob
+  if (state.appType === 'cronjob') {
+    var schedOk = state.schedule.length > 0;
+    checks.push({ pass: schedOk, text: 'Cron schedule is specified' });
+    if (!schedOk) allPass = false;
+  }
+
+  // Component names if added
+  var compNamesOk = true;
+  state.components.forEach(function(c, i) {
+    if (!c.name) compNamesOk = false;
+  });
+  if (state.components.length > 0) {
+    checks.push({ pass: compNamesOk, text: 'All component images have names' });
+    if (!compNamesOk) allPass = false;
+  }
+
+  // Env var names
+  var envOk = true;
+  state.envVars.forEach(function(ev) {
+    if (!ev.name) envOk = false;
+  });
+  if (state.envVars.length > 0) {
+    checks.push({ pass: envOk, text: 'All environment variables have names' });
+    if (!envOk) allPass = false;
+  }
+
+  // Render
+  var list = document.getElementById('validationList');
+  list.innerHTML = '';
+  checks.forEach(function(ch) {
+    var li = document.createElement('li');
+    li.className = ch.pass ? 'pass' : 'fail';
+    li.textContent = (ch.pass ? '\u2713 ' : '\u2717 ') + ch.text;
+    list.appendChild(li);
+  });
+
+  return allPass;
+}
+
+//Manifest generation
+function generateManifest() {
+  syncState();
+  var res = RESOURCE_MAP[state.resources];
+  var lines = [];
+
+  lines.push('# SRE Bundle Manifest');
+  lines.push('# Generated: ' + new Date().toISOString());
+  lines.push('# Builder: SRE Bundle Builder v1.0.0');
+  lines.push('');
+  lines.push('apiVersion: sre.io/v1');
+  lines.push('kind: Bundle');
+  lines.push('metadata:');
+  lines.push('  name: ' + q(state.appName));
+  lines.push('  version: ' + q(state.version));
+  lines.push('  team: ' + q(state.team));
+  if (state.author) lines.push('  author: ' + q(state.author));
+  if (state.description) lines.push('  description: ' + q(state.description));
+  lines.push('  classification: ' + state.classification);
+  lines.push('  generated: ' + q(new Date().toISOString()));
+  lines.push('');
+
+  lines.push('spec:');
+  lines.push('  type: ' + state.appType);
+  if (state.appType === 'web-app' || state.appType === 'api-service') {
+    lines.push('  port: ' + state.port);
+  }
+  if (state.appType === 'cronjob') {
+    lines.push('  schedule: ' + q(state.schedule));
+  }
+  lines.push('');
+
+  lines.push('  resources:');
+  lines.push('    requests:');
+  lines.push('      cpu: ' + q(res.cpu_req));
+  lines.push('      memory: ' + q(res.mem_req));
+  lines.push('    limits:');
+  lines.push('      cpu: ' + q(res.cpu_lim));
+  lines.push('      memory: ' + q(res.mem_lim));
+  lines.push('');
+
+  if ((state.appType === 'web-app' || state.appType === 'api-service') && (state.liveness || state.readiness)) {
+    lines.push('  probes:');
+    if (state.liveness) {
+      lines.push('    liveness:');
+      lines.push('      path: ' + q(state.liveness));
+      lines.push('      initialDelaySeconds: 10');
+    }
+    if (state.readiness) {
+      lines.push('    readiness:');
+      lines.push('      path: ' + q(state.readiness));
+      lines.push('      initialDelaySeconds: 5');
+    }
+    lines.push('');
+  }
+
+  if (state.appType === 'web-app' && state.ingress) {
+    lines.push('  ingress:');
+    lines.push('    enabled: true');
+    lines.push('    host: ' + q(state.ingress));
+    lines.push('    gateway: istio-system/main');
+    lines.push('');
+  }
+
+  // Images
+  lines.push('  images:');
+  lines.push('    primary:');
+  if (state.primaryImage) {
+    lines.push('      file: images/' + state.primaryImage.name);
+    lines.push('      size: ' + q(formatSize(state.primaryImage.size)));
+  }
+  if (state.components.length > 0) {
+    lines.push('    components:');
+    state.components.forEach(function(comp) {
+      lines.push('      - name: ' + q(comp.name || 'unnamed'));
+      lines.push('        role: ' + comp.type);
+      if (comp.fileName) {
+        lines.push('        file: images/' + comp.fileName);
+        lines.push('        size: ' + q(formatSize(comp.fileSize)));
+      }
+    });
+  }
+  lines.push('');
+
+  // Services
+  var anyService = state.services.database.enabled || state.services.redis.enabled || state.services.sso.enabled || state.services.storage.enabled;
+  if (anyService) {
+    lines.push('  services:');
+    if (state.services.database.enabled) {
+      var db = DB_SIZE_MAP[state.services.database.size];
+      lines.push('    database:');
+      lines.push('      type: postgresql');
+      lines.push('      size: ' + state.services.database.size);
+      lines.push('      resources:');
+      lines.push('        cpu: ' + q(db.cpu));
+      lines.push('        memory: ' + q(db.mem));
+      lines.push('      storage: ' + q(db.storage));
+    }
+    if (state.services.redis.enabled) {
+      var rd = REDIS_SIZE_MAP[state.services.redis.size];
+      lines.push('    redis:');
+      lines.push('      size: ' + state.services.redis.size);
+      lines.push('      resources:');
+      lines.push('        cpu: ' + q(rd.cpu));
+      lines.push('        memory: ' + q(rd.mem));
+    }
+    if (state.services.sso.enabled) {
+      lines.push('    sso:');
+      lines.push('      provider: keycloak');
+      lines.push('      realm: sre');
+    }
+    if (state.services.storage.enabled) {
+      lines.push('    storage:');
+      lines.push('      type: s3');
+      lines.push('      provider: minio');
+    }
+    lines.push('');
+  }
+
+  // Env vars
+  if (state.envVars.length > 0) {
+    lines.push('  env:');
+    state.envVars.forEach(function(ev) {
+      if (ev.isSecret) {
+        lines.push('    - name: ' + q(ev.name));
+        lines.push('      secretRef: ' + q(state.appName + '-' + ev.name.toLowerCase().replace(/_/g, '-')));
+      } else {
+        lines.push('    - name: ' + q(ev.name));
+        lines.push('      value: ' + q(ev.value));
+      }
+    });
+    lines.push('');
+  }
+
+  // External APIs / egress
+  if (state.externalApis.length > 0) {
+    lines.push('  egress:');
+    state.externalApis.forEach(function(api) {
+      if (api) lines.push('    - host: ' + q(api));
+    });
+    lines.push('');
+  }
+
+  // Source
+  if (state.sourceIncluded) {
+    lines.push('  source:');
+    lines.push('    included: true');
+    lines.push('    language: ' + state.sourceLang);
+    if (state.sourceFile) {
+      lines.push('    file: source/' + state.sourceFile.name);
+      lines.push('    size: ' + q(formatSize(state.sourceFile.size)));
+    }
+    lines.push('');
+  }
+
+  // Security context (always generated)
+  lines.push('  securityContext:');
+  lines.push('    runAsNonRoot: true');
+  lines.push('    readOnlyRootFilesystem: true');
+  lines.push('    allowPrivilegeEscalation: false');
+  lines.push('    capabilities:');
+  lines.push('      drop:');
+  lines.push('        - ALL');
+  lines.push('    seccompProfile:');
+  lines.push('      type: RuntimeDefault');
+
+  return lines.join('\n') + '\n';
+}
+
+function q(val) {
+  if (val === undefined || val === null) val = '';
+  val = String(val);
+  if (/[:\{\}\[\],&\*\?\|>!'"%@`#]/.test(val) || val === '' || val.indexOf(' ') !== -1 || /^(true|false|null|yes|no)$/i.test(val)) {
+    return '"' + val.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+  return val;
+}
+
+//README generation
+function generateReadme() {
+  var lines = [];
+  lines.push('# ' + state.appName + ' v' + state.version);
+  lines.push('');
+  if (state.description) {
+    lines.push(state.description);
+    lines.push('');
+  }
+  lines.push('## Bundle Contents');
+  lines.push('');
+  lines.push('| File | Description |');
+  lines.push('|------|-------------|');
+  lines.push('| bundle.yaml | Deployment manifest |');
+  if (state.primaryImage) {
+    lines.push('| images/' + state.primaryImage.name + ' | Primary container image (' + formatSize(state.primaryImage.size) + ') |');
+  }
+  state.components.forEach(function(c) {
+    if (c.fileName) {
+      lines.push('| images/' + c.fileName + ' | ' + (c.name || 'Component') + ' (' + c.type + ', ' + formatSize(c.fileSize) + ') |');
+    }
+  });
+  if (state.sourceIncluded && state.sourceFile) {
+    lines.push('| source/' + state.sourceFile.name + ' | Source code for SAST scanning |');
+  }
+  lines.push('| README.md | This file |');
+  lines.push('');
+  lines.push('## Deployment');
+  lines.push('');
+  lines.push('Submit this bundle to the SRE DSOP pipeline:');
+  lines.push('');
+  lines.push('```bash');
+  lines.push('# Upload via the SRE Dashboard');
+  lines.push('# Or use the CLI:');
+  lines.push('sre deploy bundle ' + state.appName + '-v' + state.version + '.bundle.tar.gz');
+  lines.push('```');
+  lines.push('');
+  lines.push('## Details');
+  lines.push('');
+  lines.push('- **Team:** ' + state.team);
+  lines.push('- **Type:** ' + state.appType);
+  lines.push('- **Classification:** ' + state.classification);
+  if (state.author) lines.push('- **Author:** ' + state.author);
+  lines.push('- **Generated:** ' + new Date().toISOString());
+  lines.push('');
+  lines.push('---');
+  lines.push('*Generated by SRE Bundle Builder v1.0.0*');
+  lines.push('');
+  return lines.join('\n');
+}
+
+//Preview
+function showPreview() {
+  syncState();
+  var container = document.getElementById('previewContainer');
+  if (container.style.display === 'none') {
+    container.style.display = 'block';
+    document.getElementById('previewContent').textContent = generateManifest();
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+//Tar archive creation (POSIX ustar)
+function createTar(files) {
+  var blocks = [];
+  for (var f = 0; f < files.length; f++) {
+    var file = files[f];
+    var data;
+    if (file.data instanceof Uint8Array) {
+      data = file.data;
+    } else if (file.data instanceof ArrayBuffer) {
+      data = new Uint8Array(file.data);
+    } else if (typeof file.data === 'string') {
+      data = new TextEncoder().encode(file.data);
+    } else {
+      data = new Uint8Array(0);
+    }
+
+    var header = new Uint8Array(512);
+
+    // Name (0-99)
+    writeString(header, 0, file.name, 100);
+    // Mode (100-107)
+    writeString(header, 100, file.isDir ? '0000755' : '0000644', 8);
+    // UID (108-115)
+    writeString(header, 108, '0001000', 8);
+    // GID (116-123)
+    writeString(header, 116, '0001000', 8);
+    // Size in octal (124-135)
+    var fileSize = file.isDir ? 0 : data.length;
+    writeString(header, 124, padOctal(fileSize, 11), 12);
+    // Mtime (136-147)
+    writeString(header, 136, padOctal(Math.floor(Date.now() / 1000), 11), 12);
+    // Spaces for checksum placeholder (148-155)
+    for (var ci = 148; ci < 156; ci++) header[ci] = 32;
+    // Type flag (156): '5' for directory, '0' for regular file
+    header[156] = file.isDir ? 53 : 48;
+    // USTAR magic (257-262)
+    writeString(header, 257, 'ustar', 6);
+    // Version (263-264)
+    writeString(header, 263, '00', 2);
+
+    // Calculate and write checksum
+    var checksum = 0;
+    for (var ci2 = 0; ci2 < 512; ci2++) checksum += header[ci2];
+    writeString(header, 148, padOctal(checksum, 6) + '\0 ', 8);
+
+    blocks.push(header);
+
+    if (!file.isDir && data.length > 0) {
+      var paddedLen = Math.ceil(data.length / 512) * 512;
+      var padded = new Uint8Array(paddedLen);
+      padded.set(data);
+      blocks.push(padded);
+    }
+  }
+
+  // End-of-archive: two 512-byte zero blocks
+  blocks.push(new Uint8Array(1024));
+
+  // Calculate total size
+  var total = 0;
+  for (var b = 0; b < blocks.length; b++) total += blocks[b].length;
+
+  // Concatenate
+  var result = new Uint8Array(total);
+  var offset = 0;
+  for (var b2 = 0; b2 < blocks.length; b2++) {
+    result.set(blocks[b2], offset);
+    offset += blocks[b2].length;
+  }
+  return result;
+}
+
+function writeString(buf, offset, str, len) {
+  for (var i = 0; i < Math.min(str.length, len); i++) {
+    buf[offset + i] = str.charCodeAt(i);
+  }
+}
+
+function padOctal(num, len) {
+  return num.toString(8).padStart(len, '0');
+}
+
+//Gzip with CompressionStream
+async function gzipData(data) {
+  if (typeof CompressionStream === 'undefined') {
+    return { data: data, ext: '.tar' };
+  }
+  try {
+    var cs = new CompressionStream('gzip');
+    var writer = cs.writable.getWriter();
+    writer.write(data);
+    writer.close();
+    var reader = cs.readable.getReader();
+    var chunks = [];
+    while (true) {
+      var result = await reader.read();
+      if (result.done) break;
+      chunks.push(result.value);
+    }
+    var totalLen = 0;
+    for (var c = 0; c < chunks.length; c++) totalLen += chunks[c].length;
+    var output = new Uint8Array(totalLen);
+    var off = 0;
+    for (var c2 = 0; c2 < chunks.length; c2++) {
+      output.set(chunks[c2], off);
+      off += chunks[c2].length;
+    }
+    return { data: output, ext: '.tar.gz' };
+  } catch (e) {
+    return { data: data, ext: '.tar' };
+  }
+}
+
+//Progress
+function updateProgress(pct) {
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+//Success
+function showSuccess() {
+  var container = document.getElementById('successContainer');
+  container.style.display = 'block';
+  var totalSize = 0;
+  if (state.primaryImage) totalSize += state.primaryImage.size;
+  state.components.forEach(function(c) { if (c.fileData) totalSize += c.fileSize; });
+  if (state.sourceFile) totalSize += state.sourceFile.size;
+
+  var fileCount = 2; // bundle.yaml + README.md
+  if (state.primaryImage) fileCount++;
+  fileCount += state.components.filter(function(c) { return c.fileData; }).length;
+  if (state.sourceIncluded && state.sourceFile) fileCount++;
+
+  container.innerHTML = '<div class="success-box">' +
+    '<h3>Bundle Generated Successfully</h3>' +
+    '<p>' + state.appName + '-v' + state.version + '.bundle.tar.gz</p>' +
+    '<p style="margin-top:0.5rem">' + fileCount + ' files &middot; ~' + formatSize(totalSize) + ' (images)</p>' +
+    '<p style="margin-top:1rem;font-size:0.8125rem;color:#64748b;">Submit this bundle to the SRE DSOP pipeline for processing.</p>' +
+    '</div>';
+
+  // Hide progress after a moment
+  setTimeout(function() {
+    document.getElementById('progressContainer').style.display = 'none';
+  }, 500);
+}
+
+//Generate bundle
+async function generateBundle() {
+  if (!validate()) return;
+
+  var btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  document.getElementById('progressContainer').style.display = 'block';
+  document.getElementById('successContainer').style.display = 'none';
+  updateProgress(5);
+
+  // Yield to let the UI update
+  await new Promise(function(r) { setTimeout(r, 50); });
+
+  try {
+    var manifest = generateManifest();
+    var readme = generateReadme();
+
+    // Collect all files for tar
+    var tarFiles = [];
+
+    // Directories first
+    tarFiles.push({ name: 'images/', data: '', isDir: true });
+
+    // Manifest and readme
+    tarFiles.push({ name: 'bundle.yaml', data: manifest });
+    tarFiles.push({ name: 'README.md', data: readme });
+
+    updateProgress(15);
+    await new Promise(function(r) { setTimeout(r, 20); });
+
+    // Primary image
+    if (state.primaryImage) {
+      tarFiles.push({ name: 'images/' + state.primaryImage.name, data: new Uint8Array(state.primaryImage.data) });
+    }
+
+    updateProgress(25);
+    await new Promise(function(r) { setTimeout(r, 20); });
+
+    // Component images
+    for (var i = 0; i < state.components.length; i++) {
+      var comp = state.components[i];
+      if (comp.fileData) {
+        tarFiles.push({ name: 'images/' + comp.fileName, data: new Uint8Array(comp.fileData) });
+      }
+    }
+
+    updateProgress(35);
+
+    // Source
+    if (state.sourceIncluded && state.sourceFile) {
+      tarFiles.push({ name: 'source/', data: '', isDir: true });
+      tarFiles.push({ name: 'source/' + state.sourceFile.name, data: new Uint8Array(state.sourceFile.data) });
+    }
+
+    updateProgress(45);
+    await new Promise(function(r) { setTimeout(r, 20); });
+
+    var tarData = createTar(tarFiles);
+    updateProgress(65);
+    await new Promise(function(r) { setTimeout(r, 20); });
+
+    var compressed = await gzipData(tarData);
+    updateProgress(90);
+    await new Promise(function(r) { setTimeout(r, 20); });
+
+    // Trigger download
+    var mimeType = compressed.ext === '.tar.gz' ? 'application/gzip' : 'application/x-tar';
+    var blob = new Blob([compressed.data], { type: mimeType });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = state.appName + '-v' + state.version + '.bundle' + compressed.ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    updateProgress(100);
+    showSuccess();
+  } catch (err) {
+    document.getElementById('progressContainer').style.display = 'none';
+    alert('Bundle generation failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+//HTML escaping
+function escHtml(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+function escAttr(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+//Init
+document.addEventListener('DOMContentLoaded', function() {
+  initServiceToggles();
+  updateTypeVisibility();
+
+  document.getElementById('appType').addEventListener('change', updateTypeVisibility);
+
+  document.getElementById('team').addEventListener('blur', function() {
+    if (this.value && !this.value.startsWith('team-')) {
+      this.value = 'team-' + this.value;
+    }
+    state.team = this.value;
+  });
+
+  document.getElementById('appName').addEventListener('blur', function() {
+    var err = document.getElementById('appNameError');
+    if (this.value && !/^[a-z][a-z0-9-]*$/.test(this.value)) {
+      err.textContent = 'Must be lowercase letters, numbers, hyphens. Must start with a letter.';
+    } else {
+      err.textContent = '';
+    }
+    state.appName = this.value;
+  });
+
+  // Sync all inputs to state on any input event
+  document.querySelectorAll('input, select, textarea').forEach(function(el) {
+    el.addEventListener('input', function() { syncState(); });
+  });
+});
+</script>
+</body>
+</html>
