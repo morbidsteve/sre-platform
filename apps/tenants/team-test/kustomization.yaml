@@ -1,0 +1,89 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../_base
+  - apps/
+
+patches:
+  - target: { kind: Namespace, name: TENANT_NAME }
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-test
+      - op: replace
+        path: /metadata/labels/sre.io~1team
+        value: team-test
+  - target: { kind: ResourceQuota, name: tenant-quota }
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-test-quota
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: LimitRange, name: tenant-limits }
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-test-limits
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: RoleBinding, name: tenant-developers }
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-test-developers
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+      - op: replace
+        path: /subjects/0/name
+        value: team-test-developers
+  - target: { kind: RoleBinding, name: tenant-viewers }
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: team-test-viewers
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+      - op: replace
+        path: /subjects/0/name
+        value: team-test-viewers
+  - target: { kind: NetworkPolicy, name: default-deny-all }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: NetworkPolicy, name: allow-dns }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: NetworkPolicy, name: allow-monitoring }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: NetworkPolicy, name: allow-istio-gateway }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: NetworkPolicy, name: allow-same-namespace }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: NetworkPolicy, name: allow-istio-control-plane }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
+  - target: { kind: NetworkPolicy, name: allow-https-egress }
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: team-test
