@@ -656,6 +656,16 @@ tasks:
       - sh: command -v yq
         msg: "yq v4 is required. Install: https://github.com/mikefarah/yq#install"
 
+  bundle-create:
+    desc: Create a deployment bundle (interactive)
+    cmds:
+      - scripts/sre-bundle.sh {{.CLI_ARGS}}
+
+  bundle-validate:
+    desc: Validate an existing bundle
+    cmds:
+      - scripts/sre-bundle.sh --validate {{.CLI_ARGS}}
+
   # ===========================================================================
   # DOCUMENTATION
   # ===========================================================================
