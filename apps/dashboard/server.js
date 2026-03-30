@@ -7426,6 +7426,8 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
     const { appName, gitUrl, branch, imageUrl, sourceType, team, classification, contact, securityContext, port } = req.body;
     if (!appName || !team) return res.status(400).json({ error: "appName and team are required" });
     if (!gitUrl && !imageUrl) return res.status(400).json({ error: "gitUrl or imageUrl is required" });
+    if (imageUrl && imageUrl.endsWith(":latest")) return res.status(400).json({ error: "The :latest tag is not allowed — use a pinned version tag (e.g., v1.0.0)" });
+    if (imageUrl && !validateImageRef(imageUrl)) return res.status(400).json({ error: "Invalid image reference format" });
 
     // Concurrency limits — prevent unbounded job spawning
     const MAX_ACTIVE_PER_TEAM = 3;
@@ -7452,10 +7454,17 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
       createdBy: actor,
     });
 
-    // Create all gates
+    // Create all gates (adjust names for container/image source type)
+    const isImageSource = run.source_type === "image";
     const gates = [];
     for (const gateSpec of getDefaultGates()) {
-      const gate = await db.createGate(run.id, gateSpec);
+      const spec = { ...gateSpec };
+      if (isImageSource) {
+        if (spec.shortName === "SAST") spec.gateName = "SAST (Skipped — no source)";
+        if (spec.shortName === "SECRETS") spec.gateName = "Secrets Detection (Skipped — no source)";
+        if (spec.shortName === "ARTIFACT_STORE") { spec.gateName = "Image Import"; spec.tool = "crane"; }
+      }
+      const gate = await db.createGate(run.id, spec);
       gates.push(gate);
     }
 
@@ -8863,12 +8872,12 @@ async function orchestratePipelineScan(runId) {
     }
   } else {
     if (gateMap.SAST) {
-      phase1Jobs.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
-      emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "skipped", summary: "No git URL provided", progress: 100 });
+      phase1Jobs.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "Not applicable — no source code provided (container image source)", completedAt: new Date().toISOString() }));
+      emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "skipped", summary: "Not applicable — no source code provided", progress: 100 });
     }
     if (gateMap.SECRETS) {
-      phase1Jobs.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No git URL provided", completedAt: new Date().toISOString() }));
-      emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "skipped", summary: "No git URL provided", progress: 100 });
+      phase1Jobs.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "Not applicable — no source code provided (container image source)", completedAt: new Date().toISOString() }));
+      emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "skipped", summary: "Not applicable — no source code provided", progress: 100 });
     }
   }
 
@@ -9195,8 +9204,97 @@ async function orchestratePipelineScan(runId) {
       }
     }
     })()); // end build promise
+  } else if (builtImageRef && run.source_type === "image") {
+    // External container image — import into Harbor via crane copy
+    const CRANE_IMAGE = "gcr.io/go-containerregistry/crane:v0.20.2";
+    const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
+    const teamName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
+    const sourceImage = builtImageRef;
+    // Extract tag from source image (after last colon, or "imported")
+    const tagMatch = sourceImage.match(/:([^/]+)$/);
+    const imageTag = tagMatch ? tagMatch[1] : "imported";
+    const harborDest = `${HARBOR_REGISTRY}/${teamName}/${safeName}:${imageTag}`;
+
+    if (imageTag === "latest") {
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Rejected: the :latest tag is not allowed — use a pinned version tag" });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Rejected: :latest tag not allowed", progress: 100 });
+      }
+    } else {
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: `Importing image from external registry...`, progress: 10 });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Importing image from external registry...", progress: 10 });
+      }
+
+      // Ensure Harbor project exists
+      try { await ensureHarborProject(teamName); } catch (e) {
+        console.debug('[pipeline] Harbor project ensure best-effort error:', e.message);
+      }
+
+      const importJobId = `pipe-import-${crypto.randomBytes(4).toString("hex")}`;
+      try {
+        await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+          apiVersion: "batch/v1", kind: "Job",
+          metadata: {
+            name: importJobId, namespace: BUILD_NAMESPACE,
+            labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/build-id": importJobId, "sre.io/app-name": safeName }
+          },
+          spec: {
+            backoffLimit: 2, ttlSecondsAfterFinished: 3600,
+            template: {
+              metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
+              spec: {
+                restartPolicy: "Never", serviceAccountName: "pipeline-runner",
+                containers: [{
+                  name: "crane-import", image: CRANE_IMAGE,
+                  command: ["sh", "-c", `crane copy "${sourceImage}" "${harborDest}" && echo "IMPORT_SUCCESS: ${harborDest}"`],
+                  volumeMounts: [{ name: "docker-config", mountPath: "/home/nonroot/.docker" }],
+                  resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "1Gi" } },
+                }],
+                volumes: [
+                  { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+                ],
+              },
+            },
+          },
+        });
+
+        emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Importing ${sourceImage} → ${harborDest}` });
+        if (gateMap.ARTIFACT_STORE) {
+          await db.updateGate(gateMap.ARTIFACT_STORE.id, { jobName: importJobId });
+        }
+
+        const importLogs = await waitForJobAndGetLogs(importJobId, BUILD_NAMESPACE, "crane-import", 600, runId, "ARTIFACT_STORE");
+        const importSuccess = importLogs && importLogs.includes("IMPORT_SUCCESS:");
+
+        if (importSuccess) {
+          // Update builtImageRef to point to the Harbor copy (for SBOM/CVE scans)
+          builtImageRef = harborDest;
+          buildResult.imageRef = harborDest;
+          if (gateMap.ARTIFACT_STORE) {
+            await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Imported to Harbor: ${harborDest}` });
+            emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary: `Imported to Harbor: ${harborDest}`, progress: 100 });
+          }
+          await db.auditLog(runId, "image_imported", null, `External image imported to Harbor`, { source: sourceImage, destination: harborDest });
+        } else {
+          if (gateMap.ARTIFACT_STORE) {
+            const errSummary = importLogs ? importLogs.split("\n").filter(l => l.trim()).pop() || "Import failed" : "Import job timed out";
+            await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: `Image import failed: ${errSummary}` });
+            emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: `Image import failed`, progress: 100 });
+          }
+          builtImageRef = null; // Prevent SBOM/CVE from running on un-imported image
+        }
+      } catch (importErr) {
+        logger.error("pipeline", `Import job error for run ${runId}: ${importErr.message}`, { runId, error: importErr.message });
+        if (gateMap.ARTIFACT_STORE) {
+          await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: `Image import error: ${importErr.message}` });
+          emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: `Image import error: ${importErr.message}`, progress: 100 });
+        }
+        builtImageRef = null;
+      }
+    }
   } else if (builtImageRef) {
-    // Pre-built image provided — mark ARTIFACT_STORE as passed
+    // Pre-built image from Harbor — already in registry, mark as passed
     if (gateMap.ARTIFACT_STORE) {
       await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Using pre-built image: ${builtImageRef}` });
       emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary: `Using pre-built image: ${builtImageRef}`, progress: 100 });
