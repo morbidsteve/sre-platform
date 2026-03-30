@@ -23,6 +23,9 @@ Provides DNS resolution, same-namespace traffic, and HTTPS egress.
   ports:
     - port: 443
       protocol: TCP
+{{- if .Values.networkPolicy.allowedServices }}
+{{- include "sre-lib.networkpolicy-egress-allowed-services" . | nindent 0 }}
+{{- end }}
 {{- with .Values.networkPolicy.additionalEgress }}
 {{- toYaml . | nindent 0 }}
 {{- end }}
@@ -70,4 +73,56 @@ NetworkPolicy ingress rule: allow traffic from Istio ingress gateway.
   ports:
     - port: {{ . }}
       protocol: TCP
+{{- end -}}
+
+{{/*
+NetworkPolicy egress rules for explicitly declared service dependencies.
+Renders one egress rule per entry in .Values.networkPolicy.allowedServices.
+*/}}
+{{- define "sre-lib.networkpolicy-egress-allowed-services" -}}
+{{- range .Values.networkPolicy.allowedServices }}
+# Allow egress to {{ .name }}{{ if .namespace }} in {{ .namespace }}{{ end }}
+- to:
+    {{- if .namespace }}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .namespace }}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: {{ .name }}
+    {{- else }}
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: {{ .name }}
+    {{- end }}
+  ports:
+    - port: {{ .port | default 8080 }}
+      protocol: TCP
+{{- end }}
+{{- end -}}
+
+{{/*
+NetworkPolicy ingress rules for explicitly declared callers.
+Renders one ingress rule per entry in .Values.networkPolicy.allowedCallers.
+*/}}
+{{- define "sre-lib.networkpolicy-ingress-allowed-callers" -}}
+{{- range .Values.networkPolicy.allowedCallers }}
+# Allow ingress from {{ .name }}{{ if .namespace }} in {{ .namespace }}{{ end }}
+- from:
+    {{- if .namespace }}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .namespace }}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: {{ .name }}
+    {{- else }}
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: {{ .name }}
+    {{- end }}
+  ports:
+    - port: {{ .port | default ($.Values.app.port | default 8080) }}
+      protocol: TCP
+{{- end }}
 {{- end -}}

@@ -17,6 +17,9 @@ spec:
     {{- include "sre-lib.networkpolicy-ingress-istio-gateway" .Values.app.port | nindent 4 }}
     {{- include "sre-lib.networkpolicy-ingress-monitoring" .Values.app.port | nindent 4 }}
     {{- include "sre-lib.networkpolicy-ingress-same-namespace" .Values.app.port | nindent 4 }}
+    {{- if .Values.networkPolicy.allowedCallers }}
+    {{- include "sre-lib.networkpolicy-ingress-allowed-callers" . | nindent 4 }}
+    {{- end }}
     {{- with .Values.networkPolicy.additionalIngress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

@@ -222,6 +222,32 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
+        "allowedServices": {
+          "type": "array",
+          "description": "Services this app needs to call. Generates NetworkPolicy egress rules.",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "description": "Target service name (matches app.kubernetes.io/name label)" },
+              "namespace": { "type": "string", "description": "Target namespace (omit for same namespace)" },
+              "port": { "type": "integer", "default": 8080, "description": "Target port" }
+            }
+          }
+        },
+        "allowedCallers": {
+          "type": "array",
+          "description": "Services allowed to call this app. Generates NetworkPolicy ingress rules.",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "description": "Source service name (matches app.kubernetes.io/name label)" },
+              "namespace": { "type": "string", "description": "Source namespace (omit for same namespace)" },
+              "port": { "type": "integer", "description": "Override ingress port (defaults to app.port)" }
+            }
+          }
+        },
         "additionalIngress": { "type": "array" },
         "additionalEgress": { "type": "array" }
       }
