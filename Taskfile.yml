@@ -666,6 +666,17 @@ tasks:
     cmds:
       - scripts/sre-bundle.sh --validate {{.CLI_ARGS}}
 
+  developer-kit:
+    desc: Package the developer kit for distribution
+    cmds:
+      - |
+        mkdir -p dist
+        cp tools/bundle-builder.html tools/developer-kit/bundle-builder.html
+        cp scripts/sre-bundle.sh tools/developer-kit/sre-bundle.sh
+        cp docs/developer-guides/bundle-guide.md tools/developer-kit/docs/bundle-guide.md
+        cd tools && tar czf ../dist/sre-developer-kit.tar.gz developer-kit/
+        echo "Developer kit packaged: dist/sre-developer-kit.tar.gz"
+
   # ===========================================================================
   # DOCUMENTATION
   # ===========================================================================
