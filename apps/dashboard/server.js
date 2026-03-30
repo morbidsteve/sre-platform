@@ -10,6 +10,8 @@ const db = require("./db");
 const gitops = require("./gitops");
 const logger = require("./logger");
 const { matchError, POLICY_FIXES } = require("./error-knowledge-base");
+const { execSync } = require("child_process");
+const multer = require("multer");
 
 // ── Pipeline SSE Event Bus ────────────────────────────────────────────────────
 // One EventEmitter per active pipeline run. Cleaned up when the pipeline finishes
@@ -2535,6 +2537,26 @@ const HARBOR_PULL_REGISTRY = HARBOR_REGISTRY_EXT; // For node image pulls (node 
 const KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.2";
 const GIT_CLONE_IMAGE = "alpine/git:2.43.0";
 const REPO_ANALYZE_IMAGE = "alpine/git:2.43.0";
+
+// ── Bundle Upload Config ──
+const BUNDLE_UPLOAD_DIR = "/tmp/bundles";
+const BUNDLE_MAX_SIZE = parseInt(process.env.BUNDLE_MAX_SIZE_BYTES || String(2 * 1024 * 1024 * 1024)); // 2GB
+const CRANE_IMAGE = "gcr.io/go-containerregistry/crane:v0.20.2";
+
+// Ensure bundle upload directory exists
+try { fs.mkdirSync(BUNDLE_UPLOAD_DIR, { recursive: true }); } catch { /* ignore */ }
+
+const bundleUpload = multer({
+  dest: BUNDLE_UPLOAD_DIR,
+  limits: { fileSize: BUNDLE_MAX_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (file.originalname.endsWith('.tar.gz') || file.originalname.endsWith('.tgz')) {
+      cb(null, true);
+    } else {
+      cb(new Error('File must be .tar.gz or .tgz'));
+    }
+  },
+});
 
 // TTL Map to prevent memory leaks from accumulating build entries
 class TTLMap {
@@ -7406,6 +7428,159 @@ async function notifyISSM(run, eventType, extra = {}) {
   }
 }
 
+// ── Bundle Upload ────────────────────────────────────────────────────────────
+
+// POST /api/bundle/upload — Upload and parse a deployment bundle
+app.post("/api/bundle/upload", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), (req, res, next) => {
+  bundleUpload.single("bundle")(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: `Bundle exceeds maximum size of ${Math.round(BUNDLE_MAX_SIZE / (1024*1024*1024))}GB` });
+      return res.status(400).json({ error: err.message || "Upload failed" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const uploadId = crypto.randomUUID();
+  const extractDir = path.join(BUNDLE_UPLOAD_DIR, uploadId);
+  let uploadedFilePath = null;
+
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    uploadedFilePath = req.file.path;
+
+    // Extract the tar.gz
+    fs.mkdirSync(extractDir, { recursive: true });
+    try {
+      execSync(`tar xzf "${uploadedFilePath}" -C "${extractDir}"`, { timeout: 120000 });
+    } catch (tarErr) {
+      return res.status(400).json({ error: "Failed to extract bundle — is it a valid .tar.gz?" });
+    }
+
+    // Find bundle.yaml (may be at root or one level deep)
+    let manifestPath = path.join(extractDir, "bundle.yaml");
+    if (!fs.existsSync(manifestPath)) {
+      // Check one level deep (in case the tar has a top-level directory)
+      const entries = fs.readdirSync(extractDir);
+      for (const entry of entries) {
+        const nested = path.join(extractDir, entry, "bundle.yaml");
+        if (fs.existsSync(nested)) {
+          manifestPath = nested;
+          break;
+        }
+      }
+    }
+    if (!fs.existsSync(manifestPath)) {
+      return res.status(400).json({ error: "Bundle missing bundle.yaml manifest" });
+    }
+
+    // Parse manifest
+    let manifest;
+    try {
+      manifest = yaml.load(fs.readFileSync(manifestPath, "utf8"));
+    } catch (yamlErr) {
+      return res.status(400).json({ error: `Invalid bundle.yaml: ${yamlErr.message}` });
+    }
+
+    // Validate manifest
+    if (!manifest || manifest.apiVersion !== "sre.io/v1alpha1") {
+      return res.status(400).json({ error: "Invalid apiVersion — expected sre.io/v1alpha1" });
+    }
+    if (manifest.kind !== "DeploymentBundle") {
+      return res.status(400).json({ error: "Invalid kind — expected DeploymentBundle" });
+    }
+    if (!manifest.metadata?.name) {
+      return res.status(400).json({ error: "manifest.metadata.name is required" });
+    }
+    if (!manifest.spec?.app?.type) {
+      return res.status(400).json({ error: "manifest.spec.app.type is required" });
+    }
+    if (!manifest.spec?.app?.image) {
+      return res.status(400).json({ error: "manifest.spec.app.image is required" });
+    }
+
+    // Find the base directory (handle nested tar structure)
+    const manifestDir = path.dirname(manifestPath);
+
+    // Enumerate and validate images
+    const imageEntries = [];
+    const allImageRefs = [manifest.spec.app.image];
+    if (manifest.spec.components) {
+      for (const comp of manifest.spec.components) {
+        if (comp.image) allImageRefs.push(comp.image);
+      }
+    }
+
+    for (const imageRef of allImageRefs) {
+      const imagePath = path.join(manifestDir, imageRef);
+      if (!fs.existsSync(imagePath)) {
+        return res.status(400).json({ error: `Referenced image not found in bundle: ${imageRef}` });
+      }
+      const stat = fs.statSync(imagePath);
+      const name = path.basename(imageRef, ".tar");
+
+      // Compute SHA-256
+      let sha256;
+      try {
+        const hash = crypto.createHash("sha256");
+        const stream = fs.createReadStream(imagePath);
+        for await (const chunk of stream) { hash.update(chunk); }
+        sha256 = hash.digest("hex");
+      } catch {
+        sha256 = "unknown";
+      }
+
+      imageEntries.push({
+        name,
+        file: imageRef,
+        sizeMB: Math.round(stat.size / (1024 * 1024) * 10) / 10,
+        sha256,
+      });
+    }
+
+    // Check for source code
+    const sourceIncluded = fs.existsSync(path.join(manifestDir, "source")) &&
+      fs.readdirSync(path.join(manifestDir, "source")).length > 0;
+
+    // Clean up the uploaded temp file (keep the extracted directory)
+    try { fs.unlinkSync(uploadedFilePath); } catch { /* ignore */ }
+
+    logger.info("bundle", `Bundle uploaded: ${manifest.metadata.name} v${manifest.metadata.version || "unknown"} (${imageEntries.length} image(s))`, {
+      uploadId, name: manifest.metadata.name, images: imageEntries.length, sourceIncluded,
+    });
+
+    res.json({
+      uploadId,
+      manifest,
+      images: imageEntries,
+      sourceIncluded,
+    });
+  } catch (err) {
+    console.error("[bundle] Upload error:", err);
+    // Clean up on error
+    try { if (uploadedFilePath) fs.unlinkSync(uploadedFilePath); } catch { /* ignore */ }
+    try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    res.status(500).json({ error: "Bundle processing failed" });
+  }
+});
+
+// Periodic cleanup of stale bundle uploads (older than 24 hours)
+setInterval(() => {
+  try {
+    if (!fs.existsSync(BUNDLE_UPLOAD_DIR)) return;
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const entry of fs.readdirSync(BUNDLE_UPLOAD_DIR)) {
+      const entryPath = path.join(BUNDLE_UPLOAD_DIR, entry);
+      try {
+        const stat = fs.statSync(entryPath);
+        if (stat.isDirectory() && stat.mtimeMs < cutoff) {
+          fs.rmSync(entryPath, { recursive: true, force: true });
+          logger.info("bundle", `Cleaned up stale bundle: ${entry}`);
+        }
+      } catch { /* ignore individual cleanup errors */ }
+    }
+  } catch { /* ignore */ }
+}, 60 * 60 * 1000); // Run every hour
+
 // Default DSOP gates for a new pipeline run
 function getDefaultGates() {
   return [
@@ -7423,11 +7598,15 @@ function getDefaultGates() {
 // POST /api/pipeline/runs — Create a new pipeline run
 app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {
-    const { appName, gitUrl, branch, imageUrl, sourceType, team, classification, contact, securityContext, port } = req.body;
+    const { appName, gitUrl, branch, imageUrl, sourceType, team, classification, contact, securityContext, port, bundleUploadId } = req.body;
     if (!appName || !team) return res.status(400).json({ error: "appName and team are required" });
-    if (!gitUrl && !imageUrl) return res.status(400).json({ error: "gitUrl or imageUrl is required" });
+    if (!gitUrl && !imageUrl && !bundleUploadId) return res.status(400).json({ error: "gitUrl, imageUrl, or bundleUploadId is required" });
     if (imageUrl && imageUrl.endsWith(":latest")) return res.status(400).json({ error: "The :latest tag is not allowed — use a pinned version tag (e.g., v1.0.0)" });
     if (imageUrl && !validateImageRef(imageUrl)) return res.status(400).json({ error: "Invalid image reference format" });
+    if (bundleUploadId) {
+      const bundlePath = path.join(BUNDLE_UPLOAD_DIR, bundleUploadId);
+      if (!fs.existsSync(bundlePath)) return res.status(400).json({ error: "Bundle not found — upload expired or invalid uploadId" });
+    }
 
     // Concurrency limits — prevent unbounded job spawning
     const MAX_ACTIVE_PER_TEAM = 3;
@@ -7449,13 +7628,14 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
     const actor = getActor(req);
     const run = await db.createRun({
       appName, gitUrl, branch, imageUrl,
-      sourceType: sourceType || (gitUrl ? "git" : "image"),
+      sourceType: sourceType || (gitUrl ? "git" : imageUrl ? "image" : "bundle"),
       team, classification, contact,
       createdBy: actor,
     });
 
-    // Create all gates (adjust names for container/image source type)
+    // Create all gates (adjust names for container/image/bundle source type)
     const isImageSource = run.source_type === "image";
+    const isBundleSource = run.source_type === "bundle";
     const gates = [];
     for (const gateSpec of getDefaultGates()) {
       const spec = { ...gateSpec };
@@ -7463,6 +7643,10 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
         if (spec.shortName === "SAST") spec.gateName = "SAST (Skipped — no source)";
         if (spec.shortName === "SECRETS") spec.gateName = "Secrets Detection (Skipped — no source)";
         if (spec.shortName === "ARTIFACT_STORE") { spec.gateName = "Image Import"; spec.tool = "crane"; }
+      }
+      if (isBundleSource) {
+        if (spec.shortName === "ARTIFACT_STORE") { spec.gateName = "Bundle Import"; spec.tool = "crane"; }
+        // SAST/SECRETS names depend on whether source code is included
       }
       const gate = await db.createGate(run.id, spec);
       gates.push(gate);
@@ -7480,6 +7664,17 @@ app.post("/api/pipeline/runs", mutateLimiter, requireDb, requireGroups("sre-admi
         );
       } catch (metaErr) {
         console.debug('[pipeline] Metadata/port storage best-effort:', metaErr.message);
+      }
+    }
+
+    if (bundleUploadId) {
+      try {
+        await db.pool.query(
+          "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
+          [JSON.stringify({ bundleUploadId }), run.id]
+        );
+      } catch (metaErr) {
+        console.debug('[pipeline] Bundle metadata storage best-effort:', metaErr.message);
       }
     }
 
@@ -8870,6 +9065,49 @@ async function orchestratePipelineScan(runId) {
       emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "running", summary: "Cloning repo and running Gitleaks scan...", progress: 10 });
       phase1Jobs.push(runScanGate(runId, gateMap.SECRETS, (mult) => runSecretsScan(run.git_url, run.branch, mult, gateMap.SECRETS.id, runId)));
     }
+  } else if (run.source_type === "bundle") {
+    // For bundle source type, check if source code was included
+    const bundleUploadId = run.metadata?.bundleUploadId;
+    const bundleSastPath = bundleUploadId ? path.join(BUNDLE_UPLOAD_DIR, bundleUploadId) : null;
+
+    // Find the manifest base directory
+    let bundleBaseDirForSast = bundleSastPath;
+    if (bundleSastPath && fs.existsSync(bundleSastPath)) {
+      const manifestDirect = path.join(bundleSastPath, "bundle.yaml");
+      if (!fs.existsSync(manifestDirect)) {
+        const entries = fs.readdirSync(bundleSastPath);
+        for (const entry of entries) {
+          if (fs.existsSync(path.join(bundleSastPath, entry, "bundle.yaml"))) {
+            bundleBaseDirForSast = path.join(bundleSastPath, entry);
+            break;
+          }
+        }
+      }
+    }
+
+    const bundleHasSource = bundleBaseDirForSast && fs.existsSync(path.join(bundleBaseDirForSast, "source")) &&
+      fs.readdirSync(path.join(bundleBaseDirForSast, "source")).length > 0;
+
+    if (bundleHasSource) {
+      // Source code included in bundle — mark as passed with review recommendation
+      if (gateMap.SAST) {
+        phase1Jobs.push(db.updateGate(gateMap.SAST.id, { status: "passed", summary: "Source code included in bundle — manual review recommended", completedAt: new Date().toISOString() }));
+        emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "passed", summary: "Source code included in bundle — manual review recommended", progress: 100 });
+      }
+      if (gateMap.SECRETS) {
+        phase1Jobs.push(db.updateGate(gateMap.SECRETS.id, { status: "passed", summary: "Source code included in bundle — manual review recommended", completedAt: new Date().toISOString() }));
+        emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "passed", summary: "Source code included in bundle — manual review recommended", progress: 100 });
+      }
+    } else {
+      if (gateMap.SAST) {
+        phase1Jobs.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "No source code included in bundle", completedAt: new Date().toISOString() }));
+        emitPipelineEvent(runId, "gate_status", { gate: "SAST", status: "skipped", summary: "No source code included in bundle", progress: 100 });
+      }
+      if (gateMap.SECRETS) {
+        phase1Jobs.push(db.updateGate(gateMap.SECRETS.id, { status: "skipped", summary: "No source code included in bundle", completedAt: new Date().toISOString() }));
+        emitPipelineEvent(runId, "gate_status", { gate: "SECRETS", status: "skipped", summary: "No source code included in bundle", progress: 100 });
+      }
+    }
   } else {
     if (gateMap.SAST) {
       phase1Jobs.push(db.updateGate(gateMap.SAST.id, { status: "skipped", summary: "Not applicable — no source code provided (container image source)", completedAt: new Date().toISOString() }));
@@ -8884,7 +9122,162 @@ async function orchestratePipelineScan(runId) {
   // Start the build in parallel with source scans (build doesn't need scan results)
   let builtImageRef = run.image_url || null;
   const buildResult = { imageRef: null }; // shared mutable ref for the build promise
-  if (!builtImageRef && run.git_url) {
+  if (run.source_type === "bundle") {
+    // ── Bundle import: load images from bundle tarballs via crane push ──
+    const bundleUploadId = run.metadata?.bundleUploadId;
+    const bundlePath = bundleUploadId ? path.join(BUNDLE_UPLOAD_DIR, bundleUploadId) : null;
+
+    if (!bundlePath || !fs.existsSync(bundlePath)) {
+      if (gateMap.ARTIFACT_STORE) {
+        await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Bundle not found — upload may have expired" });
+        emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Bundle not found", progress: 100 });
+      }
+    } else {
+      // Find the manifest and base directory
+      let bundleBaseDir = bundlePath;
+      let manifest = null;
+      try {
+        let manifestPath = path.join(bundlePath, "bundle.yaml");
+        if (!fs.existsSync(manifestPath)) {
+          const entries = fs.readdirSync(bundlePath);
+          for (const entry of entries) {
+            const nested = path.join(bundlePath, entry, "bundle.yaml");
+            if (fs.existsSync(nested)) {
+              manifestPath = nested;
+              bundleBaseDir = path.join(bundlePath, entry);
+              break;
+            }
+          }
+        }
+        manifest = yaml.load(fs.readFileSync(manifestPath, "utf8"));
+      } catch (e) {
+        logger.error("pipeline", `Failed to read bundle manifest for run ${runId}: ${e.message}`, { runId });
+      }
+
+      if (!manifest) {
+        if (gateMap.ARTIFACT_STORE) {
+          await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Failed to read bundle manifest" });
+          emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Failed to read bundle manifest", progress: 100 });
+        }
+      } else {
+        const safeName = run.app_name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
+        const teamName = run.team.startsWith("team-") ? run.team : `team-${run.team}`;
+        const version = manifest.metadata?.version || "latest";
+
+        // Ensure Harbor project exists
+        try { await ensureHarborProject(teamName); } catch (e) {
+          console.debug('[pipeline] Harbor project ensure best-effort error:', e.message);
+        }
+
+        if (gateMap.ARTIFACT_STORE) {
+          await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Importing bundle images to Harbor...", progress: 10 });
+          emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Importing bundle images to Harbor...", progress: 10 });
+        }
+
+        // Collect all images from manifest
+        const imageRefs = [{ name: safeName, file: manifest.spec.app.image }];
+        if (manifest.spec.components) {
+          for (const comp of manifest.spec.components) {
+            if (comp.image) {
+              const compName = comp.name.replace(/[^a-z0-9-]/gi, "-").toLowerCase().substring(0, 40);
+              imageRefs.push({ name: compName, file: comp.image });
+            }
+          }
+        }
+
+        let allImportsSucceeded = true;
+        const importedImages = [];
+
+        for (const imgRef of imageRefs) {
+          const tarPath = path.join(bundleBaseDir, imgRef.file);
+          if (!fs.existsSync(tarPath)) {
+            logger.error("pipeline", `Bundle image not found: ${imgRef.file}`, { runId });
+            allImportsSucceeded = false;
+            continue;
+          }
+
+          const harborDest = `${HARBOR_REGISTRY}/${teamName}/${imgRef.name}:${version}`;
+          const importJobId = `pipe-bundleimport-${crypto.randomBytes(4).toString("hex")}`;
+
+          emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Importing ${imgRef.name} -> ${harborDest}` });
+
+          try {
+            // Create a Job that uses crane push to load the OCI tarball into Harbor
+            // The bundle directory is mounted via a hostPath volume (since it's on the same node for now)
+            // In production, this would use MinIO temp storage
+            await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
+              apiVersion: "batch/v1", kind: "Job",
+              metadata: {
+                name: importJobId, namespace: BUILD_NAMESPACE,
+                labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/build-id": importJobId, "sre.io/app-name": safeName }
+              },
+              spec: {
+                backoffLimit: 2, ttlSecondsAfterFinished: 3600,
+                template: {
+                  metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
+                  spec: {
+                    restartPolicy: "Never", serviceAccountName: "pipeline-runner",
+                    containers: [{
+                      name: "crane-push", image: CRANE_IMAGE,
+                      command: ["sh", "-c", `crane push "/bundle/${imgRef.file}" "${harborDest}" && echo "IMPORT_SUCCESS: ${harborDest}"`],
+                      volumeMounts: [
+                        { name: "bundle-data", mountPath: "/bundle", readOnly: true },
+                        { name: "docker-config", mountPath: "/home/nonroot/.docker", readOnly: true },
+                      ],
+                      resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "2Gi" } },
+                    }],
+                    volumes: [
+                      { name: "bundle-data", hostPath: { path: bundleBaseDir, type: "Directory" } },
+                      { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
+                    ],
+                  },
+                },
+              },
+            });
+
+            const importLogs = await waitForJobAndGetLogs(importJobId, BUILD_NAMESPACE, "crane-push", 600, runId, "ARTIFACT_STORE");
+            if (importLogs && importLogs.includes("IMPORT_SUCCESS:")) {
+              importedImages.push({ name: imgRef.name, harborRef: harborDest });
+              emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `OK: ${imgRef.name} imported successfully` });
+            } else {
+              allImportsSucceeded = false;
+              emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `FAIL: ${imgRef.name} import failed` });
+            }
+          } catch (importErr) {
+            logger.error("pipeline", `Bundle import error for ${imgRef.name}: ${importErr.message}`, { runId, image: imgRef.name });
+            allImportsSucceeded = false;
+            emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `FAIL: ${imgRef.name} error: ${importErr.message}` });
+          }
+        }
+
+        if (allImportsSucceeded && importedImages.length > 0) {
+          builtImageRef = importedImages[0].harborRef; // Primary image for SBOM/CVE
+          buildResult.imageRef = builtImageRef;
+          const summary = importedImages.length === 1
+            ? `Imported: ${importedImages[0].name}`
+            : `${importedImages.length} image(s) imported: ${importedImages.map(i => i.name).join(", ")}`;
+          if (gateMap.ARTIFACT_STORE) {
+            await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary });
+            emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary, progress: 100 });
+          }
+          // Store imported images in metadata
+          try {
+            await db.pool.query(
+              "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
+              [JSON.stringify({ builtImages: importedImages }), runId]
+            );
+          } catch { /* best effort */ }
+          await db.auditLog(runId, "bundle_imported", null, `Bundle images imported to Harbor`, { images: importedImages });
+        } else {
+          if (gateMap.ARTIFACT_STORE) {
+            await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "failed", progress: 100, completedAt: new Date().toISOString(), summary: "Bundle import failed" });
+            emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "failed", summary: "Bundle import failed", progress: 100 });
+          }
+          builtImageRef = null;
+        }
+      }
+    }
+  } else if (!builtImageRef && run.git_url) {
     if (gateMap.ARTIFACT_STORE) {
       await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "running", startedAt: new Date().toISOString(), summary: "Analyzing repository...", progress: 5 });
       emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "running", summary: "Analyzing repository...", progress: 5 });
@@ -9401,6 +9794,12 @@ async function orchestratePipelineScan(runId) {
       emitPipelineEvent(runId, "done", { status: "failed" });
     }
     setTimeout(() => cleanupPipelineEmitter(runId), 5 * 60 * 1000);
+  }
+
+  // Clean up bundle temp files after pipeline completes (regardless of success/failure)
+  if (run.source_type === "bundle" && run.metadata?.bundleUploadId) {
+    const bundleCleanupPath = path.join(BUNDLE_UPLOAD_DIR, run.metadata.bundleUploadId);
+    try { fs.rmSync(bundleCleanupPath, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
 
