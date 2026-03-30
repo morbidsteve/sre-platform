@@ -57,3 +57,8 @@ spec:
             periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
+          {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "sre-worker.fullname" . }}-storage-config
+          {{- end }}

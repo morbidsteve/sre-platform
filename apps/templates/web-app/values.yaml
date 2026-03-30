@@ -128,6 +128,16 @@ websocket:
   # - uri: /ws
   # - uri: /socket.io
 
+# -- Object storage (S3-compatible via MinIO/S3) --
+storage:
+  enabled: false
+  # Bucket name (defaults to <team>-<app-name>)
+  bucket: ""
+  # Storage endpoint (defaults to internal MinIO)
+  endpoint: ""
+  # AWS region (for S3 compatibility)
+  region: ""
+
 # -- SSO / OIDC integration --
 sso:
   enabled: false
