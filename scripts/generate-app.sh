@@ -73,8 +73,8 @@ generate_helmrelease() {
   else
     read -r req_cpu req_mem lim_cpu lim_mem <<< "$(resource_preset "$res")"
   fi
-  local lp; lp="$(yq '.spec.probes.liveness // "/healthz"' "$f")"
-  local rp; rp="$(yq '.spec.probes.readiness // "/readyz"' "$f")"
+  local lp; lp="$(yq '.spec.probes.liveness // "/"' "$f")"
+  local rp; rp="$(yq '.spec.probes.readiness // "/"' "$f")"
   local sso; sso="$(yq '.spec.services.sso.enabled // false' "$f")"
   local ihost; ihost="$(yq '.spec.ingress // ""' "$f")"
   # Build base YAML
