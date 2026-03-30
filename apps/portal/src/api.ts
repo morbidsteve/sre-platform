@@ -184,6 +184,36 @@ export async function fetchTeams(): Promise<string[]> {
   }
 }
 
+export async function fetchHarborRepos(project: string): Promise<Array<{ name: string; fullName: string; artifactCount: number }>> {
+  try {
+    const response = await fetch(`/api/harbor/projects/${encodeURIComponent(project)}/repositories`, { credentials: 'include' });
+    if (!response.ok) return [];
+    return await response.json() as Array<{ name: string; fullName: string; artifactCount: number }>;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchHarborTags(project: string, repo: string): Promise<Array<{ name: string; digest: string | null; size: number | null; pushed: string | null }>> {
+  try {
+    const response = await fetch(`/api/harbor/projects/${encodeURIComponent(project)}/repositories/${encodeURIComponent(repo)}/tags`, { credentials: 'include' });
+    if (!response.ok) return [];
+    return await response.json() as Array<{ name: string; digest: string | null; size: number | null; pushed: string | null }>;
+  } catch {
+    return [];
+  }
+}
+
+export async function checkIngressHostname(hostname: string): Promise<{ available: boolean; usedBy?: string; namespace?: string }> {
+  try {
+    const response = await fetch(`/api/ingress/check?hostname=${encodeURIComponent(hostname)}`, { credentials: 'include' });
+    if (!response.ok) return { available: true };
+    return await response.json() as { available: boolean; usedBy?: string; namespace?: string };
+  } catch {
+    return { available: true };
+  }
+}
+
 // Keep backward-compatible exports
 export const platformServices = getPlatformServices();
 export const adminServices = getAdminServices();

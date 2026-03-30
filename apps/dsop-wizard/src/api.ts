@@ -587,3 +587,29 @@ export async function retryPipelineRun(runId: string): Promise<PipelineRun> {
 export async function listPipelineRuns(limit = 20): Promise<{ runs: PipelineRun[]; total: number }> {
   return apiFetch(`/pipeline/runs?limit=${limit}`);
 }
+
+export async function fetchHarborRepos(project: string): Promise<Array<{ name: string; fullName: string; artifactCount: number }>> {
+  try {
+    const res = await apiFetch<Array<{ name: string; fullName: string; artifactCount: number }>>(`/harbor/projects/${encodeURIComponent(project)}/repositories`);
+    return res;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchHarborTags(project: string, repo: string): Promise<Array<{ name: string; digest: string | null; size: number | null; pushed: string | null }>> {
+  try {
+    const res = await apiFetch<Array<{ name: string; digest: string | null; size: number | null; pushed: string | null }>>(`/harbor/projects/${encodeURIComponent(project)}/repositories/${encodeURIComponent(repo)}/tags`);
+    return res;
+  } catch {
+    return [];
+  }
+}
+
+export async function checkIngressHostname(hostname: string): Promise<{ available: boolean; usedBy?: string; namespace?: string }> {
+  try {
+    return await apiFetch<{ available: boolean; usedBy?: string; namespace?: string }>(`/ingress/check?hostname=${encodeURIComponent(hostname)}`);
+  } catch {
+    return { available: true };
+  }
+}

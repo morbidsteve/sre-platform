@@ -7321,6 +7321,172 @@ app.get("/api/proxy/harbor/vulnerabilities", async (req, res) => {
   }
 });
 
+// ── Harbor Image Browsing APIs ───────────────────────────────────────────
+
+// GET /api/harbor/projects — List Harbor projects for image browsing
+app.get("/api/harbor/projects", requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const authHeader = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
+    const harborUrls = [
+      "http://harbor-core.harbor.svc.cluster.local:80",
+      "http://harbor-core.harbor.svc:80",
+    ];
+
+    for (const harborUrl of harborUrls) {
+      try {
+        const resp = await httpRequest(`${harborUrl}/api/v2.0/projects?page_size=100`, {
+          headers: { "Authorization": authHeader },
+          timeout: 8000,
+        });
+        if (resp.status === 200) {
+          const projects = JSON.parse(resp.body);
+          // Return project names, filtering to team-* and platform projects
+          const result = projects
+            .map(p => ({ name: p.name, repoCount: p.repo_count || 0 }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          return res.json(result);
+        }
+      } catch { continue; }
+    }
+    res.json([]);
+  } catch (err) {
+    console.error("[harbor] List projects error:", err.message);
+    res.json([]);
+  }
+});
+
+// GET /api/harbor/projects/:project/repositories — List repos in a Harbor project
+app.get("/api/harbor/projects/:project/repositories", requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!project || /[;&|`$(){}!#<>\\'"*?\[\]\n\r]/.test(project)) {
+      return res.status(400).json({ error: "Invalid project name" });
+    }
+    const authHeader = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
+    const harborUrls = [
+      "http://harbor-core.harbor.svc.cluster.local:80",
+      "http://harbor-core.harbor.svc:80",
+    ];
+
+    for (const harborUrl of harborUrls) {
+      try {
+        const resp = await httpRequest(`${harborUrl}/api/v2.0/projects/${encodeURIComponent(project)}/repositories?page_size=100`, {
+          headers: { "Authorization": authHeader },
+          timeout: 8000,
+        });
+        if (resp.status === 200) {
+          const repos = JSON.parse(resp.body);
+          const result = repos.map(r => {
+            // repo name comes as "project/reponame" — strip the project prefix
+            const fullName = r.name || "";
+            const shortName = fullName.includes("/") ? fullName.split("/").slice(1).join("/") : fullName;
+            return {
+              name: shortName,
+              fullName: fullName,
+              artifactCount: r.artifact_count || 0,
+              pullCount: r.pull_count || 0,
+              updateTime: r.update_time,
+            };
+          }).sort((a, b) => a.name.localeCompare(b.name));
+          return res.json(result);
+        }
+      } catch { continue; }
+    }
+    res.json([]);
+  } catch (err) {
+    console.error("[harbor] List repositories error:", err.message);
+    res.json([]);
+  }
+});
+
+// GET /api/harbor/projects/:project/repositories/:repo/tags — List tags for a repo
+app.get("/api/harbor/projects/:project/repositories/:repo/tags", requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const { project, repo } = req.params;
+    if (!project || !repo) return res.status(400).json({ error: "Project and repo required" });
+    if (/[;&|`$(){}!#<>\\'"*?\[\]\n\r]/.test(project + repo)) {
+      return res.status(400).json({ error: "Invalid characters in project or repo name" });
+    }
+    const authHeader = "Basic " + Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
+    const harborUrls = [
+      "http://harbor-core.harbor.svc.cluster.local:80",
+      "http://harbor-core.harbor.svc:80",
+    ];
+
+    // URL-encode the repo name (it may contain slashes)
+    const encodedRepo = encodeURIComponent(repo);
+
+    for (const harborUrl of harborUrls) {
+      try {
+        const resp = await httpRequest(`${harborUrl}/api/v2.0/projects/${encodeURIComponent(project)}/repositories/${encodedRepo}/artifacts?page_size=50&with_tag=true`, {
+          headers: { "Authorization": authHeader },
+          timeout: 8000,
+        });
+        if (resp.status === 200) {
+          const artifacts = JSON.parse(resp.body);
+          const tags = [];
+          for (const artifact of artifacts) {
+            if (artifact.tags && Array.isArray(artifact.tags)) {
+              for (const tag of artifact.tags) {
+                tags.push({
+                  name: tag.name,
+                  digest: artifact.digest ? artifact.digest.substring(0, 19) : null,
+                  size: artifact.size ? Math.round(artifact.size / (1024 * 1024)) : null,
+                  pushed: tag.push_time || artifact.push_time,
+                  vulnerabilities: artifact.scan_overview ? (() => {
+                    const report = Object.values(artifact.scan_overview)[0];
+                    return report ? { critical: report.summary?.critical || 0, high: report.summary?.high || 0 } : null;
+                  })() : null,
+                });
+              }
+            }
+          }
+          // Sort by push time descending (newest first), filter out :latest
+          tags.sort((a, b) => (b.pushed || "").localeCompare(a.pushed || ""));
+          return res.json(tags);
+        }
+      } catch { continue; }
+    }
+    res.json([]);
+  } catch (err) {
+    console.error("[harbor] List tags error:", err.message);
+    res.json([]);
+  }
+});
+
+// GET /api/ingress/check?hostname=xxx — Check if hostname is already in use
+app.get("/api/ingress/check", requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const hostname = req.query.hostname;
+    if (!hostname) return res.json({ available: true });
+
+    // Check VirtualServices across all namespaces
+    try {
+      const vsResult = await customApi.listClusterCustomObject(
+        "networking.istio.io", "v1", "virtualservices"
+      );
+      const virtualServices = vsResult.body?.items || [];
+      for (const vs of virtualServices) {
+        const hosts = vs.spec?.hosts || [];
+        if (hosts.includes(hostname)) {
+          return res.json({
+            available: false,
+            usedBy: vs.metadata?.name,
+            namespace: vs.metadata?.namespace,
+          });
+        }
+      }
+    } catch (vsErr) {
+      console.debug("[ingress] VirtualService check error:", vsErr.message);
+    }
+
+    res.json({ available: true });
+  } catch (err) {
+    console.error("[ingress] Check error:", err.message);
+    res.json({ available: true }); // Fail open — don't block deployment on check failure
+  }
+});
+
 // ── Pipeline API ──────────────────────────────────────────────────────────
 
 // Track whether database is available (set during init)
