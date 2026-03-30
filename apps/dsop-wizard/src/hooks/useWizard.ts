@@ -83,5 +83,9 @@ export function useWizard() {
     exceptionRequested: exceptions.exceptionRequested,
     requestException: exceptions.requestException,
     requestingException: exceptions.requestingException,
+    // Easy mode
+    setMode: wizardState.setMode,
+    updateEasyConfig: wizardState.updateEasyConfig,
+    submitEasyDeploy: wizardState.submitEasyDeploy,
   };
 }
