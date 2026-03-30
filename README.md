@@ -361,6 +361,41 @@ spec:
 
 Commit and push — Flux deploys it automatically.
 
+### Option D: App Contract (recommended for new apps)
+
+Write a simple YAML contract and the platform generates all the HelmRelease boilerplate:
+
+```yaml
+apiVersion: sre.io/v1alpha1
+kind: AppContract
+metadata:
+  name: my-app
+  team: team-alpha
+spec:
+  type: web-app
+  image: harbor.apps.sre.example.com/team-alpha/my-app:v1.0.0
+  resources: small
+  ingress: my-app.apps.sre.example.com
+```
+
+```bash
+task deploy-app -- my-app-contract.yaml
+git push  # Flux deploys automatically
+```
+
+See [App Contract Guide](docs/developer-guides/app-contract.md) for the full schema.
+
+### Getting Your Image into Harbor
+
+Before deploying, your container image must be in Harbor. Two paths:
+
+| Path | How | Best for |
+|------|-----|----------|
+| **Full DSOP Pipeline** | Use the [DSOP Wizard](https://dsop-wizard.apps.sre.example.com) — it builds, scans, signs for you | First deployments, no existing CI |
+| **Your Own CI** | Copy a [CI template](ci/templates/) into your repo — builds on every tag push | Teams with existing CI pipelines |
+
+See [CI Pipeline Guide](docs/developer-guides/ci-pipeline.md) for setup instructions.
+
 ### Container Requirements
 
 Your container must:
