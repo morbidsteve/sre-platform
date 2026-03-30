@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Lock, CheckCircle2, Loader2, ExternalLink } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Plus, Trash2, Lock, CheckCircle2, Loader2, ExternalLink, ChevronDown, Search, AlertTriangle } from 'lucide-react';
 import { useDeploy } from '../hooks/useDeploy';
-import { fetchTeams } from '../api';
+import { fetchTeams, fetchHarborRepos, fetchHarborTags, checkIngressHostname } from '../api';
 
 interface DeployModalProps {
   onClose: () => void;
@@ -44,6 +44,24 @@ export function DeployModal({ onClose }: DeployModalProps) {
   const { form, setField, addEnv, removeEnv, setEnvField, submit, submitting, result, errors } = useDeploy();
   const [teams, setTeams] = useState<string[]>([]);
 
+  // Harbor image browsing state
+  const [repos, setRepos] = useState<Array<{ name: string; fullName: string; artifactCount: number }>>([]);
+  const [tags, setTags] = useState<Array<{ name: string; digest: string | null; size: number | null; pushed: string | null }>>([]);
+  const [selectedRepo, setSelectedRepo] = useState('');
+  const [selectedTag, setSelectedTag] = useState('');
+  const [repoSearch, setRepoSearch] = useState('');
+  const [showRepoDropdown, setShowRepoDropdown] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [loadingTags, setLoadingTags] = useState(false);
+
+  // Ingress state
+  const [ingressManual, setIngressManual] = useState(false);
+  const [ingressStatus, setIngressStatus] = useState<{ checking: boolean; available?: boolean; usedBy?: string } | null>(null);
+
+  // Refs
+  const repoDropdownRef = useRef<HTMLDivElement>(null);
+  const ingressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     fetchTeams().then(setTeams).catch(() => setTeams([]));
   }, []);
@@ -56,14 +74,110 @@ export function DeployModal({ onClose }: DeployModalProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
+  // Close repo dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (repoDropdownRef.current && !repoDropdownRef.current.contains(e.target as Node)) {
+        setShowRepoDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Fetch Harbor repos when team changes
+  useEffect(() => {
+    if (!form.team) {
+      setRepos([]);
+      setSelectedRepo('');
+      setSelectedTag('');
+      setTags([]);
+      setRepoSearch('');
+      return;
+    }
+    setLoadingRepos(true);
+    setSelectedRepo('');
+    setSelectedTag('');
+    setTags([]);
+    setRepoSearch('');
+    fetchHarborRepos(form.team)
+      .then(setRepos)
+      .catch(() => setRepos([]))
+      .finally(() => setLoadingRepos(false));
+  }, [form.team]);
+
+  // Fetch tags when repo changes
+  useEffect(() => {
+    if (!form.team || !selectedRepo) {
+      setTags([]);
+      setSelectedTag('');
+      return;
+    }
+    setLoadingTags(true);
+    setSelectedTag('');
+    fetchHarborTags(form.team, selectedRepo)
+      .then(setTags)
+      .catch(() => setTags([]))
+      .finally(() => setLoadingTags(false));
+  }, [form.team, selectedRepo]);
+
+  // Compose full image reference when repo+tag selected
+  useEffect(() => {
+    if (selectedRepo && selectedTag && form.team) {
+      const fullImage = `harbor.apps.sre.example.com/${form.team}/${selectedRepo}:${selectedTag}`;
+      setField('image', fullImage);
+    }
+  }, [selectedRepo, selectedTag, form.team, setField]);
+
+  // Auto-generate ingress hostname from app name (web-app only)
+  useEffect(() => {
+    if (form.appType === 'web-app' && form.appName && !ingressManual) {
+      setField('ingress', `${form.appName}.apps.sre.example.com`);
+    }
+  }, [form.appName, form.appType, ingressManual, setField]);
+
+  // Debounced ingress hostname check
+  useEffect(() => {
+    if (ingressDebounceRef.current) {
+      clearTimeout(ingressDebounceRef.current);
+    }
+    if (!form.ingress || form.appType !== 'web-app') {
+      setIngressStatus(null);
+      return;
+    }
+    setIngressStatus({ checking: true });
+    ingressDebounceRef.current = setTimeout(() => {
+      checkIngressHostname(form.ingress)
+        .then((res) => setIngressStatus({ checking: false, available: res.available, usedBy: res.usedBy }))
+        .catch(() => setIngressStatus(null));
+    }, 500);
+    return () => {
+      if (ingressDebounceRef.current) {
+        clearTimeout(ingressDebounceRef.current);
+      }
+    };
+  }, [form.ingress, form.appType]);
+
   const handleOverlayClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
   }, [onClose]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+    // Block submit if ingress hostname is taken
+    if (ingressStatus && !ingressStatus.checking && ingressStatus.available === false) {
+      return;
+    }
     submit();
-  }, [submit]);
+  }, [submit, ingressStatus]);
+
+  const filteredRepos = repos.filter((r) =>
+    r.name.toLowerCase().includes(repoSearch.toLowerCase())
+  );
+
+  const filteredTags = tags.filter((t) => t.name !== 'latest');
+
+  const harborAvailable = form.team && repos.length > 0;
 
   const isSuccess = result?.success === true;
 
@@ -170,19 +284,117 @@ export function DeployModal({ onClose }: DeployModalProps) {
                     <label className="block text-xs font-medium text-slate-400">
                       Container Image <span className="text-red-400">*</span>
                     </label>
-                    <input
-                      type="text"
-                      value={form.image}
-                      onChange={(e) => setField('image', e.target.value)}
-                      placeholder="harbor.sre.internal/your-team/app-name:v1.0.0"
-                      className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                    />
-                    {errors.image && <p className="mt-1 text-xs text-red-400">{errors.image}</p>}
-                    {!errors.image && (
-                      <p className="mt-1 text-xs text-slate-600">
-                        e.g., harbor.sre.internal/your-team/app-name:v1.0.0
-                      </p>
+
+                    {harborAvailable ? (
+                      /* Harbor browsing mode */
+                      <div className="mt-1 space-y-3">
+                        {/* Repository search/dropdown */}
+                        <div ref={repoDropdownRef} className="relative">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                            <input
+                              type="text"
+                              value={repoSearch}
+                              onChange={(e) => {
+                                setRepoSearch(e.target.value);
+                                setShowRepoDropdown(true);
+                              }}
+                              onFocus={() => setShowRepoDropdown(true)}
+                              placeholder={loadingRepos ? 'Loading repositories...' : 'Search repositories...'}
+                              disabled={loadingRepos}
+                              className="block w-full rounded-lg border border-slate-700 bg-slate-900 pl-9 pr-8 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50"
+                            />
+                            {loadingRepos ? (
+                              <Loader2 className="absolute right-3 top-2.5 h-3.5 w-3.5 animate-spin text-slate-500" />
+                            ) : (
+                              <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                            )}
+                          </div>
+                          {showRepoDropdown && !loadingRepos && (
+                            <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-600 bg-slate-800 shadow-xl">
+                              {filteredRepos.length > 0 ? (
+                                filteredRepos.map((repo) => (
+                                  <button
+                                    key={repo.fullName}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedRepo(repo.name);
+                                      setRepoSearch(repo.name);
+                                      setShowRepoDropdown(false);
+                                    }}
+                                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-700 ${
+                                      selectedRepo === repo.name ? 'bg-slate-700 text-cyan-400' : 'text-slate-200'
+                                    }`}
+                                  >
+                                    <span>{repo.name}</span>
+                                    <span className="text-xs text-slate-500">{repo.artifactCount} tag{repo.artifactCount !== 1 ? 's' : ''}</span>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-slate-500">No repositories found</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Tag dropdown */}
+                        {selectedRepo && (
+                          <div className="relative">
+                            <select
+                              value={selectedTag}
+                              onChange={(e) => setSelectedTag(e.target.value)}
+                              disabled={loadingTags}
+                              className="block w-full appearance-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50"
+                            >
+                              <option value="">{loadingTags ? 'Loading tags...' : 'Select a tag...'}</option>
+                              {filteredTags.map((tag) => (
+                                <option key={tag.name} value={tag.name}>
+                                  {tag.name}{tag.pushed ? ` (${new Date(tag.pushed).toLocaleDateString()})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {loadingTags ? (
+                              <Loader2 className="pointer-events-none absolute right-3 top-2.5 h-3.5 w-3.5 animate-spin text-slate-500" />
+                            ) : (
+                              <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                            )}
+                          </div>
+                        )}
+
+                        {/* Composed image reference */}
+                        {selectedRepo && selectedTag && (
+                          <div className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2">
+                            <span className="text-xs text-slate-500">Image: </span>
+                            <span className="text-xs font-mono text-cyan-400">
+                              harbor.apps.sre.example.com/{form.team}/{selectedRepo}:{selectedTag}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Fallback: plain text input */
+                      <>
+                        <input
+                          type="text"
+                          value={form.image}
+                          onChange={(e) => setField('image', e.target.value)}
+                          placeholder="harbor.apps.sre.example.com/your-team/app-name:v1.0.0"
+                          className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        />
+                        {!errors.image && !form.team && (
+                          <p className="mt-1 text-xs text-slate-600">
+                            Select a team below to browse Harbor repositories
+                          </p>
+                        )}
+                        {!errors.image && form.team && repos.length === 0 && !loadingRepos && (
+                          <p className="mt-1 text-xs text-slate-600">
+                            No repositories found in Harbor for {form.team} — enter image manually
+                          </p>
+                        )}
+                      </>
                     )}
+
+                    {errors.image && <p className="mt-1 text-xs text-red-400">{errors.image}</p>}
                   </div>
                 </div>
               </fieldset>
@@ -241,15 +453,64 @@ export function DeployModal({ onClose }: DeployModalProps) {
                   {/* Ingress - only for web-app */}
                   {form.appType === 'web-app' && (
                     <div>
-                      <label className="block text-xs font-medium text-slate-400">Ingress Hostname</label>
-                      <input
-                        type="text"
-                        value={form.ingress}
-                        onChange={(e) => setField('ingress', e.target.value)}
-                        placeholder="my-app.apps.sre.example.com"
-                        className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                      />
-                      <p className="mt-1 text-xs text-slate-600">e.g., my-app.apps.sre.example.com</p>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-medium text-slate-400">Ingress Hostname</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIngressManual(!ingressManual);
+                            if (ingressManual && form.appName) {
+                              // Switching back to auto: regenerate
+                              setField('ingress', `${form.appName}.apps.sre.example.com`);
+                            }
+                          }}
+                          className="text-xs text-slate-500 hover:text-slate-300"
+                        >
+                          {ingressManual ? 'Auto-generate' : 'Edit manually'}
+                        </button>
+                      </div>
+                      <div className="relative mt-1">
+                        <input
+                          type="text"
+                          value={form.ingress}
+                          onChange={(e) => {
+                            if (!ingressManual) setIngressManual(true);
+                            setField('ingress', e.target.value);
+                          }}
+                          placeholder="my-app.apps.sre.example.com"
+                          readOnly={!ingressManual && !!form.appName}
+                          className={`block w-full rounded-lg border bg-slate-900 px-3 py-2 pr-10 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 ${
+                            ingressStatus && !ingressStatus.checking && ingressStatus.available === false
+                              ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                              : ingressStatus && !ingressStatus.checking && ingressStatus.available === true
+                                ? 'border-emerald-500/50 focus:border-cyan-500 focus:ring-cyan-500'
+                                : 'border-slate-700 focus:border-cyan-500 focus:ring-cyan-500'
+                          } ${!ingressManual && form.appName ? 'text-slate-400' : ''}`}
+                        />
+                        {/* Status indicator */}
+                        <div className="absolute right-3 top-2.5">
+                          {ingressStatus?.checking && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                          )}
+                          {ingressStatus && !ingressStatus.checking && ingressStatus.available === true && (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                          )}
+                          {ingressStatus && !ingressStatus.checking && ingressStatus.available === false && (
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                          )}
+                        </div>
+                      </div>
+                      {ingressStatus && !ingressStatus.checking && ingressStatus.available === false && (
+                        <p className="mt-1 text-xs text-red-400">
+                          Hostname in use{ingressStatus.usedBy ? ` by ${ingressStatus.usedBy}` : ''} — choose a different name
+                        </p>
+                      )}
+                      {ingressStatus && !ingressStatus.checking && ingressStatus.available === true && form.ingress && (
+                        <p className="mt-1 text-xs text-emerald-400/70">Hostname available</p>
+                      )}
+                      {!ingressManual && !form.appName && (
+                        <p className="mt-1 text-xs text-slate-600">Enter an app name above to auto-generate</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -364,6 +625,8 @@ export function DeployModal({ onClose }: DeployModalProps) {
             <div className="sticky bottom-0 flex items-center justify-between border-t border-slate-700 bg-slate-800 px-6 py-4 rounded-b-2xl">
               {result?.error ? (
                 <p className="text-sm text-red-400">{result.error}</p>
+              ) : ingressStatus && !ingressStatus.checking && ingressStatus.available === false ? (
+                <p className="text-sm text-red-400">Ingress hostname is already in use</p>
               ) : (
                 <div />
               )}
@@ -377,7 +640,7 @@ export function DeployModal({ onClose }: DeployModalProps) {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || (ingressStatus !== null && !ingressStatus.checking && ingressStatus.available === false)}
                   className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-cyan-400 disabled:opacity-50"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

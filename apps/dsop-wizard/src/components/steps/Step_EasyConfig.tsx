@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Database, Server, ShieldCheck, HardDrive } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { fetchTeams } from '../../api';
+import { fetchTeams, fetchHarborRepos, fetchHarborTags, checkIngressHostname } from '../../api';
 
 // ── Easy-mode types ──
 
@@ -99,6 +99,18 @@ export function Step_EasyConfig({ config, onUpdate, onNext, onBack }: EasyConfig
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // Harbor browsing state
+  const [repos, setRepos] = useState<Array<{ name: string; fullName: string; artifactCount: number }>>([]);
+  const [tags, setTags] = useState<Array<{ name: string; digest: string | null; size: number | null; pushed: string | null }>>([]);
+  const [selectedRepo, setSelectedRepo] = useState('');
+  const [selectedTag, setSelectedTag] = useState('');
+  const [repoSearch, setRepoSearch] = useState('');
+  const [showRepoDropdown, setShowRepoDropdown] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [loadingTags, setLoadingTags] = useState(false);
+  const [ingressStatus, setIngressStatus] = useState<{ checking: boolean; available?: boolean; usedBy?: string } | null>(null);
+  const [ingressManual, setIngressManual] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     fetchTeams()
@@ -120,6 +132,72 @@ export function Step_EasyConfig({ config, onUpdate, onNext, onBack }: EasyConfig
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Fetch Harbor repos when team changes
+  useEffect(() => {
+    if (!config.team) return;
+    setLoadingRepos(true);
+    setRepos([]);
+    setTags([]);
+    setSelectedRepo('');
+    setSelectedTag('');
+    setRepoSearch('');
+    fetchHarborRepos(config.team).then(r => {
+      setRepos(r);
+      setLoadingRepos(false);
+    });
+  }, [config.team]);
+
+  // Fetch tags when repo is selected
+  useEffect(() => {
+    if (!config.team || !selectedRepo) {
+      setTags([]);
+      return;
+    }
+    setLoadingTags(true);
+    fetchHarborTags(config.team, selectedRepo).then(t => {
+      setTags(t);
+      setLoadingTags(false);
+    });
+  }, [config.team, selectedRepo]);
+
+  // Compose full image reference from repo + tag
+  useEffect(() => {
+    if (selectedRepo && selectedTag && config.team) {
+      const domain = 'harbor.apps.sre.example.com';
+      const fullImage = `${domain}/${config.team}/${selectedRepo}:${selectedTag}`;
+      onUpdate({ image: fullImage });
+    }
+  }, [selectedRepo, selectedTag, config.team]);
+
+  // Auto-generate ingress hostname from app name
+  useEffect(() => {
+    if (config.appType === 'web-app' && config.appName && !ingressManual) {
+      onUpdate({ ingress: `${config.appName}.apps.sre.example.com` });
+    }
+  }, [config.appName, config.appType, ingressManual]);
+
+  // Debounced ingress hostname availability check
+  useEffect(() => {
+    if (!config.ingress || config.appType !== 'web-app') {
+      setIngressStatus(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setIngressStatus({ checking: true });
+      checkIngressHostname(config.ingress).then(result => {
+        setIngressStatus({ checking: false, available: result.available, usedBy: result.usedBy });
+      });
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [config.ingress, config.appType]);
+
+  // Close repo dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = () => setShowRepoDropdown(false);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
   const showPort = config.appType === 'web-app' || config.appType === 'api-service';
@@ -269,16 +347,92 @@ export function Step_EasyConfig({ config, onUpdate, onNext, onBack }: EasyConfig
           <label className="block text-sm font-medium text-gray-300">
             Container Image <span className="text-red-400">*</span>
           </label>
-          <input
-            type="text"
-            value={config.image}
-            onChange={(e) => onUpdate({ image: e.target.value })}
-            onBlur={() => handleBlur('image')}
-            placeholder="harbor.apps.sre.example.com/team/app:v1.0.0"
-            className={`${inputClasses} font-mono ${touched.image && errors.image ? 'border-red-500 focus:ring-red-500' : ''}`}
-          />
+          <div className="mt-1 grid grid-cols-5 gap-2">
+            {/* Repository — takes 3 cols */}
+            <div className="col-span-3 relative" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="text"
+                value={repoSearch || selectedRepo}
+                onChange={(e) => {
+                  setRepoSearch(e.target.value);
+                  setShowRepoDropdown(true);
+                }}
+                onFocus={() => repos.length > 0 && setShowRepoDropdown(true)}
+                onBlur={() => handleBlur('image')}
+                placeholder={loadingRepos ? 'Loading repositories...' : 'Search or select image...'}
+                className={`${inputClasses} font-mono ${touched.image && errors.image ? 'border-red-500 focus:ring-red-500' : ''}`}
+              />
+              {showRepoDropdown && repos.length > 0 && (
+                <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-navy-600 bg-navy-800 shadow-xl">
+                  {repos
+                    .filter(r => !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase()))
+                    .map(r => (
+                      <button
+                        key={r.name}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRepo(r.name);
+                          setRepoSearch('');
+                          setShowRepoDropdown(false);
+                          setSelectedTag('');
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-navy-700 flex justify-between"
+                      >
+                        <span>{r.name}</span>
+                        <span className="text-xs text-gray-500">{r.artifactCount} tags</span>
+                      </button>
+                    ))
+                  }
+                  {repos.filter(r => !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase())).length === 0 && (
+                    <div className="px-3 py-2 text-xs text-gray-500">No matching repositories</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Tag — takes 2 cols */}
+            <div className="col-span-2">
+              <select
+                value={selectedTag}
+                onChange={(e) => setSelectedTag(e.target.value)}
+                disabled={!selectedRepo || loadingTags}
+                className={selectClasses}
+              >
+                <option value="">{loadingTags ? 'Loading...' : 'Select tag'}</option>
+                {tags
+                  .filter(t => t.name !== 'latest')
+                  .map(t => (
+                    <option key={t.name} value={t.name}>
+                      {t.name}{t.size ? ` (${Math.round(t.size / 1024 / 1024)}MB)` : ''}
+                    </option>
+                  ))
+                }
+              </select>
+            </div>
+          </div>
+
+          {/* Show composed image reference */}
+          {config.image && (
+            <p className="mt-1 text-xs text-gray-500 font-mono truncate">{config.image}</p>
+          )}
+
+          {/* Fallback: manual input when Harbor is not accessible */}
+          {repos.length === 0 && !loadingRepos && config.team && (
+            <div className="mt-2">
+              <input
+                type="text"
+                value={config.image}
+                onChange={(e) => onUpdate({ image: e.target.value })}
+                onBlur={() => handleBlur('image')}
+                placeholder="harbor.apps.sre.example.com/team/app:v1.0.0"
+                className={`${inputClasses} font-mono ${touched.image && errors.image ? 'border-red-500 focus:ring-red-500' : ''}`}
+              />
+              <p className="mt-1 text-xs text-gray-500">Harbor not accessible — enter image reference manually</p>
+            </div>
+          )}
+
           {touched.image && errors.image && (
-            <p className="text-xs text-red-400">{errors.image}</p>
+            <p className="mt-1 text-xs text-red-400">{errors.image}</p>
           )}
         </div>
 
@@ -320,11 +474,27 @@ export function Step_EasyConfig({ config, onUpdate, onNext, onBack }: EasyConfig
             <input
               type="text"
               value={config.ingress}
-              onChange={(e) => onUpdate({ ingress: e.target.value })}
+              onChange={(e) => {
+                setIngressManual(true);
+                onUpdate({ ingress: e.target.value });
+              }}
               placeholder={`${config.appName || 'my-app'}.apps.sre.example.com`}
               className={`${inputClasses} font-mono`}
             />
-            <p className="text-xs text-gray-600">Leave blank to auto-generate from app name.</p>
+            {!ingressManual && config.ingress && (
+              <p className="text-xs text-gray-500">Auto-generated from app name</p>
+            )}
+            {ingressStatus?.checking && (
+              <p className="mt-1 text-xs text-gray-500">Checking availability...</p>
+            )}
+            {ingressStatus && !ingressStatus.checking && ingressStatus.available === true && config.ingress && (
+              <p className="mt-1 text-xs text-emerald-400">Hostname available</p>
+            )}
+            {ingressStatus && !ingressStatus.checking && ingressStatus.available === false && (
+              <p className="mt-1 text-xs text-red-400">
+                Hostname already in use by {ingressStatus.usedBy}
+              </p>
+            )}
           </div>
         )}
       </div>
