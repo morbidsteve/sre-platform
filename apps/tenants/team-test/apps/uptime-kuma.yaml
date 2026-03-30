@@ -1,0 +1,89 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: uptime-kuma
+  namespace: team-test
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-test
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/web-app
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: uptime-kuma
+      team: team-test
+      image:
+        repository: harbor.apps.sre.example.com/team-test/uptime-kuma
+        tag: v1.0.0
+        pullPolicy: IfNotPresent
+      port: 3001
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      probes:
+        liveness:
+          path: /
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        readiness:
+          path: /
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env: []
+    ingress:
+      enabled: true
+      host: uptime-kuma.apps.sre.example.com
+    autoscaling:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    websocket:
+      enabled: true
+      routes:
+        - uri: /socket.io
+    # Security overrides: uptime-kuma runs as root and needs writable /app/data
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      fsGroup: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
+    extraVolumeMounts:
+      - name: data
+        mountPath: /app/data
+    extraVolumes:
+      - name: data
+        emptyDir: {}
