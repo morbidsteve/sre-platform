@@ -1,0 +1,34 @@
+---
+apiVersion: sre.io/v1alpha1
+kind: AppContract
+metadata:
+  name: order-service
+  team: team-alpha
+spec:
+  type: web-app
+  image: harbor.sre.internal/team-alpha/order-service:v2.1.0
+  port: 8080
+  replicas: 3
+  resources: medium
+  ingress: orders.apps.sre.example.com
+  probes:
+    liveness: /health
+    readiness: /ready
+  env:
+    - name: LOG_LEVEL
+      value: info
+    - name: API_KEY
+      secret: order-api-key
+  services:
+    database:
+      enabled: true
+      size: small
+    redis:
+      enabled: true
+      size: small
+    sso:
+      enabled: true
+  externalApis:
+    - api.stripe.com
+  canary:
+    enabled: true

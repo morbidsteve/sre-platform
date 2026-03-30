@@ -1,0 +1,17 @@
+---
+apiVersion: sre.io/v1alpha1
+kind: AppContract
+metadata:
+  name: email-sender
+  team: team-alpha
+spec:
+  type: worker
+  image: harbor.sre.internal/team-alpha/email-sender:v1.3.0
+  resources: small
+  env:
+    - name: SMTP_HOST
+      secret: smtp-credentials
+  services:
+    database:
+      enabled: true
+      size: small
