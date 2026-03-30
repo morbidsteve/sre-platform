@@ -1,0 +1,80 @@
+---
+# user-db — deployed via sre-deploy-app.sh
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: user-db
+  namespace: team-sock-shop
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-sock-shop
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/worker
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "user-db"
+      team: "team-sock-shop"
+      image:
+        repository: "harbor.apps.sre.example.com/team-sock-shop/user-db"
+        tag: "0.4.0"
+        pullPolicy: IfNotPresent
+      port: 27017
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      probes:
+        liveness:
+          path: "/"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env: []
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
+    persistence:
+      enabled: true
+      mountPath: "/data/db"
+      size: "5Gi"
+    ingress:
+      enabled: false
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false

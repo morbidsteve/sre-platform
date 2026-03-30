@@ -1,0 +1,65 @@
+---
+# front-end — deployed via sre-deploy-app.sh
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: front-end
+  namespace: team-sock-shop
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-sock-shop
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/web-app
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "front-end"
+      team: "team-sock-shop"
+      image:
+        repository: "harbor.apps.sre.example.com/team-sock-shop/front-end"
+        tag: "0.3.12"
+        pullPolicy: IfNotPresent
+      port: 8079
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      probes:
+        liveness:
+          path: "/"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env: []
+    ingress:
+      enabled: true
+      host: "sockshop.apps.sre.example.com"
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false
