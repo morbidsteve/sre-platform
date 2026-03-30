@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: harbor.apps.sre.example.com/platform/sre-dashboard:v5.0.74
+          image: harbor.apps.sre.example.com/platform/sre-dashboard:v5.0.75
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
