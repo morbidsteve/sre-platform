@@ -128,6 +128,10 @@ websocket:
   # - uri: /ws
   # - uri: /socket.io
 
+# -- SSO / OIDC integration --
+sso:
+  enabled: false
+
 # -- API rate limiting (Istio EnvoyFilter) --
 rateLimit:
   enabled: false

@@ -315,6 +315,17 @@
         }
       }
     },
+    "sso": {
+      "type": "object",
+      "description": "SSO / OIDC integration via Keycloak",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable SSO. Adds sre.io/sso annotation which triggers Kyverno to generate Istio JWT auth and OIDC ConfigMap."
+        }
+      }
+    },
     "rateLimit": {
       "type": "object",
       "description": "API rate limiting via Istio EnvoyFilter",

@@ -1,0 +1,32 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: no-sso-app
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/name: no-sso-app
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-alpha
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: no-sso-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: no-sso-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: app
+          image: harbor.sre.internal/team-alpha/my-app:v1.0.0
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

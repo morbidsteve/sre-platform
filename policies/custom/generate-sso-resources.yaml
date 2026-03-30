@@ -1,0 +1,176 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-sso-resources
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/policy-category: custom
+  annotations:
+    policies.kyverno.io/title: Generate SSO Resources
+    policies.kyverno.io/description: >-
+      Automatically generates Istio RequestAuthentication, AuthorizationPolicy,
+      and OIDC ConfigMap when a Deployment has the annotation sre.io/sso: "enabled".
+      This enables zero-config SSO integration for tenant applications by provisioning
+      JWT validation at the mesh level and injecting OIDC discovery configuration.
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
+    sre.io/nist-controls: "AC-2, AC-3, IA-2, IA-8"
+spec:
+  background: false
+  rules:
+    - name: generate-request-authentication
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: "*"
+              namespaceSelector:
+                matchLabels:
+                  sre.io/team: "*"
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+      preconditions:
+        all:
+          - key: "{{request.object.metadata.annotations.\"sre.io/sso\" || ''}}"
+            operator: Equals
+            value: "enabled"
+      generate:
+        synchronize: true
+        apiVersion: security.istio.io/v1
+        kind: RequestAuthentication
+        name: "{{request.object.metadata.name}}-jwt-authn"
+        namespace: "{{request.object.metadata.namespace}}"
+        data:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: sre-platform
+              sre.io/generated-by: kyverno
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: "{{request.object.metadata.labels.\"app.kubernetes.io/name\"}}"
+            jwtRules:
+              - issuer: "https://keycloak.apps.sre.example.com/realms/sre"
+                jwksUri: "https://keycloak.apps.sre.example.com/realms/sre/protocol/openid-connect/certs"
+                audiences:
+                  - "{{request.object.metadata.name}}"
+                forwardOriginalToken: true
+
+    - name: generate-authorization-policy
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: "*"
+              namespaceSelector:
+                matchLabels:
+                  sre.io/team: "*"
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+      preconditions:
+        all:
+          - key: "{{request.object.metadata.annotations.\"sre.io/sso\" || ''}}"
+            operator: Equals
+            value: "enabled"
+      generate:
+        synchronize: true
+        apiVersion: security.istio.io/v1
+        kind: AuthorizationPolicy
+        name: "{{request.object.metadata.name}}-require-jwt"
+        namespace: "{{request.object.metadata.namespace}}"
+        data:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: sre-platform
+              sre.io/generated-by: kyverno
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: "{{request.object.metadata.labels.\"app.kubernetes.io/name\"}}"
+            rules:
+              - to:
+                  - operation:
+                      paths:
+                        - /healthz
+                        - /readyz
+                        - /metrics
+                        - /livez
+              - from:
+                  - source:
+                      requestPrincipals:
+                        - "*"
+
+    - name: generate-oidc-configmap
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: "*"
+              namespaceSelector:
+                matchLabels:
+                  sre.io/team: "*"
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - monitoring
+                - logging
+      preconditions:
+        all:
+          - key: "{{request.object.metadata.annotations.\"sre.io/sso\" || ''}}"
+            operator: Equals
+            value: "enabled"
+      generate:
+        synchronize: true
+        apiVersion: v1
+        kind: ConfigMap
+        name: "{{request.object.metadata.name}}-oidc-config"
+        namespace: "{{request.object.metadata.namespace}}"
+        data:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: sre-platform
+              sre.io/generated-by: kyverno
+          data:
+            OIDC_ISSUER_URL: "https://keycloak.apps.sre.example.com/realms/sre"
+            OIDC_CLIENT_ID: "{{request.object.metadata.name}}"
+            OIDC_DISCOVERY_URL: "https://keycloak.apps.sre.example.com/realms/sre/.well-known/openid-configuration"

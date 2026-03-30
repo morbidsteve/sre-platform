@@ -1,0 +1,41 @@
+---
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: generate-sso-resources-test
+policies:
+  - policy.yaml
+resources:
+  - resource-pass.yaml
+  - resource-fail.yaml
+results:
+  - policy: generate-sso-resources
+    rule: generate-request-authentication
+    resource: sso-enabled-app
+    kind: Deployment
+    result: pass
+  - policy: generate-sso-resources
+    rule: generate-request-authentication
+    resource: no-sso-app
+    kind: Deployment
+    result: skip
+  - policy: generate-sso-resources
+    rule: generate-authorization-policy
+    resource: sso-enabled-app
+    kind: Deployment
+    result: pass
+  - policy: generate-sso-resources
+    rule: generate-authorization-policy
+    resource: no-sso-app
+    kind: Deployment
+    result: skip
+  - policy: generate-sso-resources
+    rule: generate-oidc-configmap
+    resource: sso-enabled-app
+    kind: Deployment
+    result: pass
+  - policy: generate-sso-resources
+    rule: generate-oidc-configmap
+    resource: no-sso-app
+    kind: Deployment
+    result: skip
