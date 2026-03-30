@@ -12,6 +12,7 @@
     "express": "^4.21.0",
     "express-rate-limit": "^7.5.0",
     "js-yaml": "^4.1.1",
+    "multer": "^2.1.1",
     "pg": "^8.13.1"
   }
 }
