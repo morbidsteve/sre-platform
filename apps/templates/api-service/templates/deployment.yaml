@@ -88,6 +88,11 @@ spec:
               mountPath: /tmp
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
+          {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "sre-api-service.fullname" . }}-storage-config
+          {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}

@@ -113,6 +113,18 @@ Automatically injects REDIS_URL when .Values.redis.enabled is true.
 - name: REDIS_URL
   value: {{ printf "redis://%s-redis:6379" (include "sre-lib.fullname" .) | quote }}
 {{- end }}
+{{- if and (hasKey .Values "storage") .Values.storage.enabled }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "sre-lib.fullname" . }}-storage-creds
+      key: AWS_ACCESS_KEY_ID
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "sre-lib.fullname" . }}-storage-creds
+      key: AWS_SECRET_ACCESS_KEY
+{{- end }}
 {{- end }}
 
 {{/*

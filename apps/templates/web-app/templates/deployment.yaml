@@ -98,10 +98,16 @@ spec:
               mountPath: /var/cache
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
-          {{- if .Values.sso.enabled }}
+          {{- if or .Values.sso.enabled (and (hasKey .Values "storage") .Values.storage.enabled) }}
           envFrom:
+            {{- if .Values.sso.enabled }}
             - configMapRef:
                 name: {{ include "sre-web-app.fullname" . }}-oidc-config
+            {{- end }}
+            {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
+            - configMapRef:
+                name: {{ include "sre-web-app.fullname" . }}-storage-config
+            {{- end }}
           {{- end }}
       {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}

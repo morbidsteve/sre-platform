@@ -315,6 +315,16 @@
         }
       }
     },
+    "storage": {
+      "type": "object",
+      "description": "S3-compatible object storage provisioning",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false, "description": "Enable object storage" },
+        "bucket": { "type": "string", "description": "Bucket name (defaults to <team>-<app-name>)" },
+        "endpoint": { "type": "string", "description": "S3 endpoint URL (defaults to internal MinIO)" },
+        "region": { "type": "string", "description": "Storage region" }
+      }
+    },
     "sso": {
       "type": "object",
       "description": "SSO / OIDC integration via Keycloak",

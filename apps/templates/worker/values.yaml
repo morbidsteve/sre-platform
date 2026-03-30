@@ -75,3 +75,13 @@ networkPolicy:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
+
+# -- Object storage (S3-compatible via MinIO/S3) --
+storage:
+  enabled: false
+  # Bucket name (defaults to <team>-<app-name>)
+  bucket: ""
+  # Storage endpoint (defaults to internal MinIO)
+  endpoint: ""
+  # AWS region (for S3 compatibility)
+  region: ""
