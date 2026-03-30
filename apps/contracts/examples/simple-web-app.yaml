@@ -1,0 +1,12 @@
+---
+apiVersion: sre.io/v1alpha1
+kind: AppContract
+metadata:
+  name: hello-web
+  team: team-alpha
+spec:
+  type: web-app
+  image: harbor.sre.internal/team-alpha/hello-web:v1.0.0
+  port: 3000
+  resources: small
+  ingress: hello-web.apps.sre.example.com

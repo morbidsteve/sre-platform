@@ -637,6 +637,18 @@ tasks:
       - echo "=== All tests passed ==="
 
   # ===========================================================================
+  # APP CONTRACTS
+  # ===========================================================================
+
+  deploy-app:
+    desc: Generate app deployment from an App Contract
+    cmds:
+      - scripts/generate-app.sh {{.CLI_ARGS}}
+    preconditions:
+      - sh: command -v yq
+        msg: "yq v4 is required. Install: https://github.com/mikefarah/yq#install"
+
+  # ===========================================================================
   # DOCUMENTATION
   # ===========================================================================
 

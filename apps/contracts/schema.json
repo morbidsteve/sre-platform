@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sre.io/schemas/app-contract/v1alpha1",
+  "title": "SRE App Contract",
+  "description": "Validates an SRE Platform App Contract YAML file. An App Contract declares everything the platform needs to deploy, secure, and observe an application.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "sre.io/v1alpha1",
+      "description": "API version of the App Contract schema. Must be exactly 'sre.io/v1alpha1'."
+    },
+    "kind": {
+      "const": "AppContract",
+      "description": "Resource kind. Must be exactly 'AppContract'."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Metadata identifying the application and owning team.",
+      "required": ["name", "team"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Application name in kebab-case. Must start with a lowercase letter followed by lowercase letters, digits, or hyphens."
+        },
+        "team": {
+          "type": "string",
+          "pattern": "^team-[a-z][a-z0-9-]*$",
+          "description": "Owning team name. Must start with 'team-' followed by a lowercase kebab-case identifier."
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "description": "Application specification defining type, image, resources, networking, and integrations.",
+      "required": ["type", "image", "resources"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["web-app", "api-service", "worker", "cronjob"],
+          "description": "Application workload type. Determines which Helm chart template is used: 'web-app' for HTTP services, 'api-service' for internal APIs, 'worker' for background processors, 'cronjob' for scheduled jobs."
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^harbor\\..+:.+$",
+          "not": {
+            "pattern": ":latest$"
+          },
+          "description": "Container image reference. Must start with 'harbor.' (internal registry) and include a pinned tag. The ':latest' tag is forbidden."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8080,
+          "description": "TCP port the application listens on. Must be between 1 and 65535. Defaults to 8080."
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 2,
+          "description": "Number of pod replicas. Must be between 1 and 20. Defaults to 2."
+        },
+        "resources": {
+          "type": "string",
+          "enum": ["small", "medium", "large", "custom"],
+          "description": "Resource profile for the application. Predefined sizes: 'small' (100m/128Mi), 'medium' (500m/512Mi), 'large' (1000m/1Gi). Use 'custom' to specify exact values via customResources."
+        },
+        "customResources": {
+          "type": "object",
+          "description": "Custom resource requests and limits. Required when spec.resources is 'custom', ignored otherwise.",
+          "required": ["requests", "limits"],
+          "additionalProperties": false,
+          "properties": {
+            "requests": {
+              "type": "object",
+              "description": "Minimum resources guaranteed to the container.",
+              "required": ["cpu", "memory"],
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "description": "CPU request in Kubernetes quantity format (e.g. '100m', '0.5', '1')."
+                },
+                "memory": {
+                  "type": "string",
+                  "description": "Memory request in Kubernetes quantity format (e.g. '128Mi', '1Gi')."
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "description": "Maximum resources the container may consume.",
+              "required": ["cpu", "memory"],
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "description": "CPU limit in Kubernetes quantity format (e.g. '500m', '1', '2')."
+                },
+                "memory": {
+                  "type": "string",
+                  "description": "Memory limit in Kubernetes quantity format (e.g. '512Mi', '2Gi')."
+                }
+              }
+            }
+          }
+        },
+        "ingress": {
+          "type": "string",
+          "description": "Public hostname for external access via the Istio ingress gateway (e.g. 'my-service.apps.sre.example.com'). Omit for internal-only services."
+        },
+        "probes": {
+          "type": "object",
+          "description": "Health check probe paths for Kubernetes liveness and readiness probes.",
+          "additionalProperties": false,
+          "properties": {
+            "liveness": {
+              "type": "string",
+              "description": "HTTP path for the liveness probe (e.g. '/healthz'). Kubernetes restarts the pod if this fails."
+            },
+            "readiness": {
+              "type": "string",
+              "description": "HTTP path for the readiness probe (e.g. '/readyz'). Kubernetes removes the pod from service if this fails."
+            }
+          }
+        },
+        "env": {
+          "type": "array",
+          "description": "Environment variables for the application. Each entry provides either a plain value or a reference to a secret in OpenBao (synced via External Secrets Operator).",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Environment variable name (e.g. 'LOG_LEVEL', 'DATABASE_URL')."
+              },
+              "value": {
+                "type": "string",
+                "description": "Plain-text value for the environment variable. Mutually exclusive with 'secret'."
+              },
+              "secret": {
+                "type": "string",
+                "description": "Name of the OpenBao secret to inject. The platform creates an ExternalSecret to sync this value. Mutually exclusive with 'value'."
+              }
+            },
+            "oneOf": [
+              { "required": ["value"] },
+              { "required": ["secret"] }
+            ]
+          }
+        },
+        "services": {
+          "type": "object",
+          "description": "Platform-managed backing services to provision alongside the application.",
+          "additionalProperties": false,
+          "properties": {
+            "database": {
+              "type": "object",
+              "description": "PostgreSQL database instance managed by the platform.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether to provision a PostgreSQL database for this application."
+                },
+                "size": {
+                  "type": "string",
+                  "enum": ["small", "medium", "large"],
+                  "description": "Database instance size. 'small' for dev/test, 'medium' for production, 'large' for high-throughput."
+                }
+              }
+            },
+            "redis": {
+              "type": "object",
+              "description": "Redis cache instance managed by the platform.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether to provision a Redis cache for this application."
+                },
+                "size": {
+                  "type": "string",
+                  "enum": ["small", "medium", "large"],
+                  "description": "Redis instance size. 'small' for dev/test, 'medium' for production, 'large' for high-throughput."
+                }
+              }
+            },
+            "sso": {
+              "type": "object",
+              "description": "Keycloak SSO integration for the application.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether to configure a Keycloak OIDC client and Istio RequestAuthentication for this application."
+                }
+              }
+            }
+          }
+        },
+        "externalApis": {
+          "type": "array",
+          "description": "External API hostnames that the application needs to reach. The platform creates NetworkPolicy egress rules and Istio ServiceEntry resources for each.",
+          "items": {
+            "type": "string",
+            "description": "Fully qualified domain name of an external API (e.g. 'api.stripe.com')."
+          }
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Cron expression for scheduled execution. Required when spec.type is 'cronjob', forbidden for all other types (e.g. '0 */6 * * *')."
+        },
+        "canary": {
+          "type": "object",
+          "description": "Canary deployment configuration using Istio traffic splitting.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether to enable canary deployments with progressive traffic shifting."
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resources": { "const": "custom" }
+            },
+            "required": ["resources"]
+          },
+          "then": {
+            "required": ["type", "image", "resources", "customResources"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "cronjob" }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["type", "image", "resources", "schedule"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["web-app", "api-service", "worker"] }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "not": {
+              "required": ["schedule"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
