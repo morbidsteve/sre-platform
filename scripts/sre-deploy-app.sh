@@ -697,18 +697,18 @@ if [[ "${PROBE_TYPE}" != "http" ]]; then
   }" "${APP_FILE}"
 fi
 
-# Custom resource overrides (override the preset-based resources)
+# Custom resource overrides (override the preset-based resources, quote to keep YAML strings)
 if [[ -n "${CPU_REQUEST}" ]]; then
-  sed -i "s/cpu: ${RES_REQ_CPU}/cpu: ${CPU_REQUEST}/" "${APP_FILE}"
+  sed -i "s/cpu: ${RES_REQ_CPU}/cpu: \"${CPU_REQUEST}\"/" "${APP_FILE}"
 fi
 if [[ -n "${CPU_LIMIT}" ]]; then
-  sed -i "/limits:/,/memory:/{s/cpu: ${RES_LIM_CPU}/cpu: ${CPU_LIMIT}/}" "${APP_FILE}"
+  sed -i "/limits:/,/memory:/{s/cpu: ${RES_LIM_CPU}/cpu: \"${CPU_LIMIT}\"/}" "${APP_FILE}"
 fi
 if [[ -n "${MEMORY_REQUEST}" ]]; then
-  sed -i "/requests:/,/limits:/{s/memory: ${RES_REQ_MEM}/memory: ${MEMORY_REQUEST}/}" "${APP_FILE}"
+  sed -i "/requests:/,/limits:/{s/memory: ${RES_REQ_MEM}/memory: \"${MEMORY_REQUEST}\"/}" "${APP_FILE}"
 fi
 if [[ -n "${MEMORY_LIMIT}" ]]; then
-  sed -i "/limits:/,/probes:/{s/memory: ${RES_LIM_MEM}/memory: ${MEMORY_LIMIT}/}" "${APP_FILE}"
+  sed -i "/limits:/,/probes:/{s/memory: ${RES_LIM_MEM}/memory: \"${MEMORY_LIMIT}\"/}" "${APP_FILE}"
 fi
 
 # Ingress
