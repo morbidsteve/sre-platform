@@ -29,10 +29,11 @@ spec:
         retryOn: "5xx,reset,connect-failure"
 
 ---
-# Route /oauth2/* paths on ALL service hosts to OAuth2 Proxy
+# Route /oauth2/* paths on ALL hosts to OAuth2 Proxy
 # Enables the SSO sign-in flow: when ext-authz returns the sign-in page,
 # clicking "Sign in" sends the user to /oauth2/start on the current host.
-# This VirtualService ensures those requests route to oauth2-proxy, not the app.
+# Uses wildcard to cover ALL apps (platform + tenant) automatically.
+# No manual host registration needed when deploying new apps.
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
@@ -43,26 +44,10 @@ metadata:
   annotations:
     sre.io/nist-controls: "AC-2, AC-3, IA-2, IA-8"
 spec:
-  # All service hosts that need /oauth2/* routing for SSO
-  # When deploying new apps, the dashboard auto-adds them via kubectl patch
+  # Wildcard matches ALL *.apps.sre.example.com hosts
+  # Every app gets /oauth2/* paths routed to oauth2-proxy automatically
   hosts:
-    - "dashboard.${SRE_DOMAIN}"
-    - "grafana.${SRE_DOMAIN}"
-    - "prometheus.${SRE_DOMAIN}"
-    - "alertmanager.${SRE_DOMAIN}"
-    - "harbor.${SRE_DOMAIN}"
-    - "neuvector.${SRE_DOMAIN}"
-    - "openbao.${SRE_DOMAIN}"
-    - "portal.${SRE_DOMAIN}"
-    - "dsop.${SRE_DOMAIN}"
-    - "compliance.${SRE_DOMAIN}"
-    - "statusboard.${SRE_DOMAIN}"
-    - "wireshark.${SRE_DOMAIN}"
-    - "admin-tools.${SRE_DOMAIN}"
-    - "intel.${SRE_DOMAIN}"
-    - "keystone.${SRE_DOMAIN}"
-    - "nginx-demo.${SRE_DOMAIN}"
-    - "ws.${SRE_DOMAIN}"
+    - "*.${SRE_DOMAIN}"
   gateways:
     - istio-system/main
   http:

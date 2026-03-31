@@ -1,15 +1,15 @@
 ---
-# AuthorizationPolicy — require ext-authz (OAuth2 Proxy) for PLATFORM UIs only
-# Tenant apps are NOT behind platform SSO. They handle their own auth.
+# AuthorizationPolicy — require ext-authz (OAuth2 Proxy) for ALL ingress traffic
+# ATO/CMMC/FedRAMP compliance: every app must authenticate through Keycloak SSO.
 #
 # NIST AC-3 (Access Enforcement), IA-2 (Identification and Authentication)
 #
-# Only these platform UIs require SSO login:
-#   - SRE Dashboard, Portal, DSOP Wizard, Grafana, Prometheus, Alertmanager
-# Excluded from SSO:
-#   - Keycloak (IS the auth provider)
-#   - Harbor, NeuVector (have their own auth)
-#   - All tenant apps (team-* namespaces)
+# Exemptions (notHosts):
+#   - Keycloak: IS the identity provider — can't auth-gate the auth provider
+#   - Harbor: Docker/OCI protocol uses Bearer tokens, not browser cookies
+#
+# All other traffic (platform UIs AND tenant apps) goes through OAuth2 proxy.
+# After Keycloak login, the auth cookie (.apps.sre.example.com) works for all apps.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -29,25 +29,25 @@ spec:
   rules:
     - to:
         - operation:
-            # Only SSO-gate these specific platform UI hosts
-            hosts:
-              - "dashboard.${SRE_DOMAIN}"
-              - "portal.${SRE_DOMAIN}"
-              - "dsop.${SRE_DOMAIN}"
-              - "grafana.${SRE_DOMAIN}"
-              - "prometheus.${SRE_DOMAIN}"
-              - "alertmanager.${SRE_DOMAIN}"
-              - "openbao.${SRE_DOMAIN}"
             notPaths:
               - /healthz
               - /health
               - /ready
+              - /readyz
+              - /livez
+              - /metrics
               - /oauth2/*
+              - /ui/vault/auth/oidc/oidc/callback*
+            notHosts:
+              # Keycloak — IS the identity provider (auth-gating it = infinite redirect)
+              - "keycloak.${SRE_DOMAIN}"
+              # Harbor — Docker registry API uses Bearer tokens, not browser cookies
+              - "harbor.${SRE_DOMAIN}"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
-# CUSTOM is evaluated FIRST — unauthenticated requests to platform UIs are
-# blocked before reaching this. Tenant apps bypass CUSTOM entirely.
+# CUSTOM is evaluated FIRST — unauthenticated requests are blocked.
+# This catch-all ALLOW ensures authenticated requests pass through.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
