@@ -17,6 +17,15 @@ spec:
       targetPort: http
       protocol: TCP
       name: {{ if and .Values.ingress (.Values.ingress.backendProtocol | default "" | eq "HTTPS") }}tcp{{ else }}http{{ end }}
+      {{- if and (hasKey .Values "appProtocol") (ne .Values.appProtocol "http") }}
+      appProtocol: {{ .Values.appProtocol }}
+      {{- end }}
+    {{- range .Values.extraPorts | default list }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: {{ .protocol | default "TCP" }}
+    {{- end }}
   selector:
     {{- include "sre-lib.selectorLabels" . | nindent 4 }}
 {{- end -}}

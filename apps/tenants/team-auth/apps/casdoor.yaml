@@ -1,0 +1,81 @@
+---
+# casdoor — deployed via sre-deploy-app.sh
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: casdoor
+  namespace: team-auth
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-auth
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/web-app
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "casdoor"
+      team: "team-auth"
+      image:
+        repository: "harbor.apps.sre.example.com/team-auth/casdoor"
+        tag: "v1.700.0"
+        pullPolicy: IfNotPresent
+      port: 8000
+      replicas: 1
+      resources:
+        requests:
+          cpu: 250m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      probes:
+        liveness:
+          path: "/"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env:
+        - name: "RUNNING_IN_DOCKER"
+          value: "true"
+    startupProbe:
+      enabled: true
+      path: "/api/health"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 30
+    extraVolumeMounts:
+      - name: app-config
+        mountPath: "/conf/app.conf"
+        subPath: "app.conf"
+    extraVolumes:
+      - name: app-config
+        configMap:
+          name: casdoor-config
+    ingress:
+      enabled: true
+      host: "casdoor.apps.sre.example.com"
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false

@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: casdoor-config
+  namespace: team-auth
+data:
+  app.conf: |
+    appname = casdoor
+    httpport = 8000
+    runmode = prod
+    SessionOn = true
+    copyrequestbody = true
+    driverName = postgres
+    dataSourceName = "user=casdoor password=changeme host=casdoor-db port=5432 sslmode=disable dbname=casdoor"

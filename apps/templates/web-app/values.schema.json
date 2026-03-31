@@ -90,9 +90,9 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "enum": ["http", "tcp"],
+                  "enum": ["http", "tcp", "grpc"],
                   "default": "http",
-                  "description": "Probe type: http (httpGet) or tcp (tcpSocket)"
+                  "description": "Probe type: http (httpGet), tcp (tcpSocket), or grpc"
                 },
                 "path": {
                   "type": "string",
@@ -117,9 +117,9 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "enum": ["http", "tcp"],
+                  "enum": ["http", "tcp", "grpc"],
                   "default": "http",
-                  "description": "Probe type: http (httpGet) or tcp (tcpSocket)"
+                  "description": "Probe type: http (httpGet), tcp (tcpSocket), or grpc"
                 },
                 "path": {
                   "type": "string",
@@ -168,6 +168,12 @@
       "description": "Startup probe for slow-starting apps (JVM, Django, Rails)",
       "properties": {
         "enabled": { "type": "boolean" },
+        "type": {
+          "type": "string",
+          "enum": ["http", "tcp", "grpc"],
+          "default": "http",
+          "description": "Probe type: http (httpGet), tcp (tcpSocket), or grpc"
+        },
         "path": { "type": "string" },
         "initialDelaySeconds": { "type": "integer", "minimum": 0 },
         "periodSeconds": { "type": "integer", "minimum": 1 },
@@ -410,6 +416,38 @@
           "description": "Maximum burst size (token bucket max)"
         }
       }
+    },
+    "envFrom": {
+      "type": "array",
+      "description": "Extra envFrom sources (secretRef/configMapRef) to mount as environment variables",
+      "items": {
+        "type": "object"
+      }
+    },
+    "extraPorts": {
+      "type": "array",
+      "description": "Additional Service ports beyond app.port",
+      "items": {
+        "type": "object",
+        "required": ["name", "port", "targetPort"],
+        "properties": {
+          "name": { "type": "string", "description": "Port name" },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "targetPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "protocol": { "type": "string", "enum": ["TCP", "UDP", "SCTP"], "default": "TCP" }
+        }
+      }
+    },
+    "extraVolumes": {
+      "type": "array",
+      "description": "Additional volumes (ConfigMap, Secret, etc.)",
+      "items": {
+        "type": "object"
+      }
+    },
+    "appProtocol": {
+      "type": "string",
+      "description": "Application protocol for the main Service port (e.g. grpc, tcp). Empty defaults to http."
     },
     "podSecurityContext": {
       "type": "object",

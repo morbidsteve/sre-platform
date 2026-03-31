@@ -235,6 +235,20 @@
         "region": { "type": "string", "description": "Storage region" }
       }
     },
+    "envFrom": {
+      "type": "array",
+      "description": "Extra envFrom sources (secretRef/configMapRef) to mount as environment variables",
+      "items": {
+        "type": "object"
+      }
+    },
+    "extraVolumes": {
+      "type": "array",
+      "description": "Additional volumes (ConfigMap, Secret, etc.)",
+      "items": {
+        "type": "object"
+      }
+    },
     "podSecurityContext": {
       "type": "object",
       "description": "Override pod-level security context. Defaults to restricted PSS if not set."

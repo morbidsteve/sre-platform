@@ -158,3 +158,24 @@ persistence:
 extraVolumeMounts: []
 # - name: data
 #   mountPath: /app/data
+
+# -- Extra environment sources (K8s Secrets/ConfigMaps mounted as env vars) --
+envFrom: []
+# - secretRef:
+#     name: my-app-credentials
+
+# -- Extra Service ports (beyond app.port) --
+extraPorts: []
+# - name: grpc
+#   port: 9090
+#   targetPort: 9090
+#   protocol: TCP
+
+# -- Extra volumes (non-emptyDir, e.g. ConfigMap mounts) --
+extraVolumes: []
+# - name: app-config
+#   configMap:
+#     name: my-app-config
+
+# -- App protocol for Service port (http, grpc, tcp) --
+appProtocol: ""

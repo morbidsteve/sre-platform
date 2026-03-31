@@ -1,0 +1,86 @@
+---
+# ollama — deployed via sre-deploy-app.sh
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ollama
+  namespace: team-ai
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-ai
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/api-service
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "ollama"
+      team: "team-ai"
+      image:
+        repository: "harbor.apps.sre.example.com/team-ai/ollama"
+        tag: "v0.5.7"
+        pullPolicy: IfNotPresent
+      port: 11434
+      replicas: 1
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+      probes:
+        liveness:
+          path: "/api/tags"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/api/tags"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env: []
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
+    startupProbe:
+      enabled: true
+      path: "/api/tags"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 30
+    persistence:
+      enabled: true
+      mountPath: "/root/.ollama"
+      size: "100Gi"
+    ingress:
+      enabled: false
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false

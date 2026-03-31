@@ -177,6 +177,29 @@ extraVolumeMounts: []
 # - name: data
 #   mountPath: /app/data
 
+# -- Extra environment sources (K8s Secrets/ConfigMaps mounted as env vars) --
+envFrom: []
+# - secretRef:
+#     name: my-app-credentials
+# - configMapRef:
+#     name: my-app-config
+
+# -- Extra Service ports (beyond app.port) --
+extraPorts: []
+# - name: ssh
+#   port: 22
+#   targetPort: 22
+#   protocol: TCP
+
+# -- Extra volumes (non-emptyDir, e.g. ConfigMap mounts) --
+extraVolumes: []
+# - name: app-config
+#   configMap:
+#     name: my-app-config
+
+# -- App protocol for Service port (http, grpc, tcp) --
+appProtocol: ""
+
 # -- API rate limiting (Istio EnvoyFilter) --
 rateLimit:
   enabled: false

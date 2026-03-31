@@ -59,10 +59,15 @@ spec:
             periodSeconds: {{ .Values.app.probes.readiness.periodSeconds }}
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
-          {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
+          {{- if or (and (hasKey .Values "storage") .Values.storage.enabled) .Values.envFrom }}
           envFrom:
+            {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
             - configMapRef:
                 name: {{ include "sre-worker.fullname" . }}-storage-config
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           volumeMounts:
             - name: tmp
