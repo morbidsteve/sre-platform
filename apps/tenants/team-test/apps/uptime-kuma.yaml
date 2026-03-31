@@ -1,4 +1,5 @@
 ---
+# uptime-kuma — deployed via sre-deploy-app.sh
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -12,7 +13,6 @@ spec:
   chart:
     spec:
       chart: ./apps/templates/web-app
-      reconcileStrategy: Revision
       sourceRef:
         kind: GitRepository
         name: flux-system
@@ -27,51 +27,34 @@ spec:
       retries: 3
   values:
     app:
-      name: uptime-kuma
-      team: team-test
+      name: "uptime-kuma"
+      team: "team-test"
       image:
-        repository: harbor.apps.sre.example.com/team-test/uptime-kuma
-        tag: v1.0.0
+        repository: "harbor.apps.sre.example.com/team-test/uptime-kuma"
+        tag: "v1"
         pullPolicy: IfNotPresent
       port: 3001
       replicas: 1
       resources:
         requests:
-          cpu: 100m
-          memory: 128Mi
+          cpu: 50m
+          memory: 64Mi
         limits:
-          cpu: 500m
-          memory: 512Mi
+          cpu: 200m
+          memory: 256Mi
       probes:
         liveness:
-          path: /
-          initialDelaySeconds: 15
+          path: "/"
+          initialDelaySeconds: 10
           periodSeconds: 10
         readiness:
-          path: /
+          path: "/"
           initialDelaySeconds: 5
           periodSeconds: 5
       env: []
-    ingress:
-      enabled: true
-      host: uptime-kuma.apps.sre.example.com
-    autoscaling:
-      enabled: false
-    networkPolicy:
-      enabled: true
-    podDisruptionBudget:
-      enabled: false
-    serviceMonitor:
-      enabled: false
-    websocket:
-      enabled: true
-      routes:
-        - uri: /socket.io
-    # Security overrides: uptime-kuma runs as root and needs writable /app/data
     podSecurityContext:
       runAsNonRoot: false
       runAsUser: 0
-      fsGroup: 0
       seccompProfile:
         type: RuntimeDefault
     containerSecurityContext:
@@ -81,9 +64,21 @@ spec:
       capabilities:
         drop:
           - ALL
-    extraVolumeMounts:
-      - name: data
-        mountPath: /app/data
-    extraVolumes:
-      - name: data
-        emptyDir: {}
+        add:
+          - SETGID
+          - SETUID
+    persistence:
+      enabled: true
+      mountPath: "/app/data"
+      size: "2Gi"
+    ingress:
+      enabled: true
+      host: "uptime-kuma.apps.sre.example.com"
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en-US" data-theme="gitea-auto">
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Installation - Gitea: Git with a cup of tea</title>
+	
+	<meta name="author" content="Gitea - Git with a cup of tea">
+	<meta name="description" content="Gitea (Git with a cup of tea) is a painless self-hosted Git service written in Go">
+	<meta name="keywords" content="go,git,self-hosted,gitea">
+	<meta name="referrer" content="no-referrer">
+
+
+	<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+	<link rel="alternate icon" href="/assets/img/favicon.png" type="image/png">
+	
+<script>
+	
+	window.addEventListener('error', function(e) {window._globalHandlerErrors=window._globalHandlerErrors||[]; window._globalHandlerErrors.push(e);});
+	window.addEventListener('unhandledrejection', function(e) {window._globalHandlerErrors=window._globalHandlerErrors||[]; window._globalHandlerErrors.push(e);});
+	window.config = {
+		appUrl: 'http:\/\/localhost:3000\/',
+		appSubUrl: '',
+		assetVersionEncoded: encodeURIComponent('1.22.6'), 
+		assetUrlPrefix: '\/assets',
+		runModeIsProd:  true ,
+		customEmojis: {"codeberg":":codeberg:","git":":git:","gitea":":gitea:","github":":github:","gitlab":":gitlab:","gogs":":gogs:"},
+		csrfToken: '',
+		pageData:  null ,
+		notificationSettings: {"EventSourceUpdateTime":10000,"MaxTimeout":60000,"MinTimeout":10000,"TimeoutStep":10000}, 
+		enableTimeTracking:  true ,
+		
+		mermaidMaxSourceCharacters:  5000 ,
+		
+		i18n: {
+			copy_success: "Copied!",
+			copy_error: "Copy failed",
+			error_occurred: "An error occurred",
+			network_error: "Network error",
+			remove_label_str: "Remove item \"%s\"",
+			modal_confirm: "Confirm",
+			modal_cancel: "Cancel",
+			more_items: "More items",
+		},
+	};
+	
+	window.config.pageData = window.config.pageData || {};
+</script>
+<script src="/assets/js/webcomponents.js?v=1.22.6"></script>
+
+	<noscript>
+		<style>
+			.dropdown:hover > .menu { display: block; }
+			.ui.secondary.menu .dropdown.item > .menu { margin-top: 0; }
+		</style>
+	</noscript>
+	
+	<meta property="og:title" content="Gitea: Git with a cup of tea">
+	<meta property="og:type" content="website">
+	<meta property="og:image" content="/assets/img/logo.png">
+	<meta property="og:url" content="http://localhost:3000/">
+	<meta property="og:description" content="Gitea (Git with a cup of tea) is a painless self-hosted Git service written in Go">
+
+<meta property="og:site_name" content="Gitea: Git with a cup of tea">
+
+	<link rel="stylesheet" href="/assets/css/index.css?v=1.22.6">
+<link rel="stylesheet" href="/assets/css/theme-gitea-auto.css?v=1.22.6">
+
+	
+</head>
+<body hx-headers='{"x-csrf-token": ""}' hx-swap="outerHTML" hx-ext="morph" hx-push-url="false">
+	
+
+	<div class="full height">
+		<noscript>This website requires JavaScript.</noscript>
+
+		
+
+		
+
+
+
+<div role="main" aria-label="Installation" class="page-content install">
+	<div class="ui grid install-config-container">
+		<div class="sixteen wide center aligned centered column">
+			<h3 class="ui top attached header">
+				Initial Configuration
+			</h3>
+			<div class="ui attached segment">
+				
+
+
+
+
+
+				<p>If you run Gitea inside Docker, please read the <a target="_blank" rel="noopener noreferrer" href="https://docs.gitea.com/installation/install-with-docker">documentation</a> before changing any settings.</p>
+
+				<form class="ui form" action="/" method="post">
+					
+					<h4 class="ui dividing header">Database Settings</h4>
+					<p>Gitea requires MySQL, PostgreSQL, MSSQL, SQLite3 or TiDB (MySQL protocol).</p>
+					<div class="inline required field ">
+						<label>Database Type</label>
+						<div class="ui selection database type dropdown">
+							<input type="hidden" id="db_type" name="db_type" value="sqlite3">
+							<div class="text">sqlite3</div>
+							<svg viewBox="0 0 16 16" class="dropdown icon svg octicon-triangle-down" aria-hidden="true" width="14" height="14"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427"/></svg>
+							<div class="menu">
+								
+									<div class="item" data-value="mysql">MySQL</div>
+								
+									<div class="item" data-value="postgres">PostgreSQL</div>
+								
+									<div class="item" data-value="mssql">MSSQL</div>
+								
+									<div class="item" data-value="sqlite3">SQLite3</div>
+								
+							</div>
+						</div>
+					</div>
+
+					<div class="tw-mt-4 tw-hidden" data-db-setting-for="common-host">
+						<div class="inline required field ">
+							<label for="db_host">Host</label>
+							<input id="db_host" name="db_host" value="localhost:3306">
+						</div>
+						<div class="inline required field ">
+							<label for="db_user">Username</label>
+							<input id="db_user" name="db_user" value="root">
+						</div>
+						<div class="inline required field ">
+							<label for="db_passwd">Password</label>
+							<input id="db_passwd" name="db_passwd" type="password" value="">
+						</div>
+						<div class="inline required field ">
+							<label for="db_name">Database Name</label>
+							<input id="db_name" name="db_name" value="gitea">
+						</div>
+					</div>
+
+					<div class="tw-mt-4 tw-hidden" data-db-setting-for="postgres">
+						<div class="inline required field">
+							<label>SSL</label>
+							<div class="ui selection database type dropdown">
+								<input type="hidden" name="ssl_mode" value="disable">
+								<div class="default text">disable</div>
+								<svg viewBox="0 0 16 16" class="dropdown icon svg octicon-triangle-down" aria-hidden="true" width="14" height="14"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427"/></svg>
+								<div class="menu">
+									<div class="item" data-value="disable">Disable</div>
+									<div class="item" data-value="require">Require</div>
+									<div class="item" data-value="verify-full">Verify Full</div>
+								</div>
+							</div>
+						</div>
+						<div class="inline field ">
+							<label for="db_schema">Schema</label>
+							<input id="db_schema" name="db_schema" value="">
+							<span class="help">Leave blank for database default ("public").</span>
+						</div>
+					</div>
+
+					<div class="tw-mt-4 tw-hidden" data-db-setting-for="sqlite3">
+						<div class="inline required field ">
+							<label for="db_path">Path</label>
+							<input id="db_path" name="db_path" value="/var/lib/gitea/data/gitea.db">
+							<span class="help">File path for the SQLite3 database.<br>Enter an absolute path if you run Gitea as a service.</span>
+						</div>
+					</div>
+
+					
+
+					
+					<h4 class="ui dividing header">General Settings</h4>
+					<div class="inline required field ">
+						<label for="app_name">Site Title</label>
+						<input id="app_name" name="app_name" value="Gitea: Git with a cup of tea" required>
+						<span class="help">You can enter your company name here.</span>
+					</div>
+					<div class="inline required field ">
+						<label for="repo_root_path">Repository Root Path</label>
+						<input id="repo_root_path" name="repo_root_path" value="/var/lib/gitea/git/repositories" required>
+						<span class="help">Remote Git repositories will be saved to this directory.</span>
+					</div>
+					<div class="inline field ">
+						<label for="lfs_root_path">Git LFS Root Path</label>
+						<input id="lfs_root_path" name="lfs_root_path" value="/var/lib/gitea/git/lfs">
+						<span class="help">Files tracked by Git LFS will be stored in this directory. Leave empty to disable.</span>
+					</div>
+					<div class="inline required field ">
+						<label for="run_user">Run As Username</label>
+						<input id="run_user" name="run_user" value="git" readonly>
+						<span class="help">The operating system username that Gitea runs as. Note that this user must have access to the repository root path.</span>
+					</div>
+					<div class="inline required field">
+						<label for="domain">Server Domain</label>
+						<input id="domain" name="domain" value="localhost" placeholder="demo.gitea.com" required>
+						<span class="help">Domain or host address for the server.</span>
+					</div>
+					<div class="inline field">
+						<label for="ssh_port">SSH Server Port</label>
+						<input id="ssh_port" name="ssh_port" value="2222">
+						<span class="help">Port number your SSH server listens on. Leave empty to disable.</span>
+					</div>
+					<div class="inline required field">
+						<label for="http_port">Gitea HTTP Listen Port</label>
+						<input id="http_port" name="http_port" value="3000" required>
+						<span class="help">Port number the Giteas web server will listen on.</span>
+					</div>
+					<div class="inline required field">
+						<label for="app_url">Gitea Base URL</label>
+						<input id="app_url" name="app_url" value="http://localhost:3000/" placeholder="https://demo.gitea.com" required>
+						<span class="help">Base address for HTTP(S) clone URLs and email notifications.</span>
+					</div>
+					<div class="inline required field">
+						<label for="log_root_path">Log Path</label>
+						<input id="log_root_path" name="log_root_path" value="/var/lib/gitea/data/log" placeholder="log" required>
+						<span class="help">Log files will be written to this directory.</span>
+					</div>
+					<div class="inline field">
+						<div class="ui checkbox">
+							<label>Enable Update Checker</label>
+							<input name="enable_update_checker" type="checkbox">
+						</div>
+						<span class="help">Checks for new version releases periodically by connecting to gitea.io.</span>
+					</div>
+
+					
+					<h4 class="ui dividing header">Optional Settings</h4>
+					<div>
+						
+						<details class="optional field">
+							<summary class="right-content tw-py-2">
+								Email Settings
+							</summary>
+							<div class="inline field">
+								<label for="smtp_addr">SMTP Host</label>
+								<input id="smtp_addr" name="smtp_addr" value="">
+							</div>
+							<div class="inline field">
+								<label for="smtp_port">SMTP Port</label>
+								<input id="smtp_port" name="smtp_port" value="">
+							</div>
+							<div class="inline field ">
+								<label for="smtp_from">Send Email As</label>
+								<input id="smtp_from" name="smtp_from" value="">
+								<span class="help">Email address Gitea will use. Enter a plain email address or use the &#34;Name&#34; &lt;email@example.com&gt; format.</span>
+							</div>
+							<div class="inline field ">
+								<label for="smtp_user">SMTP Username</label>
+								<input id="smtp_user" name="smtp_user" value="">
+							</div>
+							<div class="inline field">
+								<label for="smtp_passwd">SMTP Password</label>
+								<input id="smtp_passwd" name="smtp_passwd" type="password" value="">
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox">
+									<label>Require Email Confirmation to Register</label>
+									<input name="register_confirm" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox">
+									<label>Enable Email Notifications</label>
+									<input name="mail_notify" type="checkbox" >
+								</div>
+							</div>
+						</details>
+
+						
+						<details class="optional field">
+							<summary class="right-content tw-py-2">
+								Server and Third-Party Service Settings
+							</summary>
+							<div class="inline field">
+								<div class="ui checkbox" id="offline-mode">
+									<label data-tooltip-content="Disable third-party content delivery networks and serve all resources locally.">Enable Local Mode</label>
+									<input name="offline_mode" type="checkbox" checked>
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="disable-gravatar">
+									<label data-tooltip-content="Disable Gravatar and third-party avatar sources. A default avatar will be used unless a user locally uploads an avatar.">Disable Gravatar</label>
+									<input name="disable_gravatar" type="checkbox" checked>
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="federated-avatar-lookup">
+									<label data-tooltip-content="Enable federated avatar lookup using Libravatar.">Enable Federated Avatars</label>
+									<input name="enable_federated_avatar" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="enable-openid-signin">
+									<label data-tooltip-content="Enable user sign-in via OpenID.">Enable OpenID Sign-In</label>
+									<input name="enable_open_id_sign_in" type="checkbox" checked>
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="disable-registration">
+									<label data-tooltip-content="Disable user self-registration. Only administrators will be able to create new user accounts.">Disable Self-Registration</label>
+									<input name="disable_registration" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="allow-only-external-registration">
+									<label data-tooltip-content="Allow Registration Only Through External Services">Allow Registration Only Through External Services</label>
+									<input name="allow_only_external_registration" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="enable-openid-signup">
+									<label data-tooltip-content="Enable OpenID-based user self-registration.">Enable OpenID Self-Registration</label>
+									<input name="enable_open_id_sign_up" type="checkbox" checked>
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox" id="enable-captcha">
+									<label data-tooltip-content="Require a CAPTCHA for user self-registration.">Enable registration CAPTCHA</label>
+									<input name="enable_captcha" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox">
+									<label data-tooltip-content="Limit page access to signed-in users. Visitors will only see the sign-in and registration pages.">Require Sign-In to View Pages</label>
+									<input name="require_sign_in_view" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox">
+									<label data-tooltip-content="Hide email addresses of new user accounts by default.">Hide Email Addresses by Default</label>
+									<input name="default_keep_email_private" type="checkbox" >
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox">
+									<label data-tooltip-content="Allow new user accounts to create organizations by default.">Allow Creation of Organizations by Default</label>
+									<input name="default_allow_create_organization" type="checkbox" checked>
+								</div>
+							</div>
+							<div class="inline field">
+								<div class="ui checkbox">
+									<label data-tooltip-content="Enable time tracking for new repositories by default.">Enable Time Tracking by Default</label>
+									<input name="default_enable_timetracking" type="checkbox" checked>
+								</div>
+							</div>
+							<div class="inline field">
+								<label for="no_reply_address">Hidden Email Domain</label>
+								<input id="_no_reply_address" name="no_reply_address" value="noreply.localhost">
+								<span class="help">Domain name for users with a hidden email address. For example, the username 'joe' will be logged in Git as 'joe@noreply.example.org' if the hidden email domain is set to 'noreply.example.org'.</span>
+							</div>
+							<div class="inline field">
+								<label for="password_algorithm">Password Hash Algorithm</label>
+								<div class="ui selection dropdown">
+									<input id="password_algorithm" type="hidden" name="password_algorithm" value="pbkdf2">
+									<div class="text">pbkdf2</div>
+									<svg viewBox="0 0 16 16" class="dropdown icon svg octicon-triangle-down" aria-hidden="true" width="14" height="14"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427"/></svg>
+									<div class="menu">
+										
+											<div class="item" data-value="pbkdf2">pbkdf2</div>
+										
+											<div class="item" data-value="argon2">argon2</div>
+										
+											<div class="item" data-value="bcrypt">bcrypt</div>
+										
+											<div class="item" data-value="scrypt">scrypt</div>
+										
+											<div class="item" data-value="pbkdf2_hi">pbkdf2_hi</div>
+										
+									</div>
+								</div>
+								<span class="help">Set the password hashing algorithm. Algorithms have differing requirements and strength. The argon2 algorithm is rather secure but uses a lot of memory and may be inappropriate for small systems.</span>
+							</div>
+						</details>
+
+						
+						<details class="optional field">
+							<summary class="right-content tw-py-2">
+								Administrator Account Settings
+							</summary>
+							<p class="center">Creating an administrator account is optional. The first registered user will automatically become an administrator.</p>
+							<div class="inline field ">
+								<label for="admin_name">Administrator Username</label>
+								<input id="admin_name" name="admin_name" value="">
+							</div>
+							<div class="inline field ">
+								<label for="admin_email">Email Address</label>
+								<input id="admin_email" name="admin_email" type="email" value="">
+							</div>
+							<div class="inline field ">
+								<label for="admin_passwd">Password</label>
+								<input id="admin_passwd" name="admin_passwd" type="password" autocomplete="new-password" value="">
+							</div>
+							<div class="inline field ">
+								<label for="admin_confirm_passwd">Confirm Password</label>
+								<input id="admin_confirm_passwd" name="admin_confirm_passwd" autocomplete="new-password" type="password" value="">
+							</div>
+						</details>
+					</div>
+
+					<div class="divider"></div>
+
+					
+
+					<div class="inline field">
+						<div class="right-content">
+							These configuration options will be written into: /etc/gitea/app.ini
+						</div>
+						<div class="tw-mt-4 tw-mb-2 tw-text-center">
+							<button class="ui primary button">Install Gitea</button>
+						</div>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+</div>
+<img class="tw-hidden" src="/assets/img/loading.png">
+
+
+	
+
+	</div>
+
+	
+
+	<footer class="page-footer" role="group" aria-label="Footer">
+	<div class="left-links" role="contentinfo" aria-label="About Software">
+		
+			<a target="_blank" rel="noopener noreferrer" href="https://about.gitea.com">Powered by Gitea</a>
+		
+		
+			Version:
+			
+				1.22.6
+			
+		
+		
+			Page: <strong>1ms</strong>
+			Template: <strong>1ms</strong>
+		
+	</div>
+	<div class="right-links" role="group" aria-label="Links">
+		<div class="ui dropdown upward language">
+			<span class="flex-text-inline"><svg viewBox="0 0 16 16" class="svg octicon-globe" aria-hidden="true" width="14" height="14"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0M5.78 8.75a9.64 9.64 0 0 0 1.363 4.177q.383.64.857 1.215c.245-.296.551-.705.857-1.215A9.64 9.64 0 0 0 10.22 8.75Zm4.44-1.5a9.64 9.64 0 0 0-1.363-4.177c-.307-.51-.612-.919-.857-1.215a10 10 0 0 0-.857 1.215A9.64 9.64 0 0 0 5.78 7.25Zm-5.944 1.5H1.543a6.51 6.51 0 0 0 4.666 5.5q-.184-.271-.352-.552c-.715-1.192-1.437-2.874-1.581-4.948m-2.733-1.5h2.733c.144-2.074.866-3.756 1.58-4.948q.18-.295.353-.552a6.51 6.51 0 0 0-4.666 5.5m10.181 1.5c-.144 2.074-.866 3.756-1.58 4.948q-.18.296-.353.552a6.51 6.51 0 0 0 4.666-5.5Zm2.733-1.5a6.51 6.51 0 0 0-4.666-5.5q.184.272.353.552c.714 1.192 1.436 2.874 1.58 4.948Z"/></svg> English</span>
+			<div class="menu language-menu">
+				
+					<a lang="id-ID" data-url="/?lang=id-ID" class="item ">Bahasa Indonesia</a>
+				
+					<a lang="de-DE" data-url="/?lang=de-DE" class="item ">Deutsch</a>
+				
+					<a lang="en-US" data-url="/?lang=en-US" class="item active selected">English</a>
+				
+					<a lang="es-ES" data-url="/?lang=es-ES" class="item ">Español</a>
+				
+					<a lang="fr-FR" data-url="/?lang=fr-FR" class="item ">Français</a>
+				
+					<a lang="it-IT" data-url="/?lang=it-IT" class="item ">Italiano</a>
+				
+					<a lang="lv-LV" data-url="/?lang=lv-LV" class="item ">Latviešu</a>
+				
+					<a lang="hu-HU" data-url="/?lang=hu-HU" class="item ">Magyar nyelv</a>
+				
+					<a lang="nl-NL" data-url="/?lang=nl-NL" class="item ">Nederlands</a>
+				
+					<a lang="pl-PL" data-url="/?lang=pl-PL" class="item ">Polski</a>
+				
+					<a lang="pt-PT" data-url="/?lang=pt-PT" class="item ">Português de Portugal</a>
+				
+					<a lang="pt-BR" data-url="/?lang=pt-BR" class="item ">Português do Brasil</a>
+				
+					<a lang="fi-FI" data-url="/?lang=fi-FI" class="item ">Suomi</a>
+				
+					<a lang="sv-SE" data-url="/?lang=sv-SE" class="item ">Svenska</a>
+				
+					<a lang="tr-TR" data-url="/?lang=tr-TR" class="item ">Türkçe</a>
+				
+					<a lang="cs-CZ" data-url="/?lang=cs-CZ" class="item ">Čeština</a>
+				
+					<a lang="el-GR" data-url="/?lang=el-GR" class="item ">Ελληνικά</a>
+				
+					<a lang="bg-BG" data-url="/?lang=bg-BG" class="item ">Български</a>
+				
+					<a lang="ru-RU" data-url="/?lang=ru-RU" class="item ">Русский</a>
+				
+					<a lang="uk-UA" data-url="/?lang=uk-UA" class="item ">Українська</a>
+				
+					<a lang="fa-IR" data-url="/?lang=fa-IR" class="item ">فارسی</a>
+				
+					<a lang="ml-IN" data-url="/?lang=ml-IN" class="item ">മലയാളം</a>
+				
+					<a lang="ja-JP" data-url="/?lang=ja-JP" class="item ">日本語</a>
+				
+					<a lang="zh-CN" data-url="/?lang=zh-CN" class="item ">简体中文</a>
+				
+					<a lang="zh-TW" data-url="/?lang=zh-TW" class="item ">繁體中文（台灣）</a>
+				
+					<a lang="zh-HK" data-url="/?lang=zh-HK" class="item ">繁體中文（香港）</a>
+				
+					<a lang="ko-KR" data-url="/?lang=ko-KR" class="item ">한국어</a>
+				
+			</div>
+		</div>
+		<a href="/assets/licenses.txt">Licenses</a>
+		<a href="/api/swagger">API</a>
+		
+	</div>
+</footer>
+
+
+	<script src="/assets/js/index.js?v=1.22.6" onerror="alert('Failed to load asset files from ' + this.src + '. Please make sure the asset files can be accessed.')"></script>
+
+	
+</body>
+</html>
+

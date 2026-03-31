@@ -43,6 +43,11 @@ spec:
               - "harbor.${SRE_DOMAIN}"
               # NeuVector — has its own auth system (OIDC configured separately)
               - "neuvector.${SRE_DOMAIN}"
+              # Tenant applications — handle their own auth (not behind platform SSO)
+              # Apps deployed to team-* namespaces bypass ext-authz
+              - "go-httpbin.${SRE_DOMAIN}"
+              - "uptime-kuma.${SRE_DOMAIN}"
+              - "gitea.${SRE_DOMAIN}"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
