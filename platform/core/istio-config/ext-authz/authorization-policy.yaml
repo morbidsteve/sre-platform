@@ -1,16 +1,15 @@
 ---
-# AuthorizationPolicy — require ext-authz (OAuth2 Proxy) for all ingress traffic
-# Exceptions: Keycloak (auth provider), /oauth2/* paths (pre-auth flow), health endpoints
+# AuthorizationPolicy — require ext-authz (OAuth2 Proxy) for PLATFORM UIs only
+# Tenant apps are NOT behind platform SSO. They handle their own auth.
+#
 # NIST AC-3 (Access Enforcement), IA-2 (Identification and Authentication)
 #
-# Istio evaluation order: CUSTOM → DENY → ALLOW
-# 1. CUSTOM ext-authz checks auth via OAuth2 Proxy
-#    - If ext-authz denies (no session) → request is blocked immediately
-#    - If ext-authz passes (valid session) → continues to ALLOW evaluation
-#    - Excluded paths/hosts skip ext-authz entirely
-# 2. allow-gateway-traffic matches all requests → allows through
-#
-# Net effect: all traffic must pass OAuth2 Proxy auth, except Keycloak and /oauth2/* paths
+# Only these platform UIs require SSO login:
+#   - SRE Dashboard, Portal, DSOP Wizard, Grafana, Prometheus, Alertmanager
+# Excluded from SSO:
+#   - Keycloak (IS the auth provider)
+#   - Harbor, NeuVector (have their own auth)
+#   - All tenant apps (team-* namespaces)
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -30,30 +29,25 @@ spec:
   rules:
     - to:
         - operation:
+            # Only SSO-gate these specific platform UI hosts
+            hosts:
+              - "dashboard.${SRE_DOMAIN}"
+              - "portal.${SRE_DOMAIN}"
+              - "dsop.${SRE_DOMAIN}"
+              - "grafana.${SRE_DOMAIN}"
+              - "prometheus.${SRE_DOMAIN}"
+              - "alertmanager.${SRE_DOMAIN}"
+              - "openbao.${SRE_DOMAIN}"
             notPaths:
               - /healthz
               - /health
               - /ready
               - /oauth2/*
-              - /ui/vault/auth/oidc/oidc/callback*
-            notHosts:
-              # Keycloak — IS the identity provider
-              - "keycloak.${SRE_DOMAIN}"
-              # Harbor — Docker registry API uses Bearer tokens, not browser cookies
-              - "harbor.${SRE_DOMAIN}"
-              # NeuVector — has its own auth system (OIDC configured separately)
-              - "neuvector.${SRE_DOMAIN}"
-              # Tenant applications — handle their own auth (not behind platform SSO)
-              # Apps deployed to team-* namespaces bypass ext-authz
-              - "go-httpbin.${SRE_DOMAIN}"
-              - "uptime-kuma.${SRE_DOMAIN}"
-              - "gitea.${SRE_DOMAIN}"
 
 ---
 # Allow all traffic through the gateway after CUSTOM ext-authz evaluation.
-# CUSTOM is evaluated FIRST — unauthenticated requests are blocked before reaching this.
-# This catch-all ALLOW ensures authenticated requests (and excluded paths) are not
-# implicitly denied by Istio's "deny if no ALLOW matches" behavior.
+# CUSTOM is evaluated FIRST — unauthenticated requests to platform UIs are
+# blocked before reaching this. Tenant apps bypass CUSTOM entirely.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
