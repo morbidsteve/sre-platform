@@ -54,7 +54,7 @@ METRICS_ENABLED="false" LIVENESS_PATH="/" READINESS_PATH="/"
 RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
 WRITABLE_ROOT="${WRITABLE_ROOT:-false}"
 CAPABILITIES=()
-PERSIST_SPEC=""
+PERSIST_SPECS=()
 COMMAND_OVERRIDE=""
 ARGS_OVERRIDE=""
 SINGLETON="${SINGLETON:-false}"
@@ -89,7 +89,7 @@ while [[ $# -gt 0 ]]; do
     --run-as-root)    RUN_AS_ROOT="true"; shift ;;
     --writable-root)  WRITABLE_ROOT="true"; shift ;;
     --add-capability) CAPABILITIES+=("$2"); shift 2 ;;
-    --persist)        PERSIST_SPEC="$2"; shift 2 ;;
+    --persist)        PERSIST_SPECS+=("$2"); shift 2 ;;
     --command)        COMMAND_OVERRIDE="$2"; shift 2 ;;
     --args)           ARGS_OVERRIDE="$2"; shift 2 ;;
     --singleton)      SINGLETON="true"; shift ;;
@@ -558,16 +558,69 @@ if [[ -n "${STARTUP_PROBE_PATH}" ]]; then
 EOF
 fi
 
-# Persistence
-if [[ -n "${PERSIST_SPEC}" ]]; then
-  PERSIST_PATH="${PERSIST_SPEC%%:*}"
-  PERSIST_SIZE="${PERSIST_SPEC#*:}"
+# Persistence (multiple --persist flags supported)
+if [[ ${#PERSIST_SPECS[@]} -gt 0 ]]; then
+  # First --persist uses the chart's built-in persistence block
+  PERSIST_PATH="${PERSIST_SPECS[0]%%:*}"
+  PERSIST_SIZE="${PERSIST_SPECS[0]#*:}"
   cat >> "${APP_FILE}" <<EOF
     persistence:
       enabled: true
       mountPath: "${PERSIST_PATH}"
       size: "${PERSIST_SIZE}"
 EOF
+  # Additional --persist flags use extraVolumeMounts + extraVolumes
+  if [[ ${#PERSIST_SPECS[@]} -gt 1 ]]; then
+    EXTRA_VM=""
+    EXTRA_V=""
+    for ((i=1; i<${#PERSIST_SPECS[@]}; i++)); do
+      EXTRA_PATH="${PERSIST_SPECS[$i]%%:*}"
+      EXTRA_SIZE="${PERSIST_SPECS[$i]#*:}"
+      VOL_NAME="data-${i}"
+      PVC_NAME="${APP_NAME}-data-${i}"
+      EXTRA_VM="${EXTRA_VM}
+      - name: ${VOL_NAME}
+        mountPath: \"${EXTRA_PATH}\""
+      EXTRA_V="${EXTRA_V}
+      - name: ${VOL_NAME}
+        persistentVolumeClaim:
+          claimName: ${PVC_NAME}"
+    done
+    cat >> "${APP_FILE}" <<EOF
+    extraVolumeMounts:${EXTRA_VM}
+    extraVolumes:${EXTRA_V}
+EOF
+    # Generate standalone PVC files for the extra mounts
+    for ((i=1; i<${#PERSIST_SPECS[@]}; i++)); do
+      EXTRA_SIZE="${PERSIST_SPECS[$i]#*:}"
+      PVC_NAME="${APP_NAME}-data-${i}"
+      PVC_FILE="${TEAM_DIR}/apps/${PVC_NAME}-pvc.yaml"
+      cat > "${PVC_FILE}" <<PVCEOF
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${PVC_NAME}
+  namespace: ${TEAM}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: ${EXTRA_SIZE}
+PVCEOF
+      # Add to kustomization
+      PVC_ENTRY="${PVC_NAME}-pvc.yaml"
+      APPS_KUST="${TEAM_DIR}/apps/kustomization.yaml"
+      if ! grep -q "${PVC_ENTRY}" "${APPS_KUST}" 2>/dev/null; then
+        echo "  - ${PVC_ENTRY}" >> "${APPS_KUST}"
+      fi
+      success "Generated extra PVC: ${PVC_FILE#"${REPO_ROOT}/"}"
+    done
+  fi
 fi
 
 # Singleton (worker chart only)
