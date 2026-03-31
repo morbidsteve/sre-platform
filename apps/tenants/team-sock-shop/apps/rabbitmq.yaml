@@ -63,9 +63,7 @@ spec:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: false
       runAsNonRoot: false
-      capabilities:
-        drop:
-          - ALL
+
     persistence:
       enabled: true
       mountPath: "/var/lib/rabbitmq"

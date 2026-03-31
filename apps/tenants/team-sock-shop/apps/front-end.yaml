@@ -65,3 +65,14 @@ spec:
       enabled: true
     podDisruptionBudget:
       enabled: false
+    podSecurityContext:
+      runAsNonRoot: false
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
