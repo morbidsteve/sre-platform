@@ -62,6 +62,15 @@ STARTUP_PROBE_PATH=""
 RESOURCES="${RESOURCES:-small}"
 ENV_VARS=()
 EXTRA_VOLUMES=()
+ENV_FROM_SECRETS=()
+EXTRA_PORTS=()
+CONFIG_FILES=()
+APP_PROTOCOL="${APP_PROTOCOL:-http}"
+PROBE_TYPE="${PROBE_TYPE:-http}"
+CPU_REQUEST=""
+CPU_LIMIT=""
+MEMORY_REQUEST=""
+MEMORY_LIMIT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -88,6 +97,17 @@ while [[ $# -gt 0 ]]; do
     --resources)      RESOURCES="$2"; shift 2 ;;
     --env)            ENV_VARS+=("$2"); shift 2 ;;
     --extra-volume)   EXTRA_VOLUMES+=("$2"); shift 2 ;;
+    --env-from-secret)  ENV_FROM_SECRETS+=("$2"); shift 2 ;;
+    --extra-port)       EXTRA_PORTS+=("$2"); shift 2 ;;
+    --config-file)      CONFIG_FILES+=("$2"); shift 2 ;;
+    --protocol)         APP_PROTOCOL="$2"; shift 2 ;;
+    --probe-type)       PROBE_TYPE="$2"; shift 2 ;;
+    --cpu-request)      CPU_REQUEST="$2"; shift 2 ;;
+    --cpu-limit)        CPU_LIMIT="$2"; shift 2 ;;
+    --memory-request)   MEMORY_REQUEST="$2"; shift 2 ;;
+    --memory-limit)     MEMORY_LIMIT="$2"; shift 2 ;;
+    --liveness-path)    LIVENESS_PATH="$2"; shift 2 ;;
+    --readiness-path)   READINESS_PATH="$2"; shift 2 ;;
     --no-commit) NO_COMMIT=true; shift ;;
     --help|-h)
       echo "Usage: $0 [--name NAME --team TEAM --image IMAGE --tag TAG] [options]"
@@ -120,6 +140,17 @@ while [[ $# -gt 0 ]]; do
       echo "  --resources SIZE  Resource preset: small|medium|large (default: small)"
       echo "  --env KEY=VALUE   Add environment variable (repeatable)"
       echo "  --extra-volume NAME:PATH  Add emptyDir volume (repeatable)"
+      echo "  --env-from-secret NAME  Mount all keys from K8s Secret as env vars (repeatable)"
+      echo "  --extra-port NAME:PORT:TARGET:PROTO  Add extra Service port (repeatable)"
+      echo "  --config-file FILE:MOUNT  Mount local file as ConfigMap at path"
+      echo "  --protocol PROTO  App protocol: http|grpc|tcp (default: http)"
+      echo "  --probe-type TYPE Probe type: http|grpc|tcp (default: http)"
+      echo "  --cpu-request VAL Override CPU request (e.g. 250m)"
+      echo "  --cpu-limit VAL   Override CPU limit (e.g. 1000m)"
+      echo "  --memory-request VAL  Override memory request (e.g. 256Mi)"
+      echo "  --memory-limit VAL    Override memory limit (e.g. 1Gi)"
+      echo "  --liveness-path PATH  Liveness probe path (alias for --liveness)"
+      echo "  --readiness-path PATH Readiness probe path (alias for --readiness)"
       echo "  --no-commit       Generate files only, don't commit to Git"
       exit 0
       ;;
@@ -546,8 +577,14 @@ if [[ "${SINGLETON}" == "true" ]]; then
 EOF
 fi
 
-# Extra volumes
-if [[ ${#EXTRA_VOLUMES[@]} -gt 0 ]]; then
+# Extra volumes and config file volumes
+# Collect extraVolumeMounts and extraVolumes from --extra-volume and --config-file
+HAS_EXTRA_MOUNTS=false
+HAS_EXTRA_VOLS=false
+
+if [[ ${#EXTRA_VOLUMES[@]} -gt 0 || ${#CONFIG_FILES[@]} -gt 0 ]]; then
+  HAS_EXTRA_MOUNTS=true
+  HAS_EXTRA_VOLS=true
   cat >> "${APP_FILE}" <<EOF
     extraVolumeMounts:
 EOF
@@ -557,6 +594,16 @@ EOF
     cat >> "${APP_FILE}" <<EOF
       - name: "${vol_name}"
         mountPath: "${vol_path}"
+EOF
+  done
+  for cfspec in "${CONFIG_FILES[@]}"; do
+    local_file="${cfspec%%:*}"
+    mount_path="${cfspec#*:}"
+    cm_key="$(basename "${mount_path}")"
+    cat >> "${APP_FILE}" <<EOF
+      - name: app-config
+        mountPath: "${mount_path}"
+        subPath: "${cm_key}"
 EOF
   done
   cat >> "${APP_FILE}" <<EOF
@@ -569,6 +616,99 @@ EOF
         emptyDir: {}
 EOF
   done
+  if [[ ${#CONFIG_FILES[@]} -gt 0 ]]; then
+    cat >> "${APP_FILE}" <<EOF
+      - name: app-config
+        configMap:
+          name: ${APP_NAME}-config
+EOF
+  fi
+fi
+
+# Generate ConfigMap files for --config-file
+if [[ ${#CONFIG_FILES[@]} -gt 0 ]]; then
+  cm_file="${TEAM_DIR}/apps/${APP_NAME}-config.yaml"
+  cat > "${cm_file}" <<CMEOF
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${APP_NAME}-config
+  namespace: ${TEAM}
+data:
+CMEOF
+  for cfspec in "${CONFIG_FILES[@]}"; do
+    local_file="${cfspec%%:*}"
+    mount_path="${cfspec#*:}"
+    cm_key="$(basename "${mount_path}")"
+    if [[ -f "${local_file}" ]]; then
+      echo "  ${cm_key}: |" >> "${cm_file}"
+      sed 's/^/    /' "${local_file}" >> "${cm_file}"
+    else
+      warn "Config file not found: ${local_file} — skipping"
+    fi
+  done
+  success "Created ${cm_file#"${REPO_ROOT}/"}"
+fi
+
+# envFrom secrets
+if [[ ${#ENV_FROM_SECRETS[@]} -gt 0 ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    envFrom:
+EOF
+  for secret in "${ENV_FROM_SECRETS[@]}"; do
+    cat >> "${APP_FILE}" <<EOF
+      - secretRef:
+          name: "${secret}"
+EOF
+  done
+fi
+
+# Extra service ports
+if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    extraPorts:
+EOF
+  for portspec in "${EXTRA_PORTS[@]}"; do
+    IFS=':' read -r pname pport ptarget pproto <<< "${portspec}"
+    cat >> "${APP_FILE}" <<EOF
+      - name: "${pname}"
+        port: ${pport}
+        targetPort: ${ptarget:-${pport}}
+        protocol: "${pproto:-TCP}"
+EOF
+  done
+fi
+
+# App protocol (grpc, tcp)
+if [[ "${APP_PROTOCOL}" != "http" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    appProtocol: "${APP_PROTOCOL}"
+EOF
+fi
+
+# Probe type (grpc, tcp)
+if [[ "${PROBE_TYPE}" != "http" ]]; then
+  # Inject probe type into the probes section — we need to re-read and patch
+  # Since the probes are already written, use sed to inject the type field
+  sed -i "/probes:/,/readiness:/{
+    /liveness:/a\\          type: \"${PROBE_TYPE}\"
+    /readiness:/a\\          type: \"${PROBE_TYPE}\"
+  }" "${APP_FILE}"
+fi
+
+# Custom resource overrides (override the preset-based resources)
+if [[ -n "${CPU_REQUEST}" ]]; then
+  sed -i "s/cpu: ${RES_REQ_CPU}/cpu: ${CPU_REQUEST}/" "${APP_FILE}"
+fi
+if [[ -n "${CPU_LIMIT}" ]]; then
+  sed -i "/limits:/,/memory:/{s/cpu: ${RES_LIM_CPU}/cpu: ${CPU_LIMIT}/}" "${APP_FILE}"
+fi
+if [[ -n "${MEMORY_REQUEST}" ]]; then
+  sed -i "/requests:/,/limits:/{s/memory: ${RES_REQ_MEM}/memory: ${MEMORY_REQUEST}/}" "${APP_FILE}"
+fi
+if [[ -n "${MEMORY_LIMIT}" ]]; then
+  sed -i "/limits:/,/probes:/{s/memory: ${RES_LIM_MEM}/memory: ${MEMORY_LIMIT}/}" "${APP_FILE}"
 fi
 
 # Ingress
@@ -620,6 +760,14 @@ if [[ -f "${TEAM_KUSTOMIZATION}" ]]; then
     echo "  - ${APP_ENTRY}" >> "${TEAM_KUSTOMIZATION}"
     success "Added to ${TEAM_KUSTOMIZATION#"${REPO_ROOT}/"}"
   fi
+  # Add config map file if generated
+  if [[ ${#CONFIG_FILES[@]} -gt 0 ]]; then
+    CM_ENTRY="apps/${APP_NAME}-config.yaml"
+    if ! grep -q "${CM_ENTRY}" "${TEAM_KUSTOMIZATION}" 2>/dev/null; then
+      echo "  - ${CM_ENTRY}" >> "${TEAM_KUSTOMIZATION}"
+      success "Added ConfigMap to ${TEAM_KUSTOMIZATION#"${REPO_ROOT}/"}"
+    fi
+  fi
 fi
 
 # ---------- Git operations ----------
@@ -629,7 +777,9 @@ if [[ "${NO_COMMIT}" == "true" ]]; then
 elif [[ "${CLI_MODE}" == "true" ]]; then
   # Non-interactive: auto-commit
   cd "${REPO_ROOT}"
-  git add "${APP_FILE}" "${TEAM_KUSTOMIZATION}"
+  GIT_FILES=("${APP_FILE}" "${TEAM_KUSTOMIZATION}")
+  [[ ${#CONFIG_FILES[@]} -gt 0 ]] && GIT_FILES+=("${TEAM_DIR}/apps/${APP_NAME}-config.yaml")
+  git add "${GIT_FILES[@]}"
   git commit -m "feat(apps): deploy ${APP_NAME} to ${TEAM}
 
 Chart: ${CHART_TYPE}
@@ -646,7 +796,9 @@ else
   read -r do_git
   if [[ "${do_git}" != "n" && "${do_git}" != "N" ]]; then
     cd "${REPO_ROOT}"
-    git add "${APP_FILE}" "${TEAM_KUSTOMIZATION}"
+    GIT_FILES=("${APP_FILE}" "${TEAM_KUSTOMIZATION}")
+    [[ ${#CONFIG_FILES[@]} -gt 0 ]] && GIT_FILES+=("${TEAM_DIR}/apps/${APP_NAME}-config.yaml")
+    git add "${GIT_FILES[@]}"
     git commit -m "feat(apps): deploy ${APP_NAME} to ${TEAM}
 
 Chart: ${CHART_TYPE}

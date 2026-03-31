@@ -69,15 +69,26 @@ spec:
           {{- end }}
           {{- if and (hasKey .Values "startupProbe") .Values.startupProbe.enabled }}
           startupProbe:
+            {{- if eq (.Values.startupProbe.type | default "http") "grpc" }}
+            grpc:
+              port: {{ .Values.app.port }}
+            {{- else if eq (.Values.startupProbe.type | default "http") "tcp" }}
+            tcpSocket:
+              port: http
+            {{- else }}
             httpGet:
               path: {{ .Values.startupProbe.path }}
               port: http
+            {{- end }}
             initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.startupProbe.periodSeconds }}
             failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           {{- end }}
           livenessProbe:
-            {{- if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
+            {{- if eq (.Values.app.probes.liveness.type | default "http") "grpc" }}
+            grpc:
+              port: {{ .Values.app.port }}
+            {{- else if eq (.Values.app.probes.liveness.type | default "http") "tcp" }}
             tcpSocket:
               port: http
             {{- else }}
@@ -89,7 +100,10 @@ spec:
             periodSeconds: {{ .Values.app.probes.liveness.periodSeconds }}
             failureThreshold: {{ .Values.app.probes.liveness.failureThreshold | default 3 }}
           readinessProbe:
-            {{- if eq (.Values.app.probes.readiness.type | default "http") "tcp" }}
+            {{- if eq (.Values.app.probes.readiness.type | default "http") "grpc" }}
+            grpc:
+              port: {{ .Values.app.port }}
+            {{- else if eq (.Values.app.probes.readiness.type | default "http") "tcp" }}
             tcpSocket:
               port: http
             {{- else }}
@@ -112,10 +126,15 @@ spec:
           {{- end }}
           env:
             {{- include "sre-lib.env" . | nindent 12 }}
-          {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
+          {{- if or (and (hasKey .Values "storage") .Values.storage.enabled) .Values.envFrom }}
           envFrom:
+            {{- if and (hasKey .Values "storage") .Values.storage.enabled }}
             - configMapRef:
                 name: {{ include "sre-api-service.fullname" . }}-storage-config
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
       volumes:
         - name: tmp
