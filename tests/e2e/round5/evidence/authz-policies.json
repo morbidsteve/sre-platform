@@ -1,0 +1,569 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3"
+                },
+                "creationTimestamp": "2026-03-07T20:30:03Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "allow-gateway-traffic",
+                "namespace": "istio-system",
+                "resourceVersion": "19643663",
+                "uid": "cae878c9-e8df-49b2-b042-1099f541399c"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {}
+                ],
+                "selector": {
+                    "matchLabels": {
+                        "istio": "gateway"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "creationTimestamp": "2026-03-05T20:45:34Z",
+                "generation": 1,
+                "labels": {
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "allow-istiod-control-plane",
+                "namespace": "istio-system",
+                "resourceVersion": "9164",
+                "uid": "94804941-7cf6-429f-8d6a-9fc99cf806a2"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "to": [
+                            {
+                                "operation": {
+                                    "ports": [
+                                        "15010",
+                                        "15012",
+                                        "15014",
+                                        "15017"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "selector": {
+                    "matchLabels": {
+                        "app": "istiod"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "creationTimestamp": "2026-03-05T20:45:44Z",
+                "generation": 2,
+                "labels": {
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "allow-prometheus-scrape",
+                "namespace": "istio-system",
+                "resourceVersion": "117113",
+                "uid": "ef983c10-ab73-4058-973e-742e81f9f9f1"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "monitoring"
+                                    ]
+                                }
+                            }
+                        ],
+                        "to": [
+                            {
+                                "operation": {
+                                    "ports": [
+                                        "15014",
+                                        "15090"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "selector": {
+                    "matchLabels": {
+                        "app": "istiod"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "creationTimestamp": "2026-03-05T20:45:54Z",
+                "generation": 1,
+                "labels": {
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "deny-all-istiod",
+                "namespace": "istio-system",
+                "resourceVersion": "9269",
+                "uid": "94ce3e94-ceda-41d8-8f32-76f5f88a896f"
+            },
+            "spec": {
+                "selector": {
+                    "matchLabels": {
+                        "app": "istiod"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, IA-2, IA-8"
+                },
+                "creationTimestamp": "2026-03-07T12:23:42Z",
+                "generation": 35,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "ext-authz-oauth2",
+                "namespace": "istio-system",
+                "resourceVersion": "19645045",
+                "uid": "3a0edf2b-374a-4099-acb2-eb9cac4c2a59"
+            },
+            "spec": {
+                "action": "CUSTOM",
+                "provider": {
+                    "name": "oauth2-proxy"
+                },
+                "rules": [
+                    {
+                        "to": [
+                            {
+                                "operation": {
+                                    "notHosts": [
+                                        "keycloak.apps.sre.example.com",
+                                        "harbor.apps.sre.example.com"
+                                    ],
+                                    "notPaths": [
+                                        "/healthz",
+                                        "/health",
+                                        "/ready",
+                                        "/readyz",
+                                        "/livez",
+                                        "/metrics",
+                                        "/oauth2/*",
+                                        "/ui/vault/auth/oidc/oidc/callback*"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "selector": {
+                    "matchLabels": {
+                        "istio": "gateway"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, SC-7"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-gateway-ingress",
+                "namespace": "team-alpha",
+                "resourceVersion": "573956",
+                "uid": "6104da92-e614-46e7-8652-ad7e56ec97ce"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "istio-system"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "SC-8, SC-12"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-istio-control-plane",
+                "namespace": "team-alpha",
+                "resourceVersion": "573958",
+                "uid": "c794de53-3bc5-40ec-a8e1-3e79603b1b15"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "istio-system"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AU-2, CA-7, SI-4"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-prometheus-scrape",
+                "namespace": "team-alpha",
+                "resourceVersion": "573959",
+                "uid": "cf348338-a6dd-460f-9d95-76a49934ae42"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "monitoring"
+                                    ]
+                                }
+                            }
+                        ],
+                        "to": [
+                            {
+                                "operation": {
+                                    "ports": [
+                                        "8080",
+                                        "9090",
+                                        "15014",
+                                        "15090"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, AC-4"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-same-namespace",
+                "namespace": "team-alpha",
+                "resourceVersion": "573960",
+                "uid": "b19f2689-4d15-4f6b-a9d1-7de0ed18c4ee"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "team-alpha"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, AC-4, SC-7"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "default-deny",
+                "namespace": "team-alpha",
+                "resourceVersion": "573963",
+                "uid": "ff29a2e0-bb11-45c8-8979-11ca2cbd32be"
+            },
+            "spec": {}
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, SC-7"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-gateway-ingress",
+                "namespace": "team-beta",
+                "resourceVersion": "573964",
+                "uid": "31a9c7c8-e24f-4f53-931a-7d23b50d3a80"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "istio-system"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "SC-8, SC-12"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-istio-control-plane",
+                "namespace": "team-beta",
+                "resourceVersion": "573965",
+                "uid": "72dd3abe-3c14-4ea2-b744-6145baef89f4"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "istio-system"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AU-2, CA-7, SI-4"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-prometheus-scrape",
+                "namespace": "team-beta",
+                "resourceVersion": "573968",
+                "uid": "870c16a1-3740-46f4-aff9-9375c9795698"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "monitoring"
+                                    ]
+                                }
+                            }
+                        ],
+                        "to": [
+                            {
+                                "operation": {
+                                    "ports": [
+                                        "8080",
+                                        "9090",
+                                        "15014",
+                                        "15090"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, AC-4"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "allow-same-namespace",
+                "namespace": "team-beta",
+                "resourceVersion": "573970",
+                "uid": "6e4477cf-4d29-47b5-af60-25762e6c70a0"
+            },
+            "spec": {
+                "action": "ALLOW",
+                "rules": [
+                    {
+                        "from": [
+                            {
+                                "source": {
+                                    "namespaces": [
+                                        "team-beta"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "security.istio.io/v1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "AC-3, AC-4, SC-7"
+                },
+                "creationTimestamp": "2026-03-06T17:54:04Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-istio-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                    "sre.io/policy-type": "authorization"
+                },
+                "name": "default-deny",
+                "namespace": "team-beta",
+                "resourceVersion": "573972",
+                "uid": "b9521035-73a5-48ab-a7d4-ac6305caf79c"
+            },
+            "spec": {}
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

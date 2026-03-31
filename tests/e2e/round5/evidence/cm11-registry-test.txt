@@ -1,0 +1,41 @@
+Warning: would violate PodSecurity "restricted:latest": allowPrivilegeEscalation != false (container "t" must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container "t" must set securityContext.capabilities.drop=["ALL"]; container "istio-init" must not include "NET_ADMIN", "NET_RAW" in securityContext.capabilities.add), runAsNonRoot != true (container "istio-init" must not set securityContext.runAsNonRoot=false), runAsUser=0 (container "istio-init" must not set runAsUser=0), seccompProfile (pod or containers "istio-init", "istio-proxy", "t" must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+Error from server: error when creating "STDIN": admission webhook "validate.kyverno.svc-fail" denied the request: 
+
+resource Pod/team-test/test-reg was blocked due to the following policies 
+
+disallow-latest-tag:
+  validate-image-tag: 'validation error: Container images in Pod test-reg must not
+    use the :latest tag or be untagged. All images must specify an explicit version
+    tag (e.g., v1.2.3). Change your image reference from `myimage:latest` or `myimage`
+    to `myimage:v1.2.3`. rule validate-image-tag failed at path /spec/containers/1/image/'
+require-labels:
+  check-required-labels: 'validation error: Pod test-reg in namespace team-test is
+    missing required labels. All Pods must have the following labels: `app.kubernetes.io/name`,
+    `app.kubernetes.io/part-of`, and `sre.io/team`. Add them to your Deployment or
+    Pod spec under metadata.labels. rule check-required-labels failed at path /metadata/labels/app.kubernetes.io/name/'
+require-probes:
+  validate-probes: 'validation failure: All application containers in Pod test-reg
+    must define livenessProbe and readinessProbe. Istio sidecar (istio-proxy) is excluded
+    from this check. Add probes to each container spec using at least one of httpGet,
+    tcpSocket, or exec.'
+require-resource-limits:
+  validate-resource-limits: |-
+    validation error: All containers in Pod test-reg must specify resources.requests and resources.limits for both cpu and memory. Add the following to each container spec:
+
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi". rule validate-resource-limits failed at path /spec/containers/1/resources/limits/
+require-security-context:
+  require-drop-all-capabilities: |-
+    validation failure: All containers in Pod test-reg must set `securityContext.allowPrivilegeEscalation` to false and drop ALL capabilities. Add to each container: securityContext:
+
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+  require-run-as-non-root: 'validation error: Pod test-reg must set `spec.securityContext.runAsNonRoot`
+    to true. Running containers as root is a security risk. Add `securityContext.runAsNonRoot:
+    true` to your Pod spec. rule require-run-as-non-root failed at path /spec/securityContext/runAsNonRoot/'

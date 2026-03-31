@@ -1,0 +1,3 @@
+cert-manager   sre-root-ca        True    sre-root-ca-tls    25d
+istio-system   sre-wildcard       False   sre-wildcard-tls   23d
+istio-system   sre-wildcard-tls   True    sre-wildcard-tls   25d

@@ -1,0 +1,7 @@
+alloy-b6rkc         2/2   Running   6 (14d ago)    25d
+alloy-f26gl         2/2   Running   6 (14d ago)    25d
+alloy-h726c         2/2   Running   6 (14d ago)    25d
+loki-0              2/2   Running   14 (14d ago)   24d
+loki-canary-d89lx   1/1   Running   3 (14d ago)    24d
+loki-canary-f985x   1/1   Running   3 (14d ago)    24d
+loki-canary-sgr4b   1/1   Running   3 (14d ago)    24d

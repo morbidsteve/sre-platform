@@ -1,0 +1,3 @@
+NAMESPACE      NAME                   MODE         AGE
+istio-system   default                STRICT       25d
+neuvector      neuvector-permissive   PERMISSIVE   25d
