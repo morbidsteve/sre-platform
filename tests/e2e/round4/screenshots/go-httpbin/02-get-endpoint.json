@@ -1,0 +1,20 @@
+{
+  "args": {},
+  "headers": {
+    "Accept": [
+      "*/*"
+    ],
+    "Host": [
+      "go-httpbin.apps.sre.example.com"
+    ],
+    "User-Agent": [
+      "curl/8.5.0"
+    ],
+    "X-B3-Parentspanid": [
+      "968106a60a2386d6"
+    ],
+    "X-B3-Sampled": [
+      "0"
+    ],
+    "X-B3-Spanid": [
+      "4db8ddf4602c613a"
