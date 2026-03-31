@@ -770,6 +770,67 @@ if [[ -f "${TEAM_KUSTOMIZATION}" ]]; then
   fi
 fi
 
+# ---------- Generate Kyverno PolicyException if security overrides used ----------
+
+NEEDS_EXCEPTION=false
+EXCEPTION_POLICIES=""
+
+if [[ "${RUN_AS_ROOT}" == "true" ]]; then
+  NEEDS_EXCEPTION=true
+  EXCEPTION_POLICIES="${EXCEPTION_POLICIES}
+    - policyName: require-security-context
+      ruleNames:
+        - require-run-as-non-root
+        - require-drop-all-capabilities"
+fi
+
+if [[ ${#CAPABILITIES[@]} -gt 0 ]]; then
+  NEEDS_EXCEPTION=true
+  # Only add if not already added by run-as-root
+  if [[ "${RUN_AS_ROOT}" != "true" ]]; then
+    EXCEPTION_POLICIES="${EXCEPTION_POLICIES}
+    - policyName: require-security-context
+      ruleNames:
+        - require-drop-all-capabilities"
+  fi
+fi
+
+if [[ "${NEEDS_EXCEPTION}" == "true" ]]; then
+  PE_FILE="${TEAM_DIR}/apps/${APP_NAME}-policy-exception.yaml"
+  cat > "${PE_FILE}" <<PEEOF
+---
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: ${APP_NAME}-security-exception
+  namespace: ${TEAM}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: ${TEAM}
+  annotations:
+    sre.io/exception-reason: "App requires relaxed security context"
+spec:
+  exceptions:${EXCEPTION_POLICIES}
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - ${TEAM}
+          names:
+            - "${APP_NAME}-*"
+PEEOF
+  success "Generated PolicyException: ${PE_FILE#"${REPO_ROOT}/"}"
+
+  # Add to kustomization
+  PE_ENTRY="${APP_NAME}-policy-exception.yaml"
+  if ! grep -q "${PE_ENTRY}" "${TEAM_KUSTOMIZATION}" 2>/dev/null; then
+    echo "  - ${PE_ENTRY}" >> "${TEAM_KUSTOMIZATION}"
+  fi
+fi
+
 # ---------- Git operations ----------
 
 if [[ "${NO_COMMIT}" == "true" ]]; then
@@ -779,6 +840,7 @@ elif [[ "${CLI_MODE}" == "true" ]]; then
   cd "${REPO_ROOT}"
   GIT_FILES=("${APP_FILE}" "${TEAM_KUSTOMIZATION}")
   [[ ${#CONFIG_FILES[@]} -gt 0 ]] && GIT_FILES+=("${TEAM_DIR}/apps/${APP_NAME}-config.yaml")
+  [[ "${NEEDS_EXCEPTION}" == "true" ]] && GIT_FILES+=("${TEAM_DIR}/apps/${APP_NAME}-policy-exception.yaml")
   git add "${GIT_FILES[@]}"
   git commit -m "feat(apps): deploy ${APP_NAME} to ${TEAM}
 
