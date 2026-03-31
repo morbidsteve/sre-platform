@@ -1,0 +1,149 @@
+cert-manager                 cert-manager-6597f48787-w2wpk                                   1/1   Running            100 (27m ago)   25d
+cert-manager                 cert-manager-cainjector-84ddb8bcb9-vswvw                        1/1   Running            190 (14d ago)   25d
+cert-manager                 cert-manager-webhook-6f95954786-9v94s                           1/1   Running            6 (14d ago)     25d
+cnpg-system                  cnpg-cloudnative-pg-68f59f5db7-c68vk                            1/1   Running            125 (14d ago)   14d
+external-secrets             external-secrets-9d6dc6f96-5hsxf                                1/1   Running            3 (14d ago)     24d
+external-secrets             external-secrets-9d6dc6f96-v7hx2                                1/1   Running            3 (14d ago)     24d
+external-secrets             external-secrets-cert-controller-6c68d57977-wjngc               1/1   Running            51 (14d ago)    24d
+external-secrets             external-secrets-webhook-67b6785f48-fkqpn                       1/1   Running            3 (14d ago)     24d
+external-secrets             external-secrets-webhook-67b6785f48-ml7nt                       1/1   Running            3 (14d ago)     24d
+flux-system                  helm-controller-5cd489c5d9-dhpdz                                1/1   Running            222 (14d ago)   25d
+flux-system                  kustomize-controller-dbc66fb7-ckk6z                             1/1   Running            210 (14d ago)   25d
+flux-system                  notification-controller-79d6d99f47-xkfms                        1/1   Running            254 (14d ago)   25d
+flux-system                  source-controller-696b487d8b-mrnkc                              1/1   Running            249 (14d ago)   25d
+harbor                       harbor-core-749455c445-dg48t                                    1/1   Running            3 (14d ago)     14d
+harbor                       harbor-database-0                                               1/1   Running            6 (14d ago)     14d
+harbor                       harbor-exporter-77f468f795-wvplz                                1/1   Running            4 (14d ago)     14d
+harbor                       harbor-jobservice-6f9566c5d6-j6h7v                              1/1   Running            6 (14d ago)     14d
+harbor                       harbor-nginx-67d4b646c6-wzxgp                                   1/1   Running            6 (14d ago)     14d
+harbor                       harbor-portal-5dcb8b69b5-ptss2                                  1/1   Running            1 (14d ago)     14d
+harbor                       harbor-redis-0                                                  1/1   Running            1 (14d ago)     14d
+harbor                       harbor-registry-685589d594-r8qdn                                2/2   Running            2 (14d ago)     14d
+harbor                       harbor-trivy-0                                                  1/1   Running            1 (14d ago)     14d
+istio-system                 istio-gateway-664d5c5d79-frf6c                                  1/1   Running            10 (11d ago)    14d
+istio-system                 istiod-849b756b4-gk64r                                          1/1   Running            1 (14d ago)     14d
+keycloak                     keycloak-0                                                      1/1   Running            0               5d23h
+keycloak                     keycloak-https-proxy-cd5459b46-542s2                            1/1   Running            0               5d20h
+keycloak                     keycloak-postgresql-0                                           1/1   Running            3 (14d ago)     24d
+kube-system                  cloud-controller-manager-sre-lab-rke2-server-0                  1/1   Running            104 (14d ago)   25d
+kube-system                  etcd-sre-lab-rke2-server-0                                      1/1   Running            4               25d
+kube-system                  helm-install-rke2-canal-crn6q                                   0/1   Completed          0               25d
+kube-system                  helm-install-rke2-coredns-hwtjm                                 0/1   Completed          0               25d
+kube-system                  helm-install-rke2-metrics-server-jr9f9                          0/1   Completed          0               25d
+kube-system                  helm-install-rke2-runtimeclasses-gbrfb                          0/1   Completed          0               25d
+kube-system                  helm-install-rke2-snapshot-controller-crd-7nq6n                 0/1   Completed          0               25d
+kube-system                  helm-install-rke2-snapshot-controller-ssfcl                     0/1   Completed          2               25d
+kube-system                  kube-apiserver-sre-lab-rke2-server-0                            1/1   Running            11              14d
+kube-system                  kube-controller-manager-sre-lab-rke2-server-0                   1/1   Running            102 (14d ago)   25d
+kube-system                  kube-proxy-sre-lab-rke2-agent-0                                 1/1   Running            0               14d
+kube-system                  kube-proxy-sre-lab-rke2-agent-1                                 1/1   Running            0               14d
+kube-system                  kube-proxy-sre-lab-rke2-server-0                                1/1   Running            0               14d
+kube-system                  kube-scheduler-sre-lab-rke2-server-0                            1/1   Running            82 (14d ago)    25d
+kube-system                  node-hosts-manager-92g55                                        1/1   Running            0               6d23h
+kube-system                  node-hosts-manager-9l7sn                                        1/1   Running            0               6d23h
+kube-system                  node-hosts-manager-smzwl                                        1/1   Running            0               6d23h
+kube-system                  rke2-canal-bpl2t                                                2/2   Running            6 (14d ago)     25d
+kube-system                  rke2-canal-fcmbd                                                2/2   Running            8 (14d ago)     25d
+kube-system                  rke2-canal-hpd57                                                2/2   Running            6 (14d ago)     25d
+kube-system                  rke2-coredns-rke2-coredns-5dbc85cff8-8ntl9                      1/1   Running            1 (14d ago)     14d
+kube-system                  rke2-coredns-rke2-coredns-5dbc85cff8-lztzd                      1/1   Running            3 (14d ago)     18d
+kube-system                  rke2-coredns-rke2-coredns-autoscaler-6c58bf4677-l2kkl           1/1   Running            3 (14d ago)     25d
+kube-system                  rke2-metrics-server-69f4f95bf7-dtrbs                            1/1   Running            42 (14d ago)    25d
+kube-system                  rke2-snapshot-controller-bc4c494bf-f7xzt                        1/1   Running            110 (14d ago)   25d
+kyverno                      kyverno-admission-controller-59f9887bf-24srg                    1/1   Running            0               4d16h
+kyverno                      kyverno-admission-controller-59f9887bf-gnnzk                    1/1   Running            0               4d16h
+kyverno                      kyverno-admission-controller-59f9887bf-xk8d5                    1/1   Running            0               4d16h
+kyverno                      kyverno-background-controller-76f89d8584-bf9px                  1/1   Running            66 (14d ago)    25d
+kyverno                      kyverno-background-controller-76f89d8584-dpjjf                  1/1   Running            74 (14d ago)    25d
+kyverno                      kyverno-cleanup-controller-654c89ccc9-sxvnj                     1/1   Running            194 (14d ago)   25d
+kyverno                      kyverno-reports-controller-d4b864fc7-42qd8                      1/1   Running            72 (14d ago)    25d
+kyverno                      kyverno-reports-controller-d4b864fc7-rgwzl                      1/1   Running            75 (14d ago)    25d
+local-path-storage           local-path-provisioner-5db65c675b-77vnk                         1/1   Running            5 (14d ago)     25d
+logging                      alloy-b6rkc                                                     2/2   Running            6 (14d ago)     25d
+logging                      alloy-f26gl                                                     2/2   Running            6 (14d ago)     25d
+logging                      alloy-h726c                                                     2/2   Running            6 (14d ago)     25d
+logging                      loki-0                                                          2/2   Running            14 (14d ago)    24d
+logging                      loki-canary-d89lx                                               1/1   Running            3 (14d ago)     24d
+logging                      loki-canary-f985x                                               1/1   Running            3 (14d ago)     24d
+logging                      loki-canary-sgr4b                                               1/1   Running            3 (14d ago)     24d
+metallb-system               metallb-controller-778687cfd6-5l2qv                             1/1   Running            5 (14d ago)     24d
+metallb-system               metallb-speaker-22472                                           1/1   Running            3 (14d ago)     24d
+metallb-system               metallb-speaker-6rgmt                                           1/1   Running            3 (14d ago)     24d
+metallb-system               metallb-speaker-88lr8                                           1/1   Running            25 (14d ago)    24d
+monitoring                   alertmanager-kube-prometheus-stack-alertmanager-0               2/2   Running            6 (14d ago)     24d
+monitoring                   kube-prometheus-stack-grafana-6df588bd5b-fc6x5                  3/3   Running            0               6d17h
+monitoring                   kube-prometheus-stack-kube-state-metrics-cdcfddf74-4tkws        1/1   Running            247 (14d ago)   25d
+monitoring                   kube-prometheus-stack-operator-556566fb89-w5fbc                 1/1   Running            5 (14d ago)     25d
+monitoring                   kube-prometheus-stack-prometheus-node-exporter-5nhrq            1/1   Running            3 (14d ago)     25d
+monitoring                   kube-prometheus-stack-prometheus-node-exporter-8t2pm            1/1   Running            25 (14d ago)    25d
+monitoring                   kube-prometheus-stack-prometheus-node-exporter-nh7zb            1/1   Running            3 (14d ago)     25d
+monitoring                   prometheus-blackbox-exporter-75b8785fdf-x6tqg                   1/1   Running            0               5d19h
+monitoring                   prometheus-kube-prometheus-stack-prometheus-0                   2/2   Running            6 (14d ago)     24d
+monitoring                   sre-compliance-drift-29582820-c5c2c                             0/1   Error              0               104m
+monitoring                   sre-compliance-drift-29582820-llw9n                             0/1   Error              0               104m
+monitoring                   sre-compliance-drift-29582880-9hcfj                             0/1   Error              0               44m
+monitoring                   sre-compliance-drift-29582880-t45bp                             0/1   Error              0               44m
+monitoring                   sre-compliance-evidence-29580780-8n8tx                          0/1   Error              0               35h
+monitoring                   sre-compliance-evidence-29580780-vkff7                          0/1   Error              0               35h
+monitoring                   sre-compliance-evidence-29580780-xx4gw                          0/1   Error              0               35h
+monitoring                   sre-compliance-evidence-29582220-hm6pq                          0/1   Error              0               11h
+monitoring                   sre-compliance-evidence-29582220-jlckh                          0/1   Error              0               11h
+monitoring                   sre-compliance-evidence-29582220-kg4ch                          0/1   Error              0               11h
+monitoring                   sre-compliance-scan-29582280-4dljb                              0/1   Error              0               10h
+monitoring                   sre-compliance-scan-29582280-ktvlw                              0/1   Error              0               10h
+monitoring                   sre-cve-scan-29580780-65kj2                                     0/1   Completed          0               35h
+monitoring                   sre-cve-scan-29582220-nkfmd                                     0/1   Completed          0               11h
+monitoring                   sre-stig-scan-29579220-dhbq8                                    0/1   Error              0               2d13h
+monitoring                   sre-stig-scan-29579220-qrftk                                    0/1   Error              0               2d13h
+neuvector                    neuvector-cert-upgrader-job-p7tt7                               0/1   Completed          0               15d
+neuvector                    neuvector-controller-pod-6545b8d58b-4crtk                       1/1   Running            8 (16h ago)     6d
+neuvector                    neuvector-controller-pod-6545b8d58b-nqvfd                       1/1   Running            8 (16h ago)     6d
+neuvector                    neuvector-controller-pod-6545b8d58b-xv846                       1/1   Running            9 (40h ago)     6d
+neuvector                    neuvector-enforcer-pod-c8gkc                                    1/1   Running            3 (14d ago)     25d
+neuvector                    neuvector-enforcer-pod-vfh2b                                    1/1   Running            4 (14d ago)     25d
+neuvector                    neuvector-enforcer-pod-vhqnn                                    1/1   Running            7 (14d ago)     25d
+neuvector                    neuvector-manager-pod-54fdb7749f-5wdsj                          1/1   Running            0               6d
+neuvector                    neuvector-scanner-pod-6cbf7b6fd-gm6bn                           1/1   Running            0               16h
+neuvector                    neuvector-scanner-pod-6cbf7b6fd-k4gtw                           1/1   Running            0               16h
+neuvector                    neuvector-scanner-pod-6cbf7b6fd-s96sn                           1/1   Running            0               16h
+neuvector                    neuvector-updater-pod-29579040-45mxt                            0/1   Completed          0               2d16h
+neuvector                    neuvector-updater-pod-29580480-mrb4c                            0/1   Completed          0               40h
+neuvector                    neuvector-updater-pod-29581920-jq4g8                            0/1   Completed          0               16h
+oauth2-proxy                 oauth2-proxy-b6b689ccd-mz748                                    2/2   Running            0               27m
+openbao                      openbao-0                                                       1/1   Running            0               5d20h
+openbao                      openbao-auto-unseal-29582920-wbh8q                              0/1   Completed          0               4m56s
+openbao                      test-curl                                                       0/1   Completed          0               24d
+sre-compliance               rpoc-ato-portal-6698d66769-4ktnf                                2/2   Running            0               13d
+sre-dashboard                pipeline-cleanup-29582920-f6bz9                                 0/1   Completed          0               4m56s
+sre-dashboard                pipeline-db-1                                                   1/1   Running            1 (14d ago)     14d
+sre-dashboard                pipeline-db-1-initdb-9xqgm                                      0/1   Completed          0               14d
+sre-dashboard                sre-dashboard-97d8fd56c-m86pp                                   1/1   Running            10 (35m ago)    21h
+sre-dsop                     dsop-wizard-6b76788b8f-jmsms                                    2/2   Running            0               21h
+sre-portal                   sre-portal-8654bdf55-j46dk                                      2/2   Running            0               21h
+team-alpha                   statusboard-757ddddc56-8djp8                                    1/1   Running            1 (14d ago)     14d
+team-beta                    intel-7777ff54bf-rc9nq                                          1/1   Running            1 (14d ago)     14d
+team-demo                    admin-tools-68484cbf56-rlfjc                                    1/1   Running            1 (14d ago)     14d
+team-keystone                keystone-backend-keystone-backend-555d87f898-jspjh              2/2   Running            42 (14d ago)    14d
+team-keystone                keystone-celery-worker-keystone-celery-worker-c4d9898fb-xz465   2/2   Running            117 (14d ago)   15d
+team-keystone                keystone-db-6d76668485-wsz8d                                    2/2   Running            4 (14d ago)     15d
+team-keystone                keystone-frontend-keystone-frontend-59674b865-gg7x2             1/2   ImagePullBackOff   0               2m53s
+team-keystone                keystone-frontend-keystone-frontend-5cfc55dfff-89qjk            2/2   Running            2 (14d ago)     14d
+team-keystone                keystone-redis-549479b756-4bwzw                                 2/2   Running            0               13d
+team-test                    gitea-gitea-6cddf6cdc5-v4ctw                                    2/2   Running            0               86m
+team-test                    go-httpbin-go-httpbin-5cbc87584c-cmbtt                          2/2   Running            0               14m
+team-test                    uptime-kuma-test2-uptime-kuma-test2-756c54f77-kxrzr             2/2   Running            0               59m
+team-test                    uptime-kuma-uptime-kuma-7c5bff4ddc-n87nd                        2/2   Running            0               17m
+tekton-pipelines-resolvers   tekton-pipelines-remote-resolvers-797b749dcc-jqq45              1/1   Running            0               12d
+tekton-pipelines             el-github-push-listener-6647f9fc7f-whnql                        1/1   Running            0               6d23h
+tekton-pipelines             git-poller-29582924-bpzrc                                       0/1   Completed          0               56s
+tekton-pipelines             tekton-events-controller-7bb8d8b8cc-87xgh                       1/1   Running            0               12d
+tekton-pipelines             tekton-pipelines-controller-f5b46dd7-crd88                      1/1   Running            0               12d
+tekton-pipelines             tekton-pipelines-webhook-6659bdfd6d-hj9kp                       1/1   Running            0               12d
+tekton-pipelines             tekton-triggers-controller-6489447bd7-czsbt                     1/1   Running            0               12d
+tekton-pipelines             tekton-triggers-core-interceptors-99f845fb7-7rrc7               1/1   Running            0               6d23h
+tekton-pipelines             tekton-triggers-webhook-7dcd7b4958-k5tqk                        1/1   Running            2 (12d ago)     12d
+tempo                        tempo-0                                                         1/1   Running            12 (12h ago)    25d
+velero                       node-agent-7vlxh                                                1/1   Running            3 (14d ago)     24d
+velero                       node-agent-gqxcc                                                1/1   Running            3 (14d ago)     24d
+velero                       node-agent-ncr9s                                                1/1   Running            3 (14d ago)     24d
+velero                       velero-89996fbb9-67665                                          1/1   Running            6 (14d ago)     25d

@@ -1,0 +1,4 @@
+NAME                    STATUS    SCHEDULE    LASTBACKUP   AGE   PAUSED
+velero-daily-backup     Enabled   0 2 * * *   14h          24d   
+velero-monthly-backup   Enabled   0 4 1 * *                24d   
+velero-weekly-backup    Enabled   0 3 * * 0   2d13h        24d   

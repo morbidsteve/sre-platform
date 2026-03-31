@@ -1,0 +1,160 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": {
+                "creationTimestamp": "2026-03-05T20:59:22Z",
+                "generation": 6787,
+                "labels": {
+                    "kustomize.toolkit.fluxcd.io/name": "sre-cert-manager-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "sre-root-ca",
+                "namespace": "cert-manager",
+                "resourceVersion": "19665407",
+                "uid": "e6a57d5f-daa0-48d7-a79c-5ee2ff5fbc4c"
+            },
+            "spec": {
+                "commonName": "SRE Platform Root CA",
+                "duration": "87600h",
+                "isCA": true,
+                "issuerRef": {
+                    "group": "cert-manager.io",
+                    "kind": "ClusterIssuer",
+                    "name": "selfsigned-root"
+                },
+                "privateKey": {
+                    "algorithm": "ECDSA",
+                    "size": 384
+                },
+                "renewBefore": "8760h",
+                "secretName": "sre-root-ca-tls"
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-03-31T16:43:42Z",
+                        "message": "Certificate is up to date and has not expired",
+                        "observedGeneration": 6787,
+                        "reason": "Ready",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "notAfter": "2036-03-28T16:43:40Z",
+                "notBefore": "2026-03-31T16:43:40Z",
+                "renewalTime": "2035-03-29T16:43:40Z",
+                "revision": 6732
+            }
+        },
+        {
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": {
+                "annotations": {
+                    "sre.io/nist-controls": "SC-8, SC-12, SC-13"
+                },
+                "creationTimestamp": "2026-03-07T20:42:48Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/part-of": "sre-platform",
+                    "kustomize.toolkit.fluxcd.io/name": "sre-cert-manager",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "sre-wildcard",
+                "namespace": "istio-system",
+                "resourceVersion": "1308123",
+                "uid": "15ee10f3-ee04-4e5b-84f8-a9e3ba139018"
+            },
+            "spec": {
+                "dnsNames": [
+                    "*.apps.sre.example.com",
+                    "apps.sre.example.com"
+                ],
+                "duration": "2160h",
+                "issuerRef": {
+                    "group": "cert-manager.io",
+                    "kind": "ClusterIssuer",
+                    "name": "sre-ca-issuer"
+                },
+                "privateKey": {
+                    "algorithm": "ECDSA",
+                    "size": 256
+                },
+                "renewBefore": "720h",
+                "secretName": "sre-wildcard-tls"
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-03-07T20:42:48Z",
+                        "message": "Issuing certificate as Secret was previously issued by \"ClusterIssuer.cert-manager.io/sre-internal-ca\"",
+                        "observedGeneration": 1,
+                        "reason": "IncorrectIssuer",
+                        "status": "False",
+                        "type": "Ready"
+                    }
+                ],
+                "notAfter": "2026-06-03T20:59:28Z",
+                "notBefore": "2026-03-05T20:59:28Z",
+                "renewalTime": "2026-05-04T20:59:28Z"
+            }
+        },
+        {
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": {
+                "creationTimestamp": "2026-03-05T20:59:22Z",
+                "generation": 1,
+                "labels": {
+                    "kustomize.toolkit.fluxcd.io/name": "sre-cert-manager-config",
+                    "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+                },
+                "name": "sre-wildcard-tls",
+                "namespace": "istio-system",
+                "resourceVersion": "14274",
+                "uid": "26bb98c7-f053-4aba-a0ca-9b7bb79de718"
+            },
+            "spec": {
+                "dnsNames": [
+                    "*.apps.sre.example.com",
+                    "apps.sre.example.com"
+                ],
+                "duration": "2160h",
+                "issuerRef": {
+                    "group": "cert-manager.io",
+                    "kind": "ClusterIssuer",
+                    "name": "sre-internal-ca"
+                },
+                "privateKey": {
+                    "algorithm": "ECDSA",
+                    "size": 256
+                },
+                "renewBefore": "720h",
+                "secretName": "sre-wildcard-tls"
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-03-05T20:59:28Z",
+                        "message": "Certificate is up to date and has not expired",
+                        "observedGeneration": 1,
+                        "reason": "Ready",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "notAfter": "2026-06-03T20:59:28Z",
+                "notBefore": "2026-03-05T20:59:28Z",
+                "renewalTime": "2026-05-04T20:59:28Z",
+                "revision": 1
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

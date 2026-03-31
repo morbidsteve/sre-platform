@@ -1,0 +1,14 @@
+neuvector-cert-upgrader-job-p7tt7           0/1   Completed   0             15d
+neuvector-controller-pod-6545b8d58b-4crtk   1/1   Running     8 (16h ago)   6d
+neuvector-controller-pod-6545b8d58b-nqvfd   1/1   Running     8 (16h ago)   6d
+neuvector-controller-pod-6545b8d58b-xv846   1/1   Running     9 (40h ago)   6d
+neuvector-enforcer-pod-c8gkc                1/1   Running     3 (14d ago)   25d
+neuvector-enforcer-pod-vfh2b                1/1   Running     4 (14d ago)   25d
+neuvector-enforcer-pod-vhqnn                1/1   Running     7 (14d ago)   25d
+neuvector-manager-pod-54fdb7749f-5wdsj      1/1   Running     0             6d
+neuvector-scanner-pod-6cbf7b6fd-gm6bn       1/1   Running     0             16h
+neuvector-scanner-pod-6cbf7b6fd-k4gtw       1/1   Running     0             16h
+neuvector-scanner-pod-6cbf7b6fd-s96sn       1/1   Running     0             16h
+neuvector-updater-pod-29579040-45mxt        0/1   Completed   0             2d16h
+neuvector-updater-pod-29580480-mrb4c        0/1   Completed   0             40h
+neuvector-updater-pod-29581920-jq4g8        0/1   Completed   0             16h

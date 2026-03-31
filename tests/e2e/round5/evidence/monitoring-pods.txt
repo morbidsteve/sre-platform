@@ -1,0 +1,25 @@
+alertmanager-kube-prometheus-stack-alertmanager-0          2/2   Running     6 (14d ago)     24d
+kube-prometheus-stack-grafana-6df588bd5b-fc6x5             3/3   Running     0               6d17h
+kube-prometheus-stack-kube-state-metrics-cdcfddf74-4tkws   1/1   Running     247 (14d ago)   25d
+kube-prometheus-stack-operator-556566fb89-w5fbc            1/1   Running     5 (14d ago)     25d
+kube-prometheus-stack-prometheus-node-exporter-5nhrq       1/1   Running     3 (14d ago)     25d
+kube-prometheus-stack-prometheus-node-exporter-8t2pm       1/1   Running     25 (14d ago)    25d
+kube-prometheus-stack-prometheus-node-exporter-nh7zb       1/1   Running     3 (14d ago)     25d
+prometheus-blackbox-exporter-75b8785fdf-x6tqg              1/1   Running     0               5d19h
+prometheus-kube-prometheus-stack-prometheus-0              2/2   Running     6 (14d ago)     24d
+sre-compliance-drift-29582820-c5c2c                        0/1   Error       0               108m
+sre-compliance-drift-29582820-llw9n                        0/1   Error       0               107m
+sre-compliance-drift-29582880-9hcfj                        0/1   Error       0               47m
+sre-compliance-drift-29582880-t45bp                        0/1   Error       0               48m
+sre-compliance-evidence-29580780-8n8tx                     0/1   Error       0               35h
+sre-compliance-evidence-29580780-vkff7                     0/1   Error       0               35h
+sre-compliance-evidence-29580780-xx4gw                     0/1   Error       0               35h
+sre-compliance-evidence-29582220-hm6pq                     0/1   Error       0               11h
+sre-compliance-evidence-29582220-jlckh                     0/1   Error       0               11h
+sre-compliance-evidence-29582220-kg4ch                     0/1   Error       0               11h
+sre-compliance-scan-29582280-4dljb                         0/1   Error       0               10h
+sre-compliance-scan-29582280-ktvlw                         0/1   Error       0               10h
+sre-cve-scan-29580780-65kj2                                0/1   Completed   0               35h
+sre-cve-scan-29582220-nkfmd                                0/1   Completed   0               11h
+sre-stig-scan-29579220-dhbq8                               0/1   Error       0               2d13h
+sre-stig-scan-29579220-qrftk                               0/1   Error       0               2d13h

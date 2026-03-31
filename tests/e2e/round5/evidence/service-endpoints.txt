@@ -1,0 +1,9 @@
+dashboard: 403
+grafana: 403
+prometheus: 403
+alertmanager: 403
+portal: 403
+dsop: 403
+keycloak: 302
+harbor: 200
+neuvector: 403

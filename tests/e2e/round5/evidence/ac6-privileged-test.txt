@@ -1,0 +1,59 @@
+Warning: would violate PodSecurity "restricted:latest": privileged (container "t" must not set securityContext.privileged=true), allowPrivilegeEscalation != false (container "t" must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container "t" must set securityContext.capabilities.drop=["ALL"]; container "istio-init" must not include "NET_ADMIN", "NET_RAW" in securityContext.capabilities.add), runAsNonRoot != true (container "istio-init" must not set securityContext.runAsNonRoot=false), runAsUser=0 (container "istio-init" must not set runAsUser=0), seccompProfile (pod or containers "istio-init", "istio-proxy", "t" must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+Error from server: error when creating "STDIN": admission webhook "validate.kyverno.svc-fail" denied the request: 
+
+resource Pod/team-test/test-priv was blocked due to the following policies 
+
+disallow-latest-tag:
+  validate-image-tag: 'validation error: Container images in Pod test-priv must not
+    use the :latest tag or be untagged. All images must specify an explicit version
+    tag (e.g., v1.2.3). Change your image reference from `myimage:latest` or `myimage`
+    to `myimage:v1.2.3`. rule validate-image-tag failed at path /spec/containers/1/image/'
+disallow-privileged-containers:
+  deny-privileged-containers: 'validation error: Privileged containers are not allowed.
+    Pod test-priv has a container with securityContext.privileged set to true. To
+    fix this, set securityContext.privileged to false or remove the privileged field
+    entirely from each container''s securityContext. rule deny-privileged-containers
+    failed at path /spec/containers/1/securityContext/privileged/'
+require-labels:
+  check-required-labels: 'validation error: Pod test-priv in namespace team-test is
+    missing required labels. All Pods must have the following labels: `app.kubernetes.io/name`,
+    `app.kubernetes.io/part-of`, and `sre.io/team`. Add them to your Deployment or
+    Pod spec under metadata.labels. rule check-required-labels failed at path /metadata/labels/app.kubernetes.io/name/'
+require-probes:
+  validate-probes: 'validation failure: All application containers in Pod test-priv
+    must define livenessProbe and readinessProbe. Istio sidecar (istio-proxy) is excluded
+    from this check. Add probes to each container spec using at least one of httpGet,
+    tcpSocket, or exec.'
+require-resource-limits:
+  validate-resource-limits: |-
+    validation error: All containers in Pod test-priv must specify resources.requests and resources.limits for both cpu and memory. Add the following to each container spec:
+
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi". rule validate-resource-limits failed at path /spec/containers/1/resources/limits/
+require-security-context:
+  require-drop-all-capabilities: |-
+    validation failure: All containers in Pod test-priv must set `securityContext.allowPrivilegeEscalation` to false and drop ALL capabilities. Add to each container: securityContext:
+
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+  require-run-as-non-root: 'validation error: Pod test-priv must set `spec.securityContext.runAsNonRoot`
+    to true. Running containers as root is a security risk. Add `securityContext.runAsNonRoot:
+    true` to your Pod spec. rule require-run-as-non-root failed at path /spec/securityContext/runAsNonRoot/'
+restrict-image-registries:
+  validate-image-registry: 'validation error: All container images in Pod test-priv
+    must be from an approved registry. Allowed: harbor.sre.internal, harbor.apps.sre.example.com,
+    harbor.harbor.svc.cluster.local, docker.io, ghcr.io, quay.io, cgr.dev, registry.k8s.io,
+    or short Docker Hub names. rule validate-image-registry[0] failed at path /spec/containers/0/image/
+    rule validate-image-registry[1] failed at path /spec/containers/0/image/ rule
+    validate-image-registry[2] failed at path /spec/containers/0/image/ rule validate-image-registry[3]
+    failed at path /spec/containers/1/image/ rule validate-image-registry[4] failed
+    at path /spec/containers/0/image/ rule validate-image-registry[5] failed at path
+    /spec/containers/0/image/ rule validate-image-registry[6] failed at path /spec/containers/0/image/
+    rule validate-image-registry[7] failed at path /spec/containers/0/image/ rule
+    validate-image-registry[8] failed at path /spec/containers/1/image/'

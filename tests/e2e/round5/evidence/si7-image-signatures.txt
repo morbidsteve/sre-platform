@@ -1,0 +1,224 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/description: Verifies that all container images from harbor.sre.internal
+      are signed using Cosign. This ensures only trusted, verified images are deployed
+      to the cluster as part of the supply chain security controls. System namespaces
+      are excluded from this policy.
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/title: Verify Image Signatures
+    sre.io/nist-controls: SA-10, SI-7
+  creationTimestamp: "2026-03-06T00:01:06Z"
+  generation: 22
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    kustomize.toolkit.fluxcd.io/name: sre-kyverno-policies
+    kustomize.toolkit.fluxcd.io/namespace: flux-system
+    sre.io/policy-category: custom
+  name: verify-image-signatures
+  resourceVersion: "15123578"
+  uid: 1772a400-af9e-4679-9a76-df8ba841f644
+spec:
+  admission: true
+  background: true
+  emitWarning: false
+  rules:
+  - exclude:
+      any:
+      - resources:
+          namespaces:
+          - kube-system
+          - kube-node-lease
+          - kube-public
+          - flux-system
+          - istio-system
+          - cert-manager
+          - monitoring
+          - logging
+          - tempo
+          - openbao
+          - external-secrets
+          - runtime-security
+          - backup
+          - kyverno
+          - neuvector
+          - harbor
+          - velero
+          - keycloak
+          - sre-portal
+          - sre-dashboard
+          - sre-dsop
+          - oauth2-proxy
+          - local-path-storage
+          - metallb-system
+          - sre-builds
+          - tekton-pipelines
+          - tekton-pipelines-resolvers
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    name: verify-cosign-signature
+    skipBackgroundRequests: true
+    verifyImages:
+    - attestors:
+      - entries:
+        - keys:
+            publicKeys: |-
+              -----BEGIN PUBLIC KEY-----
+              MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbeYmaQeGqS1AE5/puceepf0i3Avs
+              ds4Z64EQt29IPdyQRFniSbAwG/ffyY4Qap7KWYE6RpHMeuLkKy91RVDy0A==
+              -----END PUBLIC KEY-----
+            signatureAlgorithm: sha256
+          signatureAlgorithm: sha256
+      imageReferences:
+      - harbor.sre.internal/*
+      mutateDigest: false
+      required: true
+      useCache: true
+      verifyDigest: false
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+status:
+  autogen:
+    rules:
+    - exclude:
+        any:
+        - resources:
+            namespaces:
+            - kube-system
+            - kube-node-lease
+            - kube-public
+            - flux-system
+            - istio-system
+            - cert-manager
+            - monitoring
+            - logging
+            - tempo
+            - openbao
+            - external-secrets
+            - runtime-security
+            - backup
+            - kyverno
+            - neuvector
+            - harbor
+            - velero
+            - keycloak
+            - sre-portal
+            - sre-dashboard
+            - sre-dsop
+            - oauth2-proxy
+            - local-path-storage
+            - metallb-system
+            - sre-builds
+            - tekton-pipelines
+            - tekton-pipelines-resolvers
+        resources: {}
+      match:
+        any:
+        - resources:
+            kinds:
+            - DaemonSet
+            - Deployment
+            - Job
+            - ReplicaSet
+            - ReplicationController
+            - StatefulSet
+        resources: {}
+      name: autogen-verify-cosign-signature
+      skipBackgroundRequests: true
+      verifyImages:
+      - attestors:
+        - entries:
+          - keys:
+              publicKeys: |-
+                -----BEGIN PUBLIC KEY-----
+                MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbeYmaQeGqS1AE5/puceepf0i3Avs
+                ds4Z64EQt29IPdyQRFniSbAwG/ffyY4Qap7KWYE6RpHMeuLkKy91RVDy0A==
+                -----END PUBLIC KEY-----
+              signatureAlgorithm: sha256
+            signatureAlgorithm: sha256
+        imageReferences:
+        - harbor.sre.internal/*
+        mutateDigest: false
+        required: true
+        useCache: true
+        validate: {}
+        verifyDigest: false
+    - exclude:
+        any:
+        - resources:
+            kinds:
+            - CronJob
+            namespaces:
+            - kube-system
+            - kube-node-lease
+            - kube-public
+            - flux-system
+            - istio-system
+            - cert-manager
+            - monitoring
+            - logging
+            - tempo
+            - openbao
+            - external-secrets
+            - runtime-security
+            - backup
+            - kyverno
+            - neuvector
+            - harbor
+            - velero
+            - keycloak
+            - sre-portal
+            - sre-dashboard
+            - sre-dsop
+            - oauth2-proxy
+            - local-path-storage
+            - metallb-system
+            - sre-builds
+            - tekton-pipelines
+            - tekton-pipelines-resolvers
+        resources: {}
+      match:
+        any:
+        - resources:
+            kinds:
+            - CronJob
+        resources: {}
+      name: autogen-cronjob-verify-cosign-signature
+      skipBackgroundRequests: true
+      verifyImages:
+      - attestors:
+        - entries:
+          - keys:
+              publicKeys: |-
+                -----BEGIN PUBLIC KEY-----
+                MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbeYmaQeGqS1AE5/puceepf0i3Avs
+                ds4Z64EQt29IPdyQRFniSbAwG/ffyY4Qap7KWYE6RpHMeuLkKy91RVDy0A==
+                -----END PUBLIC KEY-----
+              signatureAlgorithm: sha256
+            signatureAlgorithm: sha256
+        imageReferences:
+        - harbor.sre.internal/*
+        mutateDigest: false
+        required: true
+        useCache: true
+        validate: {}
+        verifyDigest: false
+  conditions:
+  - lastTransitionTime: "2026-03-17T12:38:13Z"
+    message: Ready
+    reason: Succeeded
+    status: "True"
+    type: Ready
+  rulecount:
+    generate: 0
+    mutate: 0
+    validate: 0
+    verifyimages: 1
+  validatingadmissionpolicy:
+    generated: false
+    message: ""
