@@ -56,13 +56,9 @@ spec:
       env: []
     containerSecurityContext:
       allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      runAsNonRoot: true
-      capabilities:
-        drop:
-          - ALL
-        add:
-          - NET_BIND_SERVICE
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+
     ingress:
       enabled: false
     autoscaling:
@@ -73,3 +69,11 @@ spec:
       enabled: true
     podDisruptionBudget:
       enabled: false
+    podSecurityContext:
+      runAsNonRoot: false
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
