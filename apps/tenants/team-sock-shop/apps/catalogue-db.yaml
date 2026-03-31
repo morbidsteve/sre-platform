@@ -26,6 +26,8 @@ spec:
     remediation:
       retries: 3
   values:
+    imagePullSecrets:
+      - name: harbor-pull-secret
     app:
       name: "catalogue-db"
       team: "team-sock-shop"
