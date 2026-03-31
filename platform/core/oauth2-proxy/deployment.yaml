@@ -85,7 +85,7 @@ spec:
             - --insecure-oidc-skip-issuer-verification=true
             - --oidc-groups-claim=groups
             - --code-challenge-method=S256
-            - --redirect-url=https://dashboard.${SRE_DOMAIN}/oauth2/callback
+            - --redirect-url=https://oauth2.${SRE_DOMAIN}/oauth2/callback
             - --scope=openid profile email groups
             - --custom-templates-dir=/templates
           env:
