@@ -20,6 +20,10 @@ spec:
       serviceAccountName: {{ include "sre-api-service.serviceAccountName" . }}
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ .Values.app.terminationGracePeriodSeconds | default 30 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "sre-lib.podSecurityContext" . | nindent 8 }}
       {{- if and (hasKey .Values "migrations") .Values.migrations.enabled }}
