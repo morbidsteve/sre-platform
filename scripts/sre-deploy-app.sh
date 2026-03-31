@@ -67,6 +67,7 @@ EXTRA_PORTS=()
 CONFIG_FILES=()
 APP_PROTOCOL="${APP_PROTOCOL:-http}"
 PROBE_TYPE="${PROBE_TYPE:-http}"
+IMAGE_PULL_SECRET=""
 CPU_REQUEST=""
 CPU_LIMIT=""
 MEMORY_REQUEST=""
@@ -108,6 +109,7 @@ while [[ $# -gt 0 ]]; do
     --memory-limit)     MEMORY_LIMIT="$2"; shift 2 ;;
     --liveness-path)    LIVENESS_PATH="$2"; shift 2 ;;
     --readiness-path)   READINESS_PATH="$2"; shift 2 ;;
+    --image-pull-secret) IMAGE_PULL_SECRET="$2"; shift 2 ;;
     --no-commit) NO_COMMIT=true; shift ;;
     --help|-h)
       echo "Usage: $0 [--name NAME --team TEAM --image IMAGE --tag TAG] [options]"
@@ -627,6 +629,20 @@ fi
 if [[ "${SINGLETON}" == "true" ]]; then
   cat >> "${APP_FILE}" <<EOF
     singleton: true
+EOF
+fi
+
+# imagePullSecrets — explicit flag or auto-detect harbor-pull-secret
+if [[ -z "${IMAGE_PULL_SECRET}" ]]; then
+  # Auto-detect: check if harbor-pull-secret exists in the target namespace
+  if kubectl get secret harbor-pull-secret -n "${TEAM}" >/dev/null 2>&1; then
+    IMAGE_PULL_SECRET="harbor-pull-secret"
+  fi
+fi
+if [[ -n "${IMAGE_PULL_SECRET}" ]]; then
+  cat >> "${APP_FILE}" <<EOF
+    imagePullSecrets:
+      - name: ${IMAGE_PULL_SECRET}
 EOF
 fi
 
