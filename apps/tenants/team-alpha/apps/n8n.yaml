@@ -44,11 +44,11 @@ spec:
           memory: 256Mi
       probes:
         liveness:
-          path: "/"
+          path: "/healthz"
           initialDelaySeconds: 10
           periodSeconds: 10
         readiness:
-          path: "/"
+          path: "/healthz"
           initialDelaySeconds: 5
           periodSeconds: 5
       env: []
@@ -64,6 +64,12 @@ spec:
       capabilities:
         drop:
           - ALL
+    startupProbe:
+      enabled: true
+      path: "/healthz"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 30
     persistence:
       enabled: true
       mountPath: "/root/.n8n"
