@@ -7,15 +7,15 @@ A hardened, compliance-ready Kubernetes platform for deploying applications in r
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![RKE2](https://img.shields.io/badge/K8s-RKE2_v1.34-blue.svg)](https://docs.rke2.io)
 [![Flux CD](https://img.shields.io/badge/GitOps-Flux_CD_v2-blue.svg)](https://fluxcd.io)
-[![Components](https://img.shields.io/badge/Platform-16_HelmReleases-green.svg)](#platform-components)
-[![Policies](https://img.shields.io/badge/Kyverno-18_policies-blue.svg)](#policy-enforcement-18-kyverno-clusterpolicies)
+[![Components](https://img.shields.io/badge/Platform-22_HelmReleases-green.svg)](#platform-components)
+[![Policies](https://img.shields.io/badge/Kyverno-20_policies-blue.svg)](#policy-enforcement-18-kyverno-clusterpolicies)
 [![NIST Controls](https://img.shields.io/badge/NIST_800--53-49_controls-blue.svg)](#compliance--dsopropc-ready)
 
 ---
 
 ## What You Get
 
-A complete Kubernetes platform with 16 integrated HelmReleases, 18 Kyverno policies, and all 8 RAISE 2.0 security gates — deployed and managed through GitOps:
+A complete Kubernetes platform with 22 integrated HelmReleases, 20 Kyverno policies, and all 8 RAISE 2.0 security gates — deployed and managed through GitOps:
 
 ![SRE Dashboard showing all 16 healthy components](docs/screenshots/dashboard-home.png)
 
