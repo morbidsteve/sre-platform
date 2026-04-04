@@ -43,7 +43,7 @@ Internet / CI Pipeline
 | Resource | Purpose |
 |----------|---------|
 | `namespace.yaml` | Harbor namespace with Istio sidecar injection |
-| `helmrelease.yaml` | Flux HelmRelease for Harbor chart v1.14.2 |
+| `helmrelease.yaml` | Flux HelmRelease for Harbor chart v1.16.3 |
 | `virtualservice.yaml` | Istio routing from gateway to Harbor core/portal |
 | `network-policies/default-deny.yaml` | Default deny all ingress/egress |
 | `network-policies/allow-harbor.yaml` | Explicit allows for required traffic flows |

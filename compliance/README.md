@@ -30,6 +30,21 @@ Maps to NIST 800-171, which is a subset of 800-53. The `nist-800-53-mappings/` d
 OSCAL (Open Security Controls Assessment Language) artifacts enable Continuous Authority to Operate by providing machine-readable compliance evidence.
 
 ```bash
-task compliance-report    # Generate compliance report from live cluster
-task compliance-gaps      # Show NIST controls without implementing components
+# Generate compliance report from live cluster
+./scripts/compliance-report.sh
+
+# Generate full ATO package
+./scripts/generate-ato-package.sh
+
+# Generate OSCAL SSP
+./scripts/generate-ssp.sh
+
+# Convert OSCAL to eMASS format
+./scripts/oscal-to-emass.sh
+
+# Run quarterly STIG scan
+./scripts/quarterly-stig-scan.sh
+
+# Check POA&M status
+./scripts/poam-check.sh
 ```

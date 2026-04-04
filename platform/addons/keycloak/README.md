@@ -4,7 +4,7 @@ SSO/OIDC provider for all platform and application UIs in the SRE platform.
 
 ## What It Does
 
-- **Centralized SSO** — Single sign-on for Grafana, Harbor, ArgoCD, Backstage, NeuVector
+- **Centralized SSO** — Single sign-on for Dashboard, Grafana, Harbor, NeuVector, OpenBao, and all tenant apps via OAuth2 Proxy
 - **SAML/LDAP Federation** — Active Directory and DoD JEDI integration
 - **RBAC Group Mapping** — Groups mapped to Kubernetes ClusterRoles
 - **MFA Enforcement** — Multi-factor authentication for all users
@@ -22,7 +22,7 @@ SSO/OIDC provider for all platform and application UIs in the SRE platform.
 
 ## Helm Chart Version
 
-Bitnami Keycloak chart is pinned to version `19.4.1`.
+Bitnami Keycloak chart is pinned to version `24.8.1`.
 
 ## Architecture
 
@@ -47,9 +47,12 @@ After deployment, configure OIDC clients for each platform UI:
 
 | Client | Redirect URI |
 |--------|-------------|
-| Grafana | `https://grafana.apps.sre.example.com/login/generic_oauth` |
-| Harbor | `https://harbor.apps.sre.example.com/c/oidc/callback` |
-| NeuVector | `https://neuvector.apps.sre.example.com/` |
+| oauth2-proxy | `https://oauth2.apps.sre.example.com/oauth2/callback` |
+| grafana | `https://grafana.apps.sre.example.com/login/generic_oauth` |
+| harbor | `https://harbor.apps.sre.example.com/c/oidc/callback` |
+| neuvector | `https://neuvector.apps.sre.example.com/` |
+| sre-dashboard | `https://dashboard.apps.sre.example.com/oauth2/callback` |
+| openbao | `https://openbao.apps.sre.example.com/ui/vault/auth/oidc/oidc/callback` |
 
 ### Group-Based RBAC
 

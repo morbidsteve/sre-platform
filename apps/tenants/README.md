@@ -19,10 +19,12 @@ tenants/
 
 ## Onboarding a New Team
 
-Use the `/new-tenant` command to scaffold a new tenant:
+```bash
+# Full onboarding: namespace, RBAC, network policies, Harbor project, Keycloak groups
+./scripts/onboard-tenant.sh my-team
 
-```
-/new-tenant <team-name>
+# Quick namespace creation only
+./scripts/sre-new-tenant.sh my-team
 ```
 
-This creates the full directory structure with sensible defaults.
+The onboarding script creates the full directory structure, applies it to the cluster, and configures Harbor and Keycloak integration. See [Team Onboarding Guide](../../docs/developer-guides/team-onboarding.md).
