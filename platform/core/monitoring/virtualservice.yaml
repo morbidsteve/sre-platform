@@ -17,6 +17,16 @@ spec:
   gateways:
     - istio-system/main
   http:
+    # OAuth2 proxy — routes /oauth2/* to oauth2-proxy for SSO flow
+    - match:
+        - uri:
+            prefix: /oauth2/
+      route:
+        - destination:
+            host: oauth2-proxy.oauth2-proxy.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 30s
     - route:
         - destination:
             host: kube-prometheus-stack-grafana.monitoring.svc.cluster.local
@@ -45,6 +55,16 @@ spec:
   gateways:
     - istio-system/main
   http:
+    # OAuth2 proxy — routes /oauth2/* to oauth2-proxy for SSO flow
+    - match:
+        - uri:
+            prefix: /oauth2/
+      route:
+        - destination:
+            host: oauth2-proxy.oauth2-proxy.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 30s
     - route:
         - destination:
             host: kube-prometheus-stack-prometheus.monitoring.svc.cluster.local
@@ -68,6 +88,16 @@ spec:
   gateways:
     - istio-system/main
   http:
+    # OAuth2 proxy — routes /oauth2/* to oauth2-proxy for SSO flow
+    - match:
+        - uri:
+            prefix: /oauth2/
+      route:
+        - destination:
+            host: oauth2-proxy.oauth2-proxy.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 30s
     - route:
         - destination:
             host: kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local
