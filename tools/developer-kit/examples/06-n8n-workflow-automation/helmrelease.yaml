@@ -1,0 +1,89 @@
+---
+# n8n — workflow automation platform
+# Demonstrates: root-required app, non-standard port, persistent storage, startup probe
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: n8n
+  namespace: REPLACE_TEAM_NAMESPACE
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: REPLACE_TEAM_NAME
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./apps/templates/web-app
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    app:
+      name: "n8n"
+      team: "REPLACE_TEAM_NAME"
+      image:
+        repository: "harbor.apps.sre.example.com/REPLACE_TEAM_NAME/n8n"
+        tag: "v1.64.0"
+        pullPolicy: IfNotPresent
+      port: 5678
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      probes:
+        liveness:
+          path: "/healthz"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readiness:
+          path: "/healthz"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      env: []
+    # n8n requires root for its internal process management
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: false
+      capabilities:
+        drop:
+          - ALL
+    startupProbe:
+      enabled: true
+      path: "/healthz"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 30
+    persistence:
+      enabled: true
+      mountPath: "/root/.n8n"
+      size: "5Gi"
+    ingress:
+      enabled: true
+      host: "n8n.apps.sre.example.com"
+    autoscaling:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    networkPolicy:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false
