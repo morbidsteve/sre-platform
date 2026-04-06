@@ -9,3 +9,4 @@ resources:
   - database-networkpolicy.yaml
   - backend-helmrelease.yaml
   - frontend-helmrelease.yaml
+  - api-virtualservice.yaml
