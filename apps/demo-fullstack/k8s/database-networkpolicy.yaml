@@ -1,0 +1,37 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: demo-db
+  namespace: team-demo
+  labels:
+    app.kubernetes.io/name: demo-db
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-demo
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: demo-db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow connections from the backend only
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: demo-backend
+      ports:
+        - port: 5432
+          protocol: TCP
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

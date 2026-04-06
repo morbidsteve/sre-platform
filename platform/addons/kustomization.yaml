@@ -9,6 +9,7 @@ resources:
   - components/sre-dashboard.yaml
   - components/sre-portal.yaml
   - components/sre-dsop-wizard.yaml
+  - components/demo-fullstack.yaml
   # - components/tekton.yaml
   # - components/argocd.yaml
   # - components/backstage.yaml
