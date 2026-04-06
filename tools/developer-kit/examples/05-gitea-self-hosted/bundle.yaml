@@ -1,0 +1,35 @@
+apiVersion: sre.io/v1alpha1
+kind: DeploymentBundle
+metadata:
+  name: gitea
+  version: "1.22.0"
+  team: team-demo
+  author: "Demo Developer"
+  description: "Self-hosted Git server for source code management"
+spec:
+  app:
+    type: web-app
+    image: images/gitea.tar
+    port: 3000
+    resources: small
+    ingress: gitea.apps.sre.example.com
+    probes:
+      liveness: /
+      readiness: /
+  services:
+    database:
+      enabled: false
+    redis:
+      enabled: false
+    sso:
+      enabled: false
+    storage:
+      enabled: true
+      mountPath: /var/lib/gitea
+      size: 10Gi
+  security:
+    runAsNonRoot: true
+    readOnlyRootFilesystem: false
+  source:
+    included: false
+  classification: UNCLASSIFIED

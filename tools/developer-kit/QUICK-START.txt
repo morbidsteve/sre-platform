@@ -3,13 +3,20 @@
 You have received this kit because you need to deploy an application
 to the Secure Runtime Environment (SRE) platform.
 
+HOW IT WORKS:
+
+  You create a bundle --> Submit to SRE team --> DSOP pipeline runs
+  security scans --> ISSM reviews --> SRE operator deploys your app
+
+  You don't need cluster access. You just need this kit and a container image.
+
 FASTEST PATH (no command line needed):
 
   1. Open bundle-builder.html in your web browser
   2. Fill in the form with your app details
   3. Upload your container image (.tar file)
   4. Click "Generate Bundle"
-  5. Send the .bundle.tar.gz file to your platform operator
+  5. Send the .bundle.tar.gz file to your SRE platform operator
 
 NEED TO CREATE A .tar FILE FROM YOUR DOCKER IMAGE?
 
@@ -28,17 +35,34 @@ WANT FULL CONTROL? (manual method)
   4. Create the bundle:
      mkdir -p images
      mv myapp.tar images/
-     tar czf myapp-v1.0.0.bundle.tar.gz bundle.yaml images/ README.md
+     tar czf myapp-v1.0.0.bundle.tar.gz bundle.yaml images/
 
 EXAMPLES
 
-  See the examples/ directory for 4 complete bundle configurations,
-  from a simple web app to a multi-container vendor deployment.
+  See the examples/ directory for 6 complete configurations:
+    01 - Simple web app (minimum viable deployment)
+    02 - App with database and SSO
+    03 - Multi-container (API + worker + cron job)
+    04 - Vendor/commercial software (COTS)
+    05 - Gitea (stateful app with persistent storage)
+    06 - n8n (app requiring root with policy exception)
 
-NEED MORE HELP?
+  Each example has:
+    bundle.yaml      - What you create and submit
+    helmrelease.yaml - What the operator generates (reference only)
+    README.md        - Explanation of the configuration
 
-  Read: docs/bundle-guide.md
+WHAT THE PLATFORM PROVIDES AUTOMATICALLY:
+
+  - HTTPS certificates
+  - mTLS between all services
+  - Network isolation
+  - Prometheus monitoring
+  - Centralized logging
+  - SSO authentication (if requested)
+  - Container vulnerability scanning
 
 QUESTIONS?
 
   Contact your SRE platform operator.
+  Read README.md for the full guide.

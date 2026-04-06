@@ -1,0 +1,35 @@
+apiVersion: sre.io/v1alpha1
+kind: DeploymentBundle
+metadata:
+  name: n8n
+  version: "1.64.0"
+  team: team-demo
+  author: "Demo Developer"
+  description: "Workflow automation platform for connecting services"
+spec:
+  app:
+    type: web-app
+    image: images/n8n.tar
+    port: 5678
+    resources: small
+    ingress: n8n.apps.sre.example.com
+    probes:
+      liveness: /healthz
+      readiness: /healthz
+  services:
+    database:
+      enabled: false
+    redis:
+      enabled: false
+    sso:
+      enabled: false
+    storage:
+      enabled: true
+      mountPath: /root/.n8n
+      size: 5Gi
+  security:
+    runAsNonRoot: false
+    readOnlyRootFilesystem: false
+  source:
+    included: false
+  classification: UNCLASSIFIED
