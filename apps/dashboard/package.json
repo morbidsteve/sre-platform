@@ -1,6 +1,6 @@
 {
   "name": "sre-dashboard",
-  "version": "5.0.75",
+  "version": "5.0.76",
   "description": "SRE Platform Dashboard — deploy apps and monitor platform health",
   "main": "server.js",
   "scripts": {
