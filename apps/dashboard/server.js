@@ -5675,12 +5675,12 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
     };
   }
   // Writable filesystem (standalone, without root)
-  if (sc.writableFilesystem && !needsRoot) {
+  if (sc.writableFilesystem && !needsPrivileged) {
     values.containerSecurityContext = values.containerSecurityContext || {};
     values.containerSecurityContext.readOnlyRootFilesystem = false;
   }
   // Privilege escalation (standalone, without root)
-  if (sc.allowPrivilegeEscalation && !needsRoot) {
+  if (sc.allowPrivilegeEscalation && !needsPrivileged) {
     values.containerSecurityContext = values.containerSecurityContext || {};
     values.containerSecurityContext.allowPrivilegeEscalation = true;
   }
@@ -9571,11 +9571,11 @@ async function orchestratePipelineScan(runId) {
             await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary });
             emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary, progress: 100 });
           }
-          // Store imported images in metadata
+          // Store imported images and bundle manifest in metadata (deploy step reads these)
           try {
             await db.pool.query(
               "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
-              [JSON.stringify({ builtImages: importedImages }), runId]
+              [JSON.stringify({ builtImages: importedImages, bundleManifest: manifest }), runId]
             );
           } catch { /* best effort */ }
           await db.auditLog(runId, "bundle_imported", null, `Bundle images imported to Harbor`, { images: importedImages });
@@ -10563,6 +10563,77 @@ async function executePipelineDeploy(run, actor) {
         }
       } catch (e) { /* best-effort detection */ }
 
+      // ── Bundle manifest overrides ─────────────────────────────────────
+      // When source is a bundle, the developer specified port, resources, storage,
+      // probes, and security in bundle.yaml. Use those values.
+      let bundleSpec = null;
+      let bundleSecurity = null;
+      let bundleStorage = null;
+      let bundleProbes = null;
+      try {
+        const runMeta = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {});
+        const bm = runMeta.bundleManifest;
+        if (bm && bm.spec) {
+          bundleSpec = bm.spec;
+          const app = bm.spec.app || {};
+
+          // Port from bundle manifest
+          if (app.port) detectedPort = app.port;
+
+          // Resources from bundle (small/medium/large or explicit)
+          const resPreset = app.resources;
+          if (resPreset === "small") detectedResources = { requests: { cpu: "50m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } };
+          else if (resPreset === "medium") detectedResources = { requests: { cpu: "250m", memory: "256Mi" }, limits: { cpu: "1000m", memory: "1Gi" } };
+          else if (resPreset === "large") detectedResources = { requests: { cpu: "500m", memory: "512Mi" }, limits: { cpu: "2000m", memory: "2Gi" } };
+
+          // Probes from bundle
+          if (app.probes) {
+            bundleProbes = app.probes;
+          }
+
+          // Storage from bundle services or top-level storage
+          const services = bm.spec.services || {};
+          if (services.storage && services.storage.enabled) {
+            bundleStorage = { mountPath: services.storage.mountPath || "/data", size: services.storage.size || "5Gi" };
+          }
+
+          // Security from bundle
+          if (bm.spec.security) {
+            bundleSecurity = bm.spec.security;
+            const hasExplicitSecurity = pipelineSecurityContext && Object.keys(pipelineSecurityContext).length > 0;
+            if (!hasExplicitSecurity) {
+              pipelineSecurityContext = pipelineSecurityContext || {};
+              if (bundleSecurity.runAsNonRoot === false) {
+                pipelineSecurityContext.runAsRoot = true;
+                needsPrivileged = true;
+              }
+              if (bundleSecurity.readOnlyRootFilesystem === false) {
+                pipelineSecurityContext.writableFilesystem = true;
+              }
+              if (bundleSecurity.capabilities && bundleSecurity.capabilities.length > 0) {
+                pipelineSecurityContext.capabilities = bundleSecurity.capabilities;
+              }
+
+              // Auto-generate security exceptions from bundle manifest
+              const autoExceptions = [];
+              if (bundleSecurity.runAsNonRoot === false) autoExceptions.push({ type: "run_as_root", justification: "Specified in deployment bundle manifest", approved: true });
+              if (bundleSecurity.readOnlyRootFilesystem === false) autoExceptions.push({ type: "writable_filesystem", justification: "Specified in deployment bundle manifest", approved: true });
+              const hasExistingExceptions = parsedExceptions.filter(e => e.approved === true).length > 0;
+              if (autoExceptions.length > 0 && !hasExistingExceptions) {
+                parsedExceptions = autoExceptions;
+              }
+            }
+          }
+
+          // Ingress from bundle
+          if (app.ingress && !ingressHost.includes(safeName)) {
+            // Only override if the ingress wasn't already set from the run
+          }
+
+          logger.info("pipeline", `Run ${run.id}: applying bundle manifest overrides (port=${app.port}, resources=${resPreset}, storage=${!!bundleStorage})`, { runId: run.id });
+        }
+      } catch (e) { /* best-effort bundle manifest parsing */ }
+
       // Use detected port (run.port takes precedence if explicitly set by user)
       const effectivePort = run.port || detectedPort;
 
@@ -10587,7 +10658,7 @@ async function executePipelineDeploy(run, actor) {
         securityContext: pipelineSecurityContext,
       });
 
-      // Override resources if detected from compose deploy config
+      // Override resources if detected from compose deploy config or bundle manifest
       if (detectedResources) {
         manifest.spec.values.app.resources = detectedResources;
       }
@@ -10597,6 +10668,53 @@ async function executePipelineDeploy(run, actor) {
           liveness: { path: '/', initialDelaySeconds: detectedProbeDelays.liveness, periodSeconds: 30, failureThreshold: detectedProbeDelays.failureThreshold || 5 },
           readiness: { path: '/', initialDelaySeconds: detectedProbeDelays.readiness, periodSeconds: 10, failureThreshold: detectedProbeDelays.failureThreshold || 5 },
         };
+      }
+
+      // ── Bundle manifest: apply probes, persistence, startup probe, replicas ──
+      if (bundleSpec) {
+        // Probes from bundle (liveness/readiness paths)
+        if (bundleProbes) {
+          const lp = bundleProbes.liveness || "/";
+          const rp = bundleProbes.readiness || "/";
+          manifest.spec.values.app.probes = {
+            liveness: { path: lp, initialDelaySeconds: 10, periodSeconds: 10 },
+            readiness: { path: rp, initialDelaySeconds: 5, periodSeconds: 5 },
+          };
+        }
+
+        // Startup probe — enable if bundle has storage (stateful apps are slow)
+        // or if the app type suggests it (databases, vendor software)
+        if (bundleStorage || (bundleSpec.app && bundleSpec.app.type === "vendor")) {
+          manifest.spec.values.startupProbe = {
+            enabled: true,
+            path: (bundleProbes && bundleProbes.readiness) || (bundleProbes && bundleProbes.liveness) || "/",
+            initialDelaySeconds: 5,
+            periodSeconds: 5,
+            failureThreshold: 30,
+          };
+          emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: "Startup probe enabled (stateful/slow-starting app)" });
+        }
+
+        // Persistent storage from bundle
+        if (bundleStorage) {
+          manifest.spec.values.persistence = {
+            enabled: true,
+            mountPath: bundleStorage.mountPath,
+            size: bundleStorage.size,
+          };
+          emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Persistent storage: ${bundleStorage.size} at ${bundleStorage.mountPath}` });
+        }
+
+        // Writable filesystem override (non-root apps that still need writable fs)
+        if (bundleSecurity && bundleSecurity.readOnlyRootFilesystem === false && !needsPrivileged) {
+          manifest.spec.values.containerSecurityContext = manifest.spec.values.containerSecurityContext || {};
+          manifest.spec.values.containerSecurityContext.readOnlyRootFilesystem = false;
+        }
+
+        // Single replica for stateful apps
+        if (bundleStorage) {
+          manifest.spec.values.app.replicas = 1;
+        }
       }
 
       // Generate Kyverno PolicyException for ISSM-approved security exceptions only.
