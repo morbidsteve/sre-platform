@@ -9,7 +9,7 @@ Everything you need to create a deployment bundle for the Secure Runtime Environ
 | `bundle-builder.html` | Open in your browser to create a bundle with a visual form (recommended) |
 | `sre-bundle.sh` | Command-line tool for creating bundles (requires bash + docker) |
 | `bundle.yaml.template` | Manifest template with comments explaining every field |
-| `examples/` | Four complete example bundles from simple to complex |
+| `examples/` | Five example bundles from simple to complex |
 | `docs/bundle-guide.md` | Comprehensive guide covering all deployment scenarios |
 | `QUICK-START.txt` | Plain text quick start (5 steps to your first bundle) |
 
