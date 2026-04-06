@@ -31,7 +31,7 @@ spec:
       team: team-demo
       image:
         repository: harbor.apps.sre.example.com/platform/demo-frontend
-        tag: "v1.0.3"
+        tag: "v1.0.4"
         pullPolicy: IfNotPresent
       port: 8080
       replicas: 1
