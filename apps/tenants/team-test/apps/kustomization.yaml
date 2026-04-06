@@ -4,7 +4,5 @@ kind: Kustomization
 resources:
   - fastapi-backend.yaml
   - gitea.yaml
-  - go-httpbin-policy-exception.yaml
-  - go-httpbin.yaml
   - petclinic.yaml
   - wordpress.yaml
