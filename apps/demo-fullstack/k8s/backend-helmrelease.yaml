@@ -62,6 +62,7 @@ spec:
       enabled: true
       allowedNamespaces:
         - namespace: team-demo
+        - namespace: istio-system
     autoscaling:
       enabled: false
     serviceMonitor:
