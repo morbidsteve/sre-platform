@@ -33,7 +33,7 @@ spec:
         repository: harbor.apps.sre.example.com/platform/demo-backend
         tag: "v1.0.0"
         pullPolicy: IfNotPresent
-      port: 8080
+      port: 9090
       replicas: 1
       resources:
         requests:
@@ -55,7 +55,7 @@ spec:
         - name: DATABASE_URL
           value: "postgres://taskboard:changeme-use-external-secrets@demo-db.team-demo.svc.cluster.local:5432/taskboard?sslmode=disable"
         - name: PORT
-          value: "8080"
+          value: "9090"
     imagePullSecrets:
       - name: harbor-pull-creds
     authorizationPolicy:
