@@ -29,6 +29,8 @@ spec:
   rules:
     - to:
         - operation:
+            notMethods:
+              - OPTIONS
             notPaths:
               - /healthz
               - /health
