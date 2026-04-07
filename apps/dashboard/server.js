@@ -5676,6 +5676,7 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
     };
   } else if (needsRoot) {
     // Root user only — NOT privileged, just uid 0
+    // Root containers typically need CHOWN, FOWNER, SETGID, SETUID for ownership operations
     values.podSecurityContext = {
       runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
       seccompProfile: { type: "RuntimeDefault" },
@@ -5685,7 +5686,10 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
       runAsUser: 0,
       allowPrivilegeEscalation: false,
       readOnlyRootFilesystem: sc.writableFilesystem ? false : true,
-      capabilities: { drop: ["ALL"] },
+      capabilities: {
+        drop: ["ALL"],
+        add: ["CHOWN", "FOWNER", "SETGID", "SETUID", "DAC_OVERRIDE"],
+      },
     };
   }
   // Writable filesystem (standalone, without root)
