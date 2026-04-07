@@ -1,0 +1,38 @@
+---
+apiVersion: kyverno.io/v2beta1
+kind: PolicyException
+metadata:
+  name: gitea-security-exception
+  namespace: team-demo
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+    sre.io/team: team-demo
+    sre.io/managed-by: dsop-pipeline
+  annotations:
+    sre.io/exception-reason: 'run_as_root: Specified in deployment bundle manifest; writable_filesystem: Specified in deployment bundle manifest'
+    sre.io/exception-approver: sre-admin@sre.example.com
+    sre.io/exception-expiry: '2026-07-06'
+    sre.io/pipeline-generated: 'true'
+spec:
+  exceptions:
+    - policyName: require-run-as-nonroot
+      ruleNames:
+        - require-pod-run-as-nonroot
+        - require-container-run-as-nonroot
+    - policyName: require-security-context
+      ruleNames:
+        - require-run-as-non-root
+        - require-read-only-root-filesystem
+    - policyName: disallow-privilege-escalation
+      ruleNames:
+        - disallow-privilege-escalation-containers
+        - disallow-privilege-escalation-init-containers
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - team-demo
+          names:
+            - gitea-*
