@@ -259,7 +259,7 @@ export function BundleUploader({ manifest, uploadId, images, sourceIncluded, onU
         <input
           ref={fileInputRef}
           type="file"
-          accept=".tar.gz,.tgz"
+          accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-tar"
           onChange={handleInputChange}
           className="hidden"
         />
