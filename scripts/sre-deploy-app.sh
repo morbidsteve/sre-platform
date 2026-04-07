@@ -362,6 +362,17 @@ if [[ "${CLI_MODE}" == "true" && -f "${APP_FILE}" ]]; then
   exit 1
 fi
 
+# ---------- Rewrite cluster-internal registry URL ----------
+# Kubelet on bare-metal nodes resolves DNS via node DNS (not CoreDNS),
+# so harbor.harbor.svc.cluster.local won't resolve.  Rewrite to the
+# external FQDN which the node-hosts-manager DaemonSet maps in /etc/hosts.
+if [[ "${IMAGE_REPO}" == harbor.harbor.svc.cluster.local/* ]]; then
+  OLD_REPO="${IMAGE_REPO}"
+  IMAGE_REPO="harbor.apps.sre.example.com/${IMAGE_REPO#harbor.harbor.svc.cluster.local/}"
+  warn "Rewrote image repository for node-level pulls:"
+  warn "  ${OLD_REPO} → ${IMAGE_REPO}"
+fi
+
 # ---------- Generate HelmRelease ----------
 
 info "Generating HelmRelease manifest..."
@@ -808,7 +819,7 @@ success "Created ${APP_FILE#"${REPO_ROOT}/"}"
 
 # Warn if image is not from an approved Harbor registry
 case "$IMAGE_REPO" in
-  harbor.sre.internal/*|harbor.apps.sre.example.com/*|harbor.harbor.svc.cluster.local/*)
+  harbor.sre.internal/*|harbor.apps.sre.example.com/*)
     ;;
   *)
     warn "Image repository '${IMAGE_REPO}' is not from an approved Harbor registry."

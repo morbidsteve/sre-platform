@@ -18,6 +18,9 @@ spec:
     - policyName: require-security-context
       ruleNames:
         - require-run-as-non-root
+    - policyName: restrict-volume-types
+      ruleNames:
+        - restrict-volume-types
   match:
     any:
       - resources:

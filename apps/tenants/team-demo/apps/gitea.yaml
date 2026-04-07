@@ -32,7 +32,7 @@ spec:
       name: gitea
       team: team-demo
       image:
-        repository: harbor.harbor.svc.cluster.local/team-demo/gitea
+        repository: harbor.apps.sre.example.com/team-demo/gitea
         tag: 1.22.0
         pullPolicy: IfNotPresent
       port: 3000
