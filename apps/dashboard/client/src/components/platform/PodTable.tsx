@@ -298,7 +298,7 @@ export function PodTable({ active, refreshTick }: PodTableProps) {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedPod, setSelectedPod] = useState<{ ns: string; name: string } | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loadPods = useCallback(async () => {

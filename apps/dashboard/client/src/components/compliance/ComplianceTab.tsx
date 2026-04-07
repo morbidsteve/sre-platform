@@ -10,6 +10,8 @@ import {
   Search,
   FileText,
   Download,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 import { SkeletonCard } from '../ui/Skeleton';
 import { Button } from '../ui/Button';
@@ -683,10 +685,14 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
   const [complianceScore, setComplianceScore] = useState<ComplianceScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
 
+  // Subtab navigation
+  const [activeSubtab, setActiveSubtab] = useState<'controls' | 'live-report'>('controls');
+
   // Live compliance report
   const [reportData, setReportData] = useState<ComplianceReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
-  const [showReport, setShowReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [expandedReportFamily, setExpandedReportFamily] = useState<string | null>(null);
 
   // Section refs for scrolling
   const controlFamilySectionRef = useRef<HTMLDivElement>(null);
@@ -729,12 +735,12 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
 
   const handleGenerateReport = useCallback(async () => {
     setReportLoading(true);
+    setReportError(null);
     try {
       const result = await generateComplianceReport();
       setReportData(result.report);
-      setShowReport(true);
     } catch {
-      // show error in the score area
+      setReportError('Failed to load compliance report');
     } finally {
       setReportLoading(false);
     }
@@ -770,6 +776,14 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
       clearInterval(scoreId);
     };
   }, [active, loadAudit, loadHealth, loadScore]);
+
+  // Auto-load compliance report when Live Report subtab becomes active
+  useEffect(() => {
+    if (!active || activeSubtab !== 'live-report') return;
+    if (!reportData && !reportLoading) {
+      handleGenerateReport();
+    }
+  }, [active, activeSubtab, reportData, reportLoading, handleGenerateReport]);
 
   const namespaces = useMemo(() => {
     const nsSet = new Set<string>();
@@ -939,24 +953,45 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {complianceScore && (
-              <div className="text-xs text-text-dim">
-                Trend: <span className="font-medium text-text-primary">{complianceScore.trend}</span>
-              </div>
-            )}
-            <button
-              className="btn btn-primary text-sm inline-flex items-center gap-2"
-              onClick={handleGenerateReport}
-              disabled={reportLoading}
-            >
-              <FileText className={`w-4 h-4 ${reportLoading ? 'animate-pulse' : ''}`} />
-              {reportLoading ? 'Generating...' : 'Generate Live Report'}
-            </button>
-          </div>
+          {complianceScore && (
+            <div className="text-xs text-text-dim">
+              Trend: <span className="font-medium text-text-primary">{complianceScore.trend}</span>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Subtab Navigation */}
+      <div className="mb-6 flex items-center gap-1 border-b border-border">
+        <button
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeSubtab === 'controls'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-text-dim hover:text-text-primary'
+          }`}
+          onClick={() => setActiveSubtab('controls')}
+        >
+          <span className="inline-flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            Controls
+          </span>
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeSubtab === 'live-report'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-text-dim hover:text-text-primary'
+          }`}
+          onClick={() => setActiveSubtab('live-report')}
+        >
+          <span className="inline-flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Live Report
+          </span>
+        </button>
+      </div>
+
+      {activeSubtab === 'controls' && (<>
       {/* Section 1: Compliance Summary Cards -- clickable */}
       <div className="mb-6">
         <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-3 flex items-center gap-2">
@@ -1277,6 +1312,226 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
           ))}
         </div>
       </div>
+      </>)}
+
+      {activeSubtab === 'live-report' && (
+        <div>
+          {/* Report Header with Refresh and Download */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Live Compliance Report
+              </h2>
+              {reportData && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-text-dim">
+                  <Clock className="w-3 h-3" />
+                  Last scanned: {new Date(reportData.scanDate).toLocaleString()}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="btn text-sm inline-flex items-center gap-2"
+                onClick={() => { setReportData(null); handleGenerateReport(); }}
+                disabled={reportLoading}
+              >
+                <RefreshCw className={`w-4 h-4 ${reportLoading ? 'animate-spin' : ''}`} />
+                {reportLoading ? 'Scanning...' : 'Refresh'}
+              </button>
+              {reportData && (
+                <button
+                  className="btn text-sm inline-flex items-center gap-2"
+                  onClick={downloadReportHtml}
+                >
+                  <Download className="w-4 h-4" />
+                  Download as HTML
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Error Banner */}
+          {reportError && (
+            <div className="mb-4 px-4 py-3 rounded border text-sm"
+                 style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)', color: 'var(--red)' }}>
+              {reportError} --{' '}
+              <button className="underline" onClick={handleGenerateReport}>Retry</button>
+            </div>
+          )}
+
+          {/* Loading state */}
+          {reportLoading && !reportData && (
+            <div className="space-y-4">
+              <div className="bg-card border border-border rounded-[var(--radius)] p-8 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <RefreshCw className="w-8 h-8 text-accent animate-spin" />
+                  <p className="text-sm text-text-dim">Scanning platform compliance...</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Report Content */}
+          {reportData && (
+            <>
+              {/* Compliance Score Circle */}
+              <div className="mb-6 bg-card border border-border rounded-[var(--radius)] p-6">
+                <div className="flex items-center gap-8">
+                  {/* Score circle */}
+                  <div className="relative flex-shrink-0">
+                    <svg width="120" height="120" viewBox="0 0 120 120">
+                      <circle
+                        cx="60" cy="60" r="52"
+                        fill="none"
+                        stroke="var(--border)"
+                        strokeWidth="8"
+                      />
+                      <circle
+                        cx="60" cy="60" r="52"
+                        fill="none"
+                        stroke={
+                          reportData.summary.compliancePercentage >= 90 ? 'var(--green)' :
+                          reportData.summary.compliancePercentage >= 70 ? 'var(--yellow)' : 'var(--red)'
+                        }
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={`${(reportData.summary.compliancePercentage / 100) * 2 * Math.PI * 52} ${2 * Math.PI * 52}`}
+                        transform="rotate(-90 60 60)"
+                        className="transition-all duration-700"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span
+                        className="text-2xl font-bold font-mono"
+                        style={{
+                          color: reportData.summary.compliancePercentage >= 90 ? 'var(--green)' :
+                                 reportData.summary.compliancePercentage >= 70 ? 'var(--yellow)' : 'var(--red)',
+                        }}
+                      >
+                        {reportData.summary.compliancePercentage}%
+                      </span>
+                      <span className="text-[10px] text-text-dim uppercase tracking-wider">Compliant</span>
+                    </div>
+                  </div>
+
+                  {/* Summary cards */}
+                  <div className="flex-1 grid grid-cols-3 gap-4">
+                    <div className="bg-surface border border-border rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold font-mono text-green">{reportData.summary.pass}</div>
+                      <div className="text-[11px] text-text-dim uppercase tracking-wider mt-1">Pass</div>
+                    </div>
+                    <div className="bg-surface border border-border rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold font-mono text-yellow">{reportData.summary.partial}</div>
+                      <div className="text-[11px] text-text-dim uppercase tracking-wider mt-1">Partial</div>
+                    </div>
+                    <div className="bg-surface border border-border rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold font-mono text-red">{reportData.summary.fail}</div>
+                      <div className="text-[11px] text-text-dim uppercase tracking-wider mt-1">Fail</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 text-xs text-text-dim text-center">
+                  {reportData.summary.total} total controls assessed -- {reportData.title}
+                </div>
+              </div>
+
+              {/* Controls grouped by family in expandable sections */}
+              <div className="space-y-2">
+                {(() => {
+                  const families = new Map<string, typeof reportData.controls>();
+                  reportData.controls.forEach(c => {
+                    if (!families.has(c.family)) families.set(c.family, []);
+                    families.get(c.family)!.push(c);
+                  });
+                  return Array.from(families.entries()).map(([family, controls]) => {
+                    const passCount = controls.filter(c => c.status === 'PASS').length;
+                    const partialCount = controls.filter(c => c.status === 'PARTIAL').length;
+                    const failCount = controls.filter(c => c.status === 'FAIL').length;
+                    const allPass = passCount === controls.length;
+                    const isExpanded = expandedReportFamily === family;
+
+                    return (
+                      <div
+                        key={family}
+                        className="bg-card border border-border rounded-[var(--radius)] overflow-hidden"
+                      >
+                        <div
+                          className="flex items-center justify-between p-4 cursor-pointer hover:bg-surface/50 transition-colors"
+                          onClick={() => setExpandedReportFamily(isExpanded ? null : family)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                              allPass ? 'bg-green' : failCount > 0 ? 'bg-red' : 'bg-yellow'
+                            }`} />
+                            <span className="text-sm font-semibold text-text-bright">{family}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {passCount > 0 && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green/15 text-green">
+                                {passCount} pass
+                              </span>
+                            )}
+                            {partialCount > 0 && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-yellow/15 text-yellow">
+                                {partialCount} partial
+                              </span>
+                            )}
+                            {failCount > 0 && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red/15 text-red">
+                                {failCount} fail
+                              </span>
+                            )}
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-text-dim" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-text-dim" />
+                            )}
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-border bg-surface/30">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
+                                <thead>
+                                  <tr className="border-b border-border text-left">
+                                    <th className="py-2 px-4 text-text-dim font-medium w-[90px]">Control</th>
+                                    <th className="py-2 px-4 text-text-dim font-medium w-[200px]">Description</th>
+                                    <th className="py-2 px-4 text-text-dim font-medium w-[80px]">Status</th>
+                                    <th className="py-2 px-4 text-text-dim font-medium">Evidence</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {controls.map(c => (
+                                    <tr key={c.control} className="border-b border-border/50 hover:bg-surface/50">
+                                      <td className="py-2.5 px-4 font-mono font-semibold text-text-bright">{c.control}</td>
+                                      <td className="py-2.5 px-4 text-text-primary">{c.description}</td>
+                                      <td className="py-2.5 px-4">
+                                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                                          c.status === 'PASS' ? 'bg-green/15 text-green' :
+                                          c.status === 'PARTIAL' ? 'bg-yellow/15 text-yellow' :
+                                          'bg-red/15 text-red'
+                                        }`}>
+                                          {c.status}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-4 text-text-dim">{c.evidence}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Event Detail Modal */}
       <Modal open={selectedEvent !== null} onClose={() => setSelectedEvent(null)} className="max-w-xl w-full">
@@ -1333,94 +1588,6 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
         )}
       </Modal>
 
-      {/* Live Compliance Report Modal */}
-      <Modal open={showReport} onClose={() => setShowReport(false)} className="max-w-4xl w-full max-h-[85vh] overflow-y-auto">
-        {reportData && (
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-base font-semibold text-text-bright">{reportData.title}</h3>
-                <p className="text-xs text-text-dim mt-1">
-                  Generated: {new Date(reportData.scanDate).toLocaleString()}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  className="btn text-sm inline-flex items-center gap-2"
-                  onClick={downloadReportHtml}
-                >
-                  <Download className="w-4 h-4" />
-                  Download HTML
-                </button>
-                <button
-                  onClick={() => setShowReport(false)}
-                  className="text-text-dim hover:text-text-primary transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Summary bar */}
-            <div className="flex items-center gap-4 bg-surface border border-border rounded-lg p-4 mb-4">
-              <span className="text-sm font-medium text-green-400">{reportData.summary.pass} Pass</span>
-              {reportData.summary.partial > 0 && <span className="text-sm font-medium text-yellow-400">{reportData.summary.partial} Partial</span>}
-              {reportData.summary.fail > 0 && <span className="text-sm font-medium text-red-400">{reportData.summary.fail} Fail</span>}
-              <span className="text-sm text-text-dim">of {reportData.summary.total} controls</span>
-              <span className="ml-auto text-lg font-bold font-mono" style={{
-                color: reportData.summary.compliancePercentage >= 90 ? 'var(--green)' :
-                       reportData.summary.compliancePercentage >= 70 ? 'var(--yellow)' : 'var(--red)',
-              }}>
-                {reportData.summary.compliancePercentage}%
-              </span>
-            </div>
-
-            {/* Controls grouped by family */}
-            {(() => {
-              const families = new Map<string, typeof reportData.controls>();
-              reportData.controls.forEach(c => {
-                if (!families.has(c.family)) families.set(c.family, []);
-                families.get(c.family)!.push(c);
-              });
-              return Array.from(families.entries()).map(([family, controls]) => (
-                <div key={family} className="mb-4">
-                  <h4 className="text-xs font-mono uppercase tracking-wider text-text-dim mb-2">{family}</h4>
-                  <div className="bg-card border border-border rounded-lg overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-border text-left">
-                          <th className="py-2 px-3 text-text-dim font-medium w-[80px]">Control</th>
-                          <th className="py-2 px-3 text-text-dim font-medium w-[200px]">Description</th>
-                          <th className="py-2 px-3 text-text-dim font-medium w-[80px]">Status</th>
-                          <th className="py-2 px-3 text-text-dim font-medium">Evidence</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {controls.map(c => (
-                          <tr key={c.control} className="border-b border-border/50 hover:bg-surface/50">
-                            <td className="py-2 px-3 font-mono font-semibold text-text-bright">{c.control}</td>
-                            <td className="py-2 px-3 text-text-primary">{c.description}</td>
-                            <td className="py-2 px-3">
-                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                                c.status === 'PASS' ? 'bg-green/15 text-green' :
-                                c.status === 'PARTIAL' ? 'bg-yellow/15 text-yellow' :
-                                'bg-red/15 text-red'
-                              }`}>
-                                {c.status}
-                              </span>
-                            </td>
-                            <td className="py-2 px-3 text-text-dim">{c.evidence}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ));
-            })()}
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }

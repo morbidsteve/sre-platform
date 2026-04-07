@@ -9,6 +9,8 @@ import {
   Gauge,
 } from 'lucide-react';
 
+declare const __APP_VERSION__: string;
+
 interface NavigationProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -73,6 +75,9 @@ export function Navigation({ activeTab, onTabChange, isAdmin, mobileOpen = false
           {tab.label}
         </button>
       ))}
+      <span className="ml-auto px-3 py-2 text-[10px] font-mono text-text-dim opacity-60 whitespace-nowrap hidden md:inline-block">
+        {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''}
+      </span>
     </nav>
     </>
   );

@@ -424,7 +424,7 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
   const [reconciling, setReconciling] = useState(false);
 
   const [eventsNsFilter, setEventsNsFilter] = useState('');
-  const [eventsCollapsed, setEventsCollapsed] = useState(false);
+  const [eventsCollapsed, setEventsCollapsed] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
   const [lastRefreshed, setLastRefreshed] = useState('');
 

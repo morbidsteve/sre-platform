@@ -167,8 +167,8 @@ function HelmReleaseRow({
 }
 
 export function FluxStatusPanel({ data, loading, onRefresh }: FluxStatusProps) {
-  const [kustCollapsed, setKustCollapsed] = useState(false);
-  const [helmCollapsed, setHelmCollapsed] = useState(false);
+  const [kustCollapsed, setKustCollapsed] = useState(true);
+  const [helmCollapsed, setHelmCollapsed] = useState(true);
   const [selectedKust, setSelectedKust] = useState<FluxKustomization | null>(null);
   const [selectedHelm, setSelectedHelm] = useState<FluxHelmRelease | null>(null);
 
