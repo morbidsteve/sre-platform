@@ -10213,14 +10213,21 @@ async function executePipelineDeploy(run, actor) {
       console.debug('[pipeline] Security context metadata read best-effort:', e.message);
     }
 
+    // Parse run metadata (used by bundle deploy, compose deploy, and requirement detection)
+    let runMetadata = {};
+    try { runMetadata = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {}); } catch (e) { /* */ }
+
     // Check if the pipeline already built an image (ARTIFACT_STORE gate passed)
-    const builtImage = run.image_url || (run.gates || []).find(g => g.gate_name === 'ARTIFACT_STORE' && g.status === 'passed' && g.output)?.output;
+    // For bundles, the imported image is in metadata.builtImages (not gate output)
+    let builtImage = run.image_url || (run.gates || []).find(g => g.gate_name === 'ARTIFACT_STORE' && g.status === 'passed' && g.output)?.output;
+    if (!builtImage && Array.isArray(runMetadata.builtImages) && runMetadata.builtImages.length > 0) {
+      builtImage = runMetadata.builtImages[0].harborRef;
+      logger.info('pipeline', `Run ${run.id}: using bundle-imported image: ${builtImage}`, { runId: run.id });
+    }
 
     // ── COMPOSE DEPLOY PATH ──
     // If the pipeline built multiple images for a compose repo, deploy them all
     // using the pre-built images from metadata instead of rebuilding via /api/deploy/git.
-    let runMetadata = {};
-    try { runMetadata = typeof run.metadata === "string" ? JSON.parse(run.metadata || "{}") : (run.metadata || {}); } catch (e) { /* */ }
     const builtImagesArray = Array.isArray(runMetadata.builtImages) ? runMetadata.builtImages : [];
     const isComposePipeline = runMetadata.repoAnalysis?.repoType === "compose" && builtImagesArray.length > 0;
 
