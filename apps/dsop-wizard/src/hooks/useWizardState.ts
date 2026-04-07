@@ -473,16 +473,21 @@ export function useWizardState() {
         };
 
         // Auto-enable security exceptions from bundle manifest
-        if (security.runAsNonRoot === false || security.readOnlyRootFilesystem === false) {
-          next.securityExceptions = prev.securityExceptions.map((exc) => {
-            if (exc.type === 'run_as_root' && security.runAsNonRoot === false) {
-              return { ...exc, enabled: true, justification: 'Specified in deployment bundle manifest' };
-            }
-            if (exc.type === 'writable_filesystem' && security.readOnlyRootFilesystem === false) {
-              return { ...exc, enabled: true, justification: 'Specified in deployment bundle manifest' };
-            }
-            return exc;
-          });
+        // Create exception objects (the array starts empty — we must add, not just toggle)
+        const bundleExceptions: SecurityException[] = [];
+        if (security.runAsNonRoot === false) {
+          bundleExceptions.push({ type: 'run_as_root', enabled: true, justification: 'Specified in deployment bundle manifest' });
+        }
+        if (security.readOnlyRootFilesystem === false) {
+          bundleExceptions.push({ type: 'writable_filesystem', enabled: true, justification: 'Specified in deployment bundle manifest' });
+        }
+        if (bundleExceptions.length > 0) {
+          // Merge with any existing exceptions, avoiding duplicates
+          const existingTypes = new Set(prev.securityExceptions.map(e => e.type));
+          next.securityExceptions = [
+            ...prev.securityExceptions,
+            ...bundleExceptions.filter(e => !existingTypes.has(e.type)),
+          ];
         }
       }
 
