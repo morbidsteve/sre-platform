@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { Tabs } from '../ui/Tabs';
 import { EmptyState } from '../ui/EmptyState';
 import { UsersPanel } from './UsersPanel';
@@ -78,12 +79,31 @@ export function AdminTab({ active }: AdminTabProps) {
     );
   }
 
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [createGroupError, setCreateGroupError] = useState('');
+  const [createGroupLoading, setCreateGroupLoading] = useState(false);
+
   const handleShowCreateGroup = () => {
-    const name = prompt('Enter new group name:');
-    if (!name) return;
-    createGroup(name.trim())
-      .then(() => loadData())
-      .catch((err) => alert('Failed: ' + (err instanceof Error ? err.message : String(err))));
+    setNewGroupName('');
+    setCreateGroupError('');
+    setShowCreateGroupModal(true);
+  };
+
+  const handleCreateGroup = async () => {
+    const name = newGroupName.trim();
+    if (!name) { setCreateGroupError('Group name is required'); return; }
+    setCreateGroupLoading(true);
+    setCreateGroupError('');
+    try {
+      await createGroup(name);
+      setShowCreateGroupModal(false);
+      loadData();
+    } catch (err) {
+      setCreateGroupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreateGroupLoading(false);
+    }
   };
 
   return (
@@ -117,6 +137,50 @@ export function AdminTab({ active }: AdminTabProps) {
               </div>
             </div>
           ) : null}
+
+          {/* Create Group Modal */}
+          {showCreateGroupModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+              onClick={(e) => { if (e.target === e.currentTarget) setShowCreateGroupModal(false); }}
+            >
+              <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-text-primary">Create Group</h3>
+                  <button className="text-text-dim hover:text-text-primary" onClick={() => setShowCreateGroupModal(false)}>
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm text-text-secondary block mb-1">Group Name</label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary text-sm focus:outline-none focus:border-accent"
+                      placeholder="e.g., developers, sre-viewers"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateGroup(); }}
+                      autoFocus
+                    />
+                  </div>
+                  {createGroupError && (
+                    <p className="text-xs text-red-400">{createGroupError}</p>
+                  )}
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button className="btn text-sm" onClick={() => setShowCreateGroupModal(false)}>Cancel</button>
+                    <button
+                      className="btn btn-primary text-sm"
+                      onClick={handleCreateGroup}
+                      disabled={createGroupLoading || !newGroupName.trim()}
+                    >
+                      {createGroupLoading ? 'Creating...' : 'Create'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <UsersPanel
             users={users}
