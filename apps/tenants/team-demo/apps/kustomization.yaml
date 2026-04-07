@@ -4,3 +4,5 @@ kind: Kustomization
 resources:
   - gitea-policy-exception.yaml
   - gitea.yaml
+  - memos-policy-exception.yaml
+  - memos.yaml
