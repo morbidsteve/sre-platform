@@ -1002,7 +1002,8 @@ export function useWizardState() {
     setState((prev) => ({ ...prev, isDeploying: true, error: null }));
     try {
       const cfg = state.easyConfig;
-      const response = await fetch('/api/portal/deploy', {
+      const dashboardApi = `https://dashboard.${(window as any).__SRE_CONFIG__?.domain || 'apps.sre.example.com'}/api`;
+      const response = await fetch(`${dashboardApi}/portal/deploy`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

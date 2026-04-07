@@ -1,7 +1,9 @@
 import type { AppSource, DetectionResult, SecurityGate, DeployStep, PipelineRun, FindingDisposition, BundleUploadResult } from './types';
 import { getConfig, svcUrl } from './config';
 
-const API_BASE = '/api';
+// Call the dashboard API directly — no nginx proxy middleman.
+// SameSite=None cookie ensures SSO session is sent cross-origin.
+const API_BASE = `${svcUrl('dashboard')}/api`;
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -379,7 +381,7 @@ export async function runDeploy(
 
   try {
     // Call the real deploy API
-    const response = await fetch('/api/deploy/git', {
+    const response = await fetch(`${API_BASE}/deploy/git`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -448,7 +450,7 @@ export async function uploadBundle(
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/bundle/upload');
+    xhr.open('POST', `${API_BASE}/bundle/upload`);
     xhr.withCredentials = true;
 
     if (onProgress) {

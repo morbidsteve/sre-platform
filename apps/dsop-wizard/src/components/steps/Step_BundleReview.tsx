@@ -151,7 +151,8 @@ export function Step_BundleReview({ config, files, onBack, onReset }: BundleRevi
       }
       if (files.source) formData.append('source', files.source);
 
-      const response = await fetch('/api/bundle/create', {
+      const dashboardApi = `https://dashboard.${(window as any).__SRE_CONFIG__?.domain || 'apps.sre.example.com'}/api`;
+      const response = await fetch(`${dashboardApi}/bundle/create`, {
         method: 'POST',
         credentials: 'include',
         body: formData,
