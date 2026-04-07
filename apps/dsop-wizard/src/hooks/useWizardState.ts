@@ -348,6 +348,44 @@ export function useWizardState() {
     }
   }, [resumePrompt]);
 
+  /** Load a specific run by ID (for resume from launcher without page reload) */
+  const loadRunById = useCallback(async (runId: string) => {
+    try {
+      const run = await getPipelineRun(runId);
+      const mappedGates = run.gates.map((g: PipelineGate) =>
+        mapPipelineGateToSecurityGate(g, run.findings, getInitialGates())
+      );
+      const isDeployedStatus = run.status === 'deployed' || (run.status as string).startsWith('deployed_');
+      const step = isDeployedStatus ? 7 :
+                   run.status === 'deploying' ? 6 :
+                   run.status === 'approved' || run.status === 'review_pending' || run.status === 'rejected' ? 5 :
+                   4;
+      setState((prev) => ({
+        ...prev,
+        pipelineRunId: run.id,
+        pipelineRun: run,
+        gates: mappedGates,
+        currentStep: step,
+        appInfo: {
+          ...prev.appInfo,
+          name: run.app_name || prev.appInfo.name,
+          team: run.team || prev.appInfo.team,
+          classification: (run.classification || prev.appInfo.classification) as Classification,
+        },
+        source: {
+          ...prev.source,
+          gitUrl: run.git_url || prev.source.gitUrl,
+          branch: run.branch || prev.source.branch,
+          imageUrl: run.image_url || prev.source.imageUrl,
+          type: run.source_type === 'bundle' ? 'bundle' : run.source_type === 'image' ? 'container' : 'git',
+        },
+      }));
+    } catch {
+      clearSession();
+      setState(initialState);
+    }
+  }, []);
+
   /** User chose to discard the previous run and start fresh */
   const discardAndStartNew = useCallback(() => {
     clearSession();
@@ -1117,6 +1155,7 @@ export function useWizardState() {
     resumePrompt,
     confirmResume,
     discardAndStartNew,
+    loadRunById,
     // Easy mode
     setMode,
     updateEasyConfig,

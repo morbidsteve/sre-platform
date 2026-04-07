@@ -77,6 +77,7 @@ export function useWizard() {
     resumePrompt: wizardState.resumePrompt,
     confirmResume: wizardState.confirmResume,
     discardAndStartNew,
+    loadRunById: wizardState.loadRunById,
     // Security exception state (for Step4 security exception UI)
     exceptionJustification: exceptions.exceptionJustification,
     setExceptionJustification: exceptions.setExceptionJustification,

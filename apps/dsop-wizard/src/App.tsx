@@ -79,18 +79,11 @@ export default function App() {
   }, [wizard]);
 
   const handleSelectRun = useCallback((runId: string) => {
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('runId', runId);
-      window.history.replaceState({}, '', url.toString());
-    } catch { /* ignore */ }
     setShowLauncher(false);
-    // Force a page reload with the runId param so useWizardState's
-    // mount effect picks it up and resumes/loads the run.
-    window.location.search = `?runId=${encodeURIComponent(runId)}${
-      window.location.search.includes('theme=light') ? '&theme=light' : ''
-    }`;
-  }, []);
+    // Load the run directly instead of reloading the page.
+    // Page reload inside an iframe causes the dashboard to re-open a new wizard.
+    wizard.loadRunById(runId);
+  }, [wizard]);
 
   // When wizard.reset() is called (e.g. from Step7 "New Pipeline" button),
   // return to the launcher
