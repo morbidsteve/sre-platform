@@ -48,8 +48,12 @@ const exceptionLabels: Record<string, string> = {
   run_as_root: 'Run as Root',
   writable_filesystem: 'Writable Filesystem',
   host_networking: 'Host Networking',
+  host_ports: 'Host Ports',
   privileged_container: 'Privileged Container',
+  privilege_escalation: 'Privilege Escalation',
   custom_capability: 'Custom Capability',
+  restricted_volumes: 'Restricted Volume Types',
+  unsafe_sysctls: 'Unsafe Sysctls',
 };
 
 type ReviewDecision = 'approved' | 'rejected' | 'returned';

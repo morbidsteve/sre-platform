@@ -5730,7 +5730,7 @@ function generatePolicyException(name, team, securityExceptions, reviewer) {
   const policyMap = {
     run_as_root: [
       { policyName: "require-run-as-nonroot", ruleNames: ["require-pod-run-as-nonroot", "require-container-run-as-nonroot"] },
-      { policyName: "require-security-context", ruleNames: ["require-run-as-non-root", "require-drop-all-capabilities"] },
+      { policyName: "require-security-context", ruleNames: ["require-run-as-non-root"] },
       { policyName: "disallow-privilege-escalation", ruleNames: ["disallow-privilege-escalation-containers", "disallow-privilege-escalation-init-containers"] },
     ],
     privileged_container: [
@@ -5744,15 +5744,23 @@ function generatePolicyException(name, team, securityExceptions, reviewer) {
       { policyName: "disallow-privilege-escalation", ruleNames: ["disallow-privilege-escalation-containers", "disallow-privilege-escalation-init-containers"] },
     ],
     writable_filesystem: [
-      { policyName: "require-security-context", ruleNames: ["require-run-as-non-root"] },
+      { policyName: "require-security-context", ruleNames: ["require-read-only-root-filesystem"] },
     ],
     host_networking: [
       { policyName: "disallow-host-namespaces", ruleNames: ["deny-host-namespaces"] },
+    ],
+    host_ports: [
       { policyName: "disallow-host-ports", ruleNames: ["deny-host-ports", "deny-host-ports-init-containers"] },
     ],
     custom_capability: [
       { policyName: "require-drop-all-capabilities", ruleNames: ["require-drop-all"] },
       { policyName: "require-security-context", ruleNames: ["require-drop-all-capabilities"] },
+    ],
+    restricted_volumes: [
+      { policyName: "restrict-volume-types", ruleNames: ["restrict-volume-types"] },
+    ],
+    unsafe_sysctls: [
+      { policyName: "restrict-unsafe-sysctls", ruleNames: ["restrict-sysctls"] },
     ],
   };
 
@@ -8629,7 +8637,7 @@ app.post("/api/pipeline/runs/:id/exceptions", mutateLimiter, requireDb, requireG
     const { exceptions } = req.body;
     if (!Array.isArray(exceptions)) return res.status(400).json({ error: "exceptions must be an array" });
 
-    const validTypes = ["run_as_root", "writable_filesystem", "host_networking", "privileged_container", "custom_capability"];
+    const validTypes = ["run_as_root", "writable_filesystem", "host_networking", "host_ports", "privileged_container", "privilege_escalation", "custom_capability", "restricted_volumes", "unsafe_sysctls"];
     for (const exc of exceptions) {
       if (!validTypes.includes(exc.type)) return res.status(400).json({ error: `Invalid exception type: ${exc.type}. Valid: ${validTypes.join(", ")}` });
       if (!exc.justification || exc.justification.length < 5) return res.status(400).json({ error: "Each exception requires a justification (min 5 chars)" });
@@ -8686,7 +8694,7 @@ app.post("/api/pipeline/runs/:id/request-exception", mutateLimiter, requireDb, r
       return res.status(400).json({ error: "Missing exceptionType or justification" });
     }
 
-    const validTypes = ["run_as_root", "writable_filesystem", "host_networking", "privileged_container", "custom_capability"];
+    const validTypes = ["run_as_root", "writable_filesystem", "host_networking", "host_ports", "privileged_container", "privilege_escalation", "custom_capability", "restricted_volumes", "unsafe_sysctls"];
     if (!validTypes.includes(exceptionType)) {
       return res.status(400).json({ error: `Invalid exceptionType: ${exceptionType}. Valid: ${validTypes.join(", ")}` });
     }
@@ -10587,10 +10595,10 @@ async function executePipelineDeploy(run, actor) {
 
             // Auto-generate security exceptions for PolicyException when none were explicitly provided
             const autoExceptions = [];
-            if (dreqs.needsRoot) autoExceptions.push({ type: 'run_as_root', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true });
-            if (dreqs.needsPrivileged) autoExceptions.push({ type: 'privileged_container', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true });
-            if (dreqs.needsWritableFs) autoExceptions.push({ type: 'writable_filesystem', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: true });
-            if (dreqs.capabilities && dreqs.capabilities.length > 0) autoExceptions.push({ type: 'custom_capability', justification: 'Auto-detected capabilities: ' + dreqs.capabilities.join(', '), approved: true });
+            if (dreqs.needsRoot) autoExceptions.push({ type: 'run_as_root', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: false });
+            if (dreqs.needsPrivileged) autoExceptions.push({ type: 'privileged_container', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: false });
+            if (dreqs.needsWritableFs) autoExceptions.push({ type: 'writable_filesystem', justification: 'Auto-detected: ' + (dreqs.detectedFrom || []).join('; '), approved: false });
+            if (dreqs.capabilities && dreqs.capabilities.length > 0) autoExceptions.push({ type: 'custom_capability', justification: 'Auto-detected capabilities: ' + dreqs.capabilities.join(', '), approved: false });
 
             const hasExistingExceptions = parsedExceptions.filter(e => e.approved === true).length > 0;
             if (autoExceptions.length > 0 && !hasExistingExceptions) {
@@ -10662,8 +10670,8 @@ async function executePipelineDeploy(run, actor) {
 
               // Auto-generate security exceptions from bundle manifest
               const autoExceptions = [];
-              if (bundleSecurity.runAsNonRoot === false) autoExceptions.push({ type: "run_as_root", justification: "Specified in deployment bundle manifest", approved: true });
-              if (bundleSecurity.readOnlyRootFilesystem === false) autoExceptions.push({ type: "writable_filesystem", justification: "Specified in deployment bundle manifest", approved: true });
+              if (bundleSecurity.runAsNonRoot === false) autoExceptions.push({ type: "run_as_root", justification: "Specified in deployment bundle manifest", approved: false });
+              if (bundleSecurity.readOnlyRootFilesystem === false) autoExceptions.push({ type: "writable_filesystem", justification: "Specified in deployment bundle manifest", approved: false });
               const hasExistingExceptions = parsedExceptions.filter(e => e.approved === true).length > 0;
               if (autoExceptions.length > 0 && !hasExistingExceptions) {
                 parsedExceptions = autoExceptions;

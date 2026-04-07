@@ -50,16 +50,24 @@ const exceptionTypeToPolicyName: Record<string, string> = {
   run_as_root: 'require-run-as-nonroot',
   writable_filesystem: 'require-security-context',
   host_networking: 'disallow-host-namespaces',
+  host_ports: 'disallow-host-ports',
   privileged_container: 'disallow-privileged-containers',
+  privilege_escalation: 'disallow-privilege-escalation',
   custom_capability: 'require-security-context',
+  restricted_volumes: 'restrict-volume-types',
+  unsafe_sysctls: 'restrict-unsafe-sysctls',
 };
 
 const exceptionTypeToRuleName: Record<string, string> = {
-  run_as_root: 'run-as-non-root',
-  writable_filesystem: 'require-read-only-rootfs',
-  host_networking: 'disallow-host-networking',
-  privileged_container: 'disallow-privileged',
-  custom_capability: 'drop-all-capabilities',
+  run_as_root: 'require-pod-run-as-nonroot',
+  writable_filesystem: 'require-read-only-root-filesystem',
+  host_networking: 'deny-host-namespaces',
+  host_ports: 'deny-host-ports',
+  privileged_container: 'deny-privileged-containers',
+  privilege_escalation: 'disallow-privilege-escalation-containers',
+  custom_capability: 'require-drop-all',
+  restricted_volumes: 'restrict-volume-types',
+  unsafe_sysctls: 'restrict-sysctls',
 };
 
 /** Generate a pre-filled PolicyException YAML from wizard context */
