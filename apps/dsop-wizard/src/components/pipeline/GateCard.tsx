@@ -855,9 +855,37 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
           {/* Findings */}
           {gate.findings.length > 0 && (
             <div className="space-y-2 mb-3">
-              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                Findings ({gate.findings.length})
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  Findings ({gate.findings.length})
+                </h4>
+                {/* Bulk disposition for all findings */}
+                {onUpdateFinding && gate.findings.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-500 mr-1">Set all:</span>
+                    {dispositionOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          gate.findings.forEach((_, idx) => {
+                            onUpdateFinding(gate.id, idx, {
+                              disposition: opt.value,
+                              mitigation: `Bulk: ${opt.label}`,
+                              mitigatedBy: username || 'operator',
+                              mitigatedAt: new Date().toISOString(),
+                            });
+                          });
+                        }}
+                        className="px-2 py-0.5 rounded text-[10px] font-medium bg-navy-700 text-gray-400 hover:bg-navy-600 hover:text-gray-200 transition-colors border border-navy-600"
+                        title={`Mark all ${gate.findings.length} findings as "${opt.label}"`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {gate.findings.map((finding, i) => (
                 <div
                   key={i}
