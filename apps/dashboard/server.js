@@ -8355,9 +8355,11 @@ app.post("/api/pipeline/runs/:id/submit-review", mutateLimiter, requireDb, requi
     }
 
     // H-2: Require minimum scan coverage before review
-    const completedGates = run.gates.filter(g => g.status === 'passed' || g.status === 'warning');
-    if (completedGates.length < 3) {
-      return res.status(400).json({ error: "Insufficient scan coverage: at least 3 gates must pass before review" });
+    // Count gates that actually ran (passed, warning, or failed with findings).
+    // Skipped gates (e.g., SAST/Secrets for bundles without source) don't count against the minimum.
+    const ranGates = automatedGates.filter(g => g.status === 'passed' || g.status === 'warning' || g.status === 'failed');
+    if (ranGates.length < 1) {
+      return res.status(400).json({ error: "At least one security gate must complete before review" });
     }
 
     // Check all critical and high findings have a disposition (H-3)
