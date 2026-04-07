@@ -356,10 +356,10 @@ export async function runSecurityPipeline(
 
 export function getInitialDeploySteps(): DeployStep[] {
   return [
-    { id: 'namespace', label: 'Namespace created', status: 'pending' },
-    { id: 'pull-secret', label: 'Harbor pull secret configured', status: 'pending' },
-    { id: 'helm-release', label: 'HelmRelease created', status: 'pending' },
-    { id: 'pods', label: 'Pods starting', status: 'pending' },
+    { id: 'namespace', label: 'Namespace', status: 'pending' },
+    { id: 'pull-secret', label: 'Pull secret', status: 'pending' },
+    { id: 'helm-release', label: 'HelmRelease', status: 'pending' },
+    { id: 'pods', label: 'Pods', status: 'pending' },
     { id: 'health', label: 'Health check', status: 'pending' },
     { id: 'portal', label: 'Portal registration', status: 'pending' },
   ];

@@ -5844,6 +5844,7 @@ function generatePolicyException(name, team, securityExceptions, reviewer) {
 async function ensureNamespace(nsName, teamLabel) {
   try {
     await k8sApi.readNamespace(nsName);
+    return false; // namespace already existed
   } catch (err) {
     if (err.statusCode === 404) {
       await k8sApi.createNamespace({
@@ -5920,6 +5921,7 @@ async function ensureNamespace(nsName, teamLabel) {
 
       // Auto-exclude tenant namespace from Kyverno policies
       await ensureKyvernoExclusions(nsName);
+      return true; // namespace was created
     } else {
       throw err;
     }
@@ -10721,12 +10723,17 @@ async function executePipelineDeploy(run, actor) {
 
       emitPipelineEvent(run.id, "deploy_step", { step: "prepare", status: "completed" });
       emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "running" });
-      emitPipelineEvent(run.id, "deploy_log", { step: "namespace", line: `Ensuring namespace ${nsName} exists` });
-      await ensureNamespace(nsName, run.team);
+      emitPipelineEvent(run.id, "deploy_log", { step: "namespace", line: `Checking namespace ${nsName}...` });
+      const nsCreated = await ensureNamespace(nsName, run.team);
+      emitPipelineEvent(run.id, "deploy_log", { step: "namespace", line: nsCreated ? `Namespace ${nsName} created` : `Namespace ${nsName} already exists` });
       emitPipelineEvent(run.id, "deploy_step", { step: "namespace", status: "completed" });
 
-      emitPipelineEvent(run.id, "deploy_step", { step: "helmrelease", status: "running" });
-      emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Creating HelmRelease for ${safeName} (image: ${imageRepo}:${imageTag})` });
+      emitPipelineEvent(run.id, "deploy_step", { step: "pull-secret", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "pull-secret", line: `Ensuring Harbor pull secret in ${nsName}` });
+      emitPipelineEvent(run.id, "deploy_step", { step: "pull-secret", status: "completed" });
+
+      emitPipelineEvent(run.id, "deploy_step", { step: "helm-release", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "helm-release", line: `Creating HelmRelease for ${safeName} (image: ${imageRepo}:${imageTag})` });
 
       const manifest = generateHelmRelease({
         name: safeName,
@@ -10774,7 +10781,7 @@ async function executePipelineDeploy(run, actor) {
             periodSeconds: 5,
             failureThreshold: 30,
           };
-          emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: "Startup probe enabled (stateful/slow-starting app)" });
+          emitPipelineEvent(run.id, "deploy_log", { step: "helm-release", line: "Startup probe enabled (stateful/slow-starting app)" });
         }
 
         // Persistent storage from bundle
@@ -10784,7 +10791,7 @@ async function executePipelineDeploy(run, actor) {
             mountPath: bundleStorage.mountPath,
             size: bundleStorage.size,
           };
-          emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Persistent storage: ${bundleStorage.size} at ${bundleStorage.mountPath}` });
+          emitPipelineEvent(run.id, "deploy_log", { step: "helm-release", line: `Persistent storage: ${bundleStorage.size} at ${bundleStorage.mountPath}` });
         }
 
         // Writable filesystem override (non-root, non-privileged apps that still need writable fs)
@@ -10812,17 +10819,21 @@ async function executePipelineDeploy(run, actor) {
         ? generatePolicyException(safeName, nsName, approvedExceptions, actor)
         : null;
       if (policyException) {
-        emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Kyverno PolicyException created for: ${approvedExceptions.map(e => e.type).join(", ")}` });
+        emitPipelineEvent(run.id, "deploy_log", { step: "helm-release", line: `Kyverno PolicyException created for: ${approvedExceptions.map(e => e.type).join(", ")}` });
         await db.auditLog(run.id, "policy_exception_generated", actor,
           `Generated Kyverno PolicyException for ${approvedExceptions.map(e => e.type).join(", ")}`);
       }
 
       await deployViaGitOps(manifest, nsName, safeName, actor, policyException);
-      emitPipelineEvent(run.id, "deploy_step", { step: "helmrelease", status: "completed" });
+      emitPipelineEvent(run.id, "deploy_step", { step: "helm-release", status: "completed" });
 
-      // Monitor HelmRelease status — auto-retry on max retry failure
-      emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: "running" });
-      emitPipelineEvent(run.id, "deploy_log", { step: "reconcile", line: "Waiting for HelmRelease to reconcile..." });
+      // Monitor pod status
+      emitPipelineEvent(run.id, "deploy_step", { step: "pods", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "pods", line: "Waiting for pods to start..." });
+
+      // Monitor HelmRelease health
+      emitPipelineEvent(run.id, "deploy_step", { step: "health", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "health", line: "Waiting for HelmRelease to reconcile..." });
       const hrStatus = await waitForHelmRelease(nsName, safeName, 180);
       let deployHealthy = true;
       let deployWarning = "";
@@ -10831,15 +10842,18 @@ async function executePipelineDeploy(run, actor) {
         deployWarning = hrStatus.error;
         logger.warn('pipeline', `HelmRelease ${safeName} not ready: ${hrStatus.error}`, { runId: run.id });
         await db.auditLog(run.id, "deploy_warning", actor, `HelmRelease issue: ${hrStatus.error}`);
-        emitPipelineEvent(run.id, "deploy_log", { step: "reconcile", line: `Warning: ${hrStatus.error}` });
-        emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: "failed" });
+        emitPipelineEvent(run.id, "deploy_log", { step: "health", line: `Warning: ${hrStatus.error}` });
+        emitPipelineEvent(run.id, "deploy_step", { step: "health", status: "failed" });
       } else {
-        emitPipelineEvent(run.id, "deploy_step", { step: "reconcile", status: "completed" });
+        emitPipelineEvent(run.id, "deploy_step", { step: "health", status: "completed" });
       }
+      emitPipelineEvent(run.id, "deploy_step", { step: "pods", status: deployHealthy ? "completed" : "failed" });
 
       const deployedUrl = `https://${ingressHost}`;
 
       // Register in app portal
+      emitPipelineEvent(run.id, "deploy_step", { step: "portal", status: "running" });
+      emitPipelineEvent(run.id, "deploy_log", { step: "portal", line: "Registering application in portal..." });
       const appData = {
         name: safeName,
         namespace: nsName,
@@ -10854,8 +10868,10 @@ async function executePipelineDeploy(run, actor) {
         await k8sApi.patchNamespacedConfigMap(APP_REGISTRY_CM, APP_REGISTRY_NS, {
           data: { "apps.json": JSON.stringify(appRegistry) },
         }, undefined, undefined, undefined, undefined, undefined, { headers: { "Content-Type": "application/strategic-merge-patch+json" } });
+        emitPipelineEvent(run.id, "deploy_step", { step: "portal", status: "completed" });
       } catch (cmErr) {
         console.debug('[pipeline] Registry update best-effort:', cmErr.message);
+        emitPipelineEvent(run.id, "deploy_step", { step: "portal", status: "failed" });
       }
 
       const deployStatus = deployHealthy ? "deployed" : "deployed_unhealthy";
