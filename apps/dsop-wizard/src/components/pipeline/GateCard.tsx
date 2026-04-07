@@ -869,24 +869,32 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
                         key={opt.value}
                         onClick={async (e) => {
                           e.stopPropagation();
-                          // Update local state
-                          gate.findings.forEach((_, idx) => {
-                            onUpdateFinding(gate.id, idx, {
-                              disposition: opt.value,
-                              mitigation: `Bulk: ${opt.label}`,
-                              mitigatedBy: username || 'operator',
-                              mitigatedAt: new Date().toISOString(),
-                            });
-                          });
-                          // Persist to backend via bulk API
-                          if (pipelineRunId) {
-                            try {
-                              await bulkUpdateFindings(pipelineRunId, gate.id, opt.value, `Bulk: ${opt.label}`);
-                            } catch (err) {
-                              console.error('Bulk disposition API failed:', err);
+                          const btn = e.currentTarget;
+                          const origText = btn.textContent;
+                          btn.textContent = '...';
+                          btn.disabled = true;
+                          try {
+                            // Persist to backend FIRST
+                            if (pipelineRunId) {
+                              const result = await bulkUpdateFindings(pipelineRunId, gate.id, opt.value, `Bulk: ${opt.label}`);
+                              btn.textContent = `✓ ${result.updated}`;
                             }
+                            // Then update local state
+                            gate.findings.forEach((_, idx) => {
+                              onUpdateFinding(gate.id, idx, {
+                                disposition: opt.value,
+                                mitigation: `Bulk: ${opt.label}`,
+                                mitigatedBy: username || 'operator',
+                                mitigatedAt: new Date().toISOString(),
+                              });
+                            });
+                            setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+                          } catch (err) {
+                            btn.textContent = '✗ Error';
+                            btn.style.color = '#f87171';
+                            setTimeout(() => { btn.textContent = origText; btn.disabled = false; btn.style.color = ''; }, 3000);
                           }
-                        }}
+                        }
                         className="px-2 py-0.5 rounded text-[10px] font-medium bg-navy-700 text-gray-400 hover:bg-navy-600 hover:text-gray-200 transition-colors border border-navy-600"
                         title={`Mark all ${gate.findings.length} findings as "${opt.label}"`}
                       >
