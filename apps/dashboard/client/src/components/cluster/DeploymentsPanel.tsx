@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
 import { EmptyState } from '../ui/EmptyState';
 import { Button } from '../ui/Button';
@@ -15,6 +16,7 @@ interface DeploymentsPanelProps {
 
 export function DeploymentsPanel({ active, refreshKey }: DeploymentsPanelProps) {
   const { isAdmin } = useUser();
+  const [collapsed, setCollapsed] = useState(true);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [namespaces, setNamespaces] = useState<Namespace[]>([]);
   const [nsFilter, setNsFilter] = useState('');
@@ -76,73 +78,87 @@ export function DeploymentsPanel({ active, refreshKey }: DeploymentsPanelProps) 
     }
   };
 
+  const readyCount = deployments.filter((d) => d.ready >= d.replicas).length;
+
   return (
     <div>
-      {/* Filter */}
-      <div className="flex flex-wrap gap-2 mb-4 items-center">
-        <select
-          className="form-input !mb-0 min-w-[160px]"
-          value={nsFilter}
-          onChange={(e) => setNsFilter(e.target.value)}
-        >
-          <option value="">All Namespaces</option>
-          {namespaces.map((ns) => (
-            <option key={ns.name} value={ns.name}>{ns.name}</option>
-          ))}
-        </select>
-        <span className="text-xs text-text-dim">{deployments.length} deployments</span>
-      </div>
+      <button
+        className="w-full flex items-center justify-between py-3 px-1 text-left"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div className="flex items-center gap-2">
+          {collapsed ? <ChevronRight className="w-4 h-4 text-text-dim" /> : <ChevronDown className="w-4 h-4 text-text-dim" />}
+          <h3 className="text-sm font-semibold text-text-primary">Deployments</h3>
+          <span className="text-xs text-text-dim">{deployments.length} total, {readyCount} ready</span>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center" onClick={(e) => e.stopPropagation()}>
+          <select
+            className="form-input !mb-0 min-w-[160px]"
+            value={nsFilter}
+            onChange={(e) => setNsFilter(e.target.value)}
+          >
+            <option value="">All Namespaces</option>
+            {namespaces.map((ns) => (
+              <option key={ns.name} value={ns.name}>{ns.name}</option>
+            ))}
+          </select>
+        </div>
+      </button>
 
-      {loading && deployments.length === 0 ? (
-        <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-      ) : deployments.length === 0 ? (
-        <EmptyState title="No deployments found" />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="py-2 px-3 text-text-dim font-medium text-xs">Name</th>
-                <th className="py-2 px-3 text-text-dim font-medium text-xs">Namespace</th>
-                <th className="py-2 px-3 text-text-dim font-medium text-xs">Replicas</th>
-                <th className="py-2 px-3 text-text-dim font-medium text-xs">Age</th>
-                {isAdmin && <th className="py-2 px-3 text-text-dim font-medium text-xs">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {deployments.map((d) => {
-                const key = d.namespace + '/' + d.name;
-                return (
-                  <tr key={key} className="border-b border-border hover:bg-surface/50 transition-colors">
-                    <td className="py-2 px-3 font-medium text-text-primary">{d.name}</td>
-                    <td className="py-2 px-3 text-text-dim">{d.namespace}</td>
-                    <td className="py-2 px-3">
-                      <span className={d.ready < d.replicas ? 'text-yellow' : 'text-green'}>
-                        {d.ready}/{d.replicas}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-text-dim text-xs">{d.age}</td>
-                    {isAdmin && (
-                      <td className="py-2 px-3">
-                        <div className="flex gap-2 items-center">
-                          <input
-                            type="number"
-                            className="form-input !mb-0 w-16 text-xs"
-                            min={0}
-                            max={20}
-                            value={scaleValues[key] ?? d.replicas}
-                            onChange={(e) => setScaleValues({ ...scaleValues, [key]: Number(e.target.value) })}
-                          />
-                          <Button size="sm" onClick={() => handleScale(d.namespace, d.name)}>Scale</Button>
-                          <Button size="sm" variant="warn" onClick={() => handleRestart(d.namespace, d.name)}>Restart</Button>
-                        </div>
-                      </td>
-                    )}
+      {!collapsed && (
+        <div className="mt-2">
+          {loading && deployments.length === 0 ? (
+            <div className="flex justify-center py-16"><Spinner size="lg" /></div>
+          ) : deployments.length === 0 ? (
+            <EmptyState title="No deployments found" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Name</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Namespace</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Replicas</th>
+                    <th className="py-2 px-3 text-text-dim font-medium text-xs">Age</th>
+                    {isAdmin && <th className="py-2 px-3 text-text-dim font-medium text-xs">Actions</th>}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {deployments.map((d) => {
+                    const key = d.namespace + '/' + d.name;
+                    return (
+                      <tr key={key} className="border-b border-border hover:bg-surface/50 transition-colors">
+                        <td className="py-2 px-3 font-medium text-text-primary">{d.name}</td>
+                        <td className="py-2 px-3 text-text-dim">{d.namespace}</td>
+                        <td className="py-2 px-3">
+                          <span className={d.ready < d.replicas ? 'text-yellow' : 'text-green'}>
+                            {d.ready}/{d.replicas}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-text-dim text-xs">{d.age}</td>
+                        {isAdmin && (
+                          <td className="py-2 px-3">
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="number"
+                                className="form-input !mb-0 w-16 text-xs"
+                                min={0}
+                                max={20}
+                                value={scaleValues[key] ?? d.replicas}
+                                onChange={(e) => setScaleValues({ ...scaleValues, [key]: Number(e.target.value) })}
+                              />
+                              <Button size="sm" onClick={() => handleScale(d.namespace, d.name)}>Scale</Button>
+                              <Button size="sm" variant="warn" onClick={() => handleRestart(d.namespace, d.name)}>Restart</Button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

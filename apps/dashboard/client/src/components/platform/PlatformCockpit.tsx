@@ -415,10 +415,12 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
   const [events, setEvents] = useState<PlatformEvent[]>([]);
   const [certs, setCerts] = useState<PlatformCertificate[]>([]);
   const [namespaces, setNamespaces] = useState<Namespace[]>([]);
+  const [ingressData, setIngressData] = useState<{ routes: { hosts: string[] }[]; nodeIp: string; httpsPort: number } | null>(null);
 
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [fluxLoading, setFluxLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [ingressLoading, setIngressLoading] = useState(true);
   const [reconciling, setReconciling] = useState(false);
 
   const [eventsNsFilter, setEventsNsFilter] = useState('');
@@ -470,14 +472,27 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
     }
   }, []);
 
+  const loadIngress = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/ingress');
+      const data = await resp.json();
+      setIngressData(data);
+    } catch {
+      // silent
+    } finally {
+      setIngressLoading(false);
+    }
+  }, []);
+
   const refreshAll = useCallback(() => {
     loadOverview();
     loadFlux();
     loadEvents();
     loadCerts();
+    loadIngress();
     setRefreshTick((t) => t + 1);
     setLastRefreshed(new Date().toLocaleTimeString());
-  }, [loadOverview, loadFlux, loadEvents, loadCerts]);
+  }, [loadOverview, loadFlux, loadEvents, loadCerts, loadIngress]);
 
   useEffect(() => {
     if (!active) return;
@@ -670,7 +685,17 @@ export function PlatformCockpit({ active }: PlatformCockpitProps) {
         {/* Row 7: DNS Setup */}
         <div>
           <div style={sectionLabel}>DNS Setup</div>
-          <DNSSetup hostsEntry="" />
+          <DNSSetup
+            hostsEntry={ingressData
+              ? ingressData.routes
+                  .flatMap((r) => r.hosts || [])
+                  .filter(Boolean)
+                  .filter((h, i, arr) => arr.indexOf(h) === i)
+                  .map((h) => `${ingressData.nodeIp}  ${h}`)
+                  .join('\n')
+              : ''}
+            loading={ingressLoading}
+          />
         </div>
 
         {/* Row 8: Events */}

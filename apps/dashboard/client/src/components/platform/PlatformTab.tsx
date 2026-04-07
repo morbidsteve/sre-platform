@@ -91,7 +91,7 @@ export function PlatformTab({ onOpenApp }: PlatformTabProps) {
 
       <div className="mt-6">
         <h2 className="text-lg font-semibold text-text-bright mb-3">DNS Setup</h2>
-        <DNSSetup hostsEntry={hostsEntry} />
+        <DNSSetup hostsEntry={hostsEntry} loading={loading && !ingressData} />
       </div>
     </div>
   );

@@ -3,9 +3,10 @@ import { Copy, Check } from 'lucide-react';
 
 interface DNSSetupProps {
   hostsEntry: string;
+  loading?: boolean;
 }
 
-export function DNSSetup({ hostsEntry }: DNSSetupProps) {
+export function DNSSetup({ hostsEntry, loading }: DNSSetupProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -38,7 +39,7 @@ export function DNSSetup({ hostsEntry }: DNSSetupProps) {
         title="Click to copy"
       >
         <pre className="text-[13px] font-mono text-text-primary whitespace-pre overflow-x-auto pr-8">
-          {hostsEntry || 'Loading...'}
+          {loading ? 'Loading...' : hostsEntry || 'No DNS entries available.'}
         </pre>
         <span className="absolute right-2 top-2 text-text-dim group-hover:text-accent transition-colors">
           {copied ? (

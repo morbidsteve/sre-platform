@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
 import { Badge } from '../ui/Badge';
 import { EmptyState } from '../ui/EmptyState';
@@ -48,6 +49,7 @@ interface EventsPanelProps {
 }
 
 export function EventsPanel({ active, refreshKey }: EventsPanelProps) {
+  const [collapsed, setCollapsed] = useState(true);
   const [events, setEvents] = useState<ClusterEvent[]>([]);
   const [namespaces, setNamespaces] = useState<Namespace[]>([]);
   const [nsFilter, setNsFilter] = useState('');
@@ -84,64 +86,87 @@ export function EventsPanel({ active, refreshKey }: EventsPanelProps) {
     return () => clearInterval(timer);
   }, [active, loadEvents]);
 
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of events) {
+      counts[e.type] = (counts[e.type] || 0) + 1;
+    }
+    return counts;
+  }, [events]);
+
+  const typeSummary = Object.entries(typeCounts)
+    .map(([type, count]) => `${count} ${type}`)
+    .join(', ');
+
   return (
     <div>
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4 items-center">
-        <select
-          className="form-input !mb-0 min-w-[160px]"
-          value={nsFilter}
-          onChange={(e) => setNsFilter(e.target.value)}
-        >
-          <option value="">All Namespaces</option>
-          {namespaces.map((ns) => (
-            <option key={ns.name} value={ns.name}>{ns.name}</option>
-          ))}
-        </select>
+      <button
+        className="w-full flex items-center justify-between py-3 px-1 text-left"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div className="flex items-center gap-2">
+          {collapsed ? <ChevronRight className="w-4 h-4 text-text-dim" /> : <ChevronDown className="w-4 h-4 text-text-dim" />}
+          <h3 className="text-sm font-semibold text-text-primary">Cluster Events</h3>
+          <span className="text-xs text-text-dim">{events.length} events{typeSummary ? ` (${typeSummary})` : ''}</span>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center" onClick={(e) => e.stopPropagation()}>
+          <select
+            className="form-input !mb-0 min-w-[160px]"
+            value={nsFilter}
+            onChange={(e) => setNsFilter(e.target.value)}
+          >
+            <option value="">All Namespaces</option>
+            {namespaces.map((ns) => (
+              <option key={ns.name} value={ns.name}>{ns.name}</option>
+            ))}
+          </select>
 
-        <select
-          className="form-input !mb-0 min-w-[120px]"
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-        >
-          <option value="">All Types</option>
-          <option value="Warning">Warning</option>
-          <option value="Normal">Normal</option>
-        </select>
+          <select
+            className="form-input !mb-0 min-w-[120px]"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value="">All Types</option>
+            <option value="Warning">Warning</option>
+            <option value="Normal">Normal</option>
+          </select>
+        </div>
+      </button>
 
-        <span className="text-xs text-text-dim">{events.length} events</span>
-      </div>
-
-      {loading && events.length === 0 ? (
-        <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-      ) : events.length === 0 ? (
-        <EmptyState title="No events found" description="No Kubernetes events match the current filters." />
-      ) : (
-        <div className="space-y-1">
-          {events.slice(0, 100).map((e, i) => (
-            <div
-              key={i}
-              className={`flex items-start gap-3 py-2 px-3 rounded hover:bg-surface/50 transition-colors ${eventBorderColor(e.type, e.reason)}`}
-            >
-              <Badge variant={eventBadgeVariant(e.type, e.reason)}>
-                {e.type}
-              </Badge>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-text-primary">{e.message}</div>
-                <div className="text-[11px] text-text-dim mt-0.5">
-                  <span className={`font-medium ${
-                    eventBadgeVariant(e.type, e.reason) === 'red'
-                      ? 'text-red'
-                      : eventBadgeVariant(e.type, e.reason) === 'yellow'
-                      ? 'text-yellow'
-                      : 'text-text-dim'
-                  }`}>{e.reason}</span>
-                  {' '}&middot; {e.namespace}/{e.object || ''} &middot; {e.age}
-                  {e.count > 1 && <span> &middot; x{e.count}</span>}
+      {!collapsed && (
+        <div className="mt-2">
+          {loading && events.length === 0 ? (
+            <div className="flex justify-center py-16"><Spinner size="lg" /></div>
+          ) : events.length === 0 ? (
+            <EmptyState title="No events found" description="No Kubernetes events match the current filters." />
+          ) : (
+            <div className="space-y-1">
+              {events.slice(0, 100).map((e, i) => (
+                <div
+                  key={i}
+                  className={`flex items-start gap-3 py-2 px-3 rounded hover:bg-surface/50 transition-colors ${eventBorderColor(e.type, e.reason)}`}
+                >
+                  <Badge variant={eventBadgeVariant(e.type, e.reason)}>
+                    {e.type}
+                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-text-primary">{e.message}</div>
+                    <div className="text-[11px] text-text-dim mt-0.5">
+                      <span className={`font-medium ${
+                        eventBadgeVariant(e.type, e.reason) === 'red'
+                          ? 'text-red'
+                          : eventBadgeVariant(e.type, e.reason) === 'yellow'
+                          ? 'text-yellow'
+                          : 'text-text-dim'
+                      }`}>{e.reason}</span>
+                      {' '}&middot; {e.namespace}/{e.object || ''} &middot; {e.age}
+                      {e.count > 1 && <span> &middot; x{e.count}</span>}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
