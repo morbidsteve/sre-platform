@@ -5676,8 +5676,13 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
   }
   // Writable filesystem (standalone, without root)
   if (sc.writableFilesystem && !needsPrivileged) {
-    values.containerSecurityContext = values.containerSecurityContext || {};
-    values.containerSecurityContext.readOnlyRootFilesystem = false;
+    values.containerSecurityContext = {
+      ...(values.containerSecurityContext || {}),
+      readOnlyRootFilesystem: false,
+      allowPrivilegeEscalation: false,
+      runAsNonRoot: true,
+      capabilities: { drop: ["ALL"] },
+    };
   }
   // Privilege escalation (standalone, without root)
   if (sc.allowPrivilegeEscalation && !needsPrivileged) {
@@ -10747,9 +10752,15 @@ async function executePipelineDeploy(run, actor) {
         }
 
         // Writable filesystem override (non-root apps that still need writable fs)
+        // Must include ALL required security fields or Kyverno blocks the pod
         if (bundleSecurity && bundleSecurity.readOnlyRootFilesystem === false && !needsPrivileged) {
-          manifest.spec.values.containerSecurityContext = manifest.spec.values.containerSecurityContext || {};
-          manifest.spec.values.containerSecurityContext.readOnlyRootFilesystem = false;
+          manifest.spec.values.containerSecurityContext = {
+            ...(manifest.spec.values.containerSecurityContext || {}),
+            readOnlyRootFilesystem: false,
+            allowPrivilegeEscalation: false,
+            runAsNonRoot: true,
+            capabilities: { drop: ["ALL"] },
+          };
         }
 
         // Single replica for stateful apps
