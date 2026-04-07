@@ -362,6 +362,7 @@ export function useWizardState() {
                    4;
       setState((prev) => ({
         ...prev,
+        mode: 'full' as const,
         pipelineRunId: run.id,
         pipelineRun: run,
         gates: mappedGates,
