@@ -120,9 +120,17 @@ export default function App() {
     await wizard.submitEasyDeploy();
   }, [wizard]);
 
-  // ── Enter key advances to next step ──────────────────────────────
+  // ── Enter key advances to next step, Escape closes iframe ────────
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // Escape: tell parent frame to close us
+      if (e.key === 'Escape') {
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'dsop-wizard-close' }, '*');
+        }
+        return;
+      }
+
       if (e.key !== 'Enter') return;
 
       // Don't trigger in textareas (multi-line input)

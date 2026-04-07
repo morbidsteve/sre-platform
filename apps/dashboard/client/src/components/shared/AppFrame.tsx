@@ -16,7 +16,7 @@ export function AppFrame({ url, title, onClose }: AppFrameProps) {
   // Reset loading when URL changes
   useEffect(() => { setLoading(true); }, [url]);
 
-  // Escape key closes
+  // Escape key closes (when dashboard has focus)
   useEffect(() => {
     if (!url) return;
     const handler = (e: KeyboardEvent) => {
@@ -24,6 +24,16 @@ export function AppFrame({ url, title, onClose }: AppFrameProps) {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
+  }, [url, onClose]);
+
+  // Listen for close message from iframe (cross-origin Escape key)
+  useEffect(() => {
+    if (!url) return;
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'dsop-wizard-close') onClose();
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
   }, [url, onClose]);
 
   if (!url) return null;
