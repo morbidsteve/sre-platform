@@ -17,7 +17,7 @@ spec:
   exceptions:
     - policyName: require-security-context
       ruleNames:
-        - require-run-as-non-root
+        - require-read-only-root-filesystem
   match:
     any:
       - resources:
