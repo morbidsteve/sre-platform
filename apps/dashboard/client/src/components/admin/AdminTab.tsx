@@ -8,6 +8,9 @@ import { CredentialsPanel } from './CredentialsPanel';
 import { CreateUserForm } from './CreateUserForm';
 import { TenantsPanel } from './TenantsPanel';
 import { AuditLogPanel } from './AuditLogPanel';
+import { SecretRotationPanel } from './SecretRotationPanel';
+import { SsoConfigPanel } from './SsoConfigPanel';
+import { RbacAuditPanel } from './RbacAuditPanel';
 import { SetupWizard } from './SetupWizard';
 import { useUser } from '../../hooks/useUser';
 import { fetchUsers, fetchGroups, createGroup, fetchSetupStatus } from '../../api/admin';
@@ -17,7 +20,10 @@ const ADMIN_TABS = [
   { id: 'users', label: 'Users' },
   { id: 'tenants', label: 'Tenants' },
   { id: 'audit', label: 'Audit Log' },
+  { id: 'rbac', label: 'RBAC Audit' },
   { id: 'credentials', label: 'Credentials' },
+  { id: 'secrets', label: 'Secrets' },
+  { id: 'sso', label: 'SSO Config' },
 ];
 
 interface AdminTabProps {
@@ -203,7 +209,13 @@ export function AdminTab({ active }: AdminTabProps) {
 
       {subTab === 'audit' && <AuditLogPanel active={active} />}
 
+      {subTab === 'rbac' && <RbacAuditPanel />}
+
       {subTab === 'credentials' && <CredentialsPanel />}
+
+      {subTab === 'secrets' && <SecretRotationPanel />}
+
+      {subTab === 'sso' && <SsoConfigPanel />}
     </div>
   );
 }

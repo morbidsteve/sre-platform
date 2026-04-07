@@ -210,6 +210,15 @@ export function restartApp(
   });
 }
 
+export function forceRepullImage(
+  namespace: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/api/ops/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/force-repull`, {
+    method: 'POST',
+  });
+}
+
 export function reconcileApp(
   namespace: string,
   name: string

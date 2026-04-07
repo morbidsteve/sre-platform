@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X, RefreshCw, RotateCcw, Activity, Cpu, MemoryStick,
   Terminal, Calendar, Code2, Settings2, Loader2, AlertTriangle,
-  CheckCircle2, Clock, Play, Pause, Repeat, Trash2,
+  CheckCircle2, Clock, Play, Pause, Repeat, Trash2, Download,
 } from 'lucide-react';
 import { PodStatusCard } from './PodStatusCard';
 import { EventsTimeline } from './EventsTimeline';
@@ -12,6 +12,7 @@ import {
   fetchOpsDiagnostics,
   patchOpsConfig,
   restartApp,
+  forceRepullImage,
   reconcileApp,
   suspendApp,
   resumeApp,
@@ -141,12 +142,13 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
   const [activeTab, setActiveTab] = useState<CockpitTab>('config');
   const [applying, setApplying] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [repulling, setRepulling] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [suspendBusy, setSuspendBusy] = useState(false);
   const [suspended, setSuspended] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'suspend' | 'resume' | 'redeploy' | 'delete' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'suspend' | 'resume' | 'redeploy' | 'delete' | 'force-repull' | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [yamlCopied, setYamlCopied] = useState(false);
 
@@ -228,6 +230,21 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
       setTimeout(() => setRestarting(false), 3000);
     }
   }, [namespace, name, load, showToast, restarting]);
+
+  const handleForceRepull = useCallback(async () => {
+    setRepulling(true);
+    setConfirmAction(null);
+    try {
+      await forceRepullImage(namespace, name);
+      showToast(`Force re-pull triggered — pod will restart with fresh image`, 'success');
+      setTimeout(load, 3000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Force re-pull failed';
+      showToast(`Force re-pull failed: ${msg}`, 'error');
+    } finally {
+      setTimeout(() => setRepulling(false), 3000);
+    }
+  }, [namespace, name, load, showToast]);
 
   const handleReconcile = useCallback(async () => {
     if (reconciling) return;
@@ -392,6 +409,15 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
             >
               <RotateCcw className={`w-3 h-3 ${restarting ? 'animate-spin' : ''}`} />
               {restarting ? 'Restarting…' : 'Restart'}
+            </button>
+            <button
+              className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 ${repulling ? 'opacity-50' : ''}`}
+              onClick={() => setConfirmAction('force-repull')}
+              disabled={repulling}
+              title="Force re-download image from Harbor (clears node cache)"
+            >
+              <Download className={`w-3 h-3 ${repulling ? 'animate-bounce' : ''}`} />
+              {repulling ? 'Re-pulling…' : 'Force Re-pull'}
             </button>
             <button
               className={`btn text-[11px] !px-2.5 !py-1 !min-h-0 flex items-center gap-1 text-yellow ${redeploying ? 'opacity-50' : ''}`}
@@ -709,6 +735,7 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
                 {confirmAction === 'redeploy' && 'Redeploy Application'}
                 {confirmAction === 'suspend' && 'Suspend Reconciliation'}
                 {confirmAction === 'resume' && 'Resume Reconciliation'}
+                {confirmAction === 'force-repull' && 'Force Re-pull Image'}
               </h3>
               <p className="text-xs text-text-dim mb-4 leading-relaxed">
                 {confirmAction === 'delete' &&
@@ -719,6 +746,8 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
                   'This will suspend Flux reconciliation. The app will keep running but changes will not be applied.'}
                 {confirmAction === 'resume' &&
                   'This will resume Flux reconciliation for this application.'}
+                {confirmAction === 'force-repull' &&
+                  `This will force Kubernetes to re-download the container image for "${name}" from Harbor, clearing any cached version on the node. The pod will restart.`}
               </p>
               <div className="flex items-center justify-end gap-2">
                 <button
@@ -740,12 +769,14 @@ export function OperationsCockpit({ namespace, name, onClose }: OperationsCockpi
                     else if (confirmAction === 'redeploy') handleRedeploy();
                     else if (confirmAction === 'suspend') handleSuspend();
                     else if (confirmAction === 'resume') handleResume();
+                    else if (confirmAction === 'force-repull') handleForceRepull();
                   }}
                 >
                   {confirmAction === 'delete' && 'Delete'}
                   {confirmAction === 'redeploy' && 'Redeploy'}
                   {confirmAction === 'suspend' && 'Suspend'}
                   {confirmAction === 'resume' && 'Resume'}
+                  {confirmAction === 'force-repull' && 'Re-pull Image'}
                 </button>
               </div>
             </div>

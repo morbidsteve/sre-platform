@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   X,
   Search,
+  FileText,
+  Download,
 } from 'lucide-react';
 import { SkeletonCard } from '../ui/Skeleton';
 import { Button } from '../ui/Button';
@@ -16,7 +18,7 @@ import { AuditFilters } from '../audit/AuditFilters';
 import { AuditTable } from '../audit/AuditTable';
 import { fetchAuditEvents } from '../../api/audit';
 import { fetchHealth } from '../../api/health';
-import { fetchComplianceScore } from '../../api/compliance';
+import { fetchComplianceScore, generateComplianceReport, type ComplianceReport } from '../../api/compliance';
 import { useConfig } from '../../context/ConfigContext';
 import { deepLink } from '../../utils/deepLinks';
 import { Skeleton } from '../ui/Skeleton';
@@ -681,6 +683,11 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
   const [complianceScore, setComplianceScore] = useState<ComplianceScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
 
+  // Live compliance report
+  const [reportData, setReportData] = useState<ComplianceReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+
   // Section refs for scrolling
   const controlFamilySectionRef = useRef<HTMLDivElement>(null);
   const auditSectionRef = useRef<HTMLDivElement>(null);
@@ -719,6 +726,35 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
       setScoreLoading(false);
     }
   }, [active]);
+
+  const handleGenerateReport = useCallback(async () => {
+    setReportLoading(true);
+    try {
+      const result = await generateComplianceReport();
+      setReportData(result.report);
+      setShowReport(true);
+    } catch {
+      // show error in the score area
+    } finally {
+      setReportLoading(false);
+    }
+  }, []);
+
+  const downloadReportHtml = useCallback(() => {
+    if (!reportData) return;
+    const statusColor = (s: string) => s === 'PASS' ? '#22c55e' : s === 'PARTIAL' ? '#eab308' : '#ef4444';
+    const rows = reportData.controls.map(c =>
+      `<tr><td style="padding:6px 12px;border-bottom:1px solid #333;font-family:monospace">${c.control}</td><td style="padding:6px 12px;border-bottom:1px solid #333">${c.family}</td><td style="padding:6px 12px;border-bottom:1px solid #333">${c.description}</td><td style="padding:6px 12px;border-bottom:1px solid #333"><span style="color:${statusColor(c.status)};font-weight:bold">${c.status}</span></td><td style="padding:6px 12px;border-bottom:1px solid #333;font-size:12px">${c.evidence}</td></tr>`
+    ).join('\n');
+    const html = `<!DOCTYPE html><html><head><title>${reportData.title}</title><style>body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:40px;margin:0}h1{color:#fff;font-size:24px}h2{color:#888;font-size:14px;text-transform:uppercase;letter-spacing:1px}.summary{display:flex;gap:24px;margin:24px 0}.card{background:#16213e;border:1px solid #333;border-radius:8px;padding:16px 24px}.card .label{font-size:12px;color:#888;text-transform:uppercase}.card .value{font-size:28px;font-weight:bold;font-family:monospace}table{width:100%;border-collapse:collapse;background:#16213e;border:1px solid #333;border-radius:8px;overflow:hidden}th{text-align:left;padding:8px 12px;background:#0f3460;color:#888;font-size:12px;text-transform:uppercase}td{font-size:13px}</style></head><body><h1>${reportData.title}</h1><p>Generated: ${new Date(reportData.scanDate).toLocaleString()}</p><div class="summary"><div class="card"><div class="label">Pass</div><div class="value" style="color:#22c55e">${reportData.summary.pass}</div></div><div class="card"><div class="label">Partial</div><div class="value" style="color:#eab308">${reportData.summary.partial}</div></div><div class="card"><div class="label">Fail</div><div class="value" style="color:#ef4444">${reportData.summary.fail}</div></div><div class="card"><div class="label">Compliance</div><div class="value" style="color:#3b82f6">${reportData.summary.compliancePercentage}%</div></div></div><h2>Control Assessment</h2><table><thead><tr><th>Control</th><th>Family</th><th>Description</th><th>Status</th><th>Evidence</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compliance-report-${new Date().toISOString().slice(0, 10)}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [reportData]);
 
   useEffect(() => {
     if (!active) return;
@@ -903,11 +939,21 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
               )}
             </div>
           </div>
-          {complianceScore && (
-            <div className="text-xs text-text-dim">
-              Trend: <span className="font-medium text-text-primary">{complianceScore.trend}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {complianceScore && (
+              <div className="text-xs text-text-dim">
+                Trend: <span className="font-medium text-text-primary">{complianceScore.trend}</span>
+              </div>
+            )}
+            <button
+              className="btn btn-primary text-sm inline-flex items-center gap-2"
+              onClick={handleGenerateReport}
+              disabled={reportLoading}
+            >
+              <FileText className={`w-4 h-4 ${reportLoading ? 'animate-pulse' : ''}`} />
+              {reportLoading ? 'Generating...' : 'Generate Live Report'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1283,6 +1329,95 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
                 <span className="text-text-primary break-words whitespace-pre-wrap">{selectedEvent.message}</span>
               </div>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Live Compliance Report Modal */}
+      <Modal open={showReport} onClose={() => setShowReport(false)} className="max-w-4xl w-full max-h-[85vh] overflow-y-auto">
+        {reportData && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-semibold text-text-bright">{reportData.title}</h3>
+                <p className="text-xs text-text-dim mt-1">
+                  Generated: {new Date(reportData.scanDate).toLocaleString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn text-sm inline-flex items-center gap-2"
+                  onClick={downloadReportHtml}
+                >
+                  <Download className="w-4 h-4" />
+                  Download HTML
+                </button>
+                <button
+                  onClick={() => setShowReport(false)}
+                  className="text-text-dim hover:text-text-primary transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Summary bar */}
+            <div className="flex items-center gap-4 bg-surface border border-border rounded-lg p-4 mb-4">
+              <span className="text-sm font-medium text-green-400">{reportData.summary.pass} Pass</span>
+              {reportData.summary.partial > 0 && <span className="text-sm font-medium text-yellow-400">{reportData.summary.partial} Partial</span>}
+              {reportData.summary.fail > 0 && <span className="text-sm font-medium text-red-400">{reportData.summary.fail} Fail</span>}
+              <span className="text-sm text-text-dim">of {reportData.summary.total} controls</span>
+              <span className="ml-auto text-lg font-bold font-mono" style={{
+                color: reportData.summary.compliancePercentage >= 90 ? 'var(--green)' :
+                       reportData.summary.compliancePercentage >= 70 ? 'var(--yellow)' : 'var(--red)',
+              }}>
+                {reportData.summary.compliancePercentage}%
+              </span>
+            </div>
+
+            {/* Controls grouped by family */}
+            {(() => {
+              const families = new Map<string, typeof reportData.controls>();
+              reportData.controls.forEach(c => {
+                if (!families.has(c.family)) families.set(c.family, []);
+                families.get(c.family)!.push(c);
+              });
+              return Array.from(families.entries()).map(([family, controls]) => (
+                <div key={family} className="mb-4">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-text-dim mb-2">{family}</h4>
+                  <div className="bg-card border border-border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-left">
+                          <th className="py-2 px-3 text-text-dim font-medium w-[80px]">Control</th>
+                          <th className="py-2 px-3 text-text-dim font-medium w-[200px]">Description</th>
+                          <th className="py-2 px-3 text-text-dim font-medium w-[80px]">Status</th>
+                          <th className="py-2 px-3 text-text-dim font-medium">Evidence</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {controls.map(c => (
+                          <tr key={c.control} className="border-b border-border/50 hover:bg-surface/50">
+                            <td className="py-2 px-3 font-mono font-semibold text-text-bright">{c.control}</td>
+                            <td className="py-2 px-3 text-text-primary">{c.description}</td>
+                            <td className="py-2 px-3">
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                                c.status === 'PASS' ? 'bg-green/15 text-green' :
+                                c.status === 'PARTIAL' ? 'bg-yellow/15 text-yellow' :
+                                'bg-red/15 text-red'
+                              }`}>
+                                {c.status}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-text-dim">{c.evidence}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         )}
       </Modal>
