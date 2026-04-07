@@ -10615,7 +10615,7 @@ async function executePipelineDeploy(run, actor) {
             if (dreqs.needsPrivileged) { pipelineSecurityContext.privileged = true; pipelineSecurityContext.runAsRoot = true; }
             if (dreqs.needsWritableFs) pipelineSecurityContext.writableFilesystem = true;
             if (dreqs.capabilities && dreqs.capabilities.length > 0) pipelineSecurityContext.capabilities = dreqs.capabilities;
-            needsPrivileged = true;
+            needsPrivileged = dreqs.needsPrivileged || false;
             logger.info('pipeline', `Run ${run.id}: auto-detected security requirements from repo analysis`, { runId: run.id, detectedReqs: dreqs });
 
             // Auto-generate security exceptions for PolicyException when none were explicitly provided
@@ -10684,7 +10684,6 @@ async function executePipelineDeploy(run, actor) {
               pipelineSecurityContext = pipelineSecurityContext || {};
               if (bundleSecurity.runAsNonRoot === false) {
                 pipelineSecurityContext.runAsRoot = true;
-                needsPrivileged = true;
               }
               if (bundleSecurity.readOnlyRootFilesystem === false) {
                 pipelineSecurityContext.writableFilesystem = true;
