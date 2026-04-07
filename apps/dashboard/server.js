@@ -5593,10 +5593,11 @@ async function autoDeployOnBuildComplete(groupId, builds, nsName, safeName, team
 function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHost, env, privileged, securityContext, extraContainers, extraVolumes, backendProtocol }) {
   const safeEnv = Array.isArray(env) ? env.filter((e) => e && e.name) : [];
 
-  // Determine if we need privileged-level security context.
-  // securityContext (granular) takes precedence over the boolean privileged flag.
+  // Determine security context level.
+  // runAsRoot only needs uid 0 — privileged means full host access (very different).
   const sc = securityContext || {};
-  const needsPrivileged = privileged || sc.privileged || sc.runAsRoot || false;
+  const needsPrivileged = privileged || sc.privileged || false;
+  const needsRoot = sc.runAsRoot || needsPrivileged;
 
   const hr = {
     apiVersion: "helm.toolkit.fluxcd.io/v2",
@@ -5638,10 +5639,10 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
           image: { repository: image, tag: tag, pullPolicy: "IfNotPresent" },
           port: port,
           replicas: replicas,
-          resources: needsPrivileged
+          resources: (needsPrivileged || needsRoot)
             ? { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "2", memory: "2Gi" } }
             : { requests: { cpu: "50m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } },
-          probes: needsPrivileged
+          probes: (needsPrivileged || needsRoot)
             ? { liveness: { type: "tcp", path: "/", initialDelaySeconds: 30, periodSeconds: 15, failureThreshold: 10 }, readiness: { type: "tcp", path: "/", initialDelaySeconds: 15, periodSeconds: 10, failureThreshold: 10 } }
             : { liveness: { path: "/", initialDelaySeconds: 10, periodSeconds: 10 }, readiness: { path: "/", initialDelaySeconds: 5, periodSeconds: 5 } },
           env: safeEnv,
@@ -5661,11 +5662,11 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
   // Apply security context overrides (granular securityContext takes precedence over boolean privileged)
   const values = hr.spec.values;
   if (needsPrivileged) {
+    // Full privileged mode — host access, all capabilities
     values.podSecurityContext = {
       runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
       seccompProfile: { type: "RuntimeDefault" },
     };
-    // REPLACE entire container security context — don't merge with chart defaults
     values.containerSecurityContext = {
       privileged: true,
       runAsNonRoot: false,
@@ -5673,9 +5674,22 @@ function generateHelmRelease({ name, team, image, tag, port, replicas, ingressHo
       allowPrivilegeEscalation: true,
       readOnlyRootFilesystem: false,
     };
+  } else if (needsRoot) {
+    // Root user only — NOT privileged, just uid 0
+    values.podSecurityContext = {
+      runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, fsGroup: 0,
+      seccompProfile: { type: "RuntimeDefault" },
+    };
+    values.containerSecurityContext = {
+      runAsNonRoot: false,
+      runAsUser: 0,
+      allowPrivilegeEscalation: false,
+      readOnlyRootFilesystem: sc.writableFilesystem ? false : true,
+      capabilities: { drop: ["ALL"] },
+    };
   }
   // Writable filesystem (standalone, without root)
-  if (sc.writableFilesystem && !needsPrivileged) {
+  if (sc.writableFilesystem && !needsPrivileged && !needsRoot) {
     values.containerSecurityContext = {
       ...(values.containerSecurityContext || {}),
       readOnlyRootFilesystem: false,
