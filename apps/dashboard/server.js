@@ -10170,7 +10170,7 @@ async function executePipelineDeploy(run, actor) {
     let parsedExceptions = [];
     try {
       parsedExceptions = typeof run.security_exceptions === "string" ? JSON.parse(run.security_exceptions || "[]") : (run.security_exceptions || []);
-      const approvedPrivilegedTypes = ["run_as_root", "writable_filesystem", "privileged_container", "host_networking"];
+      const approvedPrivilegedTypes = ["run_as_root", "privileged_container", "host_networking"];
       needsPrivileged = parsedExceptions.some(e => e.approved === true && approvedPrivilegedTypes.includes(e.type));
       if (needsPrivileged) {
         const approvedNames = parsedExceptions.filter(e => e.approved === true).map(e => e.type);
