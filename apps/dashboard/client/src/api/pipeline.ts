@@ -72,6 +72,10 @@ export function deletePipelineRun(id: string): Promise<void> {
   return apiFetch('/api/pipeline/runs/' + id, { method: 'DELETE' });
 }
 
+export function cancelPipelineRun(id: string): Promise<void> {
+  return apiFetch('/api/pipeline/runs/' + id + '/cancel', { method: 'POST' });
+}
+
 export function retryPipelineRun(id: string): Promise<PipelineRun> {
   return apiFetch<PipelineRun>('/api/pipeline/runs/' + id + '/retry', { method: 'POST' });
 }

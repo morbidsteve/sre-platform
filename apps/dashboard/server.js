@@ -8364,6 +8364,28 @@ app.post("/api/pipeline/cleanup", mutateLimiter, requireDb, requireGroups("sre-a
   }
 });
 
+// POST /api/pipeline/runs/:id/cancel — Cancel a running pipeline
+app.post("/api/pipeline/runs/:id/cancel", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
+  try {
+    const run = await db.getRun(req.params.id);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+
+    const cancellableStatuses = ["pending", "scanning", "review_pending"];
+    if (!cancellableStatuses.includes(run.status)) {
+      return res.status(400).json({ error: `Cannot cancel run in '${run.status}' status. Only pending, scanning, or review_pending runs can be cancelled.` });
+    }
+
+    const actor = getActor(req);
+    await db.updateRunStatus(run.id, "cancelled");
+    await db.auditLog(run.id, "pipeline_cancelled", actor, `Pipeline cancelled by ${actor}`);
+
+    res.json({ success: true, status: "cancelled" });
+  } catch (err) {
+    console.error("[pipeline] Cancel error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // POST /api/pipeline/runs/:id/retry — Restart a failed/stale pipeline run
 app.post("/api/pipeline/runs/:id/retry", mutateLimiter, requireDb, requireGroups("sre-admins", "developers"), async (req, res) => {
   try {

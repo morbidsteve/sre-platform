@@ -10,6 +10,7 @@ import {
   submitForReview,
   deployPipelineRun,
   retryPipelineRun as retryRun,
+  cancelPipelineRun,
   updateFindingDisposition,
 } from '../../api/pipeline';
 import type { PipelineRun } from '../../types/api';
@@ -120,6 +121,18 @@ export function RunDetailOverlay({ runId, isReview = false, onClose, onActionCom
     }
   };
 
+  const handleCancel = useCallback(async () => {
+    if (!run) return;
+    if (!window.confirm(`Cancel pipeline for "${run.app_name}"?`)) return;
+    try {
+      await cancelPipelineRun(run.id);
+      onClose();
+      onActionComplete?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Cancel failed');
+    }
+  }, [run, onClose, onActionComplete]);
+
   const handleReview = async (decision: 'approved' | 'rejected' | 'returned', comment: string) => {
     if (!run) return;
     setReviewLoading(true);
@@ -213,6 +226,11 @@ export function RunDetailOverlay({ runId, isReview = false, onClose, onActionCom
                 >
                   Open Deployed App
                 </a>
+              )}
+              {['pending', 'scanning', 'review_pending'].includes(run.status) && (
+                <Button variant="danger" size="sm" onClick={handleCancel}>
+                  Cancel Pipeline
+                </Button>
               )}
               {(run.status === 'failed' || run.status === 'scanning') && (
                 <Button variant="warn" onClick={handleRetry}>Restart Pipeline</Button>

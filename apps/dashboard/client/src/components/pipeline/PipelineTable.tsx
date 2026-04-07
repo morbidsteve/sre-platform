@@ -1,5 +1,5 @@
-import React from 'react';
-import { Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Trash2, RotateCcw, XCircle } from 'lucide-react';
 import { EmptyState } from '../ui/EmptyState';
 import type { PipelineRun } from '../../types/api';
 
@@ -15,15 +15,19 @@ function timeAgo(dateStr: string | null | undefined): string {
 function statusBadgeClass(status: string): string {
   const map: Record<string, string> = {
     scanning: 'bg-accent/15 text-accent',
-    pending: 'bg-surface text-text-dim',
+    pending: 'bg-[var(--color-surface)] text-text-dim',
     review_pending: 'bg-yellow/15 text-yellow',
     approved: 'bg-green/15 text-green',
     deployed: 'bg-green/15 text-green',
     rejected: 'bg-red/15 text-red',
     failed: 'bg-red/15 text-red',
     deploying: 'bg-accent/15 text-accent',
+    deployed_unhealthy: 'bg-red/15 text-red',
+    deployed_partial: 'bg-yellow/15 text-yellow',
+    cancelled: 'bg-[var(--color-surface)] text-text-dim',
+    undeployed: 'bg-[var(--color-surface)] text-text-dim',
   };
-  return map[status] || 'bg-surface text-text-dim';
+  return map[status] || 'bg-[var(--color-surface)] text-text-dim';
 }
 
 function gateCircleColor(status: string): string {
@@ -34,17 +38,61 @@ function gateCircleColor(status: string): string {
   return 'var(--border)';
 }
 
+type SortField = 'app_name' | 'team' | 'status' | 'created_at';
+type SortDir = 'asc' | 'desc';
+
+function SortHeader({ field, label, current, dir, onToggle }: {
+  field: SortField; label: string; current: SortField; dir: SortDir; onToggle: (f: SortField) => void;
+}) {
+  return (
+    <th
+      className="text-left text-[11px] text-text-dim font-medium px-3 py-2 cursor-pointer hover:text-text-primary select-none"
+      onClick={() => onToggle(field)}
+    >
+      {label}
+      {current === field && (
+        <span className="ml-1">{dir === 'asc' ? '\u2191' : '\u2193'}</span>
+      )}
+    </th>
+  );
+}
+
 interface PipelineTableProps {
   runs: PipelineRun[];
   onSelectRun: (id: string) => void;
   onDeleteRun?: (run: PipelineRun) => void;
+  onRetryRun?: (run: PipelineRun) => void;
+  onCancelRun?: (run: PipelineRun) => void;
   totalCount: number;
 }
 
-export function PipelineTable({ runs, onSelectRun, onDeleteRun, totalCount }: PipelineTableProps) {
+export function PipelineTable({ runs, onSelectRun, onDeleteRun, onRetryRun, onCancelRun, totalCount }: PipelineTableProps) {
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedRuns = [...runs].sort((a, b) => {
+    const aVal = (a as any)[sortField] || '';
+    const bVal = (b as any)[sortField] || '';
+    const cmp = String(aVal).localeCompare(String(bVal));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
   if (runs.length === 0) {
     return <EmptyState title="No pipeline runs found" description="No runs match the current filters." />;
   }
+
+  const hasActions = onDeleteRun || onRetryRun || onCancelRun;
+  const cancellableStatuses = ['pending', 'scanning', 'review_pending'];
+  const retryableStatuses = ['failed', 'cancelled'];
 
   return (
     <div className="card-base overflow-hidden">
@@ -57,17 +105,17 @@ export function PipelineTable({ runs, onSelectRun, onDeleteRun, totalCount }: Pi
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left">
-              <th className="py-2 px-3 text-text-dim font-medium text-xs">App Name</th>
-              <th className="py-2 px-3 text-text-dim font-medium text-xs">Team</th>
-              <th className="py-2 px-3 text-text-dim font-medium text-xs">Status</th>
-              <th className="py-2 px-3 text-text-dim font-medium text-xs">Classification</th>
-              <th className="py-2 px-3 text-text-dim font-medium text-xs">Created</th>
-              <th className="py-2 px-3 text-text-dim font-medium text-xs">Gates</th>
-              {onDeleteRun && <th className="py-2 px-3 text-text-dim font-medium text-xs w-10"></th>}
+              <SortHeader field="app_name" label="App Name" current={sortField} dir={sortDir} onToggle={toggleSort} />
+              <SortHeader field="team" label="Team" current={sortField} dir={sortDir} onToggle={toggleSort} />
+              <SortHeader field="status" label="Status" current={sortField} dir={sortDir} onToggle={toggleSort} />
+              <th className="py-2 px-3 text-text-dim font-medium text-[11px]">Classification</th>
+              <SortHeader field="created_at" label="Created" current={sortField} dir={sortDir} onToggle={toggleSort} />
+              <th className="py-2 px-3 text-text-dim font-medium text-[11px]">Gates</th>
+              {hasActions && <th className="py-2 px-3 text-text-dim font-medium text-[11px] w-24">Actions</th>}
             </tr>
           </thead>
           <tbody>
-            {runs.map((run) => {
+            {sortedRuns.map((run) => {
               const gates = run.gates || [];
               const passed = gates.filter((g) => g.status === 'passed').length;
 
@@ -105,18 +153,37 @@ export function PipelineTable({ runs, onSelectRun, onDeleteRun, totalCount }: Pi
                       )}
                     </div>
                   </td>
-                  {onDeleteRun && (
+                  {hasActions && (
                     <td className="py-2 px-3">
-                      <button
-                        className="p-1 rounded hover:bg-red/10 text-text-dim hover:text-red transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteRun(run);
-                        }}
-                        title="Delete run"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        {onCancelRun && cancellableStatuses.includes(run.status) && (
+                          <button
+                            className="p-1 rounded hover:bg-yellow/10 text-text-dim hover:text-yellow transition-colors"
+                            onClick={() => onCancelRun(run)}
+                            title="Cancel run"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onRetryRun && retryableStatuses.includes(run.status) && (
+                          <button
+                            className="p-1 rounded hover:bg-accent/10 text-text-dim hover:text-accent transition-colors"
+                            onClick={() => onRetryRun(run)}
+                            title="Retry run"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onDeleteRun && (
+                          <button
+                            className="p-1 rounded hover:bg-red/10 text-text-dim hover:text-red transition-colors"
+                            onClick={() => onDeleteRun(run)}
+                            title="Delete run"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>

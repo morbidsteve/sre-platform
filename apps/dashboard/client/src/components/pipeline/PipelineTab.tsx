@@ -21,6 +21,7 @@ export function PipelineTab({ active, onOpenApp }: PipelineTabProps) {
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
+  const [teamFilter, setTeamFilter] = useState('');
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [isReviewMode, setIsReviewMode] = useState(false);
   const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
@@ -34,20 +35,30 @@ export function PipelineTab({ active, onOpenApp }: PipelineTabProps) {
     }
   }, []);
 
+  const needsActionStatuses = ['pending', 'scanning', 'review_pending', 'deploying'];
+
   const loadRuns = useCallback(async () => {
     try {
+      const apiStatus = statusFilter === 'needs_action' ? undefined : (statusFilter || undefined);
       const data = await fetchPipelineRuns({
-        status: statusFilter || undefined,
+        status: apiStatus,
         search: searchFilter || undefined,
         offset,
         limit: PAGE_LIMIT,
       });
-      setRuns(data.runs || []);
-      setTotal(data.total || 0);
+      let filtered = data.runs || [];
+      if (statusFilter === 'needs_action') {
+        filtered = filtered.filter((r) => needsActionStatuses.includes(r.status));
+      }
+      if (teamFilter) {
+        filtered = filtered.filter((r) => r.team === teamFilter);
+      }
+      setRuns(filtered);
+      setTotal(statusFilter === 'needs_action' || teamFilter ? filtered.length : (data.total || 0));
     } catch {
       // silently fail
     }
-  }, [statusFilter, searchFilter, offset]);
+  }, [statusFilter, searchFilter, teamFilter, offset]);
 
   const refreshAll = useCallback(() => {
     loadStats();
@@ -66,6 +77,11 @@ export function PipelineTab({ active, onOpenApp }: PipelineTabProps) {
     setOffset(0);
   };
 
+  const handleTeamChange = (team: string) => {
+    setTeamFilter(team);
+    setOffset(0);
+  };
+
   const handleSearchChange = (search: string) => {
     setSearchFilter(search);
     clearTimeout(searchDebounce.current);
@@ -73,6 +89,9 @@ export function PipelineTab({ active, onOpenApp }: PipelineTabProps) {
       setOffset(0);
     }, 300);
   };
+
+  // Extract unique team names for the team filter dropdown
+  const teamList = [...new Set(runs.map((r) => r.team).filter(Boolean))].sort();
 
   const handleSelectRun = (id: string) => {
     setSelectedRunId(id);
@@ -85,8 +104,11 @@ export function PipelineTab({ active, onOpenApp }: PipelineTabProps) {
       <PipelineFilters
         statusFilter={statusFilter}
         searchFilter={searchFilter}
+        teamFilter={teamFilter}
+        teams={teamList}
         onStatusChange={handleStatusChange}
         onSearchChange={handleSearchChange}
+        onTeamChange={handleTeamChange}
       />
       <PipelineTable
         runs={runs}
