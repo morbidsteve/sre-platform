@@ -61,7 +61,7 @@ export function ServiceHealthGrid({ services, lastChecked, loading, onOpenServic
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="font-semibold text-sm text-text-bright">
+                <span className="text-sm font-semibold text-text-primary">
                   {svc.name.charAt(0).toUpperCase() + svc.name.slice(1)}
                 </span>
                 {['keycloak', 'neuvector', 'openbao'].some(s => svc.name.toLowerCase().includes(s)) ? (
@@ -70,7 +70,7 @@ export function ServiceHealthGrid({ services, lastChecked, loading, onOpenServic
                   <ExternalLink className="w-3 h-3 text-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
                 )}
               </div>
-              <div className="text-[11px] text-text-dim mb-1">{svc.description}</div>
+              <div className="text-xs text-text-dim mb-1">{svc.description}</div>
               <div
                 className="text-xs text-text-dim hover:text-accent truncate block"
                 title={svc.url}
@@ -78,7 +78,7 @@ export function ServiceHealthGrid({ services, lastChecked, loading, onOpenServic
                 {svc.url.replace('https://', '')}
               </div>
               <span
-                className={`inline-block mt-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium ${
+                className={`inline-block mt-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium ${
                   svc.healthy
                     ? 'bg-[rgba(64,192,87,0.15)] text-green'
                     : 'bg-[rgba(250,82,82,0.15)] text-red'
@@ -91,7 +91,7 @@ export function ServiceHealthGrid({ services, lastChecked, loading, onOpenServic
         ))}
       </div>
       {lastChecked && (
-        <div className="text-[11px] text-text-dim mt-3">
+        <div className="text-xs text-text-dim mt-3">
           Last checked: {lastChecked}
         </div>
       )}

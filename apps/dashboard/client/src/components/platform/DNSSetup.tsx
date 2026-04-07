@@ -30,7 +30,7 @@ export function DNSSetup({ hostsEntry, loading }: DNSSetupProps) {
 
   return (
     <div className="bg-card border border-border rounded-[var(--radius)] p-4">
-      <p className="text-[13px] text-text-dim mb-2">
+      <p className="text-xs text-text-dim mb-2">
         Add this to <code className="bg-bg px-1 py-0.5 rounded text-xs font-mono">/etc/hosts</code> to access services by hostname:
       </p>
       <div
@@ -38,7 +38,7 @@ export function DNSSetup({ hostsEntry, loading }: DNSSetupProps) {
         onClick={handleCopy}
         title="Click to copy"
       >
-        <pre className="text-[13px] font-mono text-text-primary whitespace-pre overflow-x-auto pr-8">
+        <pre className="text-xs font-mono text-text-primary whitespace-pre overflow-x-auto pr-8">
           {loading ? 'Loading...' : hostsEntry || 'No DNS entries available.'}
         </pre>
         <span className="absolute right-2 top-2 text-text-dim group-hover:text-accent transition-colors">
@@ -50,7 +50,7 @@ export function DNSSetup({ hostsEntry, loading }: DNSSetupProps) {
         </span>
       </div>
       {copied && (
-        <p className="text-[11px] text-green mt-1">Copied to clipboard!</p>
+        <p className="text-xs text-green mt-1">Copied to clipboard!</p>
       )}
     </div>
   );

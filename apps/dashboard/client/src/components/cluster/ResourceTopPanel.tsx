@@ -110,7 +110,7 @@ export function ResourceTopPanel({ active, refreshKey }: ResourceTopPanelProps) 
               {Object.entries(nodeStats).map(([node, stat]) => (
                 <div key={node} className="card-base p-3">
                   <div className="text-xs font-semibold text-text-primary mb-1">{node}</div>
-                  <div className="flex gap-4 text-[11px] text-text-dim">
+                  <div className="flex gap-4 text-xs text-text-dim">
                     <span>{stat.count} pods</span>
                     <span className="font-mono">CPU: {stat.cpu < 1000 ? stat.cpu + 'm' : (stat.cpu / 1000).toFixed(1) + ' cores'}</span>
                     <span className="font-mono">Mem: {stat.mem < 1073741824 ? Math.round(stat.mem / 1048576) + 'Mi' : (stat.mem / 1073741824).toFixed(1) + 'Gi'}</span>

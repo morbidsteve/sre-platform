@@ -217,7 +217,7 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
 
       {subTab === 'dns' && (
         <div>
-          <h2 className="text-base font-semibold text-text-bright mb-3">DNS Setup</h2>
+          <h2 className="text-sm font-semibold text-text-primary mb-3">DNS Setup</h2>
           <DNSSetup hostsEntry={hostsEntry} loading={loading && !ingressData} />
         </div>
       )}

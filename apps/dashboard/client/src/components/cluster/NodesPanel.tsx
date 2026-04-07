@@ -137,7 +137,7 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                   {node.roles.map((role) => (
                     <span
                       key={role}
-                      className={`text-[10px] font-medium px-2 py-0.5 rounded ${
+                      className={`text-xs font-medium px-2 py-0.5 rounded ${
                         role === 'control-plane' || role === 'etcd'
                           ? 'bg-accent/15 text-accent'
                           : 'bg-green/15 text-green'
@@ -149,11 +149,11 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   {node.unschedulable && (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-red/15 text-red">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded bg-red/15 text-red">
                       CORDONED
                     </span>
                   )}
-                  <span className="text-[10px] text-text-dim">
+                  <span className="text-xs text-text-dim">
                     {isExpanded ? 'Click to collapse' : 'Click for details'}
                   </span>
                 </div>
@@ -170,11 +170,11 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
 
               {/* Usage Bars */}
               <UsageBar label="CPU" used={cpuPct} total={100} unit="%" />
-              <div className="text-[10px] text-text-dim -mt-2 mb-2">
+              <div className="text-xs text-text-dim -mt-2 mb-2">
                 {node.cpu?.usedFmt ?? '0'} / {node.cpu?.allocFmt ?? '?'}
               </div>
               <UsageBar label="Memory" used={memPct} total={100} unit="%" />
-              <div className="text-[10px] text-text-dim -mt-2 mb-2">
+              <div className="text-xs text-text-dim -mt-2 mb-2">
                 {node.memory?.usedFmt ?? '0'} / {node.memory?.allocFmt ?? '?'}
               </div>
 
@@ -203,20 +203,20 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                     {/* Summary row */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div>
-                        <span className="text-[10px] uppercase text-text-dim tracking-[1px]">Pods on Node</span>
-                        <div className="text-lg font-semibold text-text-primary">{nodeDetail.podCount}</div>
+                        <span className="text-xs uppercase text-text-dim tracking-[1px]">Pods on Node</span>
+                        <div className="text-base font-semibold text-text-primary">{nodeDetail.podCount}</div>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase text-text-dim tracking-[1px]">Pod Capacity</span>
-                        <div className="text-lg font-semibold text-text-primary">{node.pods?.allocatable ?? '-'}</div>
+                        <span className="text-xs uppercase text-text-dim tracking-[1px]">Pod Capacity</span>
+                        <div className="text-base font-semibold text-text-primary">{node.pods?.allocatable ?? '-'}</div>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase text-text-dim tracking-[1px]">CPU Usage</span>
-                        <div className="text-lg font-semibold text-text-primary">{cpuPct}%</div>
+                        <span className="text-xs uppercase text-text-dim tracking-[1px]">CPU Usage</span>
+                        <div className="text-base font-semibold text-text-primary">{cpuPct}%</div>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase text-text-dim tracking-[1px]">Memory Usage</span>
-                        <div className="text-lg font-semibold text-text-primary">{memPct}%</div>
+                        <span className="text-xs uppercase text-text-dim tracking-[1px]">Memory Usage</span>
+                        <div className="text-base font-semibold text-text-primary">{memPct}%</div>
                       </div>
                     </div>
 
@@ -227,9 +227,9 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-border text-left">
-                              <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Type</th>
-                              <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Status</th>
-                              <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Message</th>
+                              <th className="py-2 px-3 text-text-dim font-medium text-xs">Type</th>
+                              <th className="py-2 px-3 text-text-dim font-medium text-xs">Status</th>
+                              <th className="py-2 px-3 text-text-dim font-medium text-xs">Message</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -239,11 +239,11 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                                 (c.type !== 'Ready' && c.status === 'False');
                               return (
                                 <tr key={c.type} className="border-b border-border">
-                                  <td className="py-1.5 px-3 font-medium text-text-primary">{c.type}</td>
-                                  <td className="py-1.5 px-3">
+                                  <td className="py-2 px-3 font-medium text-text-primary">{c.type}</td>
+                                  <td className="py-2 px-3">
                                     <Badge variant={ok ? 'green' : 'yellow'}>{c.status}</Badge>
                                   </td>
-                                  <td className="py-1.5 px-3 text-text-dim text-xs">{c.message || '-'}</td>
+                                  <td className="py-2 px-3 text-text-dim text-xs">{c.message || '-'}</td>
                                 </tr>
                               );
                             })}
@@ -262,23 +262,23 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                           <table className="w-full text-sm">
                             <thead className="sticky top-0 bg-card">
                               <tr className="border-b border-border text-left">
-                                <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Status</th>
-                                <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Name</th>
-                                <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Namespace</th>
-                                <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Ready</th>
-                                <th className="py-1.5 px-3 text-text-dim font-medium text-xs">Restarts</th>
+                                <th className="py-2 px-3 text-text-dim font-medium text-xs">Status</th>
+                                <th className="py-2 px-3 text-text-dim font-medium text-xs">Name</th>
+                                <th className="py-2 px-3 text-text-dim font-medium text-xs">Namespace</th>
+                                <th className="py-2 px-3 text-text-dim font-medium text-xs">Ready</th>
+                                <th className="py-2 px-3 text-text-dim font-medium text-xs">Restarts</th>
                               </tr>
                             </thead>
                             <tbody>
                               {nodeDetail.pods.map((p) => (
                                 <tr key={p.namespace + '/' + p.name} className="border-b border-border">
-                                  <td className="py-1.5 px-3">
+                                  <td className="py-2 px-3">
                                     <StatusDot color={p.status === 'Running' ? 'green' : p.status === 'Pending' ? 'yellow' : 'red'} />
                                   </td>
-                                  <td className="py-1.5 px-3 text-text-primary text-xs font-mono">{p.name}</td>
-                                  <td className="py-1.5 px-3 text-text-dim text-xs">{p.namespace}</td>
-                                  <td className="py-1.5 px-3 text-text-dim text-xs">{p.ready}</td>
-                                  <td className="py-1.5 px-3">
+                                  <td className="py-2 px-3 text-text-primary text-xs font-mono">{p.name}</td>
+                                  <td className="py-2 px-3 text-text-dim text-xs">{p.namespace}</td>
+                                  <td className="py-2 px-3 text-text-dim text-xs">{p.ready}</td>
+                                  <td className="py-2 px-3">
                                     {p.restarts > 0 ? (
                                       <span className="text-yellow text-xs font-medium">{p.restarts}</span>
                                     ) : (
@@ -307,7 +307,7 @@ export function NodesPanel({ active, refreshKey }: NodesPanelProps) {
                               </Badge>
                               <div className="flex-1 min-w-0">
                                 <div className="text-xs text-text-primary">{e.message}</div>
-                                <div className="text-[11px] text-text-dim">
+                                <div className="text-xs text-text-dim">
                                   {e.reason} &middot; {e.age}
                                   {e.count > 1 && <span> &middot; x{e.count}</span>}
                                 </div>
