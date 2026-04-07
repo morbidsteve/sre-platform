@@ -11336,7 +11336,7 @@ app.post("/api/security/sbom", mutateLimiter, requireGroups("sre-admins", "devel
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300, runId, "SBOM");
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "trivy-sbom", 300, null, "SBOM");
 
     let sbom;
     try { sbom = JSON.parse(logs); } catch (err) {
@@ -11394,7 +11394,7 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
       },
     });
 
-    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180, runId, "DAST");
+    const logs = await waitForJobAndGetLogs(jobName, BUILD_NAMESPACE, "zap", 180, null, "DAST");
 
     let report;
     try { report = JSON.parse(logs); } catch (err) {
