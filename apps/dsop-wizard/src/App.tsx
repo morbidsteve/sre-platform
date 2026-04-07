@@ -336,6 +336,7 @@ export default function App() {
             onUpdateGate={wizard.updateGate}
             onUpdateFinding={wizard.updateFinding}
             onBulkUpdateFindings={wizard.bulkUpdateAllFindings}
+            onRefreshRun={wizard.refreshPipelineRun}
             onOverrideGate={wizard.overrideGate}
             isAdmin={wizard.isAdmin}
             username={user?.name || 'operator'}
