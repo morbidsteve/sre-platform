@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { bulkUpdateFindings } from '../../api';
 import {
   CheckCircle2,
   XCircle,
@@ -866,8 +867,9 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
                     {dispositionOptions.map((opt) => (
                       <button
                         key={opt.value}
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
+                          // Update local state
                           gate.findings.forEach((_, idx) => {
                             onUpdateFinding(gate.id, idx, {
                               disposition: opt.value,
@@ -876,6 +878,14 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
                               mitigatedAt: new Date().toISOString(),
                             });
                           });
+                          // Persist to backend via bulk API
+                          if (pipelineRunId) {
+                            try {
+                              await bulkUpdateFindings(pipelineRunId, gate.id, opt.value, `Bulk: ${opt.label}`);
+                            } catch (err) {
+                              console.error('Bulk disposition API failed:', err);
+                            }
+                          }
                         }}
                         className="px-2 py-0.5 rounded text-[10px] font-medium bg-navy-700 text-gray-400 hover:bg-navy-600 hover:text-gray-200 transition-colors border border-navy-600"
                         title={`Mark all ${gate.findings.length} findings as "${opt.label}"`}

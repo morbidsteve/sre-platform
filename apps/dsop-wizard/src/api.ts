@@ -542,6 +542,18 @@ export async function updateFindingDisposition(
   });
 }
 
+export async function bulkUpdateFindings(
+  runId: string,
+  gateId: number,
+  disposition: FindingDisposition,
+  mitigation?: string
+): Promise<{ updated: number }> {
+  return apiFetch(`/pipeline/runs/${runId}/findings/bulk`, {
+    method: 'POST',
+    body: JSON.stringify({ gateId, disposition, mitigation }),
+  });
+}
+
 export async function submitForReview(runId: string): Promise<void> {
   await apiFetch(`/pipeline/runs/${runId}/submit-review`, { method: 'POST' });
 }

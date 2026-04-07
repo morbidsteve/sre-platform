@@ -8179,6 +8179,48 @@ app.patch("/api/pipeline/runs/:id/findings/:fid", mutateLimiter, requireDb, requ
   }
 });
 
+// POST /api/pipeline/runs/:id/findings/bulk — Bulk update all findings for a gate
+app.post("/api/pipeline/runs/:id/findings/bulk", mutateLimiter, requireDb, requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
+  try {
+    const { gateId, disposition, mitigation } = req.body;
+    if (!disposition) return res.status(400).json({ error: "disposition is required" });
+
+    const validDispositions = ["will_fix", "accepted_risk", "false_positive", "na"];
+    if (!validDispositions.includes(disposition)) {
+      return res.status(400).json({ error: `Invalid disposition. Must be one of: ${validDispositions.join(", ")}` });
+    }
+
+    const actor = getActor(req);
+    const run = await db.getRun(req.params.id);
+    if (!run) return res.status(404).json({ error: "Pipeline run not found" });
+
+    // Find all findings for this gate (or all findings if no gateId)
+    const findings = gateId
+      ? run.findings.filter(f => f.gate_id === gateId)
+      : run.findings;
+
+    let updated = 0;
+    for (const f of findings) {
+      await db.updateFinding(f.id, {
+        disposition,
+        mitigation: mitigation || `Bulk: ${disposition}`,
+        mitigatedBy: actor,
+        mitigatedAt: new Date().toISOString(),
+      }, req.params.id);
+      updated++;
+    }
+
+    await db.auditLog(req.params.id, "bulk_disposition", actor,
+      `Bulk set ${updated} findings to ${disposition}${gateId ? ` (gate ${gateId})` : ''}`,
+      { disposition, gateId, count: updated });
+
+    res.json({ updated, disposition });
+  } catch (err) {
+    console.error("[pipeline] Bulk finding update error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/pipeline/runs/:id/package — Compliance package
 app.get("/api/pipeline/runs/:id/package", requireDb, requireGroups("sre-admins", "developers", "issm"), async (req, res) => {
   try {
