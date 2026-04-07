@@ -9609,8 +9609,11 @@ async function orchestratePipelineScan(runId) {
         }
 
         if (allImportsSucceeded && importedImages.length > 0) {
-          builtImageRef = importedImages[0].harborRef; // Primary image for SBOM/CVE
+          builtImageRef = importedImages[0].harborRef; // Primary image for SBOM/CVE (cluster-internal URL)
           buildResult.imageRef = builtImageRef;
+          // Store external URL for node-level image pulls
+          const externalBundleRef = builtImageRef.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
+          await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalBundleRef, runId]);
           const summary = importedImages.length === 1
             ? `Imported: ${importedImages[0].name}`
             : `${importedImages.length} image(s) imported: ${importedImages.map(i => i.name).join(", ")}`;
@@ -9619,10 +9622,15 @@ async function orchestratePipelineScan(runId) {
             emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary, progress: 100 });
           }
           // Store imported images and bundle manifest in metadata (deploy step reads these)
+          // Rewrite harborRef from cluster-internal to external FQDN for node-level image pulls
+          const deployableImages = importedImages.map(img => ({
+            ...img,
+            harborRef: img.harborRef.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY),
+          }));
           try {
             await db.pool.query(
               "UPDATE pipeline_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2",
-              [JSON.stringify({ builtImages: importedImages, bundleManifest: manifest }), runId]
+              [JSON.stringify({ builtImages: deployableImages, bundleManifest: manifest }), runId]
             );
           } catch { /* best effort */ }
           await db.auditLog(runId, "bundle_imported", null, `Bundle images imported to Harbor`, { images: importedImages });
@@ -10022,6 +10030,9 @@ async function orchestratePipelineScan(runId) {
           // Update builtImageRef to point to the Harbor copy (for SBOM/CVE scans)
           builtImageRef = harborDest;
           buildResult.imageRef = harborDest;
+          // Store external URL for node-level image pulls
+          const externalImageRef = harborDest.replace(HARBOR_REGISTRY, HARBOR_PULL_REGISTRY);
+          await db.pool.query("UPDATE pipeline_runs SET image_url = $1, updated_at = NOW() WHERE id = $2", [externalImageRef, runId]);
           if (gateMap.ARTIFACT_STORE) {
             await db.updateGate(gateMap.ARTIFACT_STORE.id, { status: "passed", progress: 100, completedAt: new Date().toISOString(), summary: `Imported to Harbor: ${harborDest}` });
             emitPipelineEvent(runId, "gate_status", { gate: "ARTIFACT_STORE", status: "passed", summary: `Imported to Harbor: ${harborDest}`, progress: 100 });
