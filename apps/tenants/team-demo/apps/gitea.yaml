@@ -67,6 +67,11 @@ spec:
       enabled: false
     containerSecurityContext:
       readOnlyRootFilesystem: false
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
     startupProbe:
       enabled: true
       path: /
