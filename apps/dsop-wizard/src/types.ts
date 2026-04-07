@@ -90,12 +90,13 @@ export interface BundleManifest {
       database?: { enabled: boolean; size?: string };
       redis?: { enabled: boolean; size?: string };
       sso?: { enabled: boolean };
-      storage?: { enabled: boolean };
+      storage?: { enabled: boolean; mountPath?: string; size?: string };
     };
     env?: Array<{ name: string; value?: string; secret?: string }>;
     externalApis?: string[];
     source?: { included: boolean; language?: string };
     classification?: string;
+    security?: { runAsNonRoot?: boolean; readOnlyRootFilesystem?: boolean; capabilities?: string[] };
   };
 }
 
