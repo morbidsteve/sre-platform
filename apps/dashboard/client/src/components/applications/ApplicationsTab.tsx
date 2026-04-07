@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2, RotateCcw, FileCode, X, Copy, Download, Clock, Check, AlertTriangle, ShieldAlert, Stethoscope, Gauge } from 'lucide-react';
+import { Search, RefreshCw, Rocket, ExternalLink, BarChart3, Trash2, RotateCcw, FileCode, X, Copy, Download, Clock, Check, AlertTriangle, ShieldAlert, Stethoscope, Gauge, Shield, Users } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { useUserContext } from '../../context/UserContext';
@@ -102,6 +102,13 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlCopied, setYamlCopied] = useState(false);
 
+  // Access control modal state
+  const [accessTarget, setAccessTarget] = useState<{ name: string; namespace: string } | null>(null);
+  const [accessMode, setAccessMode] = useState<'everyone' | 'restricted' | 'private'>('everyone');
+  const [accessGroups, setAccessGroups] = useState<string[]>([]);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+
   const handleOpenRollback = useCallback(async (namespace: string, name: string) => {
     setRollbackTarget({ namespace, name });
     setRollbackLoading(true);
@@ -195,6 +202,56 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
       setDeleteTarget(null);
     }
   }, [deleteTarget, refreshApps, showToast]);
+
+  const openAccessModal = useCallback(async (name: string, namespace: string) => {
+    setAccessTarget({ name, namespace });
+    try {
+      // Fetch current access settings
+      const resp = await fetch(`/api/portal/apps/${encodeURIComponent(name)}/access`, { credentials: 'include' });
+      if (resp.ok) {
+        const data = await resp.json();
+        setAccessMode(data.mode || 'everyone');
+        setAccessGroups(data.groups || []);
+      } else {
+        setAccessMode('everyone');
+        setAccessGroups([]);
+      }
+      // Fetch available groups
+      const gResp = await fetch('/api/portal/groups', { credentials: 'include' });
+      if (gResp.ok) {
+        const gData = await gResp.json();
+        setAvailableGroups((gData.groups || gData || []).map((g: any) => g.name || g));
+      }
+    } catch {
+      setAccessMode('everyone');
+      setAccessGroups([]);
+    }
+  }, []);
+
+  const saveAccess = useCallback(async () => {
+    if (!accessTarget) return;
+    setAccessSaving(true);
+    try {
+      const resp = await fetch(`/api/portal/apps/${encodeURIComponent(accessTarget.name)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access: { mode: accessMode, groups: accessGroups, users: [], attributes: [] },
+        }),
+      });
+      if (resp.ok) {
+        showToast(`Access updated for ${accessTarget.name}`, 'success');
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        showToast(`Failed: ${data.error || resp.statusText}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : 'Network error'}`, 'error');
+    }
+    setAccessSaving(false);
+    setAccessTarget(null);
+  }, [accessTarget, accessMode, accessGroups, showToast]);
 
   const handleOpenService = (url: string) => {
     if (url.includes(`dsop.${config.domain}`)) {
@@ -455,6 +512,16 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                   )}
                   {user.isAdmin && (
                     <button
+                      className="btn text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1 border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+                      onClick={() => openAccessModal(app.name, app.namespace)}
+                      title="Manage access control"
+                    >
+                      <Shield className="w-3 h-3" />
+                      Access
+                    </button>
+                  )}
+                  {user.isAdmin && (
+                    <button
                       className="btn btn-danger text-[11px] !px-2 !py-1 !min-h-0 inline-flex items-center gap-1"
                       onClick={() => setDeleteTarget({ namespace: app.namespace, name: app.name })}
                     >
@@ -653,6 +720,101 @@ export function ApplicationsTab({ user, onOpenApp, onSwitchTab }: ApplicationsTa
                 >
                   <Trash2 className="w-3 h-3" />
                   {deleteInProgress ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Access Control Modal */}
+      {accessTarget && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setAccessTarget(null); }}
+        >
+          <div
+            className="bg-card border border-border rounded-xl w-full max-w-md mx-4 overflow-hidden shadow-2xl"
+            style={{ animation: 'confirmIn 0.2s ease-out' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+              <h3 className="text-sm font-semibold text-text-bright flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-400" />
+                Access Control — {accessTarget.name}
+              </h3>
+              <button className="text-text-dim hover:text-text-primary" onClick={() => setAccessTarget(null)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="text-sm text-text-secondary block mb-2">Access Mode</label>
+                <div className="flex gap-2">
+                  {(['everyone', 'restricted', 'private'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                        accessMode === mode
+                          ? 'bg-accent/20 border-accent text-accent'
+                          : 'bg-surface border-border text-text-dim hover:text-text-primary'
+                      }`}
+                      onClick={() => setAccessMode(mode)}
+                    >
+                      {mode === 'everyone' ? 'Everyone' : mode === 'restricted' ? 'Restricted' : 'Admin Only'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-text-dim mt-1">
+                  {accessMode === 'everyone' && 'All authenticated users can access this application.'}
+                  {accessMode === 'restricted' && 'Only users in selected groups can access this application.'}
+                  {accessMode === 'private' && 'Only platform admins can access this application.'}
+                </p>
+              </div>
+
+              {accessMode === 'restricted' && (
+                <div>
+                  <label className="text-sm text-text-secondary block mb-2">Allowed Groups</label>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {availableGroups.map((group) => (
+                      <label
+                        key={group}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-border hover:border-accent/40 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={accessGroups.includes(group)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAccessGroups((prev) => [...prev, group]);
+                            } else {
+                              setAccessGroups((prev) => prev.filter((g) => g !== group));
+                            }
+                          }}
+                          className="accent-accent"
+                        />
+                        <span className="text-sm text-text-primary">{group}</span>
+                      </label>
+                    ))}
+                    {availableGroups.length === 0 && (
+                      <p className="text-sm text-text-dim">No groups found. Create groups in the Admin tab.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button className="btn text-sm" onClick={() => setAccessTarget(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary text-sm"
+                  onClick={saveAccess}
+                  disabled={accessSaving}
+                >
+                  {accessSaving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
