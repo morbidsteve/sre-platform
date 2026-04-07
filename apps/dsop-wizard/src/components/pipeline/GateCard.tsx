@@ -894,7 +894,7 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
                             btn.style.color = '#f87171';
                             setTimeout(() => { btn.textContent = origText; btn.disabled = false; btn.style.color = ''; }, 3000);
                           }
-                        }
+                        }}
                         className="px-2 py-0.5 rounded text-[10px] font-medium bg-navy-700 text-gray-400 hover:bg-navy-600 hover:text-gray-200 transition-colors border border-navy-600"
                         title={`Mark all ${gate.findings.length} findings as "${opt.label}"`}
                       >
