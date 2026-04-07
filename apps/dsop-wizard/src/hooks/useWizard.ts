@@ -64,6 +64,7 @@ export function useWizard() {
     retryPipeline,
     updateGate: wizardState.updateGate,
     updateFinding: wizardState.updateFinding,
+    bulkUpdateAllFindings: wizardState.bulkUpdateAllFindings,
     submitForReview: wizardState.submitForReview,
     refreshPipelineRun: wizardState.refreshPipelineRun,
     reviewPipelineRun: wizardState.reviewPipelineRun,

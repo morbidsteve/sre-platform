@@ -28,6 +28,7 @@ interface GateCardProps {
   pipelineRunId?: string | null;
   onAcknowledge?: (gateId: number) => void;
   onUpdateFinding?: (gateId: number, findingIndex: number, updates: Partial<GateFinding>) => void;
+  onBulkUpdateFindings?: (gateId: number, updates: Partial<GateFinding>) => void;
   onOverrideGate?: (gateId: number, status: 'passed' | 'skipped', reason: string) => void;
   isAdmin?: boolean;
   username?: string;
@@ -733,7 +734,7 @@ function GateFixGuidePanel({ gate }: { gate: SecurityGate }) {
   );
 }
 
-export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, onOverrideGate, isAdmin, username = 'operator' }: GateCardProps) {
+export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, onBulkUpdateFindings, onOverrideGate, isAdmin, username = 'operator' }: GateCardProps) {
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[gate.status];
   const StatusIcon = config.icon;
@@ -879,15 +880,15 @@ export function GateCard({ gate, pipelineRunId, onAcknowledge, onUpdateFinding, 
                               const result = await bulkUpdateFindings(pipelineRunId, gate.id, opt.value, `Bulk: ${opt.label}`);
                               btn.textContent = `✓ ${result.updated}`;
                             }
-                            // Then update local state
-                            gate.findings.forEach((_, idx) => {
-                              onUpdateFinding(gate.id, idx, {
+                            // Update all findings in local state at once
+                            if (onBulkUpdateFindings) {
+                              onBulkUpdateFindings(gate.id, {
                                 disposition: opt.value,
                                 mitigation: `Bulk: ${opt.label}`,
                                 mitigatedBy: username || 'operator',
                                 mitigatedAt: new Date().toISOString(),
                               });
-                            });
+                            }
                             setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
                           } catch (err) {
                             btn.textContent = '✗ Error';

@@ -335,6 +335,7 @@ export default function App() {
             isPipelineRunning={state.isPipelineRunning}
             onUpdateGate={wizard.updateGate}
             onUpdateFinding={wizard.updateFinding}
+            onBulkUpdateFindings={wizard.bulkUpdateAllFindings}
             onOverrideGate={wizard.overrideGate}
             isAdmin={wizard.isAdmin}
             username={user?.name || 'operator'}

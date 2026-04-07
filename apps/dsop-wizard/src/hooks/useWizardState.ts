@@ -702,6 +702,20 @@ export function useWizardState() {
     });
   }, []);
 
+  // Bulk update all findings for a gate in one setState call
+  const bulkUpdateAllFindings = useCallback((gateId: number, updates: Partial<GateFinding>) => {
+    setState((prev) => ({
+      ...prev,
+      gates: prev.gates.map((g) => {
+        if (g.id !== gateId) return g;
+        return {
+          ...g,
+          findings: g.findings.map((f) => ({ ...f, ...updates })),
+        };
+      }),
+    }));
+  }, []);
+
   const overrideGate = useCallback((gateId: number, status: 'passed' | 'skipped', reason: string) => {
     setState((prev) => ({
       ...prev,
@@ -1147,6 +1161,7 @@ export function useWizardState() {
     runPipeline,
     updateGate,
     updateFinding,
+    bulkUpdateAllFindings,
     overrideGate,
     submitForReview,
     deploy,

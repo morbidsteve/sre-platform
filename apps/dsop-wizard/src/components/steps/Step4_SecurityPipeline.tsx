@@ -12,6 +12,7 @@ interface Step4Props {
   isPipelineRunning: boolean;
   onUpdateGate: (gateId: number, updates: Partial<SecurityGate>) => void;
   onUpdateFinding: (gateId: number, findingIndex: number, updates: Partial<GateFinding>) => void;
+  onBulkUpdateFindings?: (gateId: number, updates: Partial<GateFinding>) => void;
   onOverrideGate?: (gateId: number, status: 'passed' | 'skipped', reason: string) => void;
   isAdmin?: boolean;
   username: string;
@@ -255,6 +256,7 @@ export function Step4_SecurityPipeline({
   isPipelineRunning,
   onUpdateGate,
   onUpdateFinding,
+  onBulkUpdateFindings,
   onOverrideGate,
   isAdmin,
   username,
@@ -413,6 +415,7 @@ export function Step4_SecurityPipeline({
               pipelineRunId={pipelineRunId}
               onAcknowledge={handleAcknowledge}
               onUpdateFinding={onUpdateFinding}
+              onBulkUpdateFindings={onBulkUpdateFindings}
               onOverrideGate={onOverrideGate}
               isAdmin={isAdmin}
               username={username}
