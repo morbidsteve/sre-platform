@@ -16,15 +16,3 @@ metadata:
     sre.io/nist-controls: "AC-3, AC-4, SC-7"
 spec: {}
 
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: default-deny
-  namespace: team-beta
-  labels:
-    app.kubernetes.io/part-of: sre-platform
-    sre.io/policy-type: authorization
-  annotations:
-    sre.io/nist-controls: "AC-3, AC-4, SC-7"
-spec: {}
