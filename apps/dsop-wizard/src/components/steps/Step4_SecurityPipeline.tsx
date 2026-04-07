@@ -303,13 +303,11 @@ export function Step4_SecurityPipeline({
     pipelineRunId &&
     onSubmitForReview &&
     automatedDone &&
-    automatedPassed &&
-    !hasCriticalFailure &&
     !isReviewPending &&
     !isApproved;
 
-  // User can proceed to next step once automated gates are done and no critical failures
-  const canProceed = automatedDone && !hasCriticalFailure;
+  // User can proceed once automated gates are done — failures go to ISSM for waiver
+  const canProceed = automatedDone;
 
   const handleSubmitForReview = async () => {
     if (!onSubmitForReview) return;
@@ -443,10 +441,9 @@ export function Step4_SecurityPipeline({
 
       {/* Status Messages */}
       {hasCriticalFailure && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center space-y-3">
-          <p className="text-sm text-red-400">
-            One or more security gates failed. Please resolve the issues before
-            deploying.
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center space-y-3">
+          <p className="text-sm text-amber-400">
+            One or more security gates have findings. Submit to ISSM for review — all findings can be waivered with justification.
           </p>
           {onRetryPipeline && pipelineRunId && (
             <Button
@@ -465,7 +462,7 @@ export function Step4_SecurityPipeline({
       )}
 
       {/* ISSM Review Submission */}
-      {automatedDone && !hasCriticalFailure && (
+      {automatedDone && (
         <div className="bg-navy-800 border border-navy-600 rounded-xl p-5 space-y-3">
           <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
             <FileCheck className="w-4 h-4" />
