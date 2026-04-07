@@ -70,6 +70,11 @@ export function AdminTab({ active }: AdminTabProps) {
       });
   }, [active, isAdmin, setupChecked]);
 
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [createGroupError, setCreateGroupError] = useState('');
+  const [createGroupLoading, setCreateGroupLoading] = useState(false);
+
   if (!isAdmin) {
     return (
       <EmptyState
@@ -78,11 +83,6 @@ export function AdminTab({ active }: AdminTabProps) {
       />
     );
   }
-
-  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [createGroupError, setCreateGroupError] = useState('');
-  const [createGroupLoading, setCreateGroupLoading] = useState(false);
 
   const handleShowCreateGroup = () => {
     setNewGroupName('');
