@@ -96,6 +96,13 @@ export function Step2_AppInfo({
     securityExceptions.some((e) => e.enabled)
   );
 
+  // Auto-expand when bundle manifest pre-fills exceptions
+  useEffect(() => {
+    if (securityExceptions.some((e) => e.enabled)) {
+      setExceptionsExpanded(true);
+    }
+  }, [securityExceptions]);
+
   const toggleException = (type: SecurityExceptionType) => {
     const existing = securityExceptions.find((e) => e.type === type);
     if (existing) {
