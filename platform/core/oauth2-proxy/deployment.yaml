@@ -55,7 +55,7 @@ spec:
             - --cookie-secret=$(COOKIE_SECRET)
             - --cookie-name=_sre_oauth2
             - --cookie-secure=true
-            - --cookie-samesite=lax
+            - --cookie-samesite=none
             - --cookie-httponly=true
             - --cookie-domain=.${SRE_DOMAIN}
             - --upstream=static://200
