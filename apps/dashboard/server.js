@@ -9508,58 +9508,42 @@ async function orchestratePipelineScan(runId) {
           }
 
           const harborDest = `${HARBOR_REGISTRY}/${teamName}/${imgRef.name}:${version}`;
-          const importJobId = `pipe-bundleimport-${crypto.randomBytes(4).toString("hex")}`;
-
           emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Importing ${imgRef.name} -> ${harborDest}` });
 
           try {
-            // Detect which node the dashboard pod runs on so the import job
-            // lands on the same node (hostPath volume requires same-node access)
-            let dashboardNode = null;
-            try {
-              const dashPods = await k8sApi.listNamespacedPod("sre-dashboard", undefined, undefined, undefined, undefined, "app.kubernetes.io/name=sre-dashboard");
-              if (dashPods.body.items.length > 0) dashboardNode = dashPods.body.items[0].spec.nodeName;
-            } catch { /* best-effort — fall back to no selector */ }
+            // Push image directly from this process using crane (installed in container).
+            // No Kubernetes Job needed — the bundle files are in our local filesystem.
+            const imgPath = path.join(bundleBaseDir, imgRef.file);
+            if (!fs.existsSync(imgPath)) {
+              throw new Error(`Image file not found: ${imgRef.file}`);
+            }
 
-            await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
-              apiVersion: "batch/v1", kind: "Job",
-              metadata: {
-                name: importJobId, namespace: BUILD_NAMESPACE,
-                labels: { "app.kubernetes.io/part-of": "sre-platform", "sre.io/build-id": importJobId, "sre.io/app-name": safeName }
-              },
-              spec: {
-                backoffLimit: 2, ttlSecondsAfterFinished: 3600,
-                template: {
-                  metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
-                  spec: {
-                    restartPolicy: "Never", serviceAccountName: "pipeline-runner",
-                    ...(dashboardNode ? { nodeSelector: { "kubernetes.io/hostname": dashboardNode } } : {}),
-                    containers: [{
-                      name: "crane-push", image: CRANE_IMAGE,
-                      command: ["sh", "-c", `crane push "/bundle/${imgRef.file}" "${harborDest}" && echo "IMPORT_SUCCESS: ${harborDest}"`],
-                      volumeMounts: [
-                        { name: "bundle-data", mountPath: "/bundle", readOnly: true },
-                        { name: "docker-config", mountPath: "/home/nonroot/.docker", readOnly: true },
-                      ],
-                      resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "2Gi" } },
-                    }],
-                    volumes: [
-                      { name: "bundle-data", hostPath: { path: bundleBaseDir, type: "Directory" } },
-                      { name: "docker-config", secret: { secretName: "harbor-push-creds", items: [{ key: ".dockerconfigjson", path: "config.json" }] } },
-                    ],
-                  },
-                },
-              },
+            const importResult = await new Promise((resolve, reject) => {
+              const { execFile } = require("child_process");
+              const env = { ...process.env };
+              // Configure crane to trust Harbor's self-signed cert
+              env.DOCKER_CONFIG = "/tmp/.docker";
+              // Write docker config for crane auth
+              const dockerConfigDir = "/tmp/.docker";
+              if (!fs.existsSync(dockerConfigDir)) fs.mkdirSync(dockerConfigDir, { recursive: true });
+              const harborAuth = Buffer.from(`${process.env.HARBOR_ADMIN_USER || "admin"}:${process.env.HARBOR_ADMIN_PASS || "Harbor12345"}`).toString("base64");
+              const harborHost = HARBOR_REGISTRY || `harbor.${SRE_DOMAIN}`;
+              fs.writeFileSync(path.join(dockerConfigDir, "config.json"), JSON.stringify({
+                auths: { [harborHost]: { auth: harborAuth } }
+              }));
+
+              execFile("crane", ["push", imgPath, harborDest, "--insecure"], { env, timeout: 300000 }, (err, stdout, stderr) => {
+                if (err) {
+                  logger.error("pipeline", `crane push failed: ${stderr || err.message}`, { runId });
+                  reject(new Error(stderr || err.message));
+                } else {
+                  resolve(stdout);
+                }
+              });
             });
 
-            const importLogs = await waitForJobAndGetLogs(importJobId, BUILD_NAMESPACE, "crane-push", 600, runId, "ARTIFACT_STORE");
-            if (importLogs && importLogs.includes("IMPORT_SUCCESS:")) {
-              importedImages.push({ name: imgRef.name, harborRef: harborDest });
-              emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `OK: ${imgRef.name} imported successfully` });
-            } else {
-              allImportsSucceeded = false;
-              emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `FAIL: ${imgRef.name} import failed` });
-            }
+            importedImages.push({ name: imgRef.name, harborRef: harborDest });
+            emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `OK: ${imgRef.name} imported successfully` });
           } catch (importErr) {
             logger.error("pipeline", `Bundle import error for ${imgRef.name}: ${importErr.message}`, { runId, image: imgRef.name });
             allImportsSucceeded = false;

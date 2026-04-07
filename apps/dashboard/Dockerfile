@@ -10,6 +10,12 @@ RUN npm run build
 FROM node:20-alpine3.19
 WORKDIR /app
 
+# Install crane for pushing bundle images to Harbor
+RUN apk add --no-cache curl && \
+    curl -sL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin crane && \
+    apk del curl && \
+    chmod +x /usr/local/bin/crane
+
 COPY package.json package-lock.json* ./
 RUN npm install --production
 
