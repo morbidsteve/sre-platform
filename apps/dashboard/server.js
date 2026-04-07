@@ -9513,9 +9513,14 @@ async function orchestratePipelineScan(runId) {
           emitPipelineEvent(runId, "gate_log", { gate: "ARTIFACT_STORE", line: `Importing ${imgRef.name} -> ${harborDest}` });
 
           try {
-            // Create a Job that uses crane push to load the OCI tarball into Harbor
-            // The bundle directory is mounted via a hostPath volume (since it's on the same node for now)
-            // In production, this would use MinIO temp storage
+            // Detect which node the dashboard pod runs on so the import job
+            // lands on the same node (hostPath volume requires same-node access)
+            let dashboardNode = null;
+            try {
+              const dashPods = await k8sApi.listNamespacedPod("sre-dashboard", undefined, undefined, undefined, undefined, "app.kubernetes.io/name=sre-dashboard");
+              if (dashPods.body.items.length > 0) dashboardNode = dashPods.body.items[0].spec.nodeName;
+            } catch { /* best-effort — fall back to no selector */ }
+
             await batchApi.createNamespacedJob(BUILD_NAMESPACE, {
               apiVersion: "batch/v1", kind: "Job",
               metadata: {
@@ -9528,6 +9533,7 @@ async function orchestratePipelineScan(runId) {
                   metadata: { annotations: { "sidecar.istio.io/inject": "false" } },
                   spec: {
                     restartPolicy: "Never", serviceAccountName: "pipeline-runner",
+                    ...(dashboardNode ? { nodeSelector: { "kubernetes.io/hostname": dashboardNode } } : {}),
                     containers: [{
                       name: "crane-push", image: CRANE_IMAGE,
                       command: ["sh", "-c", `crane push "/bundle/${imgRef.file}" "${harborDest}" && echo "IMPORT_SUCCESS: ${harborDest}"`],
