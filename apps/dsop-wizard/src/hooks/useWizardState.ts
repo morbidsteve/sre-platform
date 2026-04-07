@@ -453,7 +453,41 @@ export function useWizardState() {
   }, []);
 
   const nextStep = useCallback(() => {
-    setState((prev) => ({ ...prev, currentStep: prev.currentStep + 1, error: null }));
+    setState((prev) => {
+      const next = { ...prev, currentStep: prev.currentStep + 1, error: null };
+
+      // Pre-fill appInfo from bundle manifest when moving from Step 1 (source) to Step 2 (appInfo)
+      if (prev.currentStep === 1 && prev.source.type === 'bundle' && prev.source.bundleManifest) {
+        const bm = prev.source.bundleManifest;
+        const spec = bm.spec || {};
+        const app = spec.app || {};
+        const security = spec.security || {};
+
+        next.appInfo = {
+          ...prev.appInfo,
+          name: bm.metadata?.name || prev.appInfo.name,
+          description: bm.metadata?.description || prev.appInfo.description,
+          team: bm.metadata?.team || prev.appInfo.team,
+          classification: (spec.classification as Classification) || prev.appInfo.classification,
+          contact: bm.metadata?.author || prev.appInfo.contact,
+        };
+
+        // Auto-enable security exceptions from bundle manifest
+        if (security.runAsNonRoot === false || security.readOnlyRootFilesystem === false) {
+          next.securityExceptions = prev.securityExceptions.map((exc) => {
+            if (exc.type === 'run_as_root' && security.runAsNonRoot === false) {
+              return { ...exc, enabled: true, justification: 'Specified in deployment bundle manifest' };
+            }
+            if (exc.type === 'writable_filesystem' && security.readOnlyRootFilesystem === false) {
+              return { ...exc, enabled: true, justification: 'Specified in deployment bundle manifest' };
+            }
+            return exc;
+          });
+        }
+      }
+
+      return next;
+    });
   }, []);
 
   const prevStep = useCallback(() => {

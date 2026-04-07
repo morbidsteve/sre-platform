@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Upload, Package, FileArchive, X, CheckCircle2, AlertCircle, Loader2, Code, Database, Shield, HardDrive } from 'lucide-react';
+import { Upload, Package, FileArchive, X, CheckCircle2, AlertCircle, Loader2, Code, Database, Shield, HardDrive, ChevronDown, ChevronRight, Cpu, Globe, Lock } from 'lucide-react';
 import type { BundleManifest, BundleUploadResult } from '../types';
 import { uploadBundle } from '../api';
 
@@ -17,6 +17,7 @@ export function BundleUploader({ manifest, uploadId, images, sourceIncluded, onU
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [showYaml, setShowYaml] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(async (file: File) => {
@@ -155,6 +156,59 @@ export function BundleUploader({ manifest, uploadId, images, sourceIncluded, onU
               </span>
             </div>
           )}
+
+          {/* Runtime config */}
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            <div className="rounded-lg border border-navy-700 bg-navy-900 p-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-gray-300">
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                Runtime
+              </div>
+              <div className="mt-1.5 space-y-0.5 text-xs text-gray-500">
+                <div>Port: <span className="text-gray-300">{manifest.spec.app.port || 8080}</span></div>
+                <div>Resources: <span className="text-gray-300">{manifest.spec.app.resources || 'small'}</span></div>
+                {manifest.spec.app.ingress && <div>Ingress: <span className="text-gray-300">{manifest.spec.app.ingress}</span></div>}
+              </div>
+            </div>
+            <div className="rounded-lg border border-navy-700 bg-navy-900 p-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-gray-300">
+                <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                Security
+              </div>
+              <div className="mt-1.5 space-y-0.5 text-xs text-gray-500">
+                <div>Non-root: <span className={manifest.spec.security?.runAsNonRoot === false ? 'text-amber-400' : 'text-emerald-400'}>{manifest.spec.security?.runAsNonRoot === false ? 'No (root)' : 'Yes'}</span></div>
+                <div>Read-only FS: <span className={manifest.spec.security?.readOnlyRootFilesystem === false ? 'text-amber-400' : 'text-emerald-400'}>{manifest.spec.security?.readOnlyRootFilesystem === false ? 'No (writable)' : 'Yes'}</span></div>
+              </div>
+            </div>
+            {manifest.spec.services?.storage?.enabled && (
+              <div className="rounded-lg border border-navy-700 bg-navy-900 p-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-gray-300">
+                  <HardDrive className="w-3.5 h-3.5 text-cyan-400" />
+                  Storage
+                </div>
+                <div className="mt-1.5 space-y-0.5 text-xs text-gray-500">
+                  <div>Size: <span className="text-gray-300">{manifest.spec.services.storage.size}</span></div>
+                  <div>Mount: <span className="text-gray-300">{manifest.spec.services.storage.mountPath}</span></div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Collapsible YAML manifest */}
+          <div className="mt-4">
+            <button
+              onClick={() => setShowYaml(!showYaml)}
+              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              {showYaml ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              bundle.yaml
+            </button>
+            {showYaml && (
+              <pre className="mt-2 p-3 rounded-lg bg-navy-950 border border-navy-700 text-xs text-gray-400 overflow-x-auto max-h-64 overflow-y-auto font-mono">
+                {JSON.stringify(manifest, null, 2)}
+              </pre>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-gray-500">
