@@ -946,37 +946,10 @@ export function useWizardState() {
 
         return;
       } catch (err) {
-        // Fall through to legacy deploy
+        // Pipeline deploy failed — report error, do NOT fall through to legacy /deploy/git
         setState((prev) => ({
           ...prev,
-          error: err instanceof Error ? err.message : 'Pipeline deploy failed, trying legacy deploy...',
-        }));
-      }
-    }
-
-    // Fallback: use the existing runDeploy flow
-    try {
-      const result = await runDeploy(
-        state.appInfo.name || 'my-app',
-        state.source.gitUrl || '',
-        state.source.branch || 'main',
-        state.appInfo.team || 'team-alpha',
-        getInitialDeploySteps(),
-        (steps: DeployStep[]) => {
-          setState((prev) => ({ ...prev, deploySteps: steps }));
-        }
-      );
-      setState((prev) => ({
-        ...prev,
-        deploySteps: result.steps,
-        deployedUrl: result.url,
-        isDeploying: false,
-        currentStep: 7,
-      }));
-    } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        isDeploying: false,
+          isDeploying: false,
         error: err instanceof Error ? err.message : 'Deployment failed',
       }));
     }
