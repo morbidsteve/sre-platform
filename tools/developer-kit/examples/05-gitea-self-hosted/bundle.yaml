@@ -28,8 +28,14 @@ spec:
       mountPath: /var/lib/gitea
       size: 10Gi
   security:
-    runAsNonRoot: true
+    runAsNonRoot: false
     readOnlyRootFilesystem: false
+    capabilities:
+      - CHOWN
+      - FOWNER
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
   source:
     included: false
   classification: UNCLASSIFIED
