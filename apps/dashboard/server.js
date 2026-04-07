@@ -10783,9 +10783,9 @@ async function executePipelineDeploy(run, actor) {
           emitPipelineEvent(run.id, "deploy_log", { step: "helmrelease", line: `Persistent storage: ${bundleStorage.size} at ${bundleStorage.mountPath}` });
         }
 
-        // Writable filesystem override (non-root apps that still need writable fs)
-        // Must include ALL required security fields or Kyverno blocks the pod
-        if (bundleSecurity && bundleSecurity.readOnlyRootFilesystem === false && !needsPrivileged) {
+        // Writable filesystem override (non-root, non-privileged apps that still need writable fs)
+        // Skip if runAsRoot — generateHelmRelease already handles that case
+        if (bundleSecurity && bundleSecurity.readOnlyRootFilesystem === false && !needsPrivileged && bundleSecurity.runAsNonRoot !== false) {
           manifest.spec.values.containerSecurityContext = {
             ...(manifest.spec.values.containerSecurityContext || {}),
             readOnlyRootFilesystem: false,
