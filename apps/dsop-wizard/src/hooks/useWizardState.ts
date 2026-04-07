@@ -269,6 +269,7 @@ export function useWizardState() {
                      4;
         setState((prev) => ({
           ...prev,
+          mode: 'full' as const,
           pipelineRunId: run.id,
           pipelineRun: run,
           gates: mappedGates,
@@ -285,7 +286,7 @@ export function useWizardState() {
             gitUrl: run.git_url || prev.source.gitUrl,
             branch: run.branch || prev.source.branch,
             imageUrl: run.image_url || prev.source.imageUrl,
-            type: run.source_type === 'image' ? 'container' : 'git',
+            type: run.source_type === 'bundle' ? 'bundle' : run.source_type === 'image' ? 'container' : 'git',
           },
         }));
         window.history.replaceState({}, '', window.location.pathname);
@@ -321,6 +322,7 @@ export function useWizardState() {
                    4;
       setState((prev) => ({
         ...prev,
+        mode: 'full' as const,
         pipelineRunId: run.id,
         pipelineRun: run,
         gates: mappedGates,
@@ -336,7 +338,7 @@ export function useWizardState() {
           gitUrl: run.git_url || prev.source.gitUrl,
           branch: run.branch || prev.source.branch,
           imageUrl: run.image_url || prev.source.imageUrl,
-          type: run.source_type === 'image' ? 'container' : 'git',
+          type: run.source_type === 'bundle' ? 'bundle' : run.source_type === 'image' ? 'container' : 'git',
         },
       }));
     } catch {
