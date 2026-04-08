@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPRECATION NOTICE: This script is superseded by the SRE Dashboard UI.
+# Use the dashboard at https://dashboard.apps.sre.example.com instead.
+# This script remains as a CLI fallback for when the dashboard is unavailable.
+# ──────────────────────────────────────────────────────────────────────────────
 # compliance-report.sh — Lightweight NIST 800-53 compliance check against live cluster
 # Queries each control family and provides evidence of implementation.
 #

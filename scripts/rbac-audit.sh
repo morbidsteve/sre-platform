@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPRECATION NOTICE: This script is superseded by the SRE Dashboard UI.
+# Use the dashboard at https://dashboard.apps.sre.example.com instead.
+# This script remains as a CLI fallback for when the dashboard is unavailable.
+# ──────────────────────────────────────────────────────────────────────────────
 # RBAC Audit Script — review all cluster RBAC for least-privilege compliance
 # NIST Controls: AC-2, AC-3, AC-6
 #

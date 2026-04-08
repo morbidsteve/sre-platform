@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPRECATION NOTICE: This script is superseded by the SRE Dashboard UI.
+# Use the dashboard at https://dashboard.apps.sre.example.com instead.
+# This script remains as a CLI fallback for when the dashboard is unavailable.
+# ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${REPO_ROOT}/scripts/lib/colors.sh"
