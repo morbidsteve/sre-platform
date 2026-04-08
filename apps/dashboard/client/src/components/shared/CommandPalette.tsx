@@ -3,6 +3,12 @@ import { Search } from 'lucide-react';
 import { useUserContext } from '../../context/UserContext';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useConfig, serviceUrl } from '../../context/ConfigContext';
+import { fetchApps } from '../../api/apps';
+import { fetchServiceStatus } from '../../api/health';
+import { fetchPipelineRuns } from '../../api/pipeline';
+import { fetchPods } from '../../api/cluster';
+import { fetchUsers, fetchGroups, fetchTenants } from '../../api/admin';
+import type { App, PipelineRun, ServiceStatus, AdminUser, AdminGroup, Tenant } from '../../types/api';
 
 interface CommandItem {
   category: string;
@@ -34,11 +40,182 @@ function fuzzyMatch(text: string, query: string): boolean {
 export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [liveResults, setLiveResults] = useState<CommandItem[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { isAdmin, isDeveloper, isIssm, user } = useUserContext();
   const { toggleTheme, theme } = useThemeContext();
   const config = useConfig();
+
+  // Prefix shortcuts for live data queries
+  const PREFIX_HELP: Record<string, string> = {
+    '#': 'Search deployed applications',
+    '@': 'Search platform services',
+    '/': 'Search pods',
+    '>': 'Search pipeline runs',
+    '!': 'Run an action (restart, repull, scale...)',
+    '$': 'Search tenants / namespaces',
+    ':': 'Search users & groups',
+    '?': 'Run health checks',
+  };
+
+  const activePrefix = query.length > 0 && Object.keys(PREFIX_HELP).includes(query[0]) ? query[0] : null;
+  const searchTerm = activePrefix ? query.slice(1).trim() : query;
+
+  // Live data fetcher
+  useEffect(() => {
+    if (!open || !activePrefix) {
+      setLiveResults([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setLiveLoading(true);
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        let items: CommandItem[] = [];
+
+        if (activePrefix === '#') {
+          // Deployed applications
+          const resp = await fetchApps();
+          const apps = resp.apps || [];
+          items = apps
+            .filter((a: App) => !searchTerm || fuzzyMatch(`${a.name} ${a.namespace} ${a.team} ${a.image}`, searchTerm))
+            .slice(0, 20)
+            .map((a: App) => ({
+              category: 'Applications',
+              label: a.name,
+              description: `${a.namespace} \u00b7 ${a.image}:${a.tag}`,
+              icon: a.ready ? '\u{1f7e2}' : '\u{1f534}',
+              badge: a.team,
+              action: () => { onTabChange('applications'); onClose(); },
+            }));
+        } else if (activePrefix === '@') {
+          // Platform services
+          try {
+            const services = await fetchServiceStatus();
+            items = (services || [])
+              .filter((s: ServiceStatus) => !searchTerm || fuzzyMatch(`${s.name} ${s.namespace}`, searchTerm))
+              .slice(0, 15)
+              .map((s: ServiceStatus) => ({
+                category: 'Services',
+                label: s.name,
+                description: s.url || s.namespace || '',
+                icon: s.healthy ? '\u{1f7e2}' : '\u{1f534}',
+                badge: s.healthy ? 'healthy' : 'unhealthy',
+                action: () => {
+                  if (s.url && onOpenApp) onOpenApp(s.url, s.name);
+                  else { onTabChange('operations'); onClose(); }
+                },
+              }));
+          } catch {
+            items = [];
+          }
+        } else if (activePrefix === '/') {
+          // Pods
+          const pods = await fetchPods(undefined, searchTerm || undefined);
+          items = (pods || [])
+            .slice(0, 20)
+            .map((p) => ({
+              category: 'Pods',
+              label: p.name,
+              description: `${p.namespace} \u00b7 ${p.status}${p.restarts > 0 ? ` \u00b7 ${p.restarts} restarts` : ''}`,
+              icon: p.status === 'Running' ? '\u{1f7e2}' : p.status === 'Pending' ? '\u{1f7e1}' : '\u{1f534}',
+              badge: p.node,
+              action: () => { onTabChange('operations'); onClose(); },
+            }));
+        } else if (activePrefix === '>') {
+          // Pipeline runs
+          const resp = await fetchPipelineRuns({ search: searchTerm || undefined, limit: 15 });
+          items = (resp.runs || []).map((r: PipelineRun) => ({
+            category: 'Pipeline Runs',
+            label: r.app_name,
+            description: `${r.status} \u00b7 ${r.team} \u00b7 ${new Date(r.created_at).toLocaleDateString()}`,
+            icon: r.status === 'deployed' ? '\u{1f7e2}' : r.status === 'failed' ? '\u{1f534}' : r.status === 'scanning' ? '\u{1f535}' : '\u{1f7e1}',
+            badge: r.status,
+            action: () => { onTabChange('security'); onClose(); },
+          }));
+        } else if (activePrefix === '$') {
+          // Tenants
+          try {
+            const tenants = await fetchTenants();
+            items = (tenants || [])
+              .filter((t: Tenant) => !searchTerm || fuzzyMatch(`${t.name} ${t.team} ${t.status}`, searchTerm))
+              .slice(0, 20)
+              .map((t: Tenant) => ({
+                category: 'Tenants',
+                label: t.name,
+                description: `Team: ${t.team || 'default'} \u00b7 ${t.status}`,
+                icon: '\u{1f4e6}',
+                badge: t.status,
+                action: () => { onTabChange('admin'); onClose(); },
+              }));
+          } catch { items = []; }
+        } else if (activePrefix === ':') {
+          // Users & groups (admin only)
+          if (isAdmin) {
+            try {
+              const [usersResp, groupsResp] = await Promise.all([fetchUsers(), fetchGroups()]);
+              const userItems = (usersResp || [])
+                .filter((u: AdminUser) => !searchTerm || fuzzyMatch(`${u.username} ${u.email} ${(u.groups || []).join(' ')}`, searchTerm))
+                .slice(0, 10)
+                .map((u: AdminUser) => ({
+                  category: 'Users',
+                  label: u.username,
+                  description: u.email || '',
+                  icon: '\u{1f464}',
+                  badge: (u.groups || []).join(', ') || 'No groups',
+                  action: () => { onTabChange('admin'); onClose(); },
+                }));
+              const groupItems = (groupsResp || [])
+                .filter((g: AdminGroup) => !searchTerm || fuzzyMatch(g.name, searchTerm))
+                .slice(0, 10)
+                .map((g: AdminGroup) => ({
+                  category: 'Groups',
+                  label: g.name,
+                  description: 'Group',
+                  icon: '\u{1f465}',
+                  action: () => { onTabChange('admin'); onClose(); },
+                }));
+              items = [...userItems, ...groupItems];
+            } catch { items = []; }
+          }
+        } else if (activePrefix === '?') {
+          // Health checks - return a single action item
+          items = [{
+            category: 'Health',
+            label: 'Run Platform Health Checks',
+            description: 'Check all 12 platform health indicators',
+            icon: '\u{1f3e5}',
+            action: () => { onTabChange('operations'); onClose(); },
+          }];
+        } else if (activePrefix === '!') {
+          // Actions
+          items = [
+            { category: 'Actions', label: 'Restart Deployment', description: 'Restart all pods for a deployment', icon: '\u{1f504}', action: () => { onTabChange('operations'); onClose(); } },
+            { category: 'Actions', label: 'Force Re-pull Image', description: 'Clear image cache and pull fresh from Harbor', icon: '\u{1f4e5}', action: () => { onTabChange('applications'); onClose(); } },
+            { category: 'Actions', label: 'Scale Deployment', description: 'Change replica count', icon: '\u{1f4c8}', action: () => { onTabChange('operations'); onClose(); } },
+            { category: 'Actions', label: 'Rotate Secrets', description: 'Rotate Harbor/Keycloak/Cosign credentials', icon: '\u{1f511}', action: () => { onTabChange('admin'); onClose(); } },
+            { category: 'Actions', label: 'Run RBAC Audit', description: 'Audit cluster RBAC bindings', icon: '\u{1f50d}', action: () => { onTabChange('admin'); onClose(); } },
+            { category: 'Actions', label: 'Generate Compliance Report', description: 'Run live NIST 800-53 compliance check', icon: '\u{1f4cb}', action: () => { onTabChange('compliance'); onClose(); } },
+            { category: 'Actions', label: 'Create Tenant', description: 'Onboard a new team namespace', icon: '\u2795', action: () => { onTabChange('admin'); onClose(); } },
+            { category: 'Actions', label: 'Cancel Pipeline Run', description: 'Stop a running pipeline', icon: '\u26d4', action: () => { onTabChange('security'); onClose(); } },
+          ].filter(a => !searchTerm || fuzzyMatch(`${a.label} ${a.description}`, searchTerm));
+        }
+
+        setLiveResults(items);
+      } catch {
+        setLiveResults([]);
+      } finally {
+        setLiveLoading(false);
+      }
+    }, 200); // 200ms debounce
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [open, query, activePrefix, searchTerm, isAdmin, onTabChange, onClose, onOpenApp]);
 
   const commands = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = [];
@@ -148,15 +325,18 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
   }, [isAdmin, isDeveloper, isIssm, user, onTabChange, onOpenApp, toggleTheme, theme, config]);
 
   const filtered = useMemo(() => {
+    if (activePrefix) {
+      // When using a prefix, only show live results
+      return liveResults;
+    }
     if (!query.trim()) return commands;
-    return commands.filter(
-      (cmd) =>
-        fuzzyMatch(cmd.label, query) ||
-        fuzzyMatch(cmd.description || '', query) ||
-        fuzzyMatch(cmd.category, query) ||
-        fuzzyMatch(cmd.badge || '', query)
+    // Without prefix, search static commands
+    const staticFiltered = commands.filter(cmd =>
+      fuzzyMatch(cmd.label, query) || fuzzyMatch(cmd.description || '', query) ||
+      fuzzyMatch(cmd.category, query) || fuzzyMatch(cmd.badge || '', query)
     );
-  }, [query, commands]);
+    return staticFiltered;
+  }, [query, commands, activePrefix, liveResults]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, CommandItem[]>();
@@ -240,6 +420,28 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
           <kbd className="text-[11px] px-1.5 py-0.5 bg-bg border border-border rounded text-text-dim">ESC</kbd>
         </div>
 
+        {/* Prefix hints */}
+        {!query && (
+          <div className="px-4 py-2 border-b border-border flex flex-wrap gap-2">
+            {Object.entries(PREFIX_HELP).map(([prefix, desc]) => (
+              <button
+                key={prefix}
+                className="text-[10px] font-mono px-2 py-1 rounded bg-surface border border-border text-text-dim hover:text-accent hover:border-accent transition-colors"
+                onClick={() => { setQuery(prefix); inputRef.current?.focus(); }}
+              >
+                <span className="text-accent font-bold">{prefix}</span> {desc}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Active prefix indicator */}
+        {activePrefix && (
+          <div className="px-4 py-1.5 text-[10px] text-accent bg-accent/5 border-b border-border">
+            {PREFIX_HELP[activePrefix]} {searchTerm ? `\u00b7 "${searchTerm}"` : '\u00b7 type to search'}
+          </div>
+        )}
+
         {/* User context badge */}
         <div className="px-4 py-1.5 border-b border-border text-[11px] text-text-dim flex items-center gap-2">
           <span>Logged in as <strong className="text-text-primary">{user?.email || 'anonymous'}</strong></span>
@@ -253,7 +455,10 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
 
         {/* Results */}
         <div ref={resultsRef} className="overflow-y-auto flex-1 p-2" style={{ scrollBehavior: 'smooth' }}>
-          {flatItems.length === 0 ? (
+          {liveLoading && (
+            <div className="px-4 py-3 text-xs text-text-dim animate-pulse">Searching...</div>
+          )}
+          {flatItems.length === 0 && !liveLoading ? (
             <div className="py-8 px-5 text-center text-text-dim">
               <span className="text-[28px] mb-2 block">🔍</span>
               <span className="text-[13px]">No results for &ldquo;{query}&rdquo;</span>
@@ -309,6 +514,8 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
           <span><kbd className="font-mono text-[10px] px-[5px] py-px bg-bg border border-border rounded">Enter</kbd> select</span>
           <span className="opacity-30">|</span>
           <span><kbd className="font-mono text-[10px] px-[5px] py-px bg-bg border border-border rounded">Esc</kbd> close</span>
+          <span className="opacity-30">|</span>
+          <span className="text-text-dim">Use # @ / &gt; ! $ : ? for quick access</span>
           <span className="ml-auto">{flatItems.length} results</span>
         </div>
       </div>
