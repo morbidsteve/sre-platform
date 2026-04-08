@@ -80,6 +80,79 @@ The `bundle.yaml` tells the platform:
 - **How to check health**: liveness and readiness probe paths
 - **Security posture**: classification level, root requirements
 
+## Multi-Service Applications
+
+The bundle spec supports three patterns depending on your architecture:
+
+### Single container (most apps)
+
+One image, one deployment. Use `spec.app` only.
+
+```yaml
+spec:
+  app:
+    image: images/myapp.tar
+    port: 8080
+```
+
+### Multiple services / microservices (components)
+
+Separate deployments that run independently — each gets its own pods, scaling,
+and lifecycle. Use `spec.components[]` alongside `spec.app`.
+
+Example: a frontend + backend API + background worker.
+
+```yaml
+spec:
+  app:
+    type: web-app
+    image: images/frontend.tar
+    port: 3000
+    ingress: myapp.apps.sre.example.com
+  components:
+    - name: api
+      type: api-service
+      image: images/api.tar
+      port: 8080
+      resources: medium
+    - name: worker
+      type: worker
+      image: images/worker.tar
+      resources: small
+```
+
+Each component becomes a separate Kubernetes Deployment. They communicate via
+cluster DNS (e.g., `api.team-alpha.svc.cluster.local`).
+
+### Sidecar containers (same pod)
+
+Containers that MUST run alongside your main app in the same pod, sharing
+network and storage. Use `spec.sidecars[]`.
+
+Example: a log shipper that reads your app's log files.
+
+```yaml
+spec:
+  app:
+    image: images/myapp.tar
+    port: 8080
+  sidecars:
+    - name: log-shipper
+      image: images/log-shipper.tar
+      port: 9090
+      resources: small
+```
+
+**When to use which:**
+
+| Pattern | When | Example |
+|---------|------|---------|
+| Single app | One container does everything | A web app, an API |
+| Components | Independent services with separate scaling | Frontend + backend + worker |
+| Sidecars | Helpers that must share the pod network/filesystem | Log shipper, metrics exporter |
+
+You do NOT need to add the Istio sidecar — the platform injects it automatically.
+
 ## Examples
 
 Each example includes a `bundle.yaml` (what you create) and a `helmrelease.yaml` (what the operator generates — for reference only).
@@ -88,7 +161,7 @@ Each example includes a `bundle.yaml` (what you create) and a `helmrelease.yaml`
 |---------|---------------|
 | [01 - Simple Web App](examples/01-simple-web-app/) | Minimum viable deployment — just an image and a port |
 | [02 - App with Database](examples/02-app-with-database/) | PostgreSQL, SSO, environment variables, secrets |
-| [03 - Multi-Container](examples/03-multi-container/) | API + background worker + scheduled job |
+| [03 - Multi-Container](examples/03-multi-container/) | API + background worker + scheduled job (components) |
 | [04 - Vendor Software](examples/04-vendor-software/) | Commercial off-the-shelf (COTS), security relaxation |
 | [05 - Gitea](examples/05-gitea-self-hosted/) | Stateful app with persistent storage, startup probe |
 | [06 - n8n](examples/06-n8n-workflow-automation/) | App requiring root, Kyverno policy exception |
