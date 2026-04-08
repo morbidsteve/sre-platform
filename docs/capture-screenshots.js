@@ -44,12 +44,12 @@ async function capture(page, name, opts = {}) {
 
   // Navigate to each tab and capture
   const tabs = [
-    { hash: 'deploy', name: '04-deploy-tab', wait: 3000 },
-    { hash: 'applications', name: '05-applications-tab', wait: 3000 },
-    { hash: 'security', name: '06-security-tab', wait: 3000 },
-    { hash: 'operations', name: '07-operations-tab', wait: 3000 },
-    { hash: 'compliance', name: '08-compliance-tab', wait: 3000 },
-    { hash: 'admin', name: '09-admin-tab', wait: 3000 },
+    { hash: 'deploy', name: '04-deploy-tab', wait: 5000 },
+    { hash: 'applications', name: '05-applications-tab', wait: 8000 },
+    { hash: 'security', name: '06-security-tab', wait: 10000 },
+    { hash: 'operations', name: '07-operations-tab', wait: 8000 },
+    { hash: 'compliance', name: '08-compliance-tab', wait: 8000 },
+    { hash: 'admin', name: '09-admin-tab', wait: 8000 },
   ];
 
   for (const tab of tabs) {
@@ -61,9 +61,9 @@ async function capture(page, name, opts = {}) {
   // Ctrl+K command palette
   console.log('Capturing command palette...');
   await page.goto(`${DASHBOARD_URL}/#overview`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await delay(2000);
+  await delay(5000);
   await page.keyboard.press('Control+k');
-  await delay(1000);
+  await delay(2000);
   await capture(page, '10-command-palette');
   await page.keyboard.press('Escape');
 
@@ -88,24 +88,25 @@ async function capture(page, name, opts = {}) {
   // Security > Pipeline Runs subtab
   console.log('Capturing pipeline runs...');
   await page.goto(`${DASHBOARD_URL}/#security`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await delay(3000);
+  await delay(10000);
   await capture(page, '12-pipeline-runs');
 
   // Admin > Quick Links
   console.log('Capturing admin quick links...');
   await page.goto(`${DASHBOARD_URL}/#admin`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await delay(2000);
+  await delay(8000);
+  await capture(page, '09-admin-tab-users', { wait: 1000 });
   const linksTab = await page.$('button:has-text("QUICK LINKS")');
   if (linksTab) {
     await linksTab.click();
-    await delay(1000);
+    await delay(3000);
     await capture(page, '13-admin-quick-links');
   }
 
   // Compliance > Live Report
   console.log('Capturing compliance...');
   await page.goto(`${DASHBOARD_URL}/#compliance`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await delay(3000);
+  await delay(8000);
   await capture(page, '14-compliance-tab');
 
   await browser.close();
