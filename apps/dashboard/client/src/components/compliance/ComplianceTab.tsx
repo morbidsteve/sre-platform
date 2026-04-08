@@ -686,7 +686,11 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
   const [scoreLoading, setScoreLoading] = useState(true);
 
   // Subtab navigation
-  const [activeSubtab, setActiveSubtab] = useState<'controls' | 'live-report'>('controls');
+  const [activeSubtab, setActiveSubtab] = useState<'controls' | 'live-report' | 'documents'>('controls');
+
+  // Document download states
+  const [sspDownloading, setSspDownloading] = useState(false);
+  const [atoDownloading, setAtoDownloading] = useState(false);
 
   // Live compliance report
   const [reportData, setReportData] = useState<ComplianceReport | null>(null);
@@ -743,6 +747,24 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
       setReportError('Failed to load compliance report');
     } finally {
       setReportLoading(false);
+    }
+  }, []);
+
+  const downloadFile = useCallback(async (url: string, filename: string, setLoading: (v: boolean) => void) => {
+    setLoading(true);
+    try {
+      const resp = await fetch(url, { credentials: 'include' });
+      if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      setError(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -987,6 +1009,19 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
           <span className="inline-flex items-center gap-2">
             <FileText className="w-4 h-4" />
             Live Report
+          </span>
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeSubtab === 'documents'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-text-dim hover:text-text-primary'
+          }`}
+          onClick={() => setActiveSubtab('documents')}
+        >
+          <span className="inline-flex items-center gap-2">
+            <Download className="w-4 h-4" />
+            Documents
           </span>
         </button>
       </div>
@@ -1530,6 +1565,81 @@ export function ComplianceTab({ active }: ComplianceTabProps) {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {activeSubtab === 'documents' && (
+        <div>
+          <h2 className="text-[13px] font-mono uppercase tracking-[1px] text-text-dim mb-4 flex items-center gap-2">
+            <Download className="w-4 h-4" />
+            Compliance Documents
+          </h2>
+          <p className="text-xs text-text-dim mb-6">
+            Download machine-readable compliance artifacts for your ATO package. These are generated from live platform state.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* SSP Download Card */}
+            <div className="bg-card border border-border rounded-[var(--radius)] p-5">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="p-2 rounded-lg bg-accent/10">
+                  <FileText className="w-5 h-5 text-accent" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-text-bright">System Security Plan (SSP)</h3>
+                  <p className="text-xs text-text-dim mt-1">
+                    OSCAL-format SSP covering all NIST 800-53 controls implemented by the platform.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-text-dim mb-4">
+                <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent font-mono">JSON</span>
+                <span>NIST 800-53 Rev 5</span>
+              </div>
+              <button
+                className="btn btn-primary text-sm w-full inline-flex items-center justify-center gap-2"
+                onClick={() => downloadFile(
+                  '/api/compliance/ssp?download=true',
+                  `ssp-${new Date().toISOString().slice(0, 10)}.json`,
+                  setSspDownloading,
+                )}
+                disabled={sspDownloading}
+              >
+                <Download className={`w-4 h-4 ${sspDownloading ? 'animate-pulse' : ''}`} />
+                {sspDownloading ? 'Downloading...' : 'Download SSP (JSON)'}
+              </button>
+            </div>
+
+            {/* ATO Package Download Card */}
+            <div className="bg-card border border-border rounded-[var(--radius)] p-5">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="p-2 rounded-lg bg-green/10">
+                  <Shield className="w-5 h-5 text-green" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-text-bright">ATO Package</h3>
+                  <p className="text-xs text-text-dim mt-1">
+                    Complete ATO package with SSP, control assessments, and platform evidence summary.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-text-dim mb-4">
+                <span className="px-1.5 py-0.5 rounded bg-green/10 text-green font-mono">JSON</span>
+                <span>FedRAMP / CMMC 2.0</span>
+              </div>
+              <button
+                className="btn btn-primary text-sm w-full inline-flex items-center justify-center gap-2"
+                onClick={() => downloadFile(
+                  '/api/compliance/ato-package?download=true',
+                  `ato-package-${new Date().toISOString().slice(0, 10)}.json`,
+                  setAtoDownloading,
+                )}
+                disabled={atoDownloading}
+              >
+                <Download className={`w-4 h-4 ${atoDownloading ? 'animate-pulse' : ''}`} />
+                {atoDownloading ? 'Downloading...' : 'Download ATO Package (JSON)'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { RefreshCw, CheckCircle2, AlertTriangle, XCircle, ArrowUpCircle } from 'lucide-react';
 import { Tabs } from '../ui/Tabs';
 import { SkeletonCard } from '../ui/Skeleton';
 import { useConfig } from '../../context/ConfigContext';
@@ -34,10 +35,51 @@ interface IngressData {
   httpsPort: number;
 }
 
+interface DrCheck {
+  check: string;
+  status: 'PASS' | 'WARN' | 'FAIL';
+  detail: string;
+}
+
+interface DrTestResponse {
+  timestamp: string;
+  checks: DrCheck[];
+  summary: { pass: number; warn: number; fail: number; total: number };
+}
+
+interface UpgradeComponent {
+  component: string;
+  current: string;
+  latest: string;
+  updateAvailable: boolean;
+}
+
+interface UpgradeCheckResponse {
+  timestamp: string;
+  components: UpgradeComponent[];
+}
+
+const DR_STATUS_ICON = {
+  PASS: CheckCircle2,
+  WARN: AlertTriangle,
+  FAIL: XCircle,
+};
+const DR_STATUS_COLOR = {
+  PASS: 'text-green-400',
+  WARN: 'text-yellow-400',
+  FAIL: 'text-red-400',
+};
+const DR_STATUS_BG = {
+  PASS: 'bg-green-500/10 border-green-500/20',
+  WARN: 'bg-yellow-500/10 border-yellow-500/20',
+  FAIL: 'bg-red-500/10 border-red-500/20',
+};
+
 const OPS_TABS = [
   { id: 'services', label: 'Services' },
   { id: 'health', label: 'Health Checks' },
   { id: 'dependencies', label: 'Dependencies' },
+  { id: 'dr', label: 'DR & Upgrades' },
   { id: 'nodes', label: 'Nodes' },
   { id: 'pods', label: 'Pods' },
   { id: 'events', label: 'Events' },
@@ -64,6 +106,44 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // DR & Upgrades state
+  const [drResults, setDrResults] = useState<DrTestResponse | null>(null);
+  const [drLoading, setDrLoading] = useState(false);
+  const [drError, setDrError] = useState<string | null>(null);
+  const [upgradeData, setUpgradeData] = useState<UpgradeCheckResponse | null>(null);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+
+  const runDrTest = useCallback(async () => {
+    setDrLoading(true);
+    setDrError(null);
+    try {
+      const resp = await fetch('/api/ops/dr-test', { method: 'POST', credentials: 'include' });
+      if (!resp.ok) throw new Error(`DR test failed (${resp.status})`);
+      const data: DrTestResponse = await resp.json();
+      setDrResults(data);
+    } catch (err) {
+      setDrError(err instanceof Error ? err.message : 'Failed to run DR validation');
+    } finally {
+      setDrLoading(false);
+    }
+  }, []);
+
+  const checkUpgrades = useCallback(async () => {
+    setUpgradeLoading(true);
+    setUpgradeError(null);
+    try {
+      const resp = await fetch('/api/ops/upgrade-check', { credentials: 'include' });
+      if (!resp.ok) throw new Error(`Upgrade check failed (${resp.status})`);
+      const data: UpgradeCheckResponse = await resp.json();
+      setUpgradeData(data);
+    } catch (err) {
+      setUpgradeError(err instanceof Error ? err.message : 'Failed to check component versions');
+    } finally {
+      setUpgradeLoading(false);
+    }
+  }, []);
 
   const triggerRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -206,6 +286,138 @@ export function OperationsTab({ active, onOpenApp }: OperationsTabProps) {
       )}
 
       {subTab === 'health' && <HealthCheckPanel />}
+
+      {subTab === 'dr' && (
+        <div className="space-y-6">
+          {/* DR Validation Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Disaster Recovery Validation
+              </h3>
+              <button
+                className="btn btn-primary text-sm inline-flex items-center gap-2"
+                onClick={runDrTest}
+                disabled={drLoading}
+              >
+                <RefreshCw className={`w-4 h-4 ${drLoading ? 'animate-spin' : ''}`} />
+                {drLoading ? 'Running...' : drResults ? 'Re-run DR Validation' : 'Run DR Validation'}
+              </button>
+            </div>
+
+            {drError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">
+                {drError}
+              </div>
+            )}
+
+            {drResults && (
+              <>
+                <div className="flex items-center gap-4 bg-surface border border-border rounded-lg p-4">
+                  <span className="text-sm text-text-dim">
+                    {new Date(drResults.timestamp).toLocaleString()}
+                  </span>
+                  <span className="text-sm font-medium text-green-400">{drResults.summary.pass} Pass</span>
+                  {drResults.summary.warn > 0 && <span className="text-sm font-medium text-yellow-400">{drResults.summary.warn} Warn</span>}
+                  {drResults.summary.fail > 0 && <span className="text-sm font-medium text-red-400">{drResults.summary.fail} Fail</span>}
+                  <span className="text-sm text-text-dim ml-auto">{drResults.summary.total} checks</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {drResults.checks.map((check) => {
+                    const Icon = DR_STATUS_ICON[check.status];
+                    return (
+                      <div key={check.check} className={`border rounded-lg p-3 ${DR_STATUS_BG[check.status]}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Icon className={`w-4 h-4 flex-shrink-0 ${DR_STATUS_COLOR[check.status]}`} />
+                          <span className="text-sm font-medium text-text-bright truncate">{check.check}</span>
+                        </div>
+                        <p className="text-xs text-text-dim ml-6">{check.detail}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {!drResults && !drLoading && !drError && (
+              <div className="bg-surface border border-border rounded-lg p-8 text-center">
+                <p className="text-sm text-text-dim">Click "Run DR Validation" to check backup health, restore readiness, and recovery objectives.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Upgrade Check Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <ArrowUpCircle className="w-4 h-4" />
+                Component Versions
+              </h3>
+              <button
+                className="btn btn-primary text-sm inline-flex items-center gap-2"
+                onClick={checkUpgrades}
+                disabled={upgradeLoading}
+              >
+                <RefreshCw className={`w-4 h-4 ${upgradeLoading ? 'animate-spin' : ''}`} />
+                {upgradeLoading ? 'Checking...' : upgradeData ? 'Re-check Versions' : 'Check Component Versions'}
+              </button>
+            </div>
+
+            {upgradeError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">
+                {upgradeError}
+              </div>
+            )}
+
+            {upgradeData && (
+              <div className="bg-card border border-border rounded-[var(--radius)] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-border text-xs text-text-dim">
+                  Last checked: {new Date(upgradeData.timestamp).toLocaleString()}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-left">
+                        <th className="py-2 px-4 text-text-dim font-medium">Component</th>
+                        <th className="py-2 px-4 text-text-dim font-medium">Current</th>
+                        <th className="py-2 px-4 text-text-dim font-medium">Latest</th>
+                        <th className="py-2 px-4 text-text-dim font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upgradeData.components.map((comp) => (
+                        <tr key={comp.component} className="border-b border-border/50 hover:bg-surface/50">
+                          <td className="py-2.5 px-4 font-medium text-text-bright">{comp.component}</td>
+                          <td className="py-2.5 px-4 font-mono text-text-primary">{comp.current}</td>
+                          <td className="py-2.5 px-4 font-mono text-text-primary">{comp.latest}</td>
+                          <td className="py-2.5 px-4">
+                            {comp.updateAvailable ? (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400">
+                                Update Available
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
+                                Up to Date
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!upgradeData && !upgradeLoading && !upgradeError && (
+              <div className="bg-surface border border-border rounded-lg p-8 text-center">
+                <p className="text-sm text-text-dim">Click "Check Component Versions" to see current vs latest versions for all platform components.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {subTab === 'dependencies' && <DependencyMap active={active} />}
 

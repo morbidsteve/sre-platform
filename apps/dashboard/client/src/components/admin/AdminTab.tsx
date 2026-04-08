@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { X, Bell, CheckCircle2, XCircle } from 'lucide-react';
 import { Tabs } from '../ui/Tabs';
 import { EmptyState } from '../ui/EmptyState';
 import { UsersPanel } from './UsersPanel';
@@ -17,6 +17,140 @@ import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { fetchUsers, fetchGroups, createGroup, fetchSetupStatus } from '../../api/admin';
 import type { AdminUser, AdminGroup } from '../../types/api';
 
+interface NotificationReceiver {
+  name: string;
+  type: 'slack' | 'email' | 'pagerduty' | 'webhook';
+  configured: boolean;
+  endpoint?: string;
+}
+
+interface NotificationStatus {
+  receivers: NotificationReceiver[];
+  lastChecked: string;
+}
+
+function NotificationsPanel({ active }: { active: boolean }) {
+  const [status, setStatus] = useState<NotificationStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    if (!active) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch('/api/ops/notifications/status', { credentials: 'include' });
+      if (!resp.ok) throw new Error(`Failed to load notification status (${resp.status})`);
+      const data: NotificationStatus = await resp.json();
+      setStatus(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load notification status');
+    } finally {
+      setLoading(false);
+    }
+  }, [active]);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
+
+  const typeIcon: Record<string, string> = {
+    slack: '#',
+    email: '@',
+    pagerduty: '!',
+    webhook: '~',
+  };
+
+  const typeLabel: Record<string, string> = {
+    slack: 'Slack',
+    email: 'Email',
+    pagerduty: 'PagerDuty',
+    webhook: 'Webhook',
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+          <Bell className="w-4 h-4" />
+          Notification Receivers
+        </h3>
+        <button
+          className="btn text-sm inline-flex items-center gap-2"
+          onClick={loadStatus}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
+      {loading && !status && (
+        <div className="bg-surface border border-border rounded-lg p-8 text-center">
+          <p className="text-sm text-text-dim">Loading notification configuration...</p>
+        </div>
+      )}
+
+      {status && (
+        <>
+          <p className="text-xs text-text-dim">
+            AlertManager notification receivers configured for this platform.
+            Last checked: {new Date(status.lastChecked).toLocaleString()}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {status.receivers.map((receiver) => (
+              <div
+                key={receiver.name}
+                className={`border rounded-lg p-4 ${
+                  receiver.configured
+                    ? 'bg-green-500/10 border-green-500/20'
+                    : 'bg-surface border-border'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded bg-accent/10 text-accent flex items-center justify-center text-xs font-bold font-mono">
+                      {typeIcon[receiver.type] || '?'}
+                    </span>
+                    <span className="text-sm font-medium text-text-bright">{receiver.name}</span>
+                  </div>
+                  {receiver.configured ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-text-dim flex-shrink-0" />
+                  )}
+                </div>
+                <div className="text-xs text-text-dim space-y-1">
+                  <div>Type: <span className="text-text-primary">{typeLabel[receiver.type] || receiver.type}</span></div>
+                  <div>
+                    Status:{' '}
+                    <span className={receiver.configured ? 'text-green-400' : 'text-text-dim'}>
+                      {receiver.configured ? 'Configured' : 'Not Configured'}
+                    </span>
+                  </div>
+                  {receiver.endpoint && (
+                    <div className="truncate">Endpoint: <span className="font-mono text-text-primary">{receiver.endpoint}</span></div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {status.receivers.length === 0 && (
+            <div className="bg-surface border border-border rounded-lg p-8 text-center">
+              <p className="text-sm text-text-dim">No notification receivers configured.</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 const ADMIN_TABS = [
   { id: 'users', label: 'Users' },
   { id: 'tenants', label: 'Tenants' },
@@ -25,6 +159,7 @@ const ADMIN_TABS = [
   { id: 'credentials', label: 'Credentials' },
   { id: 'secrets', label: 'Secrets' },
   { id: 'sso', label: 'SSO Config' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'links', label: 'Quick Links' },
 ];
 
@@ -257,6 +392,8 @@ export function AdminTab({ active }: AdminTabProps) {
       {subTab === 'secrets' && <SecretRotationPanel />}
 
       {subTab === 'sso' && <SsoConfigPanel />}
+
+      {subTab === 'notifications' && <NotificationsPanel active={active} />}
 
       {subTab === 'links' && <QuickLinksPanel />}
     </div>
