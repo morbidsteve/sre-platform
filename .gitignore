@@ -48,8 +48,9 @@ CLAUDE.local.md
 node_modules/
 package-lock.json
 
-# Screenshots (local only)
+# Screenshots (local only, except docs/screenshots which are committed)
 *.png
+!docs/screenshots/*.png
 
 # Playwright MCP
 .playwright-mcp/
