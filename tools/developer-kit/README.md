@@ -165,6 +165,7 @@ Each example includes a `bundle.yaml` (what you create) and a `helmrelease.yaml`
 | [04 - Vendor Software](examples/04-vendor-software/) | Commercial off-the-shelf (COTS), security relaxation |
 | [05 - Gitea](examples/05-gitea-self-hosted/) | Stateful app with persistent storage, startup probe |
 | [06 - n8n](examples/06-n8n-workflow-automation/) | App requiring root, Kyverno policy exception |
+| [07 - Fullstack App](examples/07-fullstack-app/) | React + Go API + PostgreSQL (frontend + backend + database) |
 
 ## What the Platform Does for You
 

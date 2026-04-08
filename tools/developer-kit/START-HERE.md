@@ -69,6 +69,7 @@ Your app will be live at the URL you specified (e.g., `https://my-app.apps.sre.e
 | Commercial/vendor software I didn't build | [04 - Vendor Software](examples/04-vendor-software/) |
 | An app that writes files to disk | [05 - Gitea](examples/05-gitea-self-hosted/) |
 | An app that needs root access | [06 - n8n](examples/06-n8n-workflow-automation/) |
+| A fullstack app (frontend + backend + database) | [07 - Fullstack App](examples/07-fullstack-app/) |
 
 ## Common Questions
 

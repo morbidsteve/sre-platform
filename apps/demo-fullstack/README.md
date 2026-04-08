@@ -30,23 +30,21 @@ The Istio VirtualService (`api-virtualservice.yaml`) routes `/api/*` to the Go
 backend and everything else to the nginx frontend. OAuth2 Proxy handles SSO for
 both paths through `/oauth2/` routes on the same hostname.
 
-## Quick Start
+## For Developers
 
-Build, push, and deploy with one command:
+If you want to deploy an app like this, you don't need anything in the `k8s/` directory.
+See the developer-friendly version: **[Example 07 - Fullstack App](../../tools/developer-kit/examples/07-fullstack-app/)**
 
-```bash
-./apps/demo-fullstack/build-and-deploy.sh v1.0.0
-```
+That example shows just the `bundle.yaml` you would create. The platform generates
+all the Kubernetes manifests (HelmReleases, VirtualServices, NetworkPolicies, etc.)
+automatically from your bundle.
 
-The script builds both Docker images, pushes them to Harbor, updates the image
-tags in the HelmReleases, commits, and pushes. Flux deploys automatically.
+## Quick Start (Platform Operators)
 
-Monitor the rollout:
-
-```bash
-flux get kustomizations sre-demo-fullstack
-kubectl get pods -n team-demo
-```
+Manage through the **SRE Dashboard**:
+1. **Applications tab** — monitor the deployment
+2. **Operations Cockpit** — diagnostics, logs, restart, scaling
+3. **Security tab** — pipeline runs and ISSM review
 
 ## Project Structure
 
@@ -155,20 +153,20 @@ The Flux Kustomization lives at `platform/addons/components/demo-fullstack.yaml`
 It uses `postBuild.substituteFrom` to inject `SRE_DOMAIN` from the
 `sre-domain-config` ConfigMap. Dependencies: `sre-istio`, `sre-tenants`.
 
-## Adapting for Your App
+## Building Your Own Fullstack App
 
-1. **Copy the structure**: `cp -r apps/demo-fullstack apps/my-app`
-2. **Replace the backend**: Drop in your API code, update the Dockerfile,
-   keep `/healthz`, `/readyz`, and `/metrics` endpoints.
-3. **Replace the frontend**: Swap the React code, keep nginx.conf as-is.
-4. **Update HelmReleases**: Change image repos, ports, resource limits, and
-   env vars in `backend-helmrelease.yaml` and `frontend-helmrelease.yaml`.
-5. **Update the VirtualService**: Change the hostname and backend service name
-   in `api-virtualservice.yaml`.
-6. **Create a Flux Kustomization**: Copy `platform/addons/components/demo-fullstack.yaml`,
-   update the path and name.
-7. **Register with Flux**: Add your Kustomization to `platform/addons/kustomization.yaml`.
-8. **Push**: Commit and push. Flux deploys automatically.
+**For developers:** You don't need to touch HelmReleases, VirtualServices, or Flux configs.
+Create a `bundle.yaml` describing your app and its components, then submit through the
+DSOP Wizard. See [Example 07](../../tools/developer-kit/examples/07-fullstack-app/) for
+exactly what you need to create.
+
+Your `bundle.yaml` just needs:
+1. Your frontend image under `spec.app`
+2. Your backend image under `spec.components`
+3. `services.database.enabled: true` if you need PostgreSQL
+4. Your health check endpoints under `probes`
+
+The platform generates all the Kubernetes manifests automatically.
 
 ## API Reference
 
