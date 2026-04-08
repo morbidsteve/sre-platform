@@ -107,7 +107,7 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
                 icon: s.healthy ? '\u{1f7e2}' : '\u{1f534}',
                 badge: s.healthy ? 'healthy' : 'unhealthy',
                 action: () => {
-                  if (s.url && onOpenApp) onOpenApp(s.url, s.name);
+                  if (s.url) { window.open(s.url, '_blank'); onClose(); }
                   else { onTabChange('operations'); onClose(); }
                 },
               }));
@@ -239,7 +239,7 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
     // ── Quick Deploy Actions ────────────────────────────────
     if (isAdmin || isDeveloper) {
       items.push(
-        { category: 'Deploy', label: 'Open DSOP Wizard', icon: '🔐', description: 'Full security pipeline deployment', badge: 'Recommended', action: () => { if (onOpenApp) onOpenApp(serviceUrl(config, 'dsop'), 'DSOP Security Pipeline'); } },
+        { category: 'Deploy', label: 'Open DSOP Wizard', icon: '🔐', description: 'Full security pipeline deployment', badge: 'Recommended', action: () => { window.open(serviceUrl(config, 'dsop'), '_blank'); onClose(); } },
         { category: 'Deploy', label: 'Quick Deploy', icon: '⚡', description: 'Deploy pre-built sample apps', action: () => onTabChange('deploy') },
         { category: 'Deploy', label: 'Deploy Helm Chart', icon: '📦', description: 'Deploy from Helm chart repository', action: () => onTabChange('deploy') },
         { category: 'Deploy', label: 'Create Database', icon: '🗄️', description: 'Provision PostgreSQL via CNPG', action: () => onTabChange('deploy') },
@@ -307,7 +307,7 @@ export function CommandPalette({ open, onClose, onTabChange, onOpenApp }: Comman
         icon: svc.icon,
         description: svc.description,
         badge: svc.badge,
-        action: () => { if (onOpenApp) onOpenApp(svc.url, svc.label); },
+        action: () => { window.open(svc.url, '_blank'); onClose(); },
       });
     }
 
