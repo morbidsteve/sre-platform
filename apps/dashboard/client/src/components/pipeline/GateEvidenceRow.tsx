@@ -369,18 +369,19 @@ export function GateEvidenceRow({ gate, isReview = false, runId, defaultExpanded
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [rawOutput, setRawOutput] = useState<GateOutputResponse['rawOutput'] | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
+  const [rawLoaded, setRawLoaded] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
   const findings = gate.findings || [];
 
   // Auto-load raw output when expanded and we have a runId
   useEffect(() => {
-    if (!expanded || !runId || rawOutput !== null || rawLoading) return;
+    if (!expanded || !runId || rawLoaded || rawLoading) return;
     if (gate.status === 'pending' || gate.status === 'running') return;
     setRawLoading(true);
     fetchGateOutput(runId, gate.gate_id)
-      .then((data) => setRawOutput(data.rawOutput))
+      .then((data) => setRawOutput(data.rawOutput || null))
       .catch(() => setRawOutput(null))
-      .finally(() => setRawLoading(false));
+      .finally(() => { setRawLoading(false); setRawLoaded(true); });
   }, [expanded, runId, gate.gate_id, gate.status, rawOutput, rawLoading]);
 
   const sn = (gate.short_name || '').toUpperCase().replace(/\s+/g, '_');
@@ -450,11 +451,17 @@ export function GateEvidenceRow({ gate, isReview = false, runId, defaultExpanded
           {isISSM ? (
             <ISSMResults gate={gate} />
           ) : rawLoading ? (
-            <div className="text-[11px] text-text-dim py-1">Loading scan output...</div>
+            <div className="text-xs text-text-dim py-1 animate-pulse">Loading scan output...</div>
           ) : rawOutput ? (
             <FormattedToolOutput shortName={gate.short_name} rawOutput={rawOutput} />
           ) : gate.status === 'passed' && findings.length === 0 ? (
-            <div className="text-xs text-green py-1">Clean scan -- no issues found.</div>
+            <div className="text-xs text-green py-1">Clean scan — no issues found.</div>
+          ) : gate.status === 'skipped' ? (
+            <div className="text-xs text-text-dim py-1">Gate skipped — not applicable for this source type.</div>
+          ) : gate.status === 'failed' && findings.length === 0 ? (
+            <div className="text-xs text-red py-1">Gate failed. {gate.summary || 'Check pipeline logs for details.'}</div>
+          ) : rawLoaded && !rawOutput && findings.length === 0 ? (
+            <div className="text-xs text-text-dim py-1">No detailed scan output available. {gate.summary || ''}</div>
           ) : null}
 
           {/* Findings (from pipeline DB) */}
