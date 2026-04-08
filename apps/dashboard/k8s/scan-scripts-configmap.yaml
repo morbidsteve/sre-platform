@@ -52,6 +52,12 @@ data:
 
   dast-scan.sh: |
     #!/bin/sh
-    zap-baseline.py -t "$TARGET_URL" -J /dev/stdout -I 2>/dev/null \
-      || echo '{"site":[]}'
+    # Try multiple ZAP baseline script locations
+    if command -v zap-baseline.py >/dev/null 2>&1; then
+      zap-baseline.py -t "$TARGET_URL" -J /dev/stdout -I 2>/dev/null
+    elif [ -f /zap/zap-baseline.py ]; then
+      python3 /zap/zap-baseline.py -t "$TARGET_URL" -J /dev/stdout -I 2>/dev/null
+    else
+      echo '{"error":"zap-baseline.py not found","site":[]}'
+    fi
     exit 0

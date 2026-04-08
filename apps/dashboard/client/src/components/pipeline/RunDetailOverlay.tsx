@@ -283,11 +283,21 @@ export function RunDetailOverlay({ runId, isReview = false, onClose, onActionCom
                   {isReview ? 'Security Gate Evidence' : 'Gate Results'}
                 </h3>
                 {(() => {
+                  // Merge run-level findings into gates by gate_id
+                  const runFindings = run.findings || [];
+                  const gatesWithFindings = run.gates.map(g => ({
+                    ...g,
+                    findings: [
+                      ...(g.findings || []),
+                      ...runFindings.filter(f => f.gate_id === g.gate_id || f.gate_id === (g as unknown as Record<string, unknown>).id),
+                    ],
+                  }));
+
                   // Auto-expand the first gate that has findings or failed
-                  const firstWithIssues = run.gates.findIndex(g =>
+                  const firstWithIssues = gatesWithFindings.findIndex(g =>
                     g.status === 'failed' || g.status === 'warning' || (g.findings && g.findings.length > 0)
                   );
-                  return run.gates.map((gate, i) => (
+                  return gatesWithFindings.map((gate, i) => (
                     <GateEvidenceRow
                       key={gate.gate_id || i}
                       gate={gate}

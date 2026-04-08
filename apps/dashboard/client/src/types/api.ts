@@ -493,6 +493,7 @@ export interface PipelineFinding {
   location?: string;
   disposition?: string;
   mitigation?: string;
+  gate_id?: number;
 }
 
 export interface PipelineGate {
@@ -532,6 +533,7 @@ export interface PipelineRun {
   created_at: string;
   updated_at: string;
   gates: PipelineGate[];
+  findings?: PipelineFinding[];
   review?: PipelineReview;
   deployed_url?: string;
   security_exceptions?: unknown[];

@@ -455,7 +455,14 @@ export function GateEvidenceRow({ gate, isReview = false, runId, defaultExpanded
           ) : rawOutput ? (
             <FormattedToolOutput shortName={gate.short_name} rawOutput={rawOutput} />
           ) : gate.status === 'passed' && findings.length === 0 ? (
-            <div className="text-xs text-green py-1">Clean scan — no issues found.</div>
+            <div className="text-xs text-green py-1">
+              {sn === 'IMAGE_SIGNING' ? 'Image signed and verified successfully.' :
+               sn === 'ARTIFACT_STORE' || sn === 'BUILD' || sn === 'CONTAINER_BUILD' ? 'Image built and stored in Harbor.' :
+               sn === 'ISSM_REVIEW' ? 'Approved by ISSM reviewer.' :
+               sn === 'DAST' ? 'Dynamic scan completed — no alerts.' :
+               sn === 'SBOM' ? 'SBOM generated successfully.' :
+               'No issues found.'}
+            </div>
           ) : gate.status === 'skipped' ? (
             <div className="text-xs text-text-dim py-1">Gate skipped — not applicable for this source type.</div>
           ) : gate.status === 'failed' && findings.length === 0 ? (

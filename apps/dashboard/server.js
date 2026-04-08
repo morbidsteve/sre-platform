@@ -9921,6 +9921,10 @@ async function runDASTScan(targetUrl, gateId, runId) {
     report = { site: [] };
   }
 
+  // Detect when ZAP didn't actually run (error fallback or usage message in output)
+  const zapDidNotRun = report.error || (logs && logs.includes("Usage: zap")) ||
+    (Array.isArray(report.site) && report.site.length === 0 && !report["@version"]);
+
   const findings = [];
   for (const site of (report.site || [])) {
     for (const alert of (site.alerts || [])) {
@@ -9931,6 +9935,15 @@ async function runDASTScan(targetUrl, gateId, runId) {
         location: alert.uri || targetUrl,
       });
     }
+  }
+
+  if (zapDidNotRun && findings.length === 0) {
+    return {
+      gate: "DAST", tool: "OWASP ZAP",
+      status: "warning",
+      findings: [],
+      summary: "DAST scan could not complete — ZAP baseline scan failed" + (report.error ? `: ${report.error}` : ""),
+    };
   }
 
   const high = findings.filter(a => a.severity === "high").length;
@@ -11967,9 +11980,11 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
               env: [
                 { name: "TARGET_URL", value: targetUrl },
               ],
-              command: ["sh", "-c", 'zap-baseline.py -t "$TARGET_URL" -J /dev/stdout -I 2>/dev/null || echo \'{"site":[]}\''],
+              command: ["sh", "/scripts/dast-scan.sh"],
               resources: { requests: { cpu: "200m", memory: "512Mi" }, limits: { cpu: "1", memory: "2Gi" } },
+              volumeMounts: [{ name: "scan-scripts", mountPath: "/scripts", readOnly: true }],
             }],
+            volumes: [{ name: "scan-scripts", configMap: { name: "scan-scripts", defaultMode: 0o555 } }],
           },
         },
       },
@@ -11983,6 +11998,10 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
       report = { site: [] };
     }
 
+    // Detect when ZAP didn't actually run (error fallback or usage message in output)
+    const zapDidNotRun = report.error || (logs && logs.includes("Usage: zap")) ||
+      (Array.isArray(report.site) && report.site.length === 0 && !report["@version"]);
+
     const alerts = [];
     for (const site of (report.site || [])) {
       for (const alert of (site.alerts || [])) {
@@ -11993,6 +12012,16 @@ app.post("/api/security/dast", mutateLimiter, requireGroups("sre-admins", "devel
           location: alert.uri || targetUrl,
         });
       }
+    }
+
+    if (zapDidNotRun && alerts.length === 0) {
+      return res.json({
+        gate: "DAST",
+        tool: "OWASP ZAP",
+        status: "warning",
+        findings: [],
+        summary: "DAST scan could not complete — ZAP baseline scan failed" + (report.error ? `: ${report.error}` : ""),
+      });
     }
 
     const high = alerts.filter(a => a.severity === "high").length;
