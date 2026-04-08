@@ -65,6 +65,14 @@ fi
 
 FULL_IMAGE="${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
 
+# ── Step 0: Update package.json BEFORE build (so Vite embeds correct version) ─
+
+SEMVER="${IMAGE_TAG#v}"
+if [[ -f "$APP_DIR/package.json" ]]; then
+    log "Updating package.json version to ${SEMVER}..."
+    sed -i "s|\"version\": \".*\"|\"version\": \"${SEMVER}\"|" "$APP_DIR/package.json"
+fi
+
 # ── Step 1: Build ─────────────────────────────────────────────────────────────
 
 log "Building Docker image ${FULL_IMAGE}..."
@@ -83,13 +91,7 @@ if [ -n "$DEPLOYMENT_FILE" ]; then
     sed -i "s|image: .*${IMAGE_NAME}:.*|image: ${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}|" "$DEPLOYMENT_FILE"
 fi
 
-# ── Step 4: Update package.json version (if it exists) ────────────────────────
-
-SEMVER="${IMAGE_TAG#v}"
-if [[ -f "$APP_DIR/package.json" ]]; then
-    log "Updating package.json version to ${SEMVER}..."
-    sed -i "s|\"version\": \".*\"|\"version\": \"${SEMVER}\"|" "$APP_DIR/package.json"
-fi
+# ── Step 4: package.json already updated in Step 0 ───────────────────────────
 
 # ── Step 5: Commit and push ──────────────────────────────────────────────────
 
