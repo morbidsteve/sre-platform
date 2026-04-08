@@ -53,40 +53,15 @@ Check deployment status in the dashboard under **Applications**.
 
 ## For SRE Operators
 
-After the bundle passes the DSOP pipeline, deploy all three components. Use `--no-commit` to batch them into a single Git push:
+Deployment is managed entirely through the **SRE Dashboard**:
 
-```bash
-# API service
-./scripts/sre-deploy-app.sh \
-  --name order-api --team team-demo \
-  --image harbor.apps.sre.example.com/team-demo/order-api --tag v1.0.0 \
-  --port 8080 --chart api-service --resources medium \
-  --ingress orders.apps.sre.example.com \
-  --liveness /healthz --readiness /readyz --metrics --no-commit
+1. The developer uploads their bundle through the **Deploy tab** (DSOP Wizard)
+2. Review the pipeline run in the **Security tab** → Pipeline Runs
+3. Approve as ISSM if security exceptions are requested
+4. Monitor the deployment in the **Applications tab**
+5. Use the **Operations Cockpit** (click any app → Cockpit) for diagnostics, logs, restart, and scaling
 
-# Background worker
-./scripts/sre-deploy-app.sh \
-  --name order-worker --team team-demo \
-  --image harbor.apps.sre.example.com/team-demo/order-worker --tag v1.0.0 \
-  --chart worker --resources small --singleton --no-commit
-
-# Commit all at once
-git add apps/tenants/team-demo/ && git commit -m "feat: deploy order processing system" && git push
-```
-
-## Verify
-
-```bash
-# Check all components
-kubectl get helmrelease -n team-demo
-kubectl get pods -n team-demo
-
-# Test the API endpoint
-curl -sk https://orders.apps.sre.example.com/healthz
-
-# Confirm worker is running as singleton
-kubectl get pods -n team-demo -l app.kubernetes.io/name=order-worker
-```
+No command-line tools needed.
 
 ## What the Platform Provides
 

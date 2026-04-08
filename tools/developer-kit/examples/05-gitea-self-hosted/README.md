@@ -46,34 +46,15 @@ Check deployment status in the dashboard under **Applications**.
 
 ## For SRE Operators
 
-After the bundle passes the DSOP pipeline, deploy with:
+Deployment is managed entirely through the **SRE Dashboard**:
 
-```bash
-./scripts/sre-deploy-app.sh \
-  --name gitea \
-  --team team-demo \
-  --image harbor.apps.sre.example.com/team-demo/gitea \
-  --tag v1.22-rootless \
-  --port 3000 \
-  --ingress gitea.apps.sre.example.com \
-  --resources small \
-  --writable-root \
-  --persist /var/lib/gitea:10Gi \
-  --startup-probe /
-```
+1. The developer uploads their bundle through the **Deploy tab** (DSOP Wizard)
+2. Review the pipeline run in the **Security tab** → Pipeline Runs
+3. Approve as ISSM if security exceptions are requested
+4. Monitor the deployment in the **Applications tab**
+5. Use the **Operations Cockpit** (click any app → Cockpit) for diagnostics, logs, restart, and scaling
 
-## Verify
-
-```bash
-# Check pods (startup probe allows up to 150s)
-kubectl get pods -n team-demo -l app.kubernetes.io/name=gitea
-
-# Check PVC was bound
-kubectl get pvc -n team-demo
-
-# Test the endpoint
-curl -sk https://gitea.apps.sre.example.com/
-```
+No command-line tools needed.
 
 ## What the Platform Provides
 

@@ -197,18 +197,14 @@ Apps can always write to `/tmp` and any mounted persistent volumes regardless of
 
 ## For SRE Operators
 
-After a bundle passes the DSOP pipeline, deploy it with:
+All deployment operations are managed through the **SRE Dashboard**:
 
-```bash
-./scripts/sre-deploy-app.sh \
-  --name <app-name> \
-  --team <team-namespace> \
-  --image harbor.apps.sre.example.com/<team>/<app> \
-  --tag <version> \
-  --port <port> \
-  [additional flags matching bundle.yaml settings]
-```
+1. **Deploy tab** — Upload bundles and manage the DSOP security pipeline
+2. **Applications tab** — Monitor deployed apps, access the Operations Cockpit for diagnostics, restart, scale, and force re-pull
+3. **Security tab** — Review pipeline runs, approve/reject as ISSM, manage policy exceptions
+4. **Admin tab** — Onboard tenants, manage users/groups, rotate secrets, configure SSO
+5. **Compliance tab** — Generate live compliance reports, view NIST controls, download ATO packages
 
-See `scripts/sre-deploy-app.sh --help` for all options. The script generates a Flux HelmRelease, commits to Git, and Flux auto-deploys.
+No command-line tools are needed for day-to-day operations.
 
 For a full working three-tier reference application (React + Go + PostgreSQL), see [`apps/demo-fullstack/`](../../apps/demo-fullstack/).

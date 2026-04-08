@@ -51,35 +51,15 @@ Check deployment status in the dashboard under **Applications**.
 
 ## For SRE Operators
 
-After the bundle passes the DSOP pipeline, deploy with:
+Deployment is managed entirely through the **SRE Dashboard**:
 
-```bash
-./scripts/sre-deploy-app.sh \
-  --name acme-portal --team team-demo \
-  --image harbor.apps.sre.example.com/team-demo/acme-portal --tag v3.1.0 \
-  --port 8443 --protocol https \
-  --ingress acme.apps.sre.example.com \
-  --resources large --writable-root \
-  --startup-probe /health --liveness /health --readiness /health
-```
+1. The developer uploads their bundle through the **Deploy tab** (DSOP Wizard)
+2. Review the pipeline run in the **Security tab** → Pipeline Runs
+3. Approve as ISSM if security exceptions are requested
+4. Monitor the deployment in the **Applications tab**
+5. Use the **Operations Cockpit** (click any app → Cockpit) for diagnostics, logs, restart, and scaling
 
-Key operator flags for COTS software:
-
-| Flag | Why It's Needed |
-|------|-----------------|
-| `--protocol https` | Vendor app speaks TLS internally; Istio needs a DestinationRule |
-| `--writable-root` | Vendor writes to temp files, logs, caches at runtime |
-| `--startup-probe` | Java app needs up to 150s to start (5s x 30 retries) |
-
-## Verify
-
-```bash
-# Check pods (startup probe may take up to 2 minutes)
-kubectl get pods -n team-demo -l app.kubernetes.io/name=acme-portal
-
-# Test the endpoint
-curl -sk https://acme.apps.sre.example.com/health
-```
+No command-line tools needed.
 
 ## What the Platform Provides
 

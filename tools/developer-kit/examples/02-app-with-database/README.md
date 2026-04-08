@@ -50,34 +50,15 @@ Check deployment status in the dashboard under **Applications**.
 
 ## For SRE Operators
 
-After the bundle passes the DSOP pipeline, deploy with:
+Deployment is managed entirely through the **SRE Dashboard**:
 
-```bash
-./scripts/sre-deploy-app.sh \
-  --name todo-app \
-  --team team-demo \
-  --image harbor.apps.sre.example.com/team-demo/todo-app \
-  --tag v2.0.0 \
-  --port 8080 \
-  --ingress todo.apps.sre.example.com \
-  --resources medium \
-  --persist /app/data:5Gi \
-  --env DATABASE_URL=postgres://todo:changeme@todo-db:5432/todo?sslmode=disable \
-  --liveness /healthz \
-  --readiness /readyz
-```
+1. The developer uploads their bundle through the **Deploy tab** (DSOP Wizard)
+2. Review the pipeline run in the **Security tab** → Pipeline Runs
+3. Approve as ISSM if security exceptions are requested
+4. Monitor the deployment in the **Applications tab**
+5. Use the **Operations Cockpit** (click any app → Cockpit) for diagnostics, logs, restart, and scaling
 
-## Verify
-
-```bash
-# Check pods and PVC
-kubectl get pods -n team-demo -l app.kubernetes.io/name=todo-app
-kubectl get pvc -n team-demo
-
-# Test the endpoint and health probes
-curl -sk https://todo.apps.sre.example.com/
-curl -sk https://todo.apps.sre.example.com/healthz
-```
+No command-line tools needed.
 
 ## What the Platform Provides
 
