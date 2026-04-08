@@ -13,6 +13,7 @@ import { SsoConfigPanel } from './SsoConfigPanel';
 import { RbacAuditPanel } from './RbacAuditPanel';
 import { SetupWizard } from './SetupWizard';
 import { useUser } from '../../hooks/useUser';
+import { useConfig, serviceUrl } from '../../context/ConfigContext';
 import { fetchUsers, fetchGroups, createGroup, fetchSetupStatus } from '../../api/admin';
 import type { AdminUser, AdminGroup } from '../../types/api';
 
@@ -24,7 +25,47 @@ const ADMIN_TABS = [
   { id: 'credentials', label: 'Credentials' },
   { id: 'secrets', label: 'Secrets' },
   { id: 'sso', label: 'SSO Config' },
+  { id: 'links', label: 'Quick Links' },
 ];
+
+function QuickLinksPanel() {
+  const config = useConfig();
+
+  const services = [
+    { name: 'Keycloak', description: 'Identity & SSO management', icon: '\u{1F510}', url: serviceUrl(config, 'keycloak'), badge: 'Auth' },
+    { name: 'Harbor', description: 'Container registry & scanning', icon: '\u{1F6A2}', url: serviceUrl(config, 'harbor'), badge: 'Registry' },
+    { name: 'Grafana', description: 'Metrics dashboards & logs', icon: '\u{1F4CA}', url: serviceUrl(config, 'grafana'), badge: 'Monitoring' },
+    { name: 'Prometheus', description: 'Metrics & alerting', icon: '\u{1F525}', url: serviceUrl(config, 'prometheus'), badge: 'Monitoring' },
+    { name: 'AlertManager', description: 'Alert routing & silencing', icon: '\u{1F514}', url: serviceUrl(config, 'alertmanager'), badge: 'Alerting' },
+    { name: 'NeuVector', description: 'Runtime security & network', icon: '\u{1F6E1}\uFE0F', url: serviceUrl(config, 'neuvector'), badge: 'Security' },
+    { name: 'OpenBao', description: 'Secrets management', icon: '\u{1F511}', url: serviceUrl(config, 'openbao'), badge: 'Secrets' },
+    { name: 'Loki (via Grafana)', description: 'Log explorer', icon: '\u{1F4DD}', url: `${serviceUrl(config, 'grafana')}/explore`, badge: 'Logging' },
+  ];
+
+  return (
+    <div>
+      <p className="text-xs text-text-dim mb-4">Quick access to all platform management interfaces. Each opens in a new tab.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {services.map((svc) => (
+          <a
+            key={svc.name}
+            href={svc.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-surface border border-border rounded-lg p-4 hover:border-accent transition-colors no-underline group"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">{svc.icon}</span>
+              <h4 className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors">{svc.name}</h4>
+            </div>
+            <p className="text-xs text-text-dim mb-2">{svc.description}</p>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">{svc.badge}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface AdminTabProps {
   active: boolean;
@@ -216,6 +257,8 @@ export function AdminTab({ active }: AdminTabProps) {
       {subTab === 'secrets' && <SecretRotationPanel />}
 
       {subTab === 'sso' && <SsoConfigPanel />}
+
+      {subTab === 'links' && <QuickLinksPanel />}
     </div>
   );
 }

@@ -551,6 +551,83 @@ app.get("/api/health/checks", requireGroups("sre-admins"), async (req, res) => {
   res.json({ timestamp: new Date().toISOString(), summary, checks });
 });
 
+// GET /api/security/posture-score — Composite security posture score (0-100)
+app.get("/api/security/posture-score", requireGroups("sre-admins", "issm", "developers"), async (req, res) => {
+  try {
+    let score = 100;
+    const factors = [];
+
+    // Factor 1: Policy violations
+    try {
+      const reports = await customApi.listClusterCustomObject("wgpolicyk8s.io", "v1alpha2", "clusterpolicyreports").catch(() => null);
+      const violations = reports?.body?.items?.[0]?.results?.filter(r => r.result === "fail")?.length || 0;
+      const deduction = Math.min(violations * 3, 30);
+      score -= deduction;
+      factors.push({ factor: "Policy Violations", count: violations, deduction, detail: `${violations} violations (-${deduction})` });
+    } catch {
+      factors.push({ factor: "Policy Violations", count: 0, deduction: 0, detail: "Unable to check" });
+    }
+
+    // Factor 2: CrashLooping pods
+    try {
+      const pods = await k8sApi.listPodForAllNamespaces();
+      const crashLooping = (pods.body.items || []).filter(p => (p.status?.containerStatuses || []).some(c => c.state?.waiting?.reason === "CrashLoopBackOff")).length;
+      const deduction = Math.min(crashLooping * 5, 20);
+      score -= deduction;
+      factors.push({ factor: "CrashLooping Pods", count: crashLooping, deduction, detail: `${crashLooping} pods (-${deduction})` });
+    } catch {
+      factors.push({ factor: "CrashLooping Pods", count: 0, deduction: 0, detail: "Unable to check" });
+    }
+
+    // Factor 3: Expiring certificates
+    try {
+      const certs = await customApi.listClusterCustomObject("cert-manager.io", "v1", "certificates");
+      const expiring = (certs.body.items || []).filter(c => {
+        const notAfter = c.status?.notAfter;
+        if (!notAfter) return false;
+        return (new Date(notAfter).getTime() - Date.now()) / (1000 * 60 * 60 * 24) < 30;
+      }).length;
+      const deduction = Math.min(expiring * 5, 15);
+      score -= deduction;
+      factors.push({ factor: "Expiring Certificates", count: expiring, deduction, detail: `${expiring} certs within 30d (-${deduction})` });
+    } catch {
+      factors.push({ factor: "Expiring Certificates", count: 0, deduction: 0, detail: "Unable to check" });
+    }
+
+    // Factor 4: Pipeline failure rate
+    try {
+      const stats = await db.getStats();
+      const total = stats?.totalRuns || 0;
+      const failed = stats?.byStatus?.failed || 0;
+      const failRate = total > 0 ? (failed / total) * 100 : 0;
+      const deduction = Math.min(Math.round(failRate / 5), 15);
+      score -= deduction;
+      factors.push({ factor: "Pipeline Failures", count: failed, deduction, detail: `${failed}/${total} failed (-${deduction})` });
+    } catch {
+      factors.push({ factor: "Pipeline Failures", count: 0, deduction: 0, detail: "Unable to check" });
+    }
+
+    // Factor 5: Flux reconciliation failures
+    try {
+      const hrs = await customApi.listClusterCustomObject("helm.toolkit.fluxcd.io", "v2", "helmreleases");
+      const notReady = (hrs.body.items || []).filter(h => !(h.status?.conditions || []).some(c => c.type === "Ready" && c.status === "True")).length;
+      const deduction = Math.min(notReady * 5, 20);
+      score -= deduction;
+      factors.push({ factor: "Unhealthy HelmReleases", count: notReady, deduction, detail: `${notReady} not ready (-${deduction})` });
+    } catch {
+      factors.push({ factor: "Unhealthy HelmReleases", count: 0, deduction: 0, detail: "Unable to check" });
+    }
+
+    score = Math.max(0, Math.min(100, score));
+    const grade = score >= 90 ? "A" : score >= 80 ? "B" : score >= 70 ? "C" : score >= 60 ? "D" : "F";
+
+    res.json({ score, grade, factors, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error("[security] Posture score error:", err);
+    res.status(500).json({ error: "Failed to calculate security posture" });
+  }
+});
+
 // Ingress routes
 app.get("/api/ingress", async (req, res) => {
   try {

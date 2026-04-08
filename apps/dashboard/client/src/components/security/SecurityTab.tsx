@@ -49,6 +49,7 @@ export function SecurityTab({ active, onOpenApp }: SecurityTabProps) {
   const [policyViolations, setPolicyViolations] = useState<PolicyViolation[]>([]);
   const [violationSummary, setViolationSummary] = useState<PolicyViolationSummary>({ critical: 0, high: 0, medium: 0, low: 0, total: 0 });
   const [violationNsFilter, setViolationNsFilter] = useState('');
+  const [postureScore, setPostureScore] = useState<{ score: number; grade: string; factors: { factor: string; count: number; deduction: number; detail: string }[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
@@ -116,11 +117,23 @@ export function SecurityTab({ active, onOpenApp }: SecurityTabProps) {
     }
   }, []);
 
+  const loadPostureScore = useCallback(async () => {
+    try {
+      const res = await fetch('/api/security/posture-score', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setPostureScore(data);
+      }
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setError(null);
-    await Promise.all([loadStats(), loadRuns(), loadPendingReviews(), loadSecurityEvents(), loadPolicyViolations()]);
+    await Promise.all([loadStats(), loadRuns(), loadPendingReviews(), loadSecurityEvents(), loadPolicyViolations(), loadPostureScore()]);
     setInitialLoading(false);
-  }, [loadStats, loadRuns, loadPendingReviews, loadSecurityEvents, loadPolicyViolations]);
+  }, [loadStats, loadRuns, loadPendingReviews, loadSecurityEvents, loadPolicyViolations, loadPostureScore]);
 
   useEffect(() => {
     if (!active) return;
@@ -371,11 +384,42 @@ export function SecurityTab({ active, onOpenApp }: SecurityTabProps) {
               Security Posture
             </h2>
             {initialLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {/* Posture Score Card */}
+                <div className="card-base p-4 text-center row-span-1">
+                  <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Posture Score</h3>
+                  <div className={`text-3xl font-bold ${
+                    !postureScore ? 'text-text-dim' :
+                    postureScore.score >= 80 ? 'text-green' :
+                    postureScore.score >= 60 ? 'text-yellow' : 'text-red'
+                  }`}>
+                    {postureScore ? postureScore.score : '--'}
+                  </div>
+                  {postureScore && (
+                    <div className={`inline-block text-xs font-semibold mt-1 px-2 py-0.5 rounded ${
+                      postureScore.score >= 80 ? 'bg-green/15 text-green' :
+                      postureScore.score >= 60 ? 'bg-yellow/15 text-yellow' : 'bg-red/15 text-red'
+                    }`}>
+                      Grade: {postureScore.grade}
+                    </div>
+                  )}
+                  {postureScore && postureScore.factors.length > 0 && (
+                    <div className="mt-2 text-left space-y-0.5">
+                      {postureScore.factors.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between text-[10px]">
+                          <span className="text-text-dim truncate mr-1">{f.factor}</span>
+                          <span className={f.deduction > 0 ? 'text-red font-medium' : 'text-green'}>
+                            {f.deduction > 0 ? `-${f.deduction}` : '0'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="card-base p-4 text-center">
                   <h3 className="text-[11px] uppercase tracking-[1px] text-text-dim mb-1">Pipeline Pass Rate</h3>
                   <div className={`text-2xl font-bold ${passRate >= 80 ? 'text-green' : passRate >= 50 ? 'text-yellow' : 'text-red'}`}>
