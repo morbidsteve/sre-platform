@@ -31,12 +31,16 @@ spec:
   app:
     type: web-app       # One of: web-app, api-service, worker, cronjob
     image: images/app.tar   # [REQUIRED] Path to docker-save tar inside the bundle.
-    port: 8080          # Port your app listens on inside the container.
-    resources: small    # Preset: small (50m/64Mi), medium (250m/256Mi), large (500m/512Mi)
+    port: 8080          # Your app's port. Node.js: 3000, Flask: 5000, Go: 8080, Java: 8080, Django: 8000
+    resources: small    # small: 0.1 CPU / 128MB RAM (scripts, small APIs)
+                        # medium: 0.25 CPU / 256MB RAM (Node.js, Python, Go)
+                        # large: 0.5 CPU / 512MB RAM (Java, .NET, heavy workloads)
     ingress: ""         # External hostname (e.g., "myapp.apps.sre.example.com"). Omit for internal-only.
     probes:
-      liveness: /healthz    # HTTP path — if this fails, pod is restarted.
-      readiness: /readyz    # HTTP path — if this fails, pod stops receiving traffic.
+      liveness: /healthz    # If this URL stops returning 200, your app is restarted.
+                            # Don't have a health endpoint? Use "/" (your main page).
+      readiness: /readyz    # If this URL fails, traffic stops flowing to this instance.
+                            # Same as liveness is fine for most apps.
     # schedule: "0 * * * *"  # Cron expression (only for type: cronjob)
 
   # -- Additional services (separate deployments) ------------------------------
@@ -80,8 +84,8 @@ spec:
   # These run as separate pods managed by the platform (not your responsibility).
   services:
     database:
-      enabled: false        # PostgreSQL database. Set to true if your app needs a DB.
-      size: small           # small (256Mi), medium (1Gi), large (4Gi)
+      enabled: false        # Managed PostgreSQL. Your app gets DATABASE_URL automatically.
+      size: small           # small: good for dev/testing. medium: production. large: heavy queries.
     redis:
       enabled: false        # Redis cache. Set to true if your app needs caching.
       size: small
@@ -112,11 +116,12 @@ spec:
   # app absolutely requires it. Relaxed settings require ISSM approval in the
   # DSOP pipeline.
   security:
-    runAsNonRoot: true              # Set to false if app must run as root (uid 0).
-    readOnlyRootFilesystem: true    # Set to false if app writes to its own filesystem.
-    capabilities: []                # Linux capabilities to add. Default drops ALL.
-      # Common: CHOWN, FOWNER, SETGID, SETUID (needed for root images)
-      # Uncommon: NET_BIND_SERVICE (bind ports < 1024), SYS_PTRACE (debugging)
+    runAsNonRoot: true              # Most apps work fine as non-root. Only set false for legacy
+                                    # apps that need uid 0 (requires ISSM approval).
+    readOnlyRootFilesystem: true    # Your app can still write to /tmp and mounted volumes.
+                                    # Set false if your app writes to its own install directory.
+    capabilities: []                # You probably don't need any. If your app fails with
+                                    # "Operation not permitted", you may need: CHOWN, FOWNER, SETGID, SETUID
 
   # -- Source code -------------------------------------------------------------
   source:
@@ -124,4 +129,7 @@ spec:
     # language: go      # Source language hint: go, node, python, java, rust, etc.
 
   # -- Classification ----------------------------------------------------------
-  classification: UNCLASSIFIED  # UNCLASSIFIED, CUI, CONFIDENTIAL, SECRET
+  classification: UNCLASSIFIED  # Ask your security officer if unsure.
+                                # UNCLASSIFIED: public/non-sensitive data
+                                # CUI: Controlled Unclassified Information
+                                # CONFIDENTIAL/SECRET: classified systems only

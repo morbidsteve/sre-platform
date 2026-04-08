@@ -40,6 +40,15 @@ tar czf n8n.bundle.tar.gz bundle.yaml images/
 
 Or use the visual builder: open `bundle-builder.html` in your browser.
 
+## What Happens After You Submit
+
+1. Upload your `.bundle.tar.gz` through the DSOP Wizard in the dashboard
+2. The platform automatically scans your image for vulnerabilities and secrets
+3. An ISSM (security reviewer) reviews and approves the deployment
+4. Your app goes live with HTTPS, monitoring, and logging -- all automatic
+
+Check deployment status in the dashboard under **Applications**.
+
 ## For SRE Operators
 
 After the bundle passes the DSOP pipeline, deploy with:
