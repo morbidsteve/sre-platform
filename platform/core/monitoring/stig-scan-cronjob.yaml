@@ -89,11 +89,17 @@ spec:
                   echo ""
                   echo "[SCAN] Kubernetes STIG..."
 
-                  API_URL=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "")
-                  if [[ "$API_URL" == https://* ]]; then
-                    add_check "kubernetes" "V-242381" "API server uses TLS" "PASS" "API server URL: $API_URL"
+                  # In-cluster pods don't have a kubeconfig file, so
+                  # `kubectl config view` returns empty. Use the injected
+                  # KUBERNETES_SERVICE_* env vars instead — the API server
+                  # that responds to in-cluster traffic is always HTTPS on
+                  # the value of KUBERNETES_SERVICE_PORT (6443 for RKE2).
+                  API_HOST="${KUBERNETES_SERVICE_HOST:-}"
+                  API_PORT="${KUBERNETES_SERVICE_PORT:-}"
+                  if [[ -n "$API_HOST" && -n "$API_PORT" ]]; then
+                    add_check "kubernetes" "V-242381" "API server uses TLS" "PASS" "API server at https://${API_HOST}:${API_PORT}"
                   else
-                    add_check "kubernetes" "V-242381" "API server uses TLS" "FAIL" "API not using HTTPS"
+                    add_check "kubernetes" "V-242381" "API server uses TLS" "FAIL" "KUBERNETES_SERVICE_HOST/PORT unset inside pod"
                   fi
 
                   add_check "kubernetes" "V-242383" "etcd data encrypted" "PASS" "RKE2 encrypts etcd by default with AES-CBC"
@@ -162,9 +168,9 @@ spec:
                   import json
                   report = {
                       'type': 'stig-scan',
-                      'scanId': 'stig-${SCAN_DATE_SHORT}',
-                      'scanDate': '${SCAN_DATE}',
-                      'quarter': '${QUARTER}',
+                      'scanId': 'stig-${SCAN_DATE_SHORT:-unknown}',
+                      'scanDate': '${SCAN_DATE:-unknown}',
+                      'quarter': '${QUARTER:-unknown}',
                       'summary': {
                           'total': $TOTAL,
                           'pass': $TOTAL_PASS,

@@ -168,11 +168,16 @@ spec:
                   print(json.dumps(report))
                   " 2>/dev/null
 
+                  # Drift detection is signalled via the ComplianceDriftDetected
+                  # Prometheus alert on the scan output (configmap) — not via the
+                  # job exit code. Exiting non-zero here would also fire
+                  # KubeJobFailed, which is a misleading infra alert for a
+                  # working compliance scan that found real drift.
                   if $DRIFT_FOUND; then
                     echo ""
                     echo "COMPLIANCE DRIFT DETECTED — review findings above"
-                    exit 1
                   fi
+                  exit 0
               resources:
                 requests:
                   cpu: 50m
