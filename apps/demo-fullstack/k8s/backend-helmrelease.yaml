@@ -69,7 +69,11 @@ spec:
     autoscaling:
       enabled: false
     serviceMonitor:
-      enabled: true
+      # Disabled: demo-backend does not expose /metrics on port 9090
+      # (app is a thin Flask service without a Prometheus client).
+      # Re-enable once the app exports /metrics, or switch the SM to
+      # target the Istio envoy-prom port 15090 for request-level metrics.
+      enabled: false
       interval: "15s"
       path: /metrics
     networkPolicy:

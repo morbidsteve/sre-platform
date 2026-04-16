@@ -31,6 +31,8 @@ spec:
     - ports:
         - port: 8000    # Kyverno metrics (admission/background/reports/cleanup controllers)
           protocol: TCP
+        - port: 9187    # CNPG postgres-exporter (pipeline-db in sre-dashboard)
+          protocol: TCP
         - port: 3100    # Loki, Tempo
           protocol: TCP
         - port: 3500    # Loki canary
