@@ -142,7 +142,9 @@ spec:
                   echo "[COLLECT] NetworkPolicy coverage..."
                   NS_TOTAL=0
                   NS_COVERED=0
-                  for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -v "^kube-\|^default$"); do
+                  # grep -vE is POSIX; busybox grep on alpine does not accept GNU \| alternation
+                  NS_LIST=$(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -vE "^(kube-|default$)" || true)
+                  for ns in $NS_LIST; do
                       NS_TOTAL=$((NS_TOTAL + 1))
                       NP=$(kubectl get networkpolicy -n "$ns" --no-headers 2>/dev/null | wc -l)
                       if [ "$NP" -gt 0 ]; then
@@ -187,14 +189,14 @@ spec:
                   with open('/tmp/policy.json') as f: policies = json.load(f)
                   with open('/tmp/cert.json') as f: certs = json.load(f)
                   with open('/tmp/node.json') as f: nodes = json.load(f)
-                  ns_total = ${NS_TOTAL}
-                  ns_covered = ${NS_COVERED}
+                  ns_total = ${NS_TOTAL:-0}
+                  ns_covered = ${NS_COVERED:-0}
                   report = {
                       'scan_date': '${SCAN_DATE}',
                       'components': components,
                       'policies': policies,
                       'certificates': certs,
-                      'mtls_mode': '${MTLS_MODE}',
+                      'mtls_mode': '${MTLS_MODE:-NONE}',
                       'network_policy_coverage': {
                           'total_namespaces': ns_total,
                           'covered_namespaces': ns_covered,
