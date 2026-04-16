@@ -64,6 +64,12 @@ spec:
                   name: harbor-admin-creds
                   key: password
                   optional: true
+            - name: SRE_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sre-admin-creds
+                  key: password
+                  optional: true
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

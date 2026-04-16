@@ -20,4 +20,7 @@ data:
   SRE_GATEWAY_IP: "192.168.2.200"
   SRE_METALLB_RANGE: "192.168.2.200-192.168.2.210"
   SRE_KEYCLOAK_PROXY_IP: "10.43.189.238"
-  SRE_OPENBAO_OIDC_SECRET: "LMEeknLI2RKfPwzhIPhUZlFk4PUEexb9"
+  # SRE_OPENBAO_OIDC_SECRET removed — Keycloak OIDC client secret for OpenBao
+  # is now synced from OpenBao path `sre/platform/openbao-oidc` into the
+  # `openbao-oidc-client` Secret via ExternalSecret in the openbao namespace.
+  # See platform/core/openbao/oidc-externalsecret.yaml.

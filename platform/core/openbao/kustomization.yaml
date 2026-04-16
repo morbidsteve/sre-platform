@@ -8,3 +8,4 @@ resources:
   - network-policies/default-deny.yaml
   - network-policies/allow-openbao.yaml
   - auto-unseal-cronjob.yaml
+  - oidc-externalsecret.yaml

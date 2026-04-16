@@ -1,19 +1,49 @@
 ---
 # OAuth2 Proxy deployment — external authentication gateway for Istio ext-authz
 # NIST AC-2, AC-3, IA-2, IA-8 (Identification & Authentication)
-apiVersion: v1
-kind: Secret
+#
+# Credentials are synced from OpenBao via External Secrets Operator.
+# Seed OpenBao path `sre/platform/oauth2-proxy` with keys:
+#   - client-id      (e.g., "oauth2-proxy")
+#   - client-secret  (Keycloak OIDC client secret for the oauth2-proxy client)
+#   - cookie-secret  (32-byte random, base64 or hex; used to encrypt session cookie)
+#
+# Example seed command:
+#   vault kv put sre/platform/oauth2-proxy \
+#     client-id=oauth2-proxy \
+#     client-secret=<keycloak-oauth2-proxy-client-secret> \
+#     cookie-secret=$(openssl rand -base64 32)
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
 metadata:
   name: oauth2-proxy-credentials
   namespace: oauth2-proxy
   labels:
     app.kubernetes.io/part-of: sre-platform
     app.kubernetes.io/component: oauth2-proxy
-type: Opaque
-stringData:
-  client-id: "oauth2-proxy"
-  client-secret: "TtZuIm3Igj088TtY4cw3xfXf5U1I8f9z"
-  cookie-secret: "lHFRQGWndLTApgdtW6/Z2ENX5VskZcw7"
+  annotations:
+    sre.io/nist-controls: "IA-5, SC-28"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-backend
+    kind: ClusterSecretStore
+  target:
+    name: oauth2-proxy-credentials
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: sre/platform/oauth2-proxy
+        property: client-id
+    - secretKey: client-secret
+      remoteRef:
+        key: sre/platform/oauth2-proxy
+        property: client-secret
+    - secretKey: cookie-secret
+      remoteRef:
+        key: sre/platform/oauth2-proxy
+        property: cookie-secret
 
 ---
 apiVersion: apps/v1

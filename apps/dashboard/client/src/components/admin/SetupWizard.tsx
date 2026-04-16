@@ -158,8 +158,7 @@ export function SetupWizard({ onComplete, onDismiss }: SetupWizardProps) {
                     <Badge variant="yellow">Default</Badge>
                     <span className="text-sm text-text-primary">{svc}</span>
                     <span className="text-xs text-text-dim">
-                      {svc === 'Harbor' && '(current: Harbor12345)'}
-                      {svc === 'Grafana' && '(current: prom-operator)'}
+                      {(svc === 'Harbor' || svc === 'Grafana') && '(default password in use)'}
                     </span>
                   </div>
                 ))}

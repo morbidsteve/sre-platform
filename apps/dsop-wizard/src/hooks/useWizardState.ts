@@ -950,8 +950,9 @@ export function useWizardState() {
         setState((prev) => ({
           ...prev,
           isDeploying: false,
-        error: err instanceof Error ? err.message : 'Deployment failed',
-      }));
+          error: err instanceof Error ? err.message : 'Deployment failed',
+        }));
+      }
     }
   }, [state.appInfo.name, state.source.gitUrl, state.source.branch, state.appInfo.team, state.pipelineRunId]);
 

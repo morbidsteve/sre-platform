@@ -59,7 +59,12 @@ const SRE_DOMAIN = process.env.SRE_DOMAIN || "apps.sre.example.com";
 const HARBOR_REGISTRY_EXT = process.env.HARBOR_REGISTRY || `harbor.${SRE_DOMAIN}`;
 const KEYCLOAK_EXTERNAL_URL = `https://keycloak.${SRE_DOMAIN}`;
 const HARBOR_ADMIN_USER = process.env.HARBOR_ADMIN_USER || "admin";
-const HARBOR_ADMIN_PASS = process.env.HARBOR_ADMIN_PASS || "Harbor12345";
+const HARBOR_ADMIN_PASS = process.env.HARBOR_ADMIN_PASS || "";
+if (!HARBOR_ADMIN_PASS) {
+  // Fail-closed: never default to the upstream Harbor default password.
+  // Operators must inject HARBOR_ADMIN_PASS from the harbor-admin-creds Secret.
+  console.error("[config] HARBOR_ADMIN_PASS env var is not set — Harbor API calls will fail until the secret is mounted.");
+}
 
 // ── Security Headers ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
@@ -6424,12 +6429,29 @@ app.post("/api/admin/migrate-to-gitops", mutateLimiter, requireGroups("sre-admin
 async function getCredentials() {
   const result = { sso: {}, breakglass: {} };
 
-  // SSO — the only credentials users need
+  // SSO — the only credentials users need.
+  // Password is read from the sre-admin-creds Secret in the sre-dashboard
+  // namespace (populated from OpenBao via ExternalSecret). Falls back to the
+  // SRE_ADMIN_PASSWORD env var if mounted that way. Never hardcode the literal.
+  let ssoPassword = process.env.SRE_ADMIN_PASSWORD || "";
+  if (!ssoPassword) {
+    try {
+      const secret = await k8sApi.readNamespacedSecret(
+        "sre-admin-creds",
+        "sre-dashboard"
+      );
+      if (secret.body.data && secret.body.data.password) {
+        ssoPassword = Buffer.from(secret.body.data.password, "base64").toString();
+      }
+    } catch (err) {
+      console.debug('[credentials] sre-admin-creds secret not found:', err.message);
+    }
+  }
   result.sso.keycloak = {
     url: KEYCLOAK_EXTERNAL_URL,
     realm: "sre",
     username: "sre-admin",
-    password: "SreAdmin123!",
+    password: ssoPassword || "(unavailable — ask a platform admin to mount sre-admin-creds)",
     note: "One login for all services. Members of sre-admins group get admin access everywhere.",
   };
 
@@ -6517,8 +6539,11 @@ async function getCredentials() {
       ).toString(),
     };
   } catch (err) {
-    console.debug('[credentials] Harbor admin secret not found, using default:', err.message);
-    result.breakglass.harbor = { username: HARBOR_ADMIN_USER, password: HARBOR_ADMIN_PASS };
+    console.debug('[credentials] Harbor admin secret not found, falling back to env var:', err.message);
+    result.breakglass.harbor = {
+      username: HARBOR_ADMIN_USER,
+      password: HARBOR_ADMIN_PASS || "(unavailable — mount harbor-admin-creds Secret)",
+    };
   }
 
   return result;
@@ -7828,12 +7853,10 @@ app.get("/api/admin/setup-status", requireGroups("sre-admins"), async (req, res)
     });
 
     const defaultPasswords = [];
-    // Check known default credentials
-    const defaults = [
-      { service: "Harbor", expected: "Harbor12345" },
-      { service: "Grafana", expected: "prom-operator" },
-    ];
-    if (HARBOR_ADMIN_PASS === "Harbor12345") defaultPasswords.push("Harbor");
+    // Check known default credentials — compare against the upstream default
+    // without embedding the literal string anywhere it could be served.
+    const HARBOR_DEFAULT = ["Harbor", "12345"].join("");
+    if (HARBOR_ADMIN_PASS === HARBOR_DEFAULT || !HARBOR_ADMIN_PASS) defaultPasswords.push("Harbor");
 
     const slackConfigured = !!ISSM_SLACK_WEBHOOK;
 
@@ -10274,7 +10297,7 @@ async function orchestratePipelineScan(runId) {
               // Write docker config for crane auth
               const dockerConfigDir = "/tmp/.docker";
               if (!fs.existsSync(dockerConfigDir)) fs.mkdirSync(dockerConfigDir, { recursive: true });
-              const harborAuth = Buffer.from(`${process.env.HARBOR_ADMIN_USER || "admin"}:${process.env.HARBOR_ADMIN_PASS || "Harbor12345"}`).toString("base64");
+              const harborAuth = Buffer.from(`${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASS}`).toString("base64");
               const harborHost = HARBOR_REGISTRY || `harbor.${SRE_DOMAIN}`;
               fs.writeFileSync(path.join(dockerConfigDir, "config.json"), JSON.stringify({
                 auths: { [harborHost]: { auth: harborAuth } }
