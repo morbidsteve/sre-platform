@@ -52,8 +52,11 @@ spec:
           initialDelaySeconds: 3
           periodSeconds: 5
       env:
+        # DATABASE_URL is synthesized by the demo-db-url ExternalSecret from
+        # OpenBao creds at sre/demo-fullstack/postgres. The sre-lib env helper
+        # reads the `value` key of the target Secret named below.
         - name: DATABASE_URL
-          value: "postgres://taskboard:changeme-use-external-secrets@demo-db.team-demo.svc.cluster.local:5432/taskboard?sslmode=disable"
+          secretRef: demo-db-url
         - name: PORT
           value: "9090"
     imagePullSecrets:

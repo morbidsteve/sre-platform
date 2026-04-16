@@ -119,8 +119,8 @@ declare -a PLATFORM_IMAGES=(
   "docker.io/neuvector/controller:5.4.0"
   "docker.io/neuvector/enforcer:5.4.0"
   "docker.io/neuvector/manager:5.4.0"
-  "docker.io/neuvector/scanner:latest"
-  "docker.io/neuvector/updater:latest"
+  "docker.io/neuvector/scanner:5.4.0"
+  "docker.io/neuvector/updater:5.4.0"
 
   # Keycloak 24.8.1 (Bitnami chart)
   "docker.io/bitnamilegacy/keycloak:26.3.2-debian-12-r0"

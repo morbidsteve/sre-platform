@@ -85,11 +85,17 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
   await simulateDelay(1500);
 
   if (source.type === 'container') {
-    const imageName = (source.imageUrl || 'app').split('/').pop()?.split(':')[0] || 'app';
+    if (!source.imageUrl) {
+      throw new Error('Container image URL is required (must include an explicit tag, e.g. repo/app:1.2.3 — :latest is rejected by platform policy).');
+    }
+    if (!source.imageUrl.includes(':') || source.imageUrl.endsWith(':latest')) {
+      throw new Error(`Container image "${source.imageUrl}" must be pinned to an explicit version tag. Platform enforces pinned tags via Kyverno — :latest is not allowed.`);
+    }
+    const imageName = source.imageUrl.split('/').pop()?.split(':')[0] || 'app';
     return {
       repoType: 'container',
       services: [
-        { name: imageName, image: source.imageUrl || 'app:latest', port: 8080, type: 'application' },
+        { name: imageName, image: source.imageUrl, port: 8080, type: 'application' },
       ],
       platformServices: [],
       externalAccess: [
@@ -118,10 +124,13 @@ export async function analyzeSource(source: AppSource): Promise<DetectionResult>
     ?.replace('.git', '')
     ?.replace(/^docker-/, '') || 'app';
 
+  // Dockerfile-based source: image does not yet exist — the pipeline will build and tag it
+  // from the git SHA. We return an UNTAGGED placeholder that must be replaced before deploy.
+  // Platform Kyverno policy rejects any non-pinned tag, so this fails loud if it ever reaches the cluster.
   return {
     repoType: 'dockerfile',
     services: [
-      { name: repoName, image: `${repoName}:latest`, port: 8080, type: 'application' },
+      { name: repoName, image: `${repoName}:UNTAGGED`, port: 8080, type: 'application' },
     ],
     platformServices: [],
     externalAccess: [
@@ -290,7 +299,10 @@ export async function runSecurityPipeline(
   onUpdate([...updated]);
 
   // Gate 2: SBOM (Syft) — REAL
-  const imageName = `${getConfig().registryUrl}/platform/${(repoUrl || '').split('/').pop()?.replace('.git', '') || 'app'}:latest`;
+  // Tag the image with the branch name (resolves to the just-built branch tag in Harbor).
+  // Platform policy forbids :latest, so use the branch as the pinned tag reference.
+  const imageBase = `${getConfig().registryUrl}/platform/${(repoUrl || '').split('/').pop()?.replace('.git', '') || 'app'}`;
+  const imageName = `${imageBase}:${repoBranch || 'main'}`;
   await runGate(1, '/security/sbom', { image: imageName }, 'passed', 'SBOM generated (SPDX + CycloneDX)');
 
   // Gate 4: CVE Scan (Trivy) — via Harbor auto-scan, show results from proxy

@@ -245,14 +245,14 @@ Istio handles all TLS termination and mTLS between services. Remove any TLS conf
 
 ### No :latest tags
 
-The platform does not allow `:latest` image tags. All images built by the platform are tagged with a specific identifier. If you reference external images in your compose file, pin them to a specific version:
+The platform enforces pinned image tags via Kyverno — never commit `:latest`. All images built by the platform are tagged with a specific identifier. If you reference external images in your compose file, pin them to a specific version:
 
 ```yaml
-# Wrong
-image: postgres:latest
+# Wrong (rejected by admission control)
+image: postgres:16  # unpinned minor — will drift
 
 # Right
-image: postgres:16.2-alpine
+image: postgres:16-alpine
 ```
 
 ---
@@ -296,7 +296,7 @@ Istio terminates TLS at the gateway. Your nginx config should be plain HTTP only
 Nginx needs to write to `/var/cache/nginx`, `/var/run`, and `/tmp` at runtime. Since the root filesystem is read-only, handle this in your Dockerfile:
 
 ```dockerfile
-FROM nginx:1.25-alpine
+FROM nginx:1.27-alpine
 
 # Create writable directories owned by non-root user
 RUN mkdir -p /var/cache/nginx /var/run /tmp && \
@@ -471,7 +471,7 @@ services:
       - db
 
   db:
-    image: postgres:latest
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: supersecret
@@ -490,7 +490,7 @@ WORKDIR /app
 COPY . .
 RUN npm ci && npm run build
 
-FROM nginx:latest
+FROM nginx:1.27-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY certs/ /etc/nginx/ssl/
@@ -528,7 +528,7 @@ CMD ["node", "src/index.js"]
 2. **SSL certificates bundled in the image** -- unnecessary and a security concern
 3. **Runs as root** -- both containers run as root by default, violating Kyverno policies
 4. **Host volume mounts** -- `./certs` and `./data` mounts will not work in Kubernetes
-5. **`:latest` image tags** -- not allowed by platform policy
+5. **Unpinned image tags are easy to introduce** -- the platform enforces pinned tags via Kyverno; `:latest` or drifting major-only tags will be rejected
 6. **Hardcoded secrets** -- `supersecret` password in plain text
 
 ### After: SRE-ready
@@ -549,7 +549,7 @@ services:
       DATABASE_URL: postgres://myapp:changeme@db:5432/myapp
 
   db:
-    image: postgres:16.2-alpine
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: myapp
       POSTGRES_PASSWORD: changeme
@@ -565,7 +565,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.25-alpine
+FROM nginx:1.27-alpine
 
 # Set up writable directories for non-root nginx
 RUN mkdir -p /var/cache/nginx/client_temp /var/run /tmp && \

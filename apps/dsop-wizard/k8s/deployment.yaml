@@ -49,20 +49,24 @@ spec:
       imagePullSecrets:
         - name: harbor-pull-creds
       securityContext:
-        runAsNonRoot: false
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: wizard
-          # NOTE: Uses nginx:1.27-alpine which runs as root.
-          # To run as non-root (runAsUser: 101), switch Dockerfile base
-          # image to nginxinc/nginx-unprivileged:1.27-alpine (like portal).
+          # Dockerfile uses nginxinc/nginx-unprivileged:1.27-alpine which
+          # runs as UID 101 and listens on port 8080 without needing root.
           image: harbor.apps.sre.example.com/platform/dsop-wizard:v3.0.36
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
             capabilities:
               drop:
                 - ALL
@@ -88,3 +92,17 @@ spec:
               port: 8080
             initialDelaySeconds: 2
             periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}

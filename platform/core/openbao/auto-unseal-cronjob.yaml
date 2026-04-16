@@ -193,8 +193,13 @@ spec:
                     echo "OIDC auth already enabled."
                   fi
 
-                  # Read OIDC client secret from K8s secret or domain config
-                  OIDC_SECRET=$(kubectl get secret openbao-oidc-client -n openbao -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "${SRE_OPENBAO_OIDC_SECRET}")
+                  # Read OIDC client secret from K8s secret (synced from OpenBao
+                  # path sre/platform/openbao-oidc by ExternalSecret).
+                  OIDC_SECRET=$(kubectl get secret openbao-oidc-client -n openbao -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "")
+                  if [ -z "$OIDC_SECRET" ]; then
+                    echo "WARNING: openbao-oidc-client Secret not found or empty — OIDC auth config skipped."
+                    echo "Seed OpenBao path sre/platform/openbao-oidc with key 'client-secret' to enable."
+                  fi
 
                   echo "Configuring OIDC auth..."
                   kubectl exec -n openbao "$TARGET_POD" -- \
