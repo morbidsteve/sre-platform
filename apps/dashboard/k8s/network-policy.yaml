@@ -108,3 +108,31 @@ spec:
       ports:
         - port: 3001
           protocol: TCP
+---
+# Allow CNPG controller and Prometheus to scrape postgres-exporter on
+# pipeline-db pods (port 9187). Without this, the CNPG cluster reports
+# "Instance Status Extraction Error" and the Prometheus target flaps.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-pipeline-db-metrics
+  namespace: sre-dashboard
+  labels:
+    app.kubernetes.io/part-of: sre-platform
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: pipeline-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - port: 9187
+          protocol: TCP
