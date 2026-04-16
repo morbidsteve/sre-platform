@@ -70,7 +70,17 @@ spec:
           - reports-controller
           - cleanup-controller
   policyTypes:
+    - Ingress
     - Egress
+  ingress:
+    # Prometheus scraping of per-controller metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8000
+          protocol: TCP
   egress:
     # Kubernetes API
     - to:
