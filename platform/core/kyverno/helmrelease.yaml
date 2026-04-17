@@ -28,14 +28,19 @@ spec:
     remediation:
       retries: 3
   values:
-    # Note: serviceMonitor.enabled is NOT set on controllers here because
-    # enabling it triggers a Helm upgrade whose post-upgrade hook
-    # (kyverno-clean-reports) times out on this cluster, leaving the
-    # HelmRelease in RetriesExceeded and cascading NotReady downstream.
-    # The metrics Services already exist (kyverno-svc-metrics,
-    # kyverno-{background,reports,cleanup}-controller-metrics), so we
-    # create ServiceMonitors in a standalone manifest alongside this
-    # HelmRelease (see kyverno-servicemonitors.yaml).
+    # Note: ServiceMonitors are created via standalone manifests (see
+    # kyverno-servicemonitors.yaml) rather than chart values.
+    #
+    # Disable the chart's pre-delete and post-upgrade cleanup hooks.
+    # Their default image (`bitnami/kubectl:1.30.2`) is no longer
+    # pullable on Docker Hub (Bitnami moved most images to a paid
+    # registry in 2025), which makes both hooks ImagePullBackOff and
+    # blocks every Helm upgrade/uninstall. Reinstate after bumping the
+    # chart version to one that replaces the Bitnami image.
+    webhooksCleanup:
+      enabled: false
+    policyReportsCleanup:
+      enabled: false
     admissionController:
       replicas: 3
       resources:
