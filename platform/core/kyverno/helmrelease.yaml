@@ -41,6 +41,9 @@ spec:
       enabled: false
     policyReportsCleanup:
       enabled: false
+    crds:
+      migration:
+        enabled: false
     admissionController:
       replicas: 3
       resources:
