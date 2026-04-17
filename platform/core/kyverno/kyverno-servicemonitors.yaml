@@ -1,0 +1,108 @@
+---
+# Standalone ServiceMonitors for Kyverno controllers.
+#
+# Why not chart values: enabling `serviceMonitor.enabled` inside the
+# kyverno HelmRelease values triggers a Helm upgrade. The chart's
+# post-upgrade hook (kyverno-clean-reports Job) times out on this
+# cluster, which leaves the release in RetriesExceeded and cascades
+# NotReady to every downstream Flux Kustomization (harbor, monitoring,
+# openbao, etc). The metrics Services are already created by the chart
+# on every install/upgrade, so we create ServiceMonitors against them
+# directly here — no Helm upgrade required.
+#
+# NIST Controls: CA-7 (Continuous Monitoring), SI-4 (System Monitoring)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno-admission-controller
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/component: admission-controller
+    app.kubernetes.io/instance: kyverno
+    app.kubernetes.io/part-of: kyverno
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: admission-controller
+      app.kubernetes.io/instance: kyverno
+  namespaceSelector:
+    matchNames: [kyverno]
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno-background-controller
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/component: background-controller
+    app.kubernetes.io/instance: kyverno
+    app.kubernetes.io/part-of: kyverno
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: background-controller
+      app.kubernetes.io/instance: kyverno
+  namespaceSelector:
+    matchNames: [kyverno]
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno-reports-controller
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/component: reports-controller
+    app.kubernetes.io/instance: kyverno
+    app.kubernetes.io/part-of: kyverno
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: reports-controller
+      app.kubernetes.io/instance: kyverno
+  namespaceSelector:
+    matchNames: [kyverno]
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno-cleanup-controller
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/component: cleanup-controller
+    app.kubernetes.io/instance: kyverno
+    app.kubernetes.io/part-of: kyverno
+    release: kube-prometheus-stack
+  annotations:
+    sre.io/nist-controls: "CA-7, SI-4"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: cleanup-controller
+      app.kubernetes.io/instance: kyverno
+  namespaceSelector:
+    matchNames: [kyverno]
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 30s
