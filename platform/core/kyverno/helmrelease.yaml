@@ -28,6 +28,14 @@ spec:
     remediation:
       retries: 3
   values:
+    # Note: serviceMonitor.enabled is NOT set on controllers here because
+    # enabling it triggers a Helm upgrade whose post-upgrade hook
+    # (kyverno-clean-reports) times out on this cluster, leaving the
+    # HelmRelease in RetriesExceeded and cascading NotReady downstream.
+    # The metrics Services already exist (kyverno-svc-metrics,
+    # kyverno-{background,reports,cleanup}-controller-metrics), so we
+    # create ServiceMonitors in a standalone manifest alongside this
+    # HelmRelease (see kyverno-servicemonitors.yaml).
     admissionController:
       replicas: 3
       resources:
@@ -37,8 +45,6 @@ spec:
         limits:
           cpu: 500m
           memory: 512Mi
-      serviceMonitor:
-        enabled: true
     backgroundController:
       replicas: 2
       resources:
@@ -48,8 +54,6 @@ spec:
         limits:
           cpu: 200m
           memory: 256Mi
-      serviceMonitor:
-        enabled: true
     reportsController:
       replicas: 2
       resources:
@@ -59,8 +63,6 @@ spec:
         limits:
           cpu: 200m
           memory: 256Mi
-      serviceMonitor:
-        enabled: true
     cleanupController:
       replicas: 1
       resources:
@@ -70,8 +72,6 @@ spec:
         limits:
           cpu: 100m
           memory: 128Mi
-      serviceMonitor:
-        enabled: true
     config:
       webhooks:
         namespaceSelector:
